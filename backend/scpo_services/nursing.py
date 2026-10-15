@@ -291,7 +291,7 @@ def list_patient_history(
 
 
 def can_view_full_patient_profile(principal: DemoPrincipal) -> bool:
-    return any(module in principal.modules and "consultar" in principal.permissions.get(module, []) for module in ("patients", "management"))
+    return any(module in principal.modules and "consultar" in principal.permissions.get(module, []) for module in ("patients", "reception", "management"))
 
 
 def serialize_patient(patient: Patient, *, full_profile: bool = False) -> dict[str, object]:

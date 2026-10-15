@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Activity,
@@ -9,6 +9,7 @@ import {
   Brain,
   Building2,
   CalendarDays,
+  Camera,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -305,12 +306,13 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
           {activeModule === 'maintenance' && <MaintenanceQueuePage />}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
+          {activeModule === 'reception' && <PatientRegistryPage receptionMode />}
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
           {activeModule === 'therapy' && <TherapyPage />}
           {activeModule === 'admin' && <AdminPage />}
           {activeModule === 'management' && <ModulePlaceholder moduleId="management" onNavigate={navigate} />}
           {activeModule === 'about' && <AboutPage />}
-          {(['xray', 'social', 'nutrition', 'hygiene', 'reception', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
+          {(['xray', 'social', 'nutrition', 'hygiene', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
@@ -410,7 +412,7 @@ const emptyPatientForm = {
   responsible_name: '', responsible_relationship: '', responsible_phone: '', responsible_address: '', responsible_address_number: '', responsible_address_complement: '', responsible_neighborhood: '', responsible_city: '', responsible_state: '', responsible_postal_code: '', photo_data: '',
 }
 
-function PatientRegistryPage({ onHistory }: { onHistory: (reference: string) => void }) {
+function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean }) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [form, setForm] = useState({ ...emptyPatientForm })
   const [editingReference, setEditingReference] = useState('')
@@ -420,6 +422,35 @@ function PatientRegistryPage({ onHistory }: { onHistory: (reference: string) => 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [cameraOpen, setCameraOpen] = useState(false)
+  const [cameraError, setCameraError] = useState('')
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    if (!cameraOpen) return
+    let stream: MediaStream | undefined
+    let videoElement: HTMLVideoElement | null = null
+    let active = true
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return () => { active = false }
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false })
+      .then((mediaStream) => {
+        stream = mediaStream
+        if (!active) { mediaStream.getTracks().forEach((track) => track.stop()); return }
+        videoElement = videoRef.current
+        if (videoElement) {
+          videoElement.srcObject = mediaStream
+          void videoElement.play().catch(() => setCameraError('Não foi possível iniciar a visualização da câmera.'))
+        }
+      })
+      .catch(() => { if (active) setCameraError('Não foi possível acessar a câmera. Verifique a permissão do navegador ou escolha uma imagem do dispositivo.') })
+    return () => {
+      active = false
+      stream?.getTracks().forEach((track) => track.stop())
+      if (videoElement) videoElement.srcObject = null
+    }
+  }, [cameraOpen])
 
   async function loadPatients() {
     setLoading(true)
@@ -444,6 +475,7 @@ function PatientRegistryPage({ onHistory }: { onHistory: (reference: string) => 
     setForm(formData)
     setEditingReference(patient.reference)
     setShowForm(true)
+    setCameraOpen(false)
     setNotice('')
   }
 
@@ -459,8 +491,8 @@ function PatientRegistryPage({ onHistory }: { onHistory: (reference: string) => 
       const data = await response.json() as Patient & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar o cadastro.')
       setPatients((current) => editingReference ? current.map((item) => item.reference === data.reference ? data : item) : [...current, data].sort((a, b) => a.room.localeCompare(b.room, 'pt-BR', { numeric: true }) || a.bed.localeCompare(b.bed, 'pt-BR', { numeric: true })))
-      setForm({ ...emptyPatientForm }); setEditingReference(''); setShowForm(false)
-      setNotice(editingReference ? 'Cadastro do paciente atualizado.' : 'Paciente cadastrado e disponível nos módulos autorizados.')
+      setForm({ ...emptyPatientForm }); setEditingReference(''); setShowForm(false); setCameraOpen(false)
+      setNotice(editingReference ? 'Cadastro do paciente atualizado.' : receptionMode ? 'Paciente admitido e cadastro compartilhado com os módulos autorizados.' : 'Paciente cadastrado e disponível nos módulos autorizados.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar o cadastro.')
     } finally { setSaving(false) }
@@ -469,11 +501,41 @@ function PatientRegistryPage({ onHistory }: { onHistory: (reference: string) => 
   const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed} ${patient.responsible_name}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')))
   const patientAddress = (patient: Patient) => [patient.address, patient.address_number, patient.address_complement, patient.neighborhood, patient.city, patient.state, patient.postal_code].filter(Boolean).join(', ')
 
+  function capturePhoto() {
+    const video = videoRef.current
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError('Aguarde a câmera iniciar antes de tirar a foto.')
+      return
+    }
+    const canvas = document.createElement('canvas')
+    const scale = Math.min(1, 900 / Math.max(video.videoWidth, video.videoHeight))
+    canvas.width = Math.round(video.videoWidth * scale)
+    canvas.height = Math.round(video.videoHeight * scale)
+    const context = canvas.getContext('2d')
+    if (!context) { setCameraError('Não foi possível processar a imagem.'); return }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    setForm((current) => ({ ...current, photo_data: canvas.toDataURL('image/jpeg', 0.82) }))
+    setCameraOpen(false)
+    setCameraError('')
+  }
+
+  function loadPhoto(file?: File) {
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Selecione uma imagem JPEG, PNG ou WebP.'); return }
+    if (file.size > 1_000_000) { setError('A foto deve ter até 1 MB.'); return }
+    const reader = new FileReader()
+    reader.onload = () => setForm((current) => ({ ...current, photo_data: String(reader.result ?? '') }))
+    reader.onerror = () => setError('Não foi possível ler a imagem selecionada.')
+    reader.readAsDataURL(file)
+    setError('')
+    setCameraOpen(false)
+  }
+
   return <section className="patient-registry-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }) } else { setShowForm(true); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar paciente'}</button></div>
+    <div className="page-title-row"><div><p className="eyebrow">{receptionMode ? 'MÓDULO · RECEPÇÃO' : 'CADASTRO COMPARTILHADO'}</p><h1>{receptionMode ? 'Recepção' : 'Pacientes'}</h1><p className="welcome-copy">{receptionMode ? 'Cadastre admissões, confirme quarto e leito e mantenha os dados de identificação atualizados.' : 'Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.'}</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : receptionMode ? 'Nova admissão' : 'Cadastrar paciente'}</button></div>
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {showForm && <form className="patient-registry-form" onSubmit={(event) => void submit(event)}>
-      <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
+      <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : receptionMode ? 'Identificação e internação' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
       <div className="patient-form-grid">
         <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
         <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={form.birth_date} onChange={(event) => setForm({ ...form, birth_date: event.target.value })} /></label>
@@ -485,10 +547,10 @@ function PatientRegistryPage({ onHistory }: { onHistory: (reference: string) => 
       </div>
       <fieldset className="patient-address-group"><legend>Endereço do paciente</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Logradouro</span><input maxLength={180} autoComplete="street-address" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></label><label className="field"><span className="field-label">Número</span><input maxLength={24} value={form.address_number} onChange={(event) => setForm({ ...form, address_number: event.target.value })} /></label><label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={form.address_complement} onChange={(event) => setForm({ ...form, address_complement: event.target.value })} /></label><label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={form.neighborhood} onChange={(event) => setForm({ ...form, neighborhood: event.target.value })} /></label><label className="field"><span className="field-label">Cidade</span><input maxLength={100} value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} /></label><label className="field"><span className="field-label">UF</span><input maxLength={2} value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value.toUpperCase() })} /></label><label className="field"><span className="field-label">CEP</span><input maxLength={12} autoComplete="postal-code" value={form.postal_code} onChange={(event) => setForm({ ...form, postal_code: event.target.value })} /></label></div></fieldset>
       <fieldset className="patient-address-group"><legend>Responsável pela internação</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Nome completo</span><input maxLength={120} value={form.responsible_name} onChange={(event) => setForm({ ...form, responsible_name: event.target.value })} /></label><label className="field"><span className="field-label">Vínculo com o paciente</span><input maxLength={60} value={form.responsible_relationship} onChange={(event) => setForm({ ...form, responsible_relationship: event.target.value })} placeholder="Ex.: filha, cônjuge" /></label><label className="field"><span className="field-label">Telefone de contato</span><input maxLength={40} autoComplete="tel" value={form.responsible_phone} onChange={(event) => setForm({ ...form, responsible_phone: event.target.value })} /></label><label className="field"><span className="field-label">Logradouro</span><input maxLength={180} value={form.responsible_address} onChange={(event) => setForm({ ...form, responsible_address: event.target.value })} /></label><label className="field"><span className="field-label">Número</span><input maxLength={24} value={form.responsible_address_number} onChange={(event) => setForm({ ...form, responsible_address_number: event.target.value })} /></label><label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={form.responsible_address_complement} onChange={(event) => setForm({ ...form, responsible_address_complement: event.target.value })} /></label><label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={form.responsible_neighborhood} onChange={(event) => setForm({ ...form, responsible_neighborhood: event.target.value })} /></label><label className="field"><span className="field-label">Cidade</span><input maxLength={100} value={form.responsible_city} onChange={(event) => setForm({ ...form, responsible_city: event.target.value })} /></label><label className="field"><span className="field-label">UF</span><input maxLength={2} value={form.responsible_state} onChange={(event) => setForm({ ...form, responsible_state: event.target.value.toUpperCase() })} /></label><label className="field"><span className="field-label">CEP</span><input maxLength={12} value={form.responsible_postal_code} onChange={(event) => setForm({ ...form, responsible_postal_code: event.target.value })} /></label></div></fieldset>
-      <fieldset className="patient-address-group"><legend>Foto do paciente</legend><div className="patient-photo-editor">{form.photo_data ? <img src={form.photo_data} alt="Prévia da foto do paciente" /> : <span className="patient-photo-placeholder"><UserRound size={24} /></span>}<label className="button button-secondary" htmlFor="patient-photo">Selecionar foto</label><input id="patient-photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 1_000_000) { setError('A foto deve ter até 1 MB.'); return } const reader = new FileReader(); reader.onload = () => setForm((current) => ({ ...current, photo_data: String(reader.result ?? '') })); reader.readAsDataURL(file) }} /><button className="button button-secondary" type="button" onClick={() => setForm({ ...form, photo_data: '' })} disabled={!form.photo_data}>Remover foto</button><small>JPEG, PNG ou WebP · até 1 MB</small></div></fieldset>
-      <div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : editingReference ? 'Salvar alterações' : 'Cadastrar paciente'} <ArrowRight size={16} /></button></div>
+      <fieldset className="patient-address-group"><legend>Foto do paciente</legend><div className="patient-photo-editor">{form.photo_data ? <img src={form.photo_data} alt="Prévia da foto do paciente" /> : <span className="patient-photo-placeholder"><UserRound size={24} /></span>}<button className="button button-secondary" type="button" onClick={() => { setCameraError(''); setCameraOpen((open) => !open) }}><Camera size={16} /> {cameraOpen ? 'Fechar câmera' : 'Tirar foto'}</button><label className="button button-secondary" htmlFor="patient-photo">Escolher imagem</label><input id="patient-photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { loadPhoto(event.target.files?.[0]); event.currentTarget.value = '' }} /><button className="button button-secondary" type="button" onClick={() => setForm({ ...form, photo_data: '' })} disabled={!form.photo_data}>Remover foto</button><small>JPEG, PNG ou WebP · até 1 MB. A câmera requer HTTPS e permissão.</small>{cameraOpen && <div className="patient-camera-panel"><video ref={videoRef} autoPlay muted playsInline aria-label="Visualização da câmera para foto do paciente" />{(cameraError || (!navigator.mediaDevices?.getUserMedia ? 'A câmera precisa de HTTPS e de permissão do navegador. Você ainda pode escolher uma imagem do dispositivo.' : '')) && <p className="form-message form-message-error" role="alert">{cameraError || 'A câmera precisa de HTTPS e de permissão do navegador. Você ainda pode escolher uma imagem do dispositivo.'}</p>}<div><button className="button button-primary" type="button" onClick={capturePhoto} disabled={!navigator.mediaDevices?.getUserMedia}><Camera size={16} /> Capturar foto</button><button className="button button-secondary" type="button" onClick={() => setCameraOpen(false)}>Cancelar câmera</button></div></div>}</div></fieldset>
+      <div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : editingReference ? 'Salvar alterações' : 'Cadastrar paciente'} <ArrowRight size={16} /></button></div>
     </form>}
-    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">REGISTROS COMPARTILHADOS</p><h2>Pacientes cadastrados</h2></div><span className="module-total">{patients.length}</span></div><label className="field patient-search"><span className="field-label">Buscar paciente, quarto ou responsável</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>{loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? <div className="patient-registry-list">{filteredPatients.map((patient) => <article className="patient-registry-card" key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p>{patient.responsible_name && <small>Responsável: {patient.responsible_name}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}><ClipboardList size={15} /> Histórico</button><button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button></div></article>)}</div> : <div className="history-empty"><UsersRound size={20} /><span>{query ? 'Nenhum cadastro corresponde à pesquisa.' : 'Nenhum paciente cadastrado.'}</span></div>}</section>
+    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">REGISTROS COMPARTILHADOS</p><h2>{receptionMode ? 'Pacientes internados' : 'Pacientes cadastrados'}</h2></div><span className="module-total">{patients.length}</span></div><label className="field patient-search"><span className="field-label">Buscar paciente, quarto ou responsável</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>{loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? <div className="patient-registry-list">{filteredPatients.map((patient) => <article className="patient-registry-card" key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p>{patient.responsible_name && <small>Responsável: {patient.responsible_name}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions">{onHistory && <button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}><ClipboardList size={15} /> Histórico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button></div></article>)}</div> : <div className="history-empty"><UsersRound size={20} /><span>{query ? 'Nenhum cadastro corresponde à pesquisa.' : 'Nenhum paciente cadastrado.'}</span></div>}</section>
   </section>
 }
 

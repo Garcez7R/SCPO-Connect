@@ -535,6 +535,10 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .patient-photo-editor > img, .patient-photo-placeholder { display: grid; width: 72px; height: 72px; place-items: center; border-radius: 50%; object-fit: cover; background: #edf4f6; color: var(--blue); }
 .patient-photo-editor input[type=file] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 .patient-photo-editor small { width: 100%; color: var(--muted); font-size: 11px; }
+.patient-camera-panel { display: grid; width: min(100%, 560px); gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafb; }
+.patient-camera-panel video { display: block; width: 100%; max-height: 420px; border-radius: 6px; background: #18252c; object-fit: contain; }
+.patient-camera-panel > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.patient-camera-panel .form-message { margin: 0; }
 .patient-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .patient-form-actions .button { min-height: 43px; }
 .patient-search { max-width: 520px; }
