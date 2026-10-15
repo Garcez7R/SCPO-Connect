@@ -28,6 +28,7 @@ class InventoryItem(Base):
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
     barcode: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     category: Mapped[str] = mapped_column(String(40), nullable=False, default="Medicamento")
+    active_ingredient: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     presentation: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     storage_location: Mapped[str] = mapped_column(String(80), nullable=False, default="")
@@ -62,6 +63,7 @@ class InventoryPayload(BaseModel):
     expiry_date: date
     barcode: str = Field(default="", max_length=40)
     category: str = Field(default="Medicamento", min_length=2, max_length=40)
+    active_ingredient: str = Field(default="", max_length=120)
     presentation: str = Field(default="", max_length=120)
     supplier: str = Field(default="", max_length=120)
     storage_location: str = Field(default="", max_length=80)
@@ -113,6 +115,7 @@ def serialize_item(item: InventoryItem) -> dict[str, object]:
         "created_at": item.created_at.isoformat(),
         "barcode": item.barcode,
         "category": item.category,
+        "active_ingredient": item.active_ingredient,
         "presentation": item.presentation,
         "supplier": item.supplier,
         "storage_location": item.storage_location,
