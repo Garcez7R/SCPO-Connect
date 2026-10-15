@@ -10,6 +10,8 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   ClipboardPlus,
   Clock3,
@@ -31,15 +33,23 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
-type ModuleId = 'home' | 'work-orders' | 'patients' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'about'
+type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
-type Patient = { reference: string; name: string; room: string; bed: string }
+type Patient = {
+  reference: string; name: string; room: string; bed: string; birth_date?: string | null; sex?: string; phone?: string; email?: string
+  address?: string; address_number?: string; address_complement?: string; neighborhood?: string; city?: string; state?: string; postal_code?: string
+  responsible_name?: string; responsible_relationship?: string; responsible_phone?: string; responsible_address?: string
+  responsible_address_number?: string; responsible_address_complement?: string; responsible_neighborhood?: string
+  responsible_city?: string; responsible_state?: string; responsible_postal_code?: string; photo_data?: string
+  created_at?: string | null; updated_at?: string | null; updated_by?: string
+}
 type VitalRecordData = { id: number; patient_reference: string; actor_name: string; values: Record<string, string>; glucose_unit: string; recorded_at: string }
 type WorkOrderStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
 type WorkOrderPriority = 'normal' | 'high' | 'urgent'
 type WorkOrder = { id: string; title: string; description: string; department: string; location: string; priority: WorkOrderPriority; status: WorkOrderStatus; requester_id: string; requester_name: string; updated_by: string; created_at: string; updated_at: string }
 type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string }
+type TherapyActivity = { id: string; title: string; activity_type: string; description: string; location: string; starts_at: string; ends_at: string | null; patient_reference: string | null; status: string; created_by: string; created_at: string }
 
 type Profile = {
   id: ProfileId
@@ -187,6 +197,7 @@ function readableApiError(detail: unknown): string {
 function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const [activeModule, setActiveModule] = useState<ModuleId>('home')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [historyPatientReference, setHistoryPatientReference] = useState('')
   useEffect(() => {
     let timer = 0
     let lastActivity = Date.now()
@@ -224,14 +235,21 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   function navigate(id: ModuleId) {
     if (id === 'nursing-history' && !profile.modules.includes('nursing')) return
-    if (id !== 'about' && id !== 'work-orders' && id !== 'nursing-history' && !profile.modules.includes(id)) return
+    if (id === 'patient-history' && !profile.modules.includes('patients')) return
+    if (id !== 'about' && id !== 'work-orders' && id !== 'nursing-history' && id !== 'patient-history' && !profile.modules.includes(id)) return
     setActiveModule(id)
     setMenuOpen(false)
+  }
+
+  function openPatientHistory(reference: string) {
+    setHistoryPatientReference(reference)
+    navigate('patient-history')
   }
 
   const activeLabel = activeModule === 'home'
     ? 'Visão geral'
     : activeModule === 'nursing-history' ? 'Coletas de sinais vitais'
+    : activeModule === 'patient-history' ? 'Histórico do paciente'
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
 
   return (
@@ -273,7 +291,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="breadcrumbs"><span>SCPO Connect</span><span className="crumb-divider">/</span><strong>{activeLabel}</strong></div>
           </div>
           <div className="topbar-right">
-            <span className="session-role">{profile.role}</span>
+            <span className="session-role">{getGreeting()}, {profile.name.split(/\s+/)[0]}</span>
             <InstallAppButton />
             <button className="button button-secondary logout-button" type="button" onClick={async () => { await fetch('/api/v1/auth/logout', { method: 'POST' }); onLogout() }}><LogOut size={15} /> Sair</button>
           </div>
@@ -286,11 +304,13 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'pharmacy' && <PharmacyPage />}
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
           {activeModule === 'maintenance' && <MaintenanceQueuePage />}
-          {activeModule === 'patients' && <PatientRegistryPage />}
+          {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
+          {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
+          {activeModule === 'therapy' && <TherapyPage />}
           {activeModule === 'admin' && <AdminPage />}
           {activeModule === 'management' && <ModulePlaceholder moduleId="management" onNavigate={navigate} />}
           {activeModule === 'about' && <AboutPage />}
-          {(['xray', 'social', 'nutrition', 'hygiene', 'reception', 'therapy', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
+          {(['xray', 'social', 'nutrition', 'hygiene', 'reception', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
@@ -385,8 +405,176 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
   </section></main>
 }
 
-function PatientRegistryPage() {
-  return <section className="placeholder-page page-enter"><div className="page-title-row"><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Consulte identificação e localização do paciente conforme as permissões do seu perfil.</p></div><span className="module-icon module-icon-nursing"><UserRound size={23} /></span></div><section className="notice-band"><div className="notice-icon"><LockKeyhole size={20} /></div><div><strong>Acesso conforme função e necessidade</strong><p>As informações do paciente são disponibilizadas de acordo com o módulo autorizado e o perfil de acesso.</p></div></section><section className="placeholder-state"><span className="placeholder-state-icon"><UsersRound size={20} /></span><div><strong>Cadastro de pacientes</strong><p>Para cadastrar ou localizar pacientes por quarto e leito e consultar as coletas, acesse Enfermagem. Os registros ficam vinculados ao paciente selecionado.</p></div></section></section>
+const emptyPatientForm = {
+  name: '', room: '', bed: '', birth_date: '', sex: '', phone: '', email: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '', postal_code: '',
+  responsible_name: '', responsible_relationship: '', responsible_phone: '', responsible_address: '', responsible_address_number: '', responsible_address_complement: '', responsible_neighborhood: '', responsible_city: '', responsible_state: '', responsible_postal_code: '', photo_data: '',
+}
+
+function PatientRegistryPage({ onHistory }: { onHistory: (reference: string) => void }) {
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [form, setForm] = useState({ ...emptyPatientForm })
+  const [editingReference, setEditingReference] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function loadPatients() {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/v1/nursing/patients?full_profile=true')
+      const data = await response.json() as { patients?: Patient[]; detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os pacientes.')
+      setPatients(data.patients ?? [])
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os pacientes.')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { void loadPatients() }, [])
+
+  function startEdit(patient: Patient) {
+    const formData = { ...emptyPatientForm }
+    for (const key of Object.keys(formData) as (keyof typeof emptyPatientForm)[]) {
+      formData[key] = key === 'birth_date' ? patient.birth_date ?? '' : patient[key] ?? ''
+    }
+    setForm(formData)
+    setEditingReference(patient.reference)
+    setShowForm(true)
+    setNotice('')
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(editingReference ? `/api/v1/nursing/patients/${encodeURIComponent(editingReference)}` : '/api/v1/nursing/patients', {
+        method: editingReference ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, birth_date: form.birth_date || null }),
+      })
+      const data = await response.json() as Patient & { detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar o cadastro.')
+      setPatients((current) => editingReference ? current.map((item) => item.reference === data.reference ? data : item) : [...current, data].sort((a, b) => a.room.localeCompare(b.room, 'pt-BR', { numeric: true }) || a.bed.localeCompare(b.bed, 'pt-BR', { numeric: true })))
+      setForm({ ...emptyPatientForm }); setEditingReference(''); setShowForm(false)
+      setNotice(editingReference ? 'Cadastro do paciente atualizado.' : 'Paciente cadastrado e disponível nos módulos autorizados.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar o cadastro.')
+    } finally { setSaving(false) }
+  }
+
+  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed} ${patient.responsible_name}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')))
+  const patientAddress = (patient: Patient) => [patient.address, patient.address_number, patient.address_complement, patient.neighborhood, patient.city, patient.state, patient.postal_code].filter(Boolean).join(', ')
+
+  return <section className="patient-registry-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }) } else { setShowForm(true); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar paciente'}</button></div>
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {showForm && <form className="patient-registry-form" onSubmit={(event) => void submit(event)}>
+      <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
+      <div className="patient-form-grid">
+        <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={form.birth_date} onChange={(event) => setForm({ ...form, birth_date: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={form.bed} onChange={(event) => setForm({ ...form, bed: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Sexo (opcional)</span><select value={form.sex} onChange={(event) => setForm({ ...form, sex: event.target.value })}><option value="">Não informado</option><option value="Feminino">Feminino</option><option value="Masculino">Masculino</option><option value="Outro">Outro</option><option value="Não informado">Prefere não informar</option></select></label>
+        <label className="field"><span className="field-label">Telefone do paciente</span><input maxLength={40} autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+        <label className="field"><span className="field-label">E-mail do paciente</span><input type="email" maxLength={160} autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+      </div>
+      <fieldset className="patient-address-group"><legend>Endereço do paciente</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Logradouro</span><input maxLength={180} autoComplete="street-address" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></label><label className="field"><span className="field-label">Número</span><input maxLength={24} value={form.address_number} onChange={(event) => setForm({ ...form, address_number: event.target.value })} /></label><label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={form.address_complement} onChange={(event) => setForm({ ...form, address_complement: event.target.value })} /></label><label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={form.neighborhood} onChange={(event) => setForm({ ...form, neighborhood: event.target.value })} /></label><label className="field"><span className="field-label">Cidade</span><input maxLength={100} value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} /></label><label className="field"><span className="field-label">UF</span><input maxLength={2} value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value.toUpperCase() })} /></label><label className="field"><span className="field-label">CEP</span><input maxLength={12} autoComplete="postal-code" value={form.postal_code} onChange={(event) => setForm({ ...form, postal_code: event.target.value })} /></label></div></fieldset>
+      <fieldset className="patient-address-group"><legend>Responsável pela internação</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Nome completo</span><input maxLength={120} value={form.responsible_name} onChange={(event) => setForm({ ...form, responsible_name: event.target.value })} /></label><label className="field"><span className="field-label">Vínculo com o paciente</span><input maxLength={60} value={form.responsible_relationship} onChange={(event) => setForm({ ...form, responsible_relationship: event.target.value })} placeholder="Ex.: filha, cônjuge" /></label><label className="field"><span className="field-label">Telefone de contato</span><input maxLength={40} autoComplete="tel" value={form.responsible_phone} onChange={(event) => setForm({ ...form, responsible_phone: event.target.value })} /></label><label className="field"><span className="field-label">Logradouro</span><input maxLength={180} value={form.responsible_address} onChange={(event) => setForm({ ...form, responsible_address: event.target.value })} /></label><label className="field"><span className="field-label">Número</span><input maxLength={24} value={form.responsible_address_number} onChange={(event) => setForm({ ...form, responsible_address_number: event.target.value })} /></label><label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={form.responsible_address_complement} onChange={(event) => setForm({ ...form, responsible_address_complement: event.target.value })} /></label><label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={form.responsible_neighborhood} onChange={(event) => setForm({ ...form, responsible_neighborhood: event.target.value })} /></label><label className="field"><span className="field-label">Cidade</span><input maxLength={100} value={form.responsible_city} onChange={(event) => setForm({ ...form, responsible_city: event.target.value })} /></label><label className="field"><span className="field-label">UF</span><input maxLength={2} value={form.responsible_state} onChange={(event) => setForm({ ...form, responsible_state: event.target.value.toUpperCase() })} /></label><label className="field"><span className="field-label">CEP</span><input maxLength={12} value={form.responsible_postal_code} onChange={(event) => setForm({ ...form, responsible_postal_code: event.target.value })} /></label></div></fieldset>
+      <fieldset className="patient-address-group"><legend>Foto do paciente</legend><div className="patient-photo-editor">{form.photo_data ? <img src={form.photo_data} alt="Prévia da foto do paciente" /> : <span className="patient-photo-placeholder"><UserRound size={24} /></span>}<label className="button button-secondary" htmlFor="patient-photo">Selecionar foto</label><input id="patient-photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 1_000_000) { setError('A foto deve ter até 1 MB.'); return } const reader = new FileReader(); reader.onload = () => setForm((current) => ({ ...current, photo_data: String(reader.result ?? '') })); reader.readAsDataURL(file) }} /><button className="button button-secondary" type="button" onClick={() => setForm({ ...form, photo_data: '' })} disabled={!form.photo_data}>Remover foto</button><small>JPEG, PNG ou WebP · até 1 MB</small></div></fieldset>
+      <div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : editingReference ? 'Salvar alterações' : 'Cadastrar paciente'} <ArrowRight size={16} /></button></div>
+    </form>}
+    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">REGISTROS COMPARTILHADOS</p><h2>Pacientes cadastrados</h2></div><span className="module-total">{patients.length}</span></div><label className="field patient-search"><span className="field-label">Buscar paciente, quarto ou responsável</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>{loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? <div className="patient-registry-list">{filteredPatients.map((patient) => <article className="patient-registry-card" key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p>{patient.responsible_name && <small>Responsável: {patient.responsible_name}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}><ClipboardList size={15} /> Histórico</button><button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button></div></article>)}</div> : <div className="history-empty"><UsersRound size={20} /><span>{query ? 'Nenhum cadastro corresponde à pesquisa.' : 'Nenhum paciente cadastrado.'}</span></div>}</section>
+  </section>
+}
+
+function PatientHistoryPage({ patientReference, onBack }: { patientReference: string; onBack: () => void }) {
+  const pageSize = 50
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [records, setRecords] = useState<VitalRecordData[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [metric, setMetric] = useState('saturation')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const patient = patients.find((item) => item.reference === patientReference)
+  useEffect(() => {
+    let current = true
+    Promise.all([fetch('/api/v1/nursing/patients?full_profile=true'), fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/history?limit=${pageSize}&offset=${offset}`)]).then(async ([patientResponse, historyResponse]) => {
+      const patientData = await patientResponse.json() as { patients?: Patient[]; detail?: string }
+      const historyData = await historyResponse.json() as { records?: VitalRecordData[]; total?: number; detail?: string }
+      if (!patientResponse.ok) throw new Error(patientData.detail ?? 'Não foi possível carregar o cadastro.')
+      if (!historyResponse.ok) throw new Error(historyData.detail ?? 'Não foi possível carregar o histórico.')
+      return { patientData, historyData }
+    }).then(({ patientData, historyData }) => { if (current) { setPatients(patientData.patients ?? []); setRecords(historyData.records ?? []); setTotal(historyData.total ?? 0); setError('') } }).catch((loadError) => { if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao consultar o histórico.') }).finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [patientReference, offset])
+  return <section className="patient-history-page page-enter"><div className="page-title-row"><div><p className="eyebrow">PRONTUÁRIO · ACESSO AUTORIZADO</p><h1>Histórico do paciente</h1><p className="welcome-copy">Registros de sinais vitais associados ao cadastro central.</p></div><button className="button button-secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Voltar aos pacientes</button></div>{patient && <section className="patient-history-summary">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}<div><h2>{patient.name}</h2><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p>{patient.responsible_name && <small>Responsável pela internação: {patient.responsible_name} · {patient.responsible_phone || 'Contato não informado'}</small>}</div><span className="module-total">{total} {total === 1 ? 'registro' : 'registros'}</span></section>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}{loading ? <div className="history-empty">Carregando histórico…</div> : <VitalHistory records={records} patients={patients} metric={metric} onMetric={setMetric} />}{!loading && total > pageSize && <nav className="history-pagination" aria-label="Paginação do histórico do paciente"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Mais antigas <ArrowRight size={15} /></button></div></nav>}</section>
+}
+
+function TherapyPage() {
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [activities, setActivities] = useState<TherapyActivity[]>([])
+  const [month, setMonth] = useState(() => { const current = new Date(); return new Date(current.getFullYear(), current.getMonth(), 1) })
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [form, setForm] = useState({ title: '', activity_type: '', description: '', location: '', starts_at: '', ends_at: '', patient_reference: '' })
+
+  useEffect(() => {
+    let current = true
+    const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString()
+    const end = new Date(month.getFullYear(), month.getMonth() + 1, 1).toISOString()
+    Promise.all([
+      fetch('/api/v1/nursing/patients'),
+      fetch(`/api/v1/therapy/activities?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&limit=200`),
+    ]).then(async ([patientResponse, activityResponse]) => {
+      const patientData = await patientResponse.json() as { patients?: Patient[]; detail?: string }
+      const activityData = await activityResponse.json() as { activities?: TherapyActivity[]; detail?: string }
+      if (!patientResponse.ok) throw new Error(patientData.detail ?? 'Não foi possível carregar os pacientes autorizados.')
+      if (!activityResponse.ok) throw new Error(activityData.detail ?? 'Não foi possível carregar a agenda terapêutica.')
+      return { patientData, activityData }
+    }).then(({ patientData, activityData }) => { if (current) { setPatients(patientData.patients ?? []); setActivities(activityData.activities ?? []); setError('') } }).catch((loadError) => { if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a oficina terapêutica.') }).finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [month])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError(''); setNotice('')
+    try {
+      const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, starts_at: new Date(form.starts_at).toISOString(), ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null, patient_reference: form.patient_reference || null }) })
+      const data = await response.json() as TherapyActivity & { detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível agendar a atividade.')
+      if (new Date(data.starts_at).getFullYear() === month.getFullYear() && new Date(data.starts_at).getMonth() === month.getMonth()) setActivities((items) => [...items, data].sort((a, b) => a.starts_at.localeCompare(b.starts_at)))
+      setForm({ title: '', activity_type: '', description: '', location: '', starts_at: '', ends_at: '', patient_reference: '' }); setShowForm(false); setNotice('Atividade incluída na agenda.')
+    } catch (submitError) { setError(submitError instanceof Error ? submitError.message : 'Falha ao salvar a atividade.') } finally { setSaving(false) }
+  }
+
+  const monthLabel = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(month)
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
+  const firstWeekday = new Date(month.getFullYear(), month.getMonth(), 1).getDay()
+  const activityDateKey = (value: string) => { const date = new Date(value); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
+  const calendarCells = Array.from({ length: Math.ceil((firstWeekday + daysInMonth) / 7) * 7 }, (_, index) => {
+    const day = index - firstWeekday + 1
+    if (day < 1 || day > daysInMonth) return null
+    const dateKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    return { day, dateKey, birthdays: patients.filter((patient) => patient.birth_date?.slice(5) === dateKey.slice(5)), activities: activities.filter((activity) => activityDateKey(activity.starts_at) === dateKey) }
+  })
+  const birthdaysThisMonth = patients.filter((patient) => patient.birth_date && Number(patient.birth_date.slice(5, 7)) === month.getMonth() + 1).sort((a, b) => (a.birth_date ?? '').slice(8).localeCompare((b.birth_date ?? '').slice(8), 'pt-BR', { numeric: true }))
+
+  return <section className="therapy-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · OFICINA TERAPÊUTICA</p><h1>Atividades e calendário</h1><p className="welcome-copy">Organize oficinas, grupos e atendimentos com os pacientes autorizados.</p></div><button className="button button-primary" type="button" onClick={() => { setShowForm((value) => !value); setNotice(''); setError('') }}><CalendarDays size={16} /> {showForm ? 'Fechar agenda' : 'Agendar atividade'}</button></div>
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {showForm && <form className="therapy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVA ATIVIDADE</p><h2>Dados da oficina</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome da atividade</span><input required minLength={3} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: oficina de pintura" /></label><label className="field"><span className="field-label">Modalidade</span><select required value={form.activity_type} onChange={(event) => setForm({ ...form, activity_type: event.target.value })}><option value="">Selecione</option><option value="grupo">Grupo terapêutico</option><option value="arte">Arte e expressão</option><option value="música">Música</option><option value="movimento">Movimento corporal</option><option value="ocupacional">Atividade ocupacional</option><option value="recreação">Recreação</option><option value="outro">Outra</option></select></label><label className="field"><span className="field-label">Início</span><input required type="datetime-local" value={form.starts_at} onChange={(event) => setForm({ ...form, starts_at: event.target.value })} /></label><label className="field"><span className="field-label">Término (opcional)</span><input type="datetime-local" min={form.starts_at || undefined} value={form.ends_at} onChange={(event) => setForm({ ...form, ends_at: event.target.value })} /></label><label className="field"><span className="field-label">Local</span><input required minLength={2} maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Sala ou espaço" /></label><label className="field"><span className="field-label">Paciente (opcional)</span><select value={form.patient_reference} onChange={(event) => setForm({ ...form, patient_reference: event.target.value })}><option value="">Atividade em grupo / sem vínculo individual</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label></div><label className="field"><span className="field-label">Objetivo ou observações</span><textarea maxLength={1000} rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label><div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => setShowForm(false)} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Salvar atividade'} <ArrowRight size={16} /></button></div></form>}
+    <div className="therapy-layout"><section className="therapy-calendar-panel"><div className="therapy-calendar-heading"><button className="icon-button" type="button" aria-label="Mês anterior" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={19} /></button><h2>{monthLabel}</h2><button className="icon-button" type="button" aria-label="Próximo mês" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={19} /></button></div><div className="therapy-calendar-grid therapy-calendar-weekdays">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => <span key={day}>{day}</span>)}</div><div className="therapy-calendar-grid">{calendarCells.map((cell, index) => cell ? <article className={`therapy-calendar-day ${cell.birthdays.length ? 'has-birthday' : ''} ${cell.activities.length ? 'has-activity' : ''}`} key={cell.dateKey}><strong>{cell.day}</strong>{cell.birthdays.slice(0, 2).map((patient) => <span className="therapy-calendar-tag birthday-tag" key={patient.reference} title={`Aniversário: ${patient.name}`}>🎂 {patient.name.split(' ')[0]}</span>)}{cell.activities.slice(0, 2).map((activity) => <span className="therapy-calendar-tag activity-tag" key={activity.id} title={activity.title}>• {activity.title}</span>)}{cell.birthdays.length + cell.activities.length > 4 && <small>+{cell.birthdays.length + cell.activities.length - 4}</small>}</article> : <span className="therapy-calendar-day therapy-calendar-empty" key={`empty-${index}`} />)}</div><div className="therapy-calendar-legend"><span><i className="legend-birthday" /> Aniversários</span><span><i className="legend-activity" /> Atividades</span></div></section>
+      <aside className="therapy-birthday-panel"><div className="section-heading"><div><p className="eyebrow">DATAS ESPECIAIS</p><h2>Aniversários</h2></div><span className="module-total">{birthdaysThisMonth.length}</span></div>{birthdaysThisMonth.length ? <div className="therapy-birthday-list">{birthdaysThisMonth.map((patient) => <article key={patient.reference}><span className="birthday-date">{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'short' }).format(new Date(`${month.getFullYear()}-${patient.birth_date!.slice(5)}T00:00:00Z`))}</span><div><strong>{patient.name}</strong><small>Quarto {patient.room} · Leito {patient.bed}</small></div></article>)}</div> : <div className="history-empty">Nenhum aniversário cadastrado neste mês.</div>}<p className="field-hint">As datas são calculadas a partir do cadastro de pacientes autorizado para este perfil.</p></aside></div>
+    <section className="therapy-activity-list"><div className="section-heading"><div><p className="eyebrow">PROGRAMAÇÃO</p><h2>Atividades de {monthLabel}</h2></div><span className="module-total">{activities.length}</span></div>{loading ? <div className="history-empty">Carregando agenda…</div> : activities.length ? <div className="therapy-activity-grid">{activities.map((activity) => { const patient = patients.find((item) => item.reference === activity.patient_reference); return <article key={activity.id} className="therapy-activity-card"><span className="therapy-activity-date"><strong>{new Intl.DateTimeFormat('pt-BR', { day: '2-digit' }).format(new Date(activity.starts_at))}</strong><small>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(new Date(activity.starts_at))}</small></span><div><span className="eyebrow">{activity.activity_type} · {new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(activity.starts_at))}</span><h3>{activity.title}</h3><p>{activity.location}{patient ? ` · ${patient.name}` : ' · Grupo'}</p>{activity.description && <small>{activity.description}</small>}</div></article> })}</div> : <div className="history-empty">Nenhuma atividade agendada para este mês.</div>}</section>
+  </section>
 }
 
 const workOrderStatuses: Record<WorkOrderStatus, string> = {
@@ -399,6 +587,11 @@ const workOrderPriorities: Record<WorkOrderPriority, string> = {
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+}
+
+function getGreeting() {
+  const hour = Number(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+  return hour >= 5 && hour < 12 ? 'Bom dia' : hour >= 12 && hour < 18 ? 'Boa tarde' : 'Boa noite'
 }
 
 function WorkOrdersPage({ user }: { user: AuthUser }) {
@@ -626,7 +819,7 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
   return (
     <section className="dashboard-page page-enter">
       <div className="welcome-row">
-        <div><p className="eyebrow">{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase()}</p><h1>Bom dia, {firstName}.</h1><p className="welcome-copy">Acesse os espaços de trabalho disponíveis para o seu perfil.</p></div>
+        <div><p className="eyebrow">{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase()}</p><h1>{getGreeting()}, {firstName}.</h1><p className="welcome-copy">Acesse os espaços de trabalho disponíveis para o seu perfil.</p></div>
         <div className="date-chip"><Clock3 size={16} /><span>{allowedModules.length} módulos disponíveis</span></div>
       </div>
 

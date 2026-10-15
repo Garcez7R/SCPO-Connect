@@ -20,7 +20,8 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 
 ## Recursos
 
-- Cadastro de pacientes com quarto, leito e foto.
+- Cadastro central de pacientes com quarto, leito, data de nascimento, foto, contatos e endereços do paciente e do responsável pela internação.
+- Histórico individual de sinais vitais, com consulta separada e controle de acesso por perfil.
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
 - Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
 - Permissões por módulo e ações, verificadas também pelas APIs.
@@ -28,6 +29,8 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Registro de eventos administrativos e área de conformidade.
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.
+- Oficina terapêutica com agenda de atividades e calendário mensal de aniversários.
+- Saudação de bom dia, boa tarde ou boa noite conforme o horário de Brasília.
 
 ### Áreas de trabalho
 
@@ -43,7 +46,7 @@ Enfermagem, Farmácia, Raio X, Serviço Social, Nutrição, Higienização, Rece
 | Instalação com containers | Docker Compose e PostgreSQL 17 |
 | HTTPS interno | Caddy com autoridade certificadora local |
 
-As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem, Farmácia, Raio X, Serviço Social e Manutenção. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
+As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem e cadastro central de pacientes, Farmácia, Oficina Terapêutica, Raio X, Serviço Social e Manutenção. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
 
 ## Executar para desenvolvimento
 

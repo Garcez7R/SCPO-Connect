@@ -78,6 +78,9 @@ def upgrade() -> None:
     elif service == "maintenance":
         # Its domain tables are introduced by the dedicated 0004 migration.
         pass
+    elif service == "therapy":
+        # Its domain tables are introduced by the dedicated 0007 migration.
+        pass
     else:
         raise RuntimeError("SCPO_SERVICE desconhecido")
 
@@ -92,7 +95,7 @@ def downgrade() -> None:
         "xray": "exam_requests",
     }
     service = os.getenv("SCPO_SERVICE")
-    if service == "maintenance":
+    if service in {"maintenance", "therapy"}:
         return
     if service not in table_by_service:
         raise RuntimeError("SCPO_SERVICE desconhecido")

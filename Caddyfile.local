@@ -32,6 +32,9 @@
 	handle /api/v1/maintenance/* {
 		reverse_proxy 127.0.0.1:8007
 	}
+	handle /api/v1/therapy/* {
+		reverse_proxy 127.0.0.1:8008
+	}
 
 	handle {
 		try_files {path} /index.html

@@ -39,7 +39,7 @@ printf '%s\n' "$SCPO_BOOTSTRAP_ADMIN_TOKEN" > "$bootstrap_token_file"
 chmod 0600 "$bootstrap_token_file"
 API_BIND_HOST="${SCPO_API_BIND_HOST:-127.0.0.1}"
 
-for service in access audit nursing pharmacy social xray maintenance; do
+for service in access audit nursing pharmacy social xray maintenance therapy; do
   database_variable="SCPO_${service^^}_DATABASE_URL"
   export "$database_variable=sqlite:///$PWD/data/local/${service}.sqlite3"
   SCPO_SERVICE="$service" uv run --no-sync alembic upgrade head
@@ -61,6 +61,7 @@ start_service xray 8004
 start_service social 8005
 start_service audit 8006
 start_service maintenance 8007
+start_service therapy 8008
 printf '\nAPIs em execução. Ctrl+C encerra todos os serviços. Logs em .logs/\n'
 
 cleanup() {

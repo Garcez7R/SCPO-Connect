@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, func, select
+from sqlalchemy import JSON, Boolean, Date, DateTime, Integer, String, Text, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -41,6 +41,31 @@ class Patient(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     room: Mapped[str] = mapped_column(String(20), nullable=False)
     bed: Mapped[str] = mapped_column(String(20), nullable=False)
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    sex: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    phone: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    email: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    address: Mapped[str] = mapped_column(String(180), nullable=False, default="")
+    address_number: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    address_complement: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    neighborhood: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    state: Mapped[str] = mapped_column(String(2), nullable=False, default="")
+    postal_code: Mapped[str] = mapped_column(String(12), nullable=False, default="")
+    responsible_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    responsible_relationship: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    responsible_phone: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    responsible_address: Mapped[str] = mapped_column(String(180), nullable=False, default="")
+    responsible_address_number: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    responsible_address_complement: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    responsible_neighborhood: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    responsible_city: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    responsible_state: Mapped[str] = mapped_column(String(2), nullable=False, default="")
+    responsible_postal_code: Mapped[str] = mapped_column(String(12), nullable=False, default="")
+    photo_data: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
@@ -86,6 +111,52 @@ class PatientPayload(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     room: str = Field(min_length=1, max_length=20)
     bed: str = Field(min_length=1, max_length=20)
+    birth_date: date | None = None
+    sex: str = Field(default="", max_length=24)
+    phone: str = Field(default="", max_length=40)
+    email: str = Field(default="", max_length=160)
+    address: str = Field(default="", max_length=180)
+    address_number: str = Field(default="", max_length=24)
+    address_complement: str = Field(default="", max_length=100)
+    neighborhood: str = Field(default="", max_length=100)
+    city: str = Field(default="", max_length=100)
+    state: str = Field(default="", max_length=2)
+    postal_code: str = Field(default="", max_length=12)
+    responsible_name: str = Field(default="", max_length=120)
+    responsible_relationship: str = Field(default="", max_length=60)
+    responsible_phone: str = Field(default="", max_length=40)
+    responsible_address: str = Field(default="", max_length=180)
+    responsible_address_number: str = Field(default="", max_length=24)
+    responsible_address_complement: str = Field(default="", max_length=100)
+    responsible_neighborhood: str = Field(default="", max_length=100)
+    responsible_city: str = Field(default="", max_length=100)
+    responsible_state: str = Field(default="", max_length=2)
+    responsible_postal_code: str = Field(default="", max_length=12)
+    photo_data: str = Field(default="", max_length=1_500_000)
+
+    @field_validator("photo_data")
+    @classmethod
+    def validate_photo(cls, value: str) -> str:
+        if value and not re.fullmatch(r"data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}", value):
+            raise ValueError("A foto deve ser uma imagem JPEG, PNG ou WebP válida")
+        return value
+
+
+PATIENT_MODULES = ("patients", "nursing", "reception", "therapy", "nutrition", "social", "hygiene", "xray", "psychology", "management")
+
+
+async def authorize_patient_module(request: Request) -> DemoPrincipal:
+    from .common import authenticated_principal
+
+    principal = await authenticated_principal(request)
+    action = {"GET": "consultar", "HEAD": "consultar", "POST": "criar", "PUT": "alterar", "PATCH": "alterar"}.get(request.method.upper(), "consultar")
+    if any(module in principal.modules and action in principal.permissions.get(module, []) for module in PATIENT_MODULES):
+        return principal
+    raise HTTPException(status_code=403, detail="Acesso ao cadastro de pacientes não autorizado")
+
+
+PATIENT_ACCESS = Depends(authorize_patient_module)
+PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "management"))
 
 
 class VitalPayload(BaseModel):
@@ -161,27 +232,80 @@ def create_vital_record(
 
 @app.get("/api/v1/nursing/patients")
 def list_patients(
-    _: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
+    full_profile: bool = False,
 ) -> dict[str, list[dict[str, object]]]:
+    if full_profile and not can_view_full_patient_profile(principal):
+        raise HTTPException(status_code=403, detail="Acesso aos dados cadastrais completos não autorizado")
     patients = db.scalars(select(Patient).where(Patient.active.is_(True)).order_by(Patient.room, Patient.bed)).all()
-    return {"patients": [serialize_patient(patient) for patient in patients]}
+    return {"patients": [serialize_patient(patient, full_profile=full_profile) for patient in patients]}
 
 
 @app.post("/api/v1/nursing/patients", status_code=201)
 def create_patient(
     payload: PatientPayload,
-    _: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    patient = Patient(reference=str(uuid.uuid4()), **payload.model_dump())
+    patient = Patient(reference=str(uuid.uuid4()), **payload.model_dump(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC), updated_by=principal.actor_name)
     db.add(patient)
     db.commit()
-    return serialize_patient(patient)
+    db.refresh(patient)
+    return serialize_patient(patient, full_profile=can_view_full_patient_profile(principal))
 
 
-def serialize_patient(patient: Patient) -> dict[str, object]:
-    return {"reference": patient.reference, "name": patient.name, "room": patient.room, "bed": patient.bed}
+@app.put("/api/v1/nursing/patients/{patient_reference}")
+def update_patient(
+    patient_reference: str,
+    payload: PatientPayload,
+    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    for key, value in payload.model_dump().items():
+        setattr(patient, key, value)
+    patient.updated_at = datetime.now(UTC)
+    patient.updated_by = principal.actor_name
+    db.commit()
+    db.refresh(patient)
+    return serialize_patient(patient, full_profile=can_view_full_patient_profile(principal))
+
+
+@app.get("/api/v1/nursing/patients/{patient_reference}/history")
+def list_patient_history(
+    patient_reference: str,
+    _: Annotated[DemoPrincipal, PATIENT_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    if db.get(Patient, patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    query = select(VitalRecord).where(VitalRecord.patient_reference == patient_reference).order_by(VitalRecord.recorded_at.desc())
+    total = db.scalar(select(func.count(VitalRecord.id)).where(VitalRecord.patient_reference == patient_reference)) or 0
+    records = db.scalars(query.offset(offset).limit(limit)).all()
+    return {"records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
+
+
+def can_view_full_patient_profile(principal: DemoPrincipal) -> bool:
+    return any(module in principal.modules and "consultar" in principal.permissions.get(module, []) for module in ("patients", "management"))
+
+
+def serialize_patient(patient: Patient, *, full_profile: bool = False) -> dict[str, object]:
+    result: dict[str, object] = {
+        "reference": patient.reference,
+        "name": patient.name,
+        "room": patient.room,
+        "bed": patient.bed,
+        "birth_date": patient.birth_date,
+    }
+    if full_profile:
+        result.update({key: getattr(patient, key) for key in PatientPayload.model_fields})
+        result.update({"created_at": patient.created_at.isoformat() if patient.created_at else None, "updated_at": patient.updated_at.isoformat() if patient.updated_at else None, "updated_by": patient.updated_by})
+    return result
 
 
 @app.get("/api/v1/nursing/vitals")

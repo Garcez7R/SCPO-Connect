@@ -34,6 +34,8 @@ services:
       SCPO_XRAY_DB_PASSWORD: ${SCPO_XRAY_DB_PASSWORD:?Configure SCPO_XRAY_DB_PASSWORD in .env}
       SCPO_MAINTENANCE_DB_USER: ${SCPO_MAINTENANCE_DB_USER:?Configure SCPO_MAINTENANCE_DB_USER in .env}
       SCPO_MAINTENANCE_DB_PASSWORD: ${SCPO_MAINTENANCE_DB_PASSWORD:?Configure SCPO_MAINTENANCE_DB_PASSWORD in .env}
+      SCPO_THERAPY_DB_USER: ${SCPO_THERAPY_DB_USER:?Configure SCPO_THERAPY_DB_USER in .env}
+      SCPO_THERAPY_DB_PASSWORD: ${SCPO_THERAPY_DB_PASSWORD:?Configure SCPO_THERAPY_DB_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres-init/01-create-databases.sh:/docker-entrypoint-initdb.d/01-create-databases.sh:ro
@@ -112,6 +114,16 @@ services:
       SCPO_MAINTENANCE_DATABASE_URL: postgresql+psycopg://${SCPO_MAINTENANCE_DB_USER}:${SCPO_MAINTENANCE_DB_PASSWORD}@db:5432/scpo_maintenance
     networks: [backend]
 
+  therapy:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=therapy alembic upgrade head && uvicorn scpo_services.therapy:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: therapy
+      SCPO_THERAPY_DATABASE_URL: postgresql+psycopg://${SCPO_THERAPY_DB_USER}:${SCPO_THERAPY_DB_PASSWORD}@db:5432/scpo_therapy
+      SCPO_NURSING_DATABASE_URL: postgresql+psycopg://${SCPO_NURSING_DB_USER}:${SCPO_NURSING_DB_PASSWORD}@db:5432/scpo_nursing
+    networks: [backend]
+
   web:
     build:
       context: .
@@ -141,6 +153,7 @@ services:
       - social
       - xray
       - maintenance
+      - therapy
     networks: [backend]
 
 volumes:
