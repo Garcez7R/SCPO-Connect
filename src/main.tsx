@@ -25,6 +25,16 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       sessionStorage.setItem(reloadGuard, '1')
       window.location.reload()
     }, { once: true })
-    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((registration) => registration.update()).catch(() => undefined)
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((registration) => {
+      void registration.update()
+      const updateTimer = window.setInterval(() => {
+        if (document.visibilityState === 'visible' && navigator.onLine) void registration.update().catch(() => undefined)
+      }, 60_000)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && navigator.onLine) void registration.update().catch(() => undefined)
+      })
+      window.addEventListener('online', () => void registration.update().catch(() => undefined))
+      window.addEventListener('pagehide', () => window.clearInterval(updateTimer), { once: true })
+    }).catch(() => undefined)
   })
 }

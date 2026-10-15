@@ -569,6 +569,26 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .patient-registry-identity p, .patient-registry-identity small { display: block; margin: 2px 0; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .patient-registry-actions { display: flex; flex: 0 0 auto; gap: 7px; }
 .patient-registry-actions .button { min-height: 38px; padding: 7px 10px; font-size: 11px; }
+.patient-card-identifiers { color: var(--ink) !important; font-weight: 600; }
+.patient-modal-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; align-items: center; justify-items: center; padding: 18px; background: rgb(15 28 38 / 58%); overflow: auto; }
+.patient-detail-modal { display: grid; width: min(820px, 100%); max-height: min(90vh, 940px); gap: 20px; padding: 22px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 24px 80px rgb(0 0 0 / 25%); }
+.patient-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.patient-detail-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.patient-detail-identity > img { width: 68px; height: 68px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
+.patient-detail-identity h2 { margin: 3px 0; font-size: 21px; }
+.patient-detail-identity p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 13px; }
+.patient-detail-sections { display: grid; gap: 16px; }
+.patient-detail-sections > section { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.patient-detail-sections h3 { margin: 0; font-size: 14px; }
+.patient-detail-sections p { margin: 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.patient-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.patient-detail-grid span { display: grid; gap: 3px; min-width: 0; }
+.patient-detail-grid small { color: var(--muted); font-size: 11px; }
+.patient-detail-grid strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.patient-detail-sections .patient-detail-alert { border-color: #efcfaa; background: #fff9f0; }
+.patient-detail-alert h3, .patient-detail-alert p { color: #8a4e11; }
+.patient-detail-actions { display: flex; justify-content: flex-end; gap: 9px; }
+@media (max-width: 700px) { .patient-modal-backdrop { align-items: end; padding: 0; } .patient-detail-modal { max-height: 94dvh; gap: 15px; padding: 16px; border-radius: 12px 12px 0 0; } .patient-detail-header { align-items: flex-start; } .patient-detail-identity > img { width: 54px; height: 54px; } .patient-detail-identity h2 { font-size: 17px; } .patient-detail-grid { grid-template-columns: 1fr; } .patient-detail-actions { flex-direction: column; } .patient-detail-actions .button { width: 100%; min-height: 44px; } }
 .button-danger { min-height: 38px; padding: 7px 10px; border: 1px solid #e6c6c6; border-radius: 5px; background: #fff7f6; color: #9a3d3d; font-size: 11px; font-weight: 600; cursor: pointer; }
 .button-danger:hover { background: #fcebea; }
 .allergy-entry textarea { min-height: 80px; }
