@@ -637,6 +637,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .beta-dialog { position: relative; z-index: 1; display: grid; width: min(100%, 390px); justify-items: center; gap: 10px; padding: 32px 28px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgba(14, 34, 48, .25); text-align: center; animation: beta-dialog-in .32s cubic-bezier(.16, 1, .3, 1) both; }
 .beta-dialog-close { position: absolute; top: 12px; right: 12px; }
 .beta-dialog-icon { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 14px; background: #eaf3f7; color: var(--blue-dark); }
+.beta-dialog-icon img { display: block; width: 48px; height: 48px; object-fit: contain; }
 .beta-dialog .eyebrow { margin-top: 7px; }
 .beta-dialog h2 { margin: 0; color: var(--ink); font-size: 21px; }
 .beta-dialog p:not(.eyebrow) { margin: 0; color: var(--blue-dark); font-size: 15px; font-weight: 600; }

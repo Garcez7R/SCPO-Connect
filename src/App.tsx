@@ -26,7 +26,6 @@ import {
   Pencil,
   ShieldCheck,
   Search,
-  Sparkles,
   Stethoscope,
   UsersRound,
   UserRound,
@@ -359,9 +358,10 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
 function BetaCelebration({ onClose }: { onClose: () => void }) {
   useEffect(() => {
+    const closeTimer = window.setTimeout(onClose, 7000)
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
     window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
+    return () => { window.clearTimeout(closeTimer); window.removeEventListener('keydown', closeOnEscape) }
   }, [onClose])
 
   return <div className="beta-celebration" role="dialog" aria-modal="true" aria-labelledby="beta-title" onClick={onClose}>
@@ -369,7 +369,7 @@ function BetaCelebration({ onClose }: { onClose: () => void }) {
     <div className="beta-confetti-layer" aria-hidden="true">{betaConfettiPieces.map((style, index) => <span className="beta-confetti-piece" key={index} style={style} />)}</div>
     <section className="beta-dialog" onClick={(event) => event.stopPropagation()}>
       <button className="icon-button beta-dialog-close" type="button" aria-label="Fechar" onClick={onClose}><X size={18} /></button>
-      <span className="beta-dialog-icon"><Sparkles size={24} /></span>
+      <span className="beta-dialog-icon"><img src="/scpo-connect-install-192.png" alt="Ícone do SCPO Connect" /></span>
       <p className="eyebrow">SCPO CONNECT</p>
       <h2 id="beta-title">Versão em desenvolvimento</h2>
       <p>Fase beta</p>
