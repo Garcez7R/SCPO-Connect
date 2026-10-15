@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import DateTime, Integer, String, select
+from sqlalchemy import DateTime, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import Base, DemoPrincipal, database_session, get_engine, require_demo_role, verify_database_migrated
@@ -24,6 +24,9 @@ class TherapyActivity(Base):
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     patient_reference: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="scheduled")
+    activity_report: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    report_updated_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    report_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -40,6 +43,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="SCPO Connect · Oficina Terapêutica", version="1.0.0", lifespan=lifespan)
 THERAPY_ROLE = require_demo_role("therapy")
+THERAPY_REPORT_ACCESS = require_demo_role("therapy", "management")
 
 
 class ActivityPayload(BaseModel):
@@ -53,6 +57,12 @@ class ActivityPayload(BaseModel):
     patient_reference: str | None = Field(default=None, max_length=36)
 
 
+class ActivityReportPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    activity_report: str = Field(default="", max_length=4000)
+    status: Literal["scheduled", "in_progress", "completed", "cancelled"]
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"service": "therapy", "status": "ok"}
@@ -60,7 +70,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/therapy/activities")
 def list_activities(
-    _: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    _: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_therapy_db)],
     from_date: datetime | None = None,
     to_date: datetime | None = None,
@@ -73,6 +83,25 @@ def list_activities(
         query = query.where(TherapyActivity.starts_at < to_date)
     activities = db.scalars(query.order_by(TherapyActivity.starts_at).limit(limit)).all()
     return {"activities": [serialize_activity(activity) for activity in activities]}
+
+
+@app.patch("/api/v1/therapy/activities/{activity_id}/report")
+def update_activity_report(
+    activity_id: str,
+    payload: ActivityReportPayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    activity = db.get(TherapyActivity, activity_id)
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Atividade não encontrada")
+    activity.activity_report = payload.activity_report.strip()
+    activity.status = payload.status
+    activity.report_updated_by = principal.actor_name
+    activity.report_updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(activity)
+    return serialize_activity(activity)
 
 
 @app.post("/api/v1/therapy/activities", status_code=201)
@@ -116,6 +145,9 @@ def serialize_activity(activity: TherapyActivity) -> dict[str, object]:
         "ends_at": ends_at.astimezone(UTC).isoformat() if ends_at else None,
         "patient_reference": activity.patient_reference,
         "status": activity.status,
+        "activity_report": activity.activity_report,
+        "report_updated_by": activity.report_updated_by,
+        "report_updated_at": activity.report_updated_at.isoformat() if activity.report_updated_at else None,
         "created_by": activity.created_by,
         "created_at": activity.created_at.isoformat(),
     }
