@@ -696,6 +696,32 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .work-order-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 .work-order-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .work-order-card-heading h3 { margin: 6px 0 0; font-size: 15px; line-height: 1.35; }
+.maintenance-filters { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; }
+.maintenance-query { grid-column: span 2; }
+.maintenance-filter-actions, .maintenance-actions { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.maintenance-report-summary { display: flex; flex-wrap: wrap; gap: 10px 18px; padding: 11px 2px; color: var(--muted); font-size: 13px; }
+.maintenance-report-summary strong { color: var(--ink); }
+.work-order-print-action { display: flex; justify-content: flex-end; }
+.backup-export-form { display: flex; align-items: end; gap: 14px; }
+.backup-export-form .field { flex: 1; }
+.backup-panel { margin-bottom: 18px; }
+@media (max-width: 700px) { .maintenance-filters { grid-template-columns: 1fr 1fr; } .maintenance-query { grid-column: span 2; } .maintenance-filter-actions { grid-column: span 2; } .maintenance-filter-actions .button { flex: 1; min-height: 44px; } .maintenance-actions { width: 100%; } .backup-export-form { align-items: stretch; flex-direction: column; } }
+@media print {
+  body.print-maintenance-queue * { visibility: hidden !important; }
+  body.print-maintenance-queue .maintenance-queue-page,
+  body.print-maintenance-queue .maintenance-queue-page * { visibility: visible !important; }
+  body.print-maintenance-queue .maintenance-queue-page { position: absolute; inset: 0; width: 100%; margin: 0; padding: 0; }
+  body.print-maintenance-queue .maintenance-queue-page > *:not(.work-order-list-panel),
+  body.print-maintenance-queue .maintenance-queue-page button,
+  body.print-maintenance-queue .maintenance-queue-page form { display: none !important; }
+  body.print-maintenance-order * { visibility: hidden !important; }
+  body.print-maintenance-order .work-order-card:not(.print-away),
+  body.print-maintenance-order .work-order-card:not(.print-away) * { visibility: visible !important; }
+  body.print-maintenance-order .work-order-card:not(.print-away) { position: absolute; inset: 0; display: block; width: 100%; border: 0; padding: 24px; }
+  body.print-maintenance-order .work-order-card:not(.print-away) .work-order-actions,
+  body.print-maintenance-order .work-order-card:not(.print-away) .work-order-print-action { display: none !important; }
+  .work-order-card { break-inside: avoid; color: #111; }
+}
 .work-order-priority, .work-order-status { display: inline-flex; width: fit-content; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .priority-normal { background: #eef3f6; color: #506474; }
 .priority-high { background: #fff4df; color: #8b5c08; }

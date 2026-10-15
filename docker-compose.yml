@@ -131,6 +131,20 @@ services:
         condition: service_healthy
     networks: [backend]
 
+  backup:
+    <<: *backend-service
+    command: ["uvicorn", "scpo_services.backup:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_ACCESS_DATABASE_URL: postgresql+psycopg://${SCPO_ACCESS_DB_USER}:${SCPO_ACCESS_DB_PASSWORD}@db:5432/scpo_access
+      SCPO_AUDIT_DATABASE_URL: postgresql+psycopg://${SCPO_AUDIT_DB_USER}:${SCPO_AUDIT_DB_PASSWORD}@db:5432/scpo_audit
+      SCPO_NURSING_DATABASE_URL: postgresql+psycopg://${SCPO_NURSING_DB_USER}:${SCPO_NURSING_DB_PASSWORD}@db:5432/scpo_nursing
+      SCPO_PHARMACY_DATABASE_URL: postgresql+psycopg://${SCPO_PHARMACY_DB_USER}:${SCPO_PHARMACY_DB_PASSWORD}@db:5432/scpo_pharmacy
+      SCPO_SOCIAL_DATABASE_URL: postgresql+psycopg://${SCPO_SOCIAL_DB_USER}:${SCPO_SOCIAL_DB_PASSWORD}@db:5432/scpo_social
+      SCPO_XRAY_DATABASE_URL: postgresql+psycopg://${SCPO_XRAY_DB_USER}:${SCPO_XRAY_DB_PASSWORD}@db:5432/scpo_xray
+      SCPO_MAINTENANCE_DATABASE_URL: postgresql+psycopg://${SCPO_MAINTENANCE_DB_USER}:${SCPO_MAINTENANCE_DB_PASSWORD}@db:5432/scpo_maintenance
+    networks: [backend]
+
   web:
     build:
       context: .
@@ -161,6 +175,7 @@ services:
       - xray
       - maintenance
       - therapy
+      - backup
     networks: [backend]
 
 volumes:

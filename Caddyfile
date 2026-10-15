@@ -64,6 +64,11 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 		reverse_proxy therapy:8000
 	}
 
+	@backup path /api/v1/backup/*
+	handle @backup {
+		reverse_proxy backup:8000
+	}
+
 	handle {
 		reverse_proxy web:80
 	}

@@ -2,10 +2,10 @@
 
 import uuid
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import DateTime, ForeignKey, Integer, String, case, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -19,6 +19,7 @@ class WorkOrder(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(String(1500), nullable=False)
+    service_type: Mapped[str] = mapped_column(String(80), nullable=False, default="Outro serviço")
     department: Mapped[str] = mapped_column(String(100), nullable=False)
     location: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     patient_reference: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
@@ -63,6 +64,7 @@ class WorkOrderCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=5, max_length=120)
     description: str = Field(min_length=5, max_length=1500)
+    service_type: str = Field(default="Outro serviço", min_length=2, max_length=80)
     department: str = Field(min_length=2, max_length=100)
     location: str = Field(default="", max_length=120)
     patient_reference: str | None = Field(default=None, max_length=36)
@@ -85,6 +87,7 @@ def _serialize_order(order: WorkOrder) -> dict[str, object]:
         "id": order.id,
         "title": order.title,
         "description": order.description,
+        "service_type": order.service_type,
         "department": order.department,
         "location": order.location,
         "patient_reference": order.patient_reference,
@@ -158,11 +161,36 @@ def list_my_orders(
 def maintenance_queue(
     principal: Annotated[DemoPrincipal, AUTHENTICATED],
     db: Annotated[Session, Depends(get_maintenance_db)],
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    service_type: str | None = Query(default=None, max_length=80),
+    department: str | None = Query(default=None, max_length=100),
+    status: Literal["open", "in_progress", "completed", "cancelled"] | None = None,
+    priority: Literal["normal", "high", "urgent"] | None = None,
+    q: str | None = Query(default=None, max_length=120),
 ) -> dict[str, list[dict[str, object]]]:
     _require_maintenance(principal, "consultar")
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="A data inicial deve ser anterior à data final")
+    query = select(WorkOrder)
+    if from_date:
+        query = query.where(WorkOrder.created_at >= datetime.combine(from_date, time.min, tzinfo=UTC))
+    if to_date:
+        query = query.where(WorkOrder.created_at < datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC))
+    if service_type:
+        query = query.where(WorkOrder.service_type == service_type)
+    if department:
+        query = query.where(WorkOrder.department == department)
+    if status:
+        query = query.where(WorkOrder.status == status)
+    if priority:
+        query = query.where(WorkOrder.priority == priority)
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.where(WorkOrder.title.ilike(term) | WorkOrder.description.ilike(term) | WorkOrder.location.ilike(term) | WorkOrder.requester_name.ilike(term))
     priority_order = case((WorkOrder.priority == "urgent", 0), (WorkOrder.priority == "high", 1), else_=2)
     status_order = case((WorkOrder.status == "open", 0), (WorkOrder.status == "in_progress", 1), else_=2)
-    orders = db.scalars(select(WorkOrder).order_by(status_order, priority_order, WorkOrder.created_at.asc())).all()
+    orders = db.scalars(query.order_by(status_order, priority_order, WorkOrder.created_at.asc())).all()
     emit_audit_event(principal, "maintenance", "maintenance_queue_read", "work_order_queue")
     return {"orders": [_serialize_order(order) for order in orders]}
 
