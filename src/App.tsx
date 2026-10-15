@@ -37,7 +37,7 @@ type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursi
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 type Patient = {
-  reference: string; name: string; room: string; bed: string; cpf?: string; birth_date?: string | null; sex?: string; phone?: string; email?: string
+  reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; allergies?: string; birth_date?: string | null; sex?: string; phone?: string; email?: string
   address?: string; address_number?: string; address_complement?: string; neighborhood?: string; city?: string; state?: string; postal_code?: string
   responsible_name?: string; responsible_relationship?: string; responsible_phone?: string; responsible_address?: string
   responsible_address_number?: string; responsible_address_complement?: string; responsible_neighborhood?: string
@@ -51,7 +51,8 @@ type WorkOrder = { id: string; title: string; description: string; department: s
 type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string }
 type TherapyActivityStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 type TherapyActivity = { id: string; title: string; activity_type: string; description: string; location: string; starts_at: string; ends_at: string | null; patient_reference: string | null; status: TherapyActivityStatus; activity_report: string; report_updated_by: string | null; report_updated_at: string | null; created_by: string; created_at: string }
-type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; actor_name: string; created_at: string }
+type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; fasting_at?: string | null; fasting_reason?: string; actor_name: string; created_at: string }
+type NutritionPlan = { allergies: string; assessment_date: string | null; diet_type: string; restrictions: string; fasting_at: string | null; fasting_reason: string }
 
 type Profile = {
   id: ProfileId
@@ -106,6 +107,15 @@ const emptyRecord = {
   pain: '',
   painScale: '',
   notes: '',
+  oxygenStatus: '',
+  oxygenStartedAt: '',
+  oxygenEndedAt: '',
+  wounds: '',
+  dressingType: '',
+  examName: '',
+  examScheduledAt: '',
+  examFollowUp: '',
+  examResult: '',
 }
 
 type RecordFields = typeof emptyRecord
@@ -143,6 +153,15 @@ const fieldLabels: Record<keyof RecordFields, string> = {
   pain: 'Valor informado',
   painScale: 'Escala utilizada',
   notes: 'Observações',
+  oxygenStatus: 'Uso de oxigênio',
+  oxygenStartedAt: 'Oxigênio ligado em',
+  oxygenEndedAt: 'Oxigênio desligado em',
+  wounds: 'Curativos / lesões',
+  dressingType: 'Tipo de cobertura',
+  examName: 'Exame',
+  examScheduledAt: 'Exame agendado para',
+  examFollowUp: 'Acompanhamento do exame',
+  examResult: 'Resultado / informação disponível',
 }
 
 function App() {
@@ -465,7 +484,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
 }
 
 const emptyPatientForm = {
-  name: '', room: '', bed: '', cpf: '', birth_date: '', sex: '', phone: '', email: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '', postal_code: '',
+  name: '', room: '', bed: '', cpf: '', sus_card: '', allergies: '', birth_date: '', sex: '', phone: '', email: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '', postal_code: '',
   responsible_name: '', responsible_relationship: '', responsible_phone: '', responsible_address: '', responsible_address_number: '', responsible_address_complement: '', responsible_neighborhood: '', responsible_city: '', responsible_state: '', responsible_postal_code: '', photo_data: '',
 }
 
@@ -516,6 +535,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [notice, setNotice] = useState('')
   const [cameraOpen, setCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState('')
+  const [duplicateCandidates, setDuplicateCandidates] = useState<{ reference: string; name: string; room: string; bed: string; reasons: string }[]>([])
+  const [duplicateOverride, setDuplicateOverride] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
@@ -575,6 +596,17 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
     event.preventDefault()
     setSaving(true); setError(''); setNotice('')
     try {
+      if (!duplicateOverride) {
+        const params = new URLSearchParams({ name: form.name, cpf: form.cpf, sus_card: form.sus_card, exclude_reference: editingReference })
+        const checkResponse = await fetch(`/api/v1/nursing/patients/duplicates?${params}`)
+        const checkData = await checkResponse.json() as { matches?: typeof duplicateCandidates; detail?: string }
+        if (!checkResponse.ok) throw new Error(checkData.detail ?? 'Não foi possível verificar duplicidades.')
+        if ((checkData.matches ?? []).length) {
+          setDuplicateCandidates(checkData.matches ?? [])
+          setError('Encontramos cadastros com dados semelhantes. Confira antes de prosseguir; nomes iguais podem pertencer a pessoas diferentes.')
+          return
+        }
+      }
       const response = await fetch(editingReference ? `/api/v1/nursing/patients/${encodeURIComponent(editingReference)}` : '/api/v1/nursing/patients', {
         method: editingReference ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -584,10 +616,23 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar o cadastro.')
       setPatients((current) => editingReference ? current.map((item) => item.reference === data.reference ? data : item) : [...current, data].sort((a, b) => a.room.localeCompare(b.room, 'pt-BR', { numeric: true }) || a.bed.localeCompare(b.bed, 'pt-BR', { numeric: true })))
       setForm({ ...emptyPatientForm }); setEditingReference(''); setShowForm(false); setCameraOpen(false)
+      setDuplicateCandidates([]); setDuplicateOverride(false)
       setNotice(editingReference ? 'Cadastro do paciente atualizado.' : receptionMode ? 'Paciente admitido e cadastro compartilhado com os módulos autorizados.' : 'Paciente cadastrado e disponível nos módulos autorizados.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar o cadastro.')
     } finally { setSaving(false) }
+  }
+
+  async function archivePatient(patient: Patient) {
+    const reason = window.prompt(`Motivo para arquivar o cadastro de ${patient.name} (o histórico será preservado):`)
+    if (!reason?.trim()) return
+    try {
+      const response = await fetch(`/api/v1/nursing/patients/${encodeURIComponent(patient.reference)}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) })
+      const data = await response.json() as { detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível arquivar o cadastro.')
+      setPatients((current) => current.filter((item) => item.reference !== patient.reference))
+      setNotice('Cadastro arquivado. O histórico assistencial foi preservado.')
+    } catch (archiveError) { setError(archiveError instanceof Error ? archiveError.message : 'Falha ao arquivar cadastro.') }
   }
 
   const queryDigits = query.replace(/\D/g, '')
@@ -632,6 +677,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       <div className="patient-form-grid">
         <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
         <label className="field"><span className="field-label">CPF</span><input inputMode="numeric" autoComplete="off" maxLength={14} value={form.cpf} onChange={(event) => setForm({ ...form, cpf: event.target.value.replace(/[^\d.-]/g, '').slice(0, 14) })} placeholder="000.000.000-00" /></label>
+        <label className="field"><span className="field-label">Cartão Nacional de Saúde (SUS)</span><input inputMode="numeric" autoComplete="off" maxLength={20} value={form.sus_card} onChange={(event) => setForm({ ...form, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
         <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={form.birth_date} onChange={(event) => setForm({ ...form, birth_date: event.target.value })} /></label>
         <label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
         <label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={form.bed} onChange={(event) => setForm({ ...form, bed: event.target.value })} /></label>
@@ -639,12 +685,14 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
         <label className="field"><span className="field-label">Telefone do paciente</span><input maxLength={40} autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
         <label className="field"><span className="field-label">E-mail do paciente</span><input type="email" maxLength={160} autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
       </div>
+      <label className="field allergy-entry"><span className="field-label">Alergias e alertas de segurança</span><textarea maxLength={1000} value={form.allergies} onChange={(event) => setForm({ ...form, allergies: event.target.value })} placeholder="Registre substâncias/alimentos e observações conhecidas; informe ‘sem alergias conhecidas’ quando confirmado." /></label>
+      {duplicateCandidates.length > 0 && <div className="duplicate-warning" role="alert"><strong>Confira antes de salvar</strong>{duplicateCandidates.map((candidate) => <span key={candidate.reference}>{candidate.name} · Quarto {candidate.room}, leito {candidate.bed} · Coincidência: {candidate.reasons}</span>)}<button className="button button-secondary" type="button" onClick={() => { setDuplicateOverride(true); setError(''); setDuplicateCandidates([]) }}>Confirmo que é outra pessoa</button></div>}
       <fieldset className="patient-address-group"><legend>Endereço do paciente</legend><AddressFields form={form} patients={patients} prefix="" onChange={(key, value) => setForm((current) => ({ ...current, [key]: value }))} /></fieldset>
       <fieldset className="patient-address-group"><legend>Responsável pela internação</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Nome completo</span><input maxLength={120} value={form.responsible_name} onChange={(event) => setForm({ ...form, responsible_name: event.target.value })} /></label><label className="field"><span className="field-label">Vínculo com o paciente</span><input maxLength={60} value={form.responsible_relationship} onChange={(event) => setForm({ ...form, responsible_relationship: event.target.value })} placeholder="Ex.: filha, cônjuge" /></label><label className="field"><span className="field-label">Telefone de contato</span><input maxLength={40} autoComplete="tel" value={form.responsible_phone} onChange={(event) => setForm({ ...form, responsible_phone: event.target.value })} /></label></div><AddressFields form={form} patients={patients} prefix="responsible_" onChange={(key, value) => setForm((current) => ({ ...current, [key]: value }))} /></fieldset>
       <fieldset className="patient-address-group"><legend>Foto do paciente</legend><div className="patient-photo-editor">{form.photo_data ? <img src={form.photo_data} alt="Prévia da foto do paciente" /> : <span className="patient-photo-placeholder"><UserRound size={24} /></span>}<button className="button button-secondary" type="button" onClick={() => { setCameraError(''); setCameraOpen((open) => !open) }}><Camera size={16} /> {cameraOpen ? 'Fechar câmera' : 'Tirar foto'}</button><label className="button button-secondary" htmlFor="patient-photo">Escolher imagem</label><input id="patient-photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { loadPhoto(event.target.files?.[0]); event.currentTarget.value = '' }} /><button className="button button-secondary" type="button" onClick={() => setForm({ ...form, photo_data: '' })} disabled={!form.photo_data}>Remover foto</button><small>JPEG, PNG ou WebP · até 1 MB. A câmera requer HTTPS e permissão.</small>{cameraOpen && <div className="patient-camera-panel"><video ref={videoRef} autoPlay muted playsInline aria-label="Visualização da câmera para foto do paciente" />{(cameraError || (!navigator.mediaDevices?.getUserMedia ? 'A câmera precisa de HTTPS e de permissão do navegador. Você ainda pode escolher uma imagem do dispositivo.' : '')) && <p className="form-message form-message-error" role="alert">{cameraError || 'A câmera precisa de HTTPS e de permissão do navegador. Você ainda pode escolher uma imagem do dispositivo.'}</p>}<div><button className="button button-primary" type="button" onClick={capturePhoto} disabled={!navigator.mediaDevices?.getUserMedia}><Camera size={16} /> Capturar foto</button><button className="button button-secondary" type="button" onClick={() => setCameraOpen(false)}>Cancelar câmera</button></div></div>}</div></fieldset>
       <div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : editingReference ? 'Salvar alterações' : 'Cadastrar paciente'} <ArrowRight size={16} /></button></div>
     </form>}
-    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">REGISTROS COMPARTILHADOS</p><h2>{receptionMode ? 'Pacientes internados' : 'Pacientes cadastrados'}</h2></div><span className="module-total">{patients.length}</span></div><label className="field patient-search"><span className="field-label">Buscar paciente, quarto ou responsável</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>{loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? <div className="patient-registry-list">{filteredPatients.map((patient) => <article className="patient-registry-card" key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p>{patient.responsible_name && <small>Responsável: {patient.responsible_name}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions">{onHistory && <button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}><ClipboardList size={15} /> Histórico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button></div></article>)}</div> : <div className="history-empty"><UsersRound size={20} /><span>{query ? 'Nenhum cadastro corresponde à pesquisa.' : 'Nenhum paciente cadastrado.'}</span></div>}</section>
+    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">REGISTROS COMPARTILHADOS</p><h2>{receptionMode ? 'Pacientes internados' : 'Pacientes cadastrados'}</h2></div><span className="module-total">{patients.length}</span></div><label className="field patient-search"><span className="field-label">Buscar paciente, quarto ou responsável</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>{loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? <div className="patient-registry-list">{filteredPatients.map((patient) => <article className="patient-registry-card" key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p>{patient.allergies && <strong className="allergy-flag"><AlertTriangle size={13} /> Alergia/alerta: {patient.allergies}</strong>}{patient.responsible_name && <small>Responsável: {patient.responsible_name}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions">{onHistory && <button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}><ClipboardList size={15} /> Histórico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button><button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button></div></article>)}</div> : <div className="history-empty"><UsersRound size={20} /><span>{query ? 'Nenhum cadastro corresponde à pesquisa.' : 'Nenhum paciente cadastrado.'}</span></div>}</section>
   </section>
 }
 
@@ -1135,6 +1183,16 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
     setFromDate(''); setToDate(''); setRoom(''); setBed(''); setPatientReference(''); setOffset(0)
   }
 
+  async function voidRecord(recordId: number) {
+    const reason = window.prompt('Motivo para arquivar esta coleta incorreta (ela será preservada na auditoria):')
+    if (!reason?.trim()) return
+    const response = await fetch(`/api/v1/nursing/vitals/${recordId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) })
+    const data = await response.json() as { detail?: string }
+    if (!response.ok) { setError(data.detail ?? 'Não foi possível arquivar a coleta.'); return }
+    setRecords((current) => current.filter((record) => record.id !== recordId))
+    setTotal((current) => Math.max(0, current - 1))
+  }
+
   return <section className="nursing-history-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Coletas registradas</h1><p className="welcome-copy">Consulte valores e evolução por paciente, quarto, leito e período.</p></div><button className="button button-secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Voltar à coleta</button></div>
     <section className="history-filter-panel" aria-label="Filtros das coletas">
@@ -1149,7 +1207,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
       <button className="button button-secondary history-clear-button" type="button" onClick={clearFilters}>Limpar filtros</button>
     </section>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {loadingRecords ? <div className="history-empty">Carregando coletas…</div> : <VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} />}
+    {loadingRecords ? <div className="history-empty">Carregando coletas…</div> : <VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} onVoid={(id) => void voidRecord(id)} />}
     {!loadingRecords && total > pageSize && <nav className="history-pagination" aria-label="Paginação das coletas"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><span>Página {pageNumber} de {pageCount}</span><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Próxima <ArrowRight size={15} /></button></div></nav>}
   </section>
 }
@@ -1165,6 +1223,7 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
   const [historyError, setHistoryError] = useState('')
   const [showPatientForm, setShowPatientForm] = useState(false)
   const [newPatient, setNewPatient] = useState({ name: '', room: '', bed: '' })
+  const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null)
 
   useEffect(() => {
     let current = true
@@ -1179,6 +1238,17 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
     }).catch(() => { if (current) setHistoryError('Não foi possível carregar os dados. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
     return () => { current = false }
   }, [profile.id])
+
+  useEffect(() => {
+    if (!patientRef) return
+    let current = true
+    fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientRef)}/nutrition-plan`).then(async (response) => {
+      const data = await response.json() as NutritionPlan
+      if (!response.ok) throw new Error('Falha ao carregar o plano alimentar')
+      if (current) setNutritionPlan(data)
+    }).catch(() => { if (current) setNutritionPlan(null) })
+    return () => { current = false }
+  }, [patientRef])
 
   async function addPatient(event: FormEvent) {
     event.preventDefault()
@@ -1241,7 +1311,9 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
   return (
     <section className="nursing-page page-enter">
       <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Sinais vitais</h1><p className="welcome-copy">Registre uma nova coleta ou abra o histórico para consultar registros por período e localização.</p></div><div className="nursing-title-actions"><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
-      <div className="patient-strip"><span className="patient-avatar"><Stethoscope size={19} /></span><label className="patient-copy"><span>Paciente · quarto · leito</span><select value={patientRef} onChange={(event) => setPatientRef(event.target.value)}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+      <div className="patient-strip"><span className="patient-avatar"><Stethoscope size={19} /></span><label className="patient-copy"><span>Paciente · quarto · leito</span><select value={patientRef} onChange={(event) => { setPatientRef(event.target.value); setNutritionPlan(null) }}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+      {patients.find((patient) => patient.reference === patientRef)?.allergies && <div className="clinical-alert" role="alert"><AlertTriangle size={19} /><div><strong>Alerta cadastral · alergias</strong><span>{patients.find((patient) => patient.reference === patientRef)?.allergies}</span></div></div>}
+      {nutritionPlan && (nutritionPlan.assessment_date || nutritionPlan.fasting_at) && <div className="care-plan-strip"><strong>Plano alimentar compartilhado</strong>{nutritionPlan.assessment_date && <span>Avaliação de {new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${nutritionPlan.assessment_date}T00:00:00Z`))} · {nutritionPlan.diet_type || 'Tipo de dieta não informado'}{nutritionPlan.restrictions ? ` · Restrições: ${nutritionPlan.restrictions}` : ''}</span>}{nutritionPlan.fasting_at && <span className="fasting-alert">Jejum programado: {dateTime(nutritionPlan.fasting_at)}{nutritionPlan.fasting_reason ? ` · ${nutritionPlan.fasting_reason}` : ''}</span>}</div>}
       {showPatientForm && <form className="patient-create-form" onSubmit={addPatient}><label className="field"><span className="field-label">Nome do paciente</span><input required value={newPatient.name} onChange={(event) => setNewPatient({ ...newPatient, name: event.target.value })} /></label><label className="field"><span className="field-label">Quarto</span><input required value={newPatient.room} onChange={(event) => setNewPatient({ ...newPatient, room: event.target.value })} /></label><label className="field"><span className="field-label">Leito</span><input required value={newPatient.bed} onChange={(event) => setNewPatient({ ...newPatient, bed: event.target.value })} /></label><button className="button button-primary" type="submit">Salvar paciente</button></form>}
       {historyError && <div className="form-message form-message-error" role="alert">{historyError}</div>}
 
@@ -1263,9 +1335,9 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
           </FormSection>
 
           <FormSection number="02" title="Glicose" detail="A unidade é exibida e pode ser alterada para esta coleta.">
-            <div className="field-grid field-grid-two">
+            <div className="field-grid field-grid-two glucose-entry-grid">
               <ValueField label="Valor" unit={record.glucoseUnit} value={record.glucose} disabled={notApplicable.includes('glucose')} onChange={(value) => updateField('glucose', value)} onNA={() => toggleNotApplicable('glucose')} isNA={notApplicable.includes('glucose')} inputMode="decimal" />
-              <label className="field"><span className="field-label">Unidade</span><select value={record.glucoseUnit} onChange={(event) => updateField('glucoseUnit', event.target.value)} disabled={notApplicable.includes('glucose')}><option>mg/dL</option><option>mmol/L</option></select></label>
+              <label className="field glucose-unit-field"><span className="field-label">Unidade</span><select value={record.glucoseUnit} onChange={(event) => updateField('glucoseUnit', event.target.value)} disabled={notApplicable.includes('glucose')}><option>mg/dL</option><option>mmol/L</option></select></label>
             </div>
           </FormSection>
 
@@ -1295,6 +1367,17 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
             <label className="field"><span className="field-label">Texto livre</span><textarea value={record.notes} onChange={(event) => updateField('notes', event.target.value)} maxLength={1000} rows={3} placeholder="Observações complementares" /><span className="field-hint">{record.notes.length}/1.000 caracteres</span></label>
           </FormSection>
 
+          <FormSection number="07" title="Tratamentos e acompanhamentos" detail="Registre os dados observados e horários conforme a rotina assistencial local.">
+            <div className="field-grid field-grid-three">
+              <label className="field"><span className="field-label">Uso de oxigênio</span><select value={record.oxygenStatus} onChange={(event) => updateField('oxygenStatus', event.target.value)}><option value="">Não informado</option><option value="em uso">Em uso</option><option value="suspenso">Suspenso</option><option value="não utiliza">Não utiliza</option></select></label>
+              <label className="field"><span className="field-label">Oxigênio ligado em</span><input type="datetime-local" value={record.oxygenStartedAt} onChange={(event) => updateField('oxygenStartedAt', event.target.value)} /></label>
+              <label className="field"><span className="field-label">Oxigênio desligado em</span><input type="datetime-local" value={record.oxygenEndedAt} onChange={(event) => updateField('oxygenEndedAt', event.target.value)} /></label>
+            </div>
+            <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Curativos e lesões</span><textarea maxLength={1000} value={record.wounds} onChange={(event) => updateField('wounds', event.target.value)} placeholder="Local e descrição observada" /></label><label className="field"><span className="field-label">Tipo de cobertura</span><textarea maxLength={500} value={record.dressingType} onChange={(event) => updateField('dressingType', event.target.value)} placeholder="Cobertura registrada" /></label></div>
+            <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Exame</span><input maxLength={500} value={record.examName} onChange={(event) => updateField('examName', event.target.value)} placeholder="Nome do exame" /></label><label className="field"><span className="field-label">Agendamento</span><input type="datetime-local" value={record.examScheduledAt} onChange={(event) => updateField('examScheduledAt', event.target.value)} /></label></div>
+            <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Acompanhamento</span><textarea maxLength={1000} value={record.examFollowUp} onChange={(event) => updateField('examFollowUp', event.target.value)} placeholder="Etapa/status informado" /></label><label className="field"><span className="field-label">Resultado / informação disponível</span><textarea maxLength={2000} value={record.examResult} onChange={(event) => updateField('examResult', event.target.value)} placeholder="Resultado recebido ou observação" /></label></div>
+          </FormSection>
+
           {message && <div className={`form-message ${entryState === 'error' ? 'form-message-error' : ''}`} role="status">{message}</div>}
           <div className="form-actions"><span className="draft-hint"><Pencil size={14} /> Rascunho temporário nesta sessão</span><button className="button button-primary" type="submit">Revisar coleta <ArrowRight size={17} /></button></div>
         </form>
@@ -1315,7 +1398,7 @@ const vitalMetrics: { key: string; label: string; unit: string; field: string; p
   { key: 'glucose_mmoll', label: 'Glicose · mmol/L', unit: 'mmol/L', field: 'glucose', glucoseUnit: 'mmol/L' },
 ]
 
-function VitalHistory({ records, patients, patientReference, metric, onMetric }: { records: VitalRecordData[]; patients: Patient[]; patientReference?: string; metric: string; onMetric: (value: string) => void }) {
+function VitalHistory({ records, patients, patientReference, metric, onMetric, onVoid }: { records: VitalRecordData[]; patients: Patient[]; patientReference?: string; metric: string; onMetric: (value: string) => void; onVoid?: (id: number) => void }) {
   const config = vitalMetrics.find((item) => item.key === metric) ?? vitalMetrics[0]
   const chartRecords = patientReference ? records.filter((record) => record.patient_reference === patientReference) : []
   const points = chartRecords.slice().reverse().flatMap((record, index) => {
@@ -1329,7 +1412,7 @@ function VitalHistory({ records, patients, patientReference, metric, onMetric }:
   const span = max - min || 1
   const coordinates = points.map((point, index) => ({ ...point, x: points.length < 2 ? 50 : 8 + index * 84 / (points.length - 1), y: 90 - ((point.value - min) / span) * 72 }))
   const line = coordinates.map((point) => `${point.x},${point.y}`).join(' ')
-  return <section className="vital-history"><div className="history-heading"><div><p className="eyebrow">CONSULTA DE REGISTROS</p><h2>Histórico de sinais vitais</h2><p className="welcome-copy">Confira os valores registrados, horário e profissional responsável.</p></div><label className="history-metric"><span className="field-label">Indicador</span><select value={metric} onChange={(event) => onMetric(event.target.value)}>{vitalMetrics.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label></div>{!patientReference ? <div className="history-empty"><Activity size={20} /><span>Selecione um paciente para visualizar a evolução no gráfico.</span></div> : points.length ? <><div className="history-chart"><svg viewBox="0 0 100 100" role="img" aria-label={`Gráfico de ${config.label}`} preserveAspectRatio="none"><line x1="5" y1="90" x2="95" y2="90" className="chart-axis" />{points.length > 1 && <polyline points={line} className="chart-line" />}{coordinates.map((point) => <circle key={`${point.label}-${point.index}`} cx={point.x} cy={point.y} r="2.1" className="chart-point"><title>{point.label}: {point.value} {config.unit}</title></circle>)}</svg></div><div className="history-values">{coordinates.slice(-5).reverse().map((point) => <span key={`${point.label}-${point.index}`}><strong>{point.value} {config.unit}</strong><small>{point.label}</small></span>)}</div></> : <div className="history-empty"><Activity size={20} /><span>Não há valores deste indicador no período consultado.</span></div>}{records.length > 0 && <div className="collection-list"><h3>Coletas recentes</h3>{records.map((record) => { const patient = patients.find((item) => item.reference === record.patient_reference); return <article className="collection-row" key={record.id}><div className="collection-row-heading"><strong>{patient?.name ?? 'Paciente'} · Qto {patient?.room ?? '—'} · Leito {patient?.bed ?? '—'}</strong><time>{dateTime(record.recorded_at)}</time></div><div className="collection-values">{[['Saturação', record.values.saturation && `${record.values.saturation}%`], ['Pressão', record.values.pressure], ['FC', record.values.heartRate && `${record.values.heartRate} bpm`], ['FR', record.values.respiratoryRate && `${record.values.respiratoryRate} rpm`], ['Glicose', record.values.glucose && `${record.values.glucose} ${record.glucose_unit}`], ['Dor', record.values.pain]].filter(([, value]) => value).map(([label, value]) => <span key={label}><small>{label}</small><strong>{value}</strong></span>)}</div><small className="collection-actor">Registrado por {record.actor_name}</small></article> })}</div>}</section>
+  return <section className="vital-history"><div className="history-heading"><div><p className="eyebrow">CONSULTA DE REGISTROS</p><h2>Histórico de sinais vitais</h2><p className="welcome-copy">Confira os valores registrados, horário e profissional responsável.</p></div><label className="history-metric"><span className="field-label">Indicador</span><select value={metric} onChange={(event) => onMetric(event.target.value)}>{vitalMetrics.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label></div>{!patientReference ? <div className="history-empty"><Activity size={20} /><span>Selecione um paciente para visualizar a evolução no gráfico.</span></div> : points.length ? <><div className="history-chart"><svg viewBox="0 0 100 100" role="img" aria-label={`Gráfico de ${config.label}`} preserveAspectRatio="none"><line x1="5" y1="90" x2="95" y2="90" className="chart-axis" />{points.length > 1 && <polyline points={line} className="chart-line" />}{coordinates.map((point) => <circle key={`${point.label}-${point.index}`} cx={point.x} cy={point.y} r="2.1" className="chart-point"><title>{point.label}: {point.value} {config.unit}</title></circle>)}</svg></div><div className="history-values">{coordinates.slice(-5).reverse().map((point) => <span key={`${point.label}-${point.index}`}><strong>{point.value} {config.unit}</strong><small>{point.label}</small></span>)}</div></> : <div className="history-empty"><Activity size={20} /><span>Não há valores deste indicador no período consultado.</span></div>}{records.length > 0 && <div className="collection-list"><h3>Coletas recentes</h3>{records.map((record) => { const patient = patients.find((item) => item.reference === record.patient_reference); return <article className="collection-row" key={record.id}><div className="collection-row-heading"><strong>{patient?.name ?? 'Paciente'} · Qto {patient?.room ?? '—'} · Leito {patient?.bed ?? '—'}</strong><time>{dateTime(record.recorded_at)}</time></div><div className="collection-values">{[['Saturação', record.values.saturation && `${record.values.saturation}%`], ['Pressão', record.values.pressure], ['FC', record.values.heartRate && `${record.values.heartRate} bpm`], ['FR', record.values.respiratoryRate && `${record.values.respiratoryRate} rpm`], ['Glicose', record.values.glucose && `${record.values.glucose} ${record.glucose_unit}`], ['Dor', record.values.pain], ['Oxigênio', record.values.oxygenStatus], ['Lesões', record.values.wounds], ['Exame', record.values.examName]].filter(([, value]) => value).map(([label, value]) => <span key={label}><small>{label}</small><strong>{value}</strong></span>)}</div><small className="collection-actor">Registrado por {record.actor_name}</small>{onVoid && <button className="button button-danger" type="button" onClick={() => onVoid(record.id)}>Arquivar registro incorreto</button>}</article> })}</div>}</section>
 }
 
 function FormSection({ number, title, detail, children }: { number: string; title: string; detail: string; children: React.ReactNode }) {
@@ -1472,14 +1555,15 @@ function AdminPage() {
     {notice && <div className="form-message" role="status">{notice}</div>}
     <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos permitidos</legend><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset><div className="form-actions"><span className="draft-hint">Selecione um ou mais módulos. Permissões serão registradas na auditoria.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
     <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((user) => <AccountRow key={user.id} user={user} onUpdate={updateAccount} onReset={resetCredentials} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
-    <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Acesso individual por módulo</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Consultar</strong> abrir registros autorizados</span><span><strong>Criar</strong> adicionar registros no módulo</span><span><strong>Alterar</strong> modificar registros autorizados</span><span><strong>Administrar</strong> usuários e permissões</span></div></section>
+    <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Acesso individual por módulo</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Consultar</strong> abrir registros autorizados</span><span><strong>Criar</strong> adicionar registros no módulo</span><span><strong>Alterar</strong> modificar registros autorizados</span><span><strong>Excluir</strong> arquivar registros clínicos com justificativa</span><span><strong>Administrar</strong> usuários e permissões</span></div></section>
   </section>
 }
 
 function AccountRow({ user, onUpdate, onReset }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void>; onReset: (user: Account) => Promise<void> }) {
   const [editModules, setEditModules] = useState(user.modules.filter((module) => module !== 'admin'))
+  const [editPermissions, setEditPermissions] = useState(user.permissions)
   const [expanded, setExpanded] = useState(false)
-  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => void onReset(user)}>Redefinir senha/MFA</button><button className="user-action" type="button" onClick={() => { setEditModules(user.modules.filter((module) => module !== 'admin')); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
+  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => void onReset(user)}>Redefinir senha/MFA</button><button className="user-action" type="button" onClick={() => { setEditModules(user.modules.filter((module) => module !== 'admin')); setEditPermissions(user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? ['consultar', 'criar', 'alterar']])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
 }
 
 function NutritionPage() {
@@ -1490,7 +1574,7 @@ function NutritionPage() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ assessment_date: new Date().toLocaleDateString('en-CA'), weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '' })
+  const [form, setForm] = useState({ assessment_date: new Date().toLocaleDateString('en-CA'), weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '', fasting_at: '', fasting_reason: '' })
   async function loadRecords() {
     try {
       const response = await fetch('/api/v1/nursing/nutrition')
@@ -1515,10 +1599,10 @@ function NutritionPage() {
     if (!selectedPatient) { setError('Selecione um paciente.'); return }
     setBusy(true); setError(''); setMessage('')
     try {
-      const response = await fetch('/api/v1/nursing/nutrition', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, patient_reference: selectedPatient }) })
+      const response = await fetch('/api/v1/nursing/nutrition', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, fasting_at: form.fasting_at ? new Date(form.fasting_at).toISOString() : null, patient_reference: selectedPatient }) })
       const data = await response.json() as NutritionRecordData & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar a avaliação.')
-      setForm({ ...form, weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '' })
+      setForm({ ...form, weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '', fasting_at: '', fasting_reason: '' })
       setMessage('Avaliação nutricional registrada.')
       await loadRecords()
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar a avaliação.') }
@@ -1533,13 +1617,15 @@ function NutritionPage() {
       <div className="section-heading"><div><p className="eyebrow">NOVA AVALIAÇÃO</p><h2>Dados nutricionais</h2></div></div>
       <label className="field"><span className="field-label">Localizar paciente por nome, quarto ou leito</span><span className="search-input-wrap"><Search size={17} /><input value={patientQuery} onChange={(event) => setPatientQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>
       <label className="field nutrition-patient-select"><span className="field-label">Paciente</span><select required value={selectedPatient} onChange={(event) => setSelectedPatient(event.target.value)}><option value="">Selecione o paciente</option>{filtered.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Quarto {patient.room}, leito {patient.bed}</option>)}</select></label>
+      {patients.find((patient) => patient.reference === selectedPatient)?.allergies && <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alerta cadastral · alergias</strong><span>{patients.find((patient) => patient.reference === selectedPatient)?.allergies}</span></div></div>}
       <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Data da avaliação</span><input type="date" required value={form.assessment_date} onChange={(event) => setForm({ ...form, assessment_date: event.target.value })} /></label><label className="field"><span className="field-label">Peso</span><span className="input-with-unit"><input inputMode="decimal" value={form.weight_kg} onChange={(event) => setForm({ ...form, weight_kg: event.target.value })} placeholder="Ex.: 68,5" /><span className="unit-label">kg</span></span></label><label className="field"><span className="field-label">Altura</span><span className="input-with-unit"><input inputMode="decimal" value={form.height_cm} onChange={(event) => setForm({ ...form, height_cm: event.target.value })} placeholder="Ex.: 172" /><span className="unit-label">cm</span></span></label></div>
       <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Tipo de dieta</span><select value={form.diet_type} onChange={(event) => setForm({ ...form, diet_type: event.target.value })}><option value="">Selecione</option><option>Geral</option><option>Branda</option><option>Pastosa</option><option>Líquida</option><option>Enteral</option><option>Jejum</option><option>Outra</option></select></label><label className="field"><span className="field-label">Aceitação alimentar</span><select value={form.appetite} onChange={(event) => setForm({ ...form, appetite: event.target.value })}><option value="">Selecione</option><option value="normal">Normal</option><option value="reduced">Reduzida</option><option value="poor">Baixa</option><option value="increased">Aumentada</option></select></label><label className="field"><span className="field-label">Hidratação</span><select value={form.hydration} onChange={(event) => setForm({ ...form, hydration: event.target.value })}><option value="">Selecione</option><option value="adequate">Adequada</option><option value="low">Baixa</option><option value="assisted">Necessita auxílio</option></select></label></div>
       <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Alergias alimentares</span><textarea maxLength={500} value={form.allergies} onChange={(event) => setForm({ ...form, allergies: event.target.value })} placeholder="Descreva ou informe que não há alergias conhecidas" /></label><label className="field"><span className="field-label">Restrições alimentares</span><textarea maxLength={500} value={form.restrictions} onChange={(event) => setForm({ ...form, restrictions: event.target.value })} placeholder="Restrições e orientações dietéticas" /></label></div>
+      <div className="fasting-plan-panel"><div><strong>Jejum programado</strong><small>Este registro será compartilhado com a enfermagem.</small></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Data e horário</span><input type="datetime-local" value={form.fasting_at} onChange={(event) => setForm({ ...form, fasting_at: event.target.value })} /></label><label className="field"><span className="field-label">Motivo / observação</span><input maxLength={500} value={form.fasting_reason} onChange={(event) => setForm({ ...form, fasting_reason: event.target.value })} placeholder="Informação da equipe responsável" /></label></div></div>
       <label className="field"><span className="field-label">Evolução e observações</span><textarea maxLength={3000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Registro da avaliação e conduta nutricional" /></label>
       <div className="patient-form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Registrar avaliação'} <ArrowRight size={16} /></button></div>
     </form>
-    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO RECENTE</p><h2>Avaliações nutricionais</h2></div><span className="module-total">{records.length}</span></div>{records.length ? <div className="nutrition-record-list">{records.map((record) => <article className="nutrition-record-card" key={record.id}><div><h3>{patientName(record.patient_reference)}</h3><p>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${record.assessment_date}T00:00:00Z`))} · {record.diet_type || 'Dieta não informada'}</p>{record.weight_kg && <small>Peso: {record.weight_kg} kg</small>}{record.allergies && <small>Alergias: {record.allergies}</small>}{record.restrictions && <small>Restrições: {record.restrictions}</small>}{record.notes && <small>{record.notes}</small>}</div><span className="nutrition-author">{record.actor_name}</span></article>)}</div> : <div className="history-empty">Nenhuma avaliação nutricional registrada.</div>}</section>
+    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO RECENTE</p><h2>Avaliações nutricionais</h2></div><span className="module-total">{records.length}</span></div>{records.length ? <div className="nutrition-record-list">{records.map((record) => <article className="nutrition-record-card" key={record.id}><div><h3>{patientName(record.patient_reference)}</h3><p>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${record.assessment_date}T00:00:00Z`))} · {record.diet_type || 'Dieta não informada'}</p>{record.weight_kg && <small>Peso: {record.weight_kg} kg</small>}{record.allergies && <small>Alergias: {record.allergies}</small>}{record.restrictions && <small>Restrições: {record.restrictions}</small>}{record.fasting_at && <small className="fasting-alert">Jejum programado: {dateTime(record.fasting_at)} · {record.fasting_reason || 'sem observação'}</small>}{record.notes && <small>{record.notes}</small>}</div><div className="nutrition-record-actions"><span className="nutrition-author">{record.actor_name}</span><button className="button button-danger" type="button" onClick={async () => { const reason = window.prompt('Motivo para corrigir/remover esta avaliação (o registro será preservado na auditoria):'); if (!reason?.trim()) return; const response = await fetch(`/api/v1/nursing/nutrition/${record.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) }); if (response.ok) await loadRecords(); else setError('Não foi possível arquivar a avaliação.') }}>Arquivar</button></div></article>)}</div> : <div className="history-empty">Nenhuma avaliação nutricional registrada.</div>}</section>
   </section>
 }
 
