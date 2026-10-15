@@ -15,6 +15,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from .common import Base, DemoPrincipal, database_session, get_engine, require_service_token, verify_database_migrated
 from .security import (
     SESSION_COOKIE,
+    SESSION_TTL_SECONDS,
     decrypt_mfa_secret,
     encrypt_mfa_secret,
     hash_password,
@@ -201,7 +202,7 @@ def _set_cookie(response: Response, user: AppUser, stage: str) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         token,
-        max_age=15 * 60,
+        max_age=SESSION_TTL_SECONDS,
         httponly=True,
         secure=os.getenv("SCPO_COOKIE_SECURE", "true").lower() == "true",
         samesite="strict",

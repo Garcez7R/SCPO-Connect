@@ -13,7 +13,10 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 SESSION_COOKIE = "scpo_session"
-SESSION_TTL_SECONDS = 15 * 60
+# Long enough to cover an uninterrupted hospital shift while still expiring
+# abandoned sessions at the end of the day. Active sessions are renewed by
+# the client without prompting for MFA again.
+SESSION_TTL_SECONDS = 12 * 60 * 60
 PASSWORD_SCRYPT_N = 2**15
 
 
