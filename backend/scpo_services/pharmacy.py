@@ -33,6 +33,7 @@ class InventoryItem(Base):
     supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     storage_location: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     minimum_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
+    average_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -68,6 +69,13 @@ class InventoryPayload(BaseModel):
     supplier: str = Field(default="", max_length=120)
     storage_location: str = Field(default="", max_length=80)
     minimum_balance: str = Field(default="0", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    average_balance: str = Field(default="0", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+
+
+class StockThresholdPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    minimum_balance: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    average_balance: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
 
 
 @app.get("/health")
@@ -104,6 +112,26 @@ def create_item(
     return serialize_item(item)
 
 
+@app.patch("/api/v1/pharmacy/items/{item_id}/stock-thresholds")
+def update_stock_thresholds(
+    item_id: int,
+    payload: StockThresholdPayload,
+    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    item = db.get(InventoryItem, item_id)
+    if item is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Item de estoque não encontrado")
+    item.minimum_balance = payload.minimum_balance
+    item.average_balance = payload.average_balance
+    db.commit()
+    db.refresh(item)
+    emit_audit_event(principal, "pharmacy", "inventory_thresholds_updated", str(item.id))
+    return serialize_item(item)
+
+
 def serialize_item(item: InventoryItem) -> dict[str, object]:
     return {
         "id": item.id,
@@ -120,4 +148,5 @@ def serialize_item(item: InventoryItem) -> dict[str, object]:
         "supplier": item.supplier,
         "storage_location": item.storage_location,
         "minimum_balance": item.minimum_balance,
+        "average_balance": item.average_balance,
     }

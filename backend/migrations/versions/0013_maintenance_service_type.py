@@ -19,7 +19,25 @@ def upgrade() -> None:
     if "service_type" not in {column["name"] for column in inspect(op.get_bind()).get_columns("work_orders")}:
         op.add_column("work_orders", sa.Column("service_type", sa.String(80), nullable=False, server_default="Outro serviço"))
     bind = op.get_bind()
-    bind.execute(sa.text("UPDATE work_orders SET service_type = substring(description from '^Categoria: ([^\\n]+)') WHERE description LIKE 'Categoria:%'"))
+    work_orders = sa.table(
+        "work_orders",
+        sa.column("id", sa.Integer()),
+        sa.column("description", sa.Text()),
+        sa.column("service_type", sa.String(80)),
+    )
+    rows = bind.execute(
+        sa.select(work_orders.c.id, work_orders.c.description).where(
+            work_orders.c.description.like("Categoria:%")
+        )
+    ).all()
+    for order_id, description in rows:
+        service_type = description.splitlines()[0][len("Categoria:"):].strip()[:80]
+        if service_type:
+            bind.execute(
+                work_orders.update()
+                .where(work_orders.c.id == order_id)
+                .values(service_type=service_type)
+            )
 
 
 def downgrade() -> None:

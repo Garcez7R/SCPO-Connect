@@ -54,8 +54,18 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
         pharmacist, domain_database["pharmacy"],
     )
     assert item["balance"] == "12"
+    assert item["average_balance"] == "0"
+    updated = pharmacy.update_stock_thresholds(
+        item["id"],
+        pharmacy.StockThresholdPayload(minimum_balance="4", average_balance="10"),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+    assert updated["minimum_balance"] == "4"
+    assert updated["average_balance"] == "10"
     listed = pharmacy.list_items(pharmacist, domain_database["pharmacy"])
     assert listed["items"][0]["lot"] == "L-01"
+    assert listed["items"][0]["average_balance"] == "10"
 
 
 def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:

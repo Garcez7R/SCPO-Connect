@@ -31,7 +31,7 @@ def test_each_service_migration_creates_only_its_owned_table(
     assert table in tables
     assert "alembic_version" in tables
     if service == "nursing":
-        assert len(tables) == 5
+        assert len(tables) == 6
         report_columns = {column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")}
         assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
         assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records"))
@@ -39,6 +39,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         assert len(tables) == 3
     elif service == "maintenance":
         assert len(tables) == 3
+    elif service == "pharmacy":
+        assert len(tables) == 2
+        assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}
     else:
         assert len(tables) == 2
     if service in {"social", "xray"}:
