@@ -163,6 +163,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-card-available:hover { transform: translateY(-2px); border-color: #a9c6d3; box-shadow: var(--shadow); }
 .module-card:disabled { opacity: 1; }
 .module-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; }
+.module-card .module-icon { width: 52px; height: 52px; border-radius: 10px; }
 .module-icon-nursing { background: #eaf3f7; color: #246b8e; }
 .module-icon-pharmacy { background: #edf5ee; color: #39734f; }
 .module-icon-xray { background: #f0eff8; color: #65549b; }

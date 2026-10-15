@@ -1015,7 +1015,7 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
           const available = profile.modules.includes(id)
           return (
             <button key={id} type="button" className={`module-card ${available ? 'module-card-available' : 'module-card-locked'}`} onClick={() => available && onNavigate(id)} disabled={!available}>
-              <span className={`module-icon module-icon-${id}`}><Icon size={21} strokeWidth={1.8} /></span>
+              <span className={`module-icon module-icon-${id}`}><Icon size={29} strokeWidth={1.8} /></span>
               <span className="module-card-title">{label}</span>
               <span className="module-card-description">{description}</span>
               <span className={`module-card-status ${available ? 'status-ready' : 'status-later'}`}>{available ? <><span className="status-dot" /> Disponível no perfil</> : <><LockKeyhole size={13} /> Acesso não concedido</>}</span>
