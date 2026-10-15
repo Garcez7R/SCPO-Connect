@@ -5,10 +5,10 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import DateTime, Integer, String, Text, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from .common import Base, DemoPrincipal, database_session, get_engine, require_demo_role, verify_database_migrated
+from .common import Base, DemoPrincipal, database_session, get_engine, require_demo_role, verify_database_migrated, emit_audit_event
 from .nursing import Patient
 
 
@@ -22,7 +22,7 @@ class TherapyActivity(Base):
     location: Mapped[str] = mapped_column(String(120), nullable=False)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    patient_reference: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    patient_reference: Mapped[str | None] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="scheduled")
     activity_report: Mapped[str] = mapped_column(Text, nullable=False, default="")
     report_updated_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -70,7 +70,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/therapy/activities")
 def list_activities(
-    _: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_therapy_db)],
     from_date: datetime | None = None,
     to_date: datetime | None = None,
@@ -82,6 +82,7 @@ def list_activities(
     if to_date:
         query = query.where(TherapyActivity.starts_at < to_date)
     activities = db.scalars(query.order_by(TherapyActivity.starts_at).limit(limit)).all()
+    emit_audit_event(principal, "therapy", "therapy_activities_read", "therapy_calendar")
     return {"activities": [serialize_activity(activity) for activity in activities]}
 
 
@@ -101,6 +102,7 @@ def update_activity_report(
     activity.report_updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(activity)
+    emit_audit_event(principal, "therapy", "therapy_report_updated", activity.patient_reference or activity.id)
     return serialize_activity(activity)
 
 
@@ -129,6 +131,7 @@ def create_activity(
     db.add(activity)
     db.commit()
     db.refresh(activity)
+    emit_audit_event(principal, "therapy", "therapy_activity_created", activity.patient_reference or activity.id)
     return serialize_activity(activity)
 
 

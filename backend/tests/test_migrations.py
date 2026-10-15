@@ -14,6 +14,7 @@ from sqlalchemy import inspect
         ("pharmacy", "inventory_items"),
         ("social", "social_referrals"),
         ("xray", "exam_requests"),
+        ("maintenance", "work_orders"),
     ],
 )
 def test_each_service_migration_creates_only_its_owned_table(
@@ -29,10 +30,24 @@ def test_each_service_migration_creates_only_its_owned_table(
     tables = set(inspect(get_engine(service)).get_table_names())
     assert table in tables
     assert "alembic_version" in tables
-    assert len(tables) == (3 if service == "nursing" else 2)
     if service == "nursing":
+        assert len(tables) == 5
         report_columns = {column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")}
         assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
+        assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records"))
+    elif service == "access":
+        assert len(tables) == 3
+    elif service == "maintenance":
+        assert len(tables) == 3
+    else:
+        assert len(tables) == 2
+    if service in {"social", "xray"}:
+        column = "patient_reference"
+        details = inspect(get_engine(service)).get_columns(table)
+        assert next(item for item in details if item["name"] == column)["type"].length == 36
+        assert any(index["name"].endswith("patient_reference") for index in inspect(get_engine(service)).get_indexes(table))
+    if service == "maintenance":
+        assert "patient_reference" in {column["name"] for column in inspect(get_engine(service)).get_columns(table)}
     clear_engine_cache()
 
 

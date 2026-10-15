@@ -25,8 +25,9 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
 - Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
 - Permissões por módulo e ações, verificadas também pelas APIs.
-- Ordens de serviço: abertura por funcionários e fila de execução para a equipe de manutenção.
-- Registro de eventos administrativos e área de conformidade.
+- Ordens de serviço: abertura por funcionários, vínculo opcional com paciente e fila de execução da manutenção.
+- Solicitações de Raio X e encaminhamentos de Serviço Social ligados ao cadastro compartilhado de pacientes.
+- Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.
 - Oficina terapêutica com agenda de atividades e calendário mensal de aniversários.
@@ -34,7 +35,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 
 ### Áreas de trabalho
 
-Enfermagem, Farmácia, Raio X, Serviço Social, Nutrição, Higienização, Recepção, Oficina Terapêutica, Psicologia / Psiquiatria, Manutenção e Gestão Hospitalar.
+Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Nutrição, Recepção, Oficina Terapêutica, Manutenção e Gestão Hospitalar. Higienização e Psicologia / Psiquiatria não aparecem como áreas operacionais até terem fluxos funcionais definidos.
 
 ## Arquitetura
 

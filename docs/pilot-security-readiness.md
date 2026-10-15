@@ -2,20 +2,22 @@
 
 ## Situação atual
 
-O app ainda não está habilitado para dados reais. Foi implementado login local individual com scrypt, MFA TOTP, sessões HttpOnly assinadas e autorização no backend; `X-Demo-Role` não é mais aceito. O fluxo ainda precisa de revisão/validação, segurança de recuperação e auditoria clínica. A trilha existente cobre operações de administração de contas, não consultas ou alterações clínicas.
+O app ainda não deve ser liberado para uso assistencial com dados reais. O login local usa contas individuais, MFA TOTP, sessões HttpOnly assinadas e autorização no backend. A API não aceita `X-Demo-Role`. As APIs agora enviam eventos mínimos de leitura e alteração para Auditoria, sem conteúdo clínico; essa entrega é best-effort e não bloqueia a operação quando o serviço de auditoria está indisponível. A trilha precisa de entrega durável, proteção contra alteração e política de retenção antes do piloto.
 
-O cadastro de paciente e os registros de sinais vitais também usam referências `DEMO-*`. Preserve esse isolamento até que a identidade institucional esteja integrada e revisada. A interface mantém os avisos de dados de teste enquanto esse bloqueio estiver vigente.
+O cadastro compartilhado usa referências UUID reais. Os módulos de Enfermagem, Nutrição, Oficina Terapêutica, Serviço Social, Raio X e Ordens de Serviço validam ou persistem o vínculo com esse cadastro. O banco impede referências órfãs nos registros clínicos do banco de Enfermagem; os serviços em bancos separados validam a referência pela API interna.
+
+As validações de sinais vitais cobrem presença, formato, consistência entre valor e “não aferido”, saturação entre 0 e 100 e preenchimento dos componentes de pressão. Limites clínicos para os demais indicadores e alertas não foram definidos: devem ser aprovados pelos responsáveis assistenciais antes da configuração. O app não interpreta os valores nem orienta condutas.
 
 ## Decisões atuais e controles pendentes
 
 1. O deploy interno usará `tls internal` do Caddy e sua CA privada. A raiz pública deve ser instalada como confiável nos aparelhos autorizados; valide a impressão digital por canal independente. O volume `caddy_data` deve ser persistente e ter backup protegido. Se o domínio/IP ou a CA mudar, os aparelhos precisam receber a atualização da confiança.
 2. Validar a identidade no servidor. O navegador não pode escolher nome, função ou permissões por cabeçalho. Mapear grupos institucionais para permissões mínimas no backend e negar por padrão.
-3. Gerar autoria com a identidade validada pelo servidor. Registrar consultas e alterações relevantes, com horário, usuário, ação, módulo e identificador do registro; evitar copiar conteúdo clínico para os logs. Proteger a trilha contra alteração e definir retenção/acesso.
+3. Gerar autoria com a identidade validada pelo servidor. Os eventos mínimos já registram horário, usuário, ação, módulo e referência do paciente/registro. Substituir o envio best-effort por outbox durável, proteger a trilha contra alteração e definir retenção/acesso antes do piloto.
 4. O Active Directory do Zentyal está adiado, sem previsão por depender de orçamento. Foram escolhidas contas locais individuais do SCPO com senha e MFA; validar política de recuperação/redefinição, bloqueio, revogação e suporte. O certificado TLS interno não faz login de usuário.
 5. Validar finalidade e base legal, controlador/operador, encarregado, retenção, direitos dos titulares, resposta a incidentes, backup/recuperação e fluxos clínicos com as áreas responsáveis.
 6. Revisar e aprovar o piloto com TI, segurança, encarregado de dados, jurídico e responsáveis assistenciais; habilitar dados reais somente depois de identidade, autorização, autoria, auditoria e fluxos validados.
 
-O escopo funcional agora inclui Enfermagem, Farmácia, Raio X, Serviço Social, Nutrição, Higienização, Recepção, Oficina Terapêutica e Gestão Hospitalar. Gestão Hospitalar foi solicitada como perfil com acesso clínico total; esse privilégio exige auditoria de leituras e alterações antes de qualquer liberação. A proposta de campos e acesso por área está em [cadastro central e acesso aos dados](patient-access-model.md).
+As áreas atualmente disponíveis na interface são cadastro de pacientes, Enfermagem, Farmácia (cadastro e consulta de estoque), Raio X, Serviço Social, Nutrição, Recepção, Oficina Terapêutica, Manutenção e Gestão Hospitalar. Higienização e Psicologia/Psiquiatria não aparecem como áreas operacionais até terem fluxos e permissões próprios. Gestão Hospitalar tem acesso clínico total; a liberação desse perfil depende de auditoria confiável e validação institucional. A proposta de campos e acesso por área está em [cadastro central e acesso aos dados](patient-access-model.md).
 
 ## Referências
 

@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import DateTime, ForeignKey, Integer, String, case, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from .common import Base, DemoPrincipal, authenticated_principal, database_session, get_engine, verify_database_migrated
+from .common import Base, DemoPrincipal, authenticated_principal, database_session, get_engine, verify_database_migrated, verify_patient_reference, emit_audit_event
 
 
 class WorkOrder(Base):
@@ -21,6 +21,7 @@ class WorkOrder(Base):
     description: Mapped[str] = mapped_column(String(1500), nullable=False)
     department: Mapped[str] = mapped_column(String(100), nullable=False)
     location: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    patient_reference: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     priority: Mapped[str] = mapped_column(String(12), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     requester_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -64,6 +65,7 @@ class WorkOrderCreate(BaseModel):
     description: str = Field(min_length=5, max_length=1500)
     department: str = Field(min_length=2, max_length=100)
     location: str = Field(default="", max_length=120)
+    patient_reference: str | None = Field(default=None, max_length=36)
     priority: Literal["normal", "high", "urgent"] = "normal"
 
 
@@ -85,6 +87,7 @@ def _serialize_order(order: WorkOrder) -> dict[str, object]:
         "description": order.description,
         "department": order.department,
         "location": order.location,
+        "patient_reference": order.patient_reference,
         "priority": order.priority,
         "status": order.status,
         "requester_id": order.requester_id,
@@ -106,6 +109,8 @@ def create_order(
     principal: Annotated[DemoPrincipal, AUTHENTICATED],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
+    if payload.patient_reference:
+        verify_patient_reference(payload.patient_reference)
     now = datetime.now(UTC)
     order = WorkOrder(
         id=str(uuid.uuid4()),
@@ -131,6 +136,7 @@ def create_order(
     ))
     db.commit()
     db.refresh(order)
+    emit_audit_event(principal, "maintenance", "work_order_created", order.patient_reference or order.id)
     return _serialize_order(order)
 
 
@@ -144,6 +150,7 @@ def list_my_orders(
         .where(WorkOrder.requester_id == principal.user_id)
         .order_by(WorkOrder.created_at.desc())
     ).all()
+    emit_audit_event(principal, "maintenance", "work_orders_read", "own_orders")
     return {"orders": [_serialize_order(order) for order in orders]}
 
 
@@ -156,6 +163,7 @@ def maintenance_queue(
     priority_order = case((WorkOrder.priority == "urgent", 0), (WorkOrder.priority == "high", 1), else_=2)
     status_order = case((WorkOrder.status == "open", 0), (WorkOrder.status == "in_progress", 1), else_=2)
     orders = db.scalars(select(WorkOrder).order_by(status_order, priority_order, WorkOrder.created_at.asc())).all()
+    emit_audit_event(principal, "maintenance", "maintenance_queue_read", "work_order_queue")
     return {"orders": [_serialize_order(order) for order in orders]}
 
 
@@ -171,6 +179,7 @@ def list_order_events(
     if order.requester_id != principal.user_id:
         _require_maintenance(principal, "consultar")
     events = db.scalars(select(WorkOrderEvent).where(WorkOrderEvent.order_id == order_id).order_by(WorkOrderEvent.happened_at.asc())).all()
+    emit_audit_event(principal, "maintenance", "work_order_events_read", order_id)
     return {"events": [{
         "id": event.id,
         "actor_name": event.actor_name,
@@ -211,4 +220,5 @@ def update_order(
     order.updated_at = now
     db.commit()
     db.refresh(order)
+    emit_audit_event(principal, "maintenance", "work_order_status_changed", order.patient_reference or order.id)
     return _serialize_order(order)

@@ -1,9 +1,19 @@
 {
 	auto_https disable_redirects
+	default_sni {$SCPO_INTERNAL_HOST:localhost}
 }
 
 http://{$SCPO_INTERNAL_HOST:localhost} {
-	redir https://{$SCPO_INTERNAL_HOST:localhost}:{$SCPO_HTTPS_PORT:8443}{uri} 308
+	handle /scpo-root-ca.crt {
+		rewrite * /root.crt
+		root * /data/caddy/pki/authorities/local
+		header Content-Type application/x-x509-ca-cert
+		file_server
+	}
+
+	handle {
+		redir https://{$SCPO_INTERNAL_HOST:localhost}:{$SCPO_HTTPS_PORT:8443}{uri} 308
+	}
 }
 
 {$SCPO_INTERNAL_HOST:localhost} {

@@ -2,6 +2,8 @@ x-backend-environment: &backend-environment
   PYTHONPATH: /app/backend
   SCPO_SERVICE_TOKEN: ${SCPO_SERVICE_TOKEN:?Configure SCPO_SERVICE_TOKEN in .env}
   SCPO_ACCESS_API_URL: http://access:8000
+  SCPO_AUDIT_API_URL: http://audit:8000
+  SCPO_NURSING_API_URL: http://nursing:8000
 
 x-backend-service: &backend-service
   build:

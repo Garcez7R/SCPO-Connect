@@ -1,4 +1,5 @@
 import os
+import logging
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,7 +7,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import Header, HTTPException, Request
-from sqlalchemy import Engine, create_engine, inspect
+from sqlalchemy import Engine, create_engine, event, inspect
 from sqlalchemy.orm import DeclarativeBase, Session
 
 from .security import SESSION_COOKIE
@@ -29,6 +30,7 @@ class DemoPrincipal:
 
 
 _engines: dict[str, Engine] = {}
+_logger = logging.getLogger("scpo.audit")
 _repo_root = Path(__file__).resolve().parents[2]
 
 
@@ -49,6 +51,12 @@ def get_engine(service: str) -> Engine:
         if url.startswith("sqlite:"):
             options["connect_args"] = {"check_same_thread": False}
         engine = create_engine(url, **options)
+        if url.startswith("sqlite:"):
+            @event.listens_for(engine, "connect")
+            def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                cursor.close()
         _engines[url] = engine
     return engine
 
@@ -63,7 +71,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0010_patient_cpf_nutrition"
+    expected_revision = "0011_patient_integrity"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."
@@ -139,3 +147,49 @@ def require_service_token(
     expected = os.getenv("SCPO_SERVICE_TOKEN", "")
     if not expected or not x_service_token or not hmac.compare_digest(expected, x_service_token):
         raise HTTPException(status_code=403, detail="Serviço não autorizado")
+
+
+def verify_patient_reference(reference: str) -> dict[str, str]:
+    """Resolve a shared patient identifier against the nursing registry."""
+    nursing_url = os.getenv("SCPO_NURSING_API_URL", "http://nursing:8000").rstrip("/")
+    service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
+    if not service_token:
+        raise HTTPException(status_code=503, detail="Validação do cadastro indisponível")
+    try:
+        response = httpx.post(
+            f"{nursing_url}/internal/v1/patients/resolve",
+            headers={"X-Service-Token": service_token},
+            json={"reference": reference},
+            timeout=3.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Cadastro de pacientes indisponível") from exc
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+    if response.status_code != 200:
+        raise HTTPException(status_code=503, detail="Não foi possível validar o paciente")
+    try:
+        data = response.json()
+        return {"reference": str(data["reference"]), "name": str(data["name"]), "room": str(data["room"]), "bed": str(data["bed"])}
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="Resposta inválida do cadastro de pacientes") from exc
+
+
+def emit_audit_event(principal: DemoPrincipal, module: str, action: str, target_id: str) -> None:
+    """Send a minimum-necessary access event; never include clinical payloads."""
+    audit_url = os.getenv("SCPO_AUDIT_API_URL")
+    service_token = os.getenv("SCPO_SERVICE_TOKEN")
+    if not audit_url or not service_token:
+        _logger.error("Clinical audit unavailable: service not configured (%s/%s)", module, action)
+        return
+    try:
+        response = httpx.post(
+            f"{audit_url.rstrip('/')}/internal/v1/events",
+            headers={"X-Service-Token": service_token},
+            json={"actor_name": principal.actor_name, "actor_role": principal.role,
+                  "action": action, "module": module, "target_id": target_id[:40]},
+            timeout=2.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        _logger.exception("Clinical audit delivery failed (%s/%s)", module, action)

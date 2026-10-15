@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import JSON, Boolean, Date, DateTime, Integer, String, Text, func, select
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -15,6 +15,8 @@ from .common import (
     database_session,
     get_engine,
     require_demo_role,
+    require_service_token,
+    emit_audit_event,
     verify_database_migrated,
 )
 
@@ -23,7 +25,7 @@ class VitalRecord(Base):
     __tablename__ = "vital_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False)
+    patient_reference: Mapped[str] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
     actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
     values: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
@@ -137,6 +139,14 @@ class PatientPayload(BaseModel):
     responsible_postal_code: str = Field(default="", max_length=12)
     photo_data: str = Field(default="", max_length=1_500_000)
 
+    @field_validator("name", "room", "bed")
+    @classmethod
+    def trim_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Este campo é obrigatório")
+        return value
+
     @field_validator("photo_data")
     @classmethod
     def validate_photo(cls, value: str) -> str:
@@ -164,7 +174,7 @@ class NutritionRecord(Base):
     __tablename__ = "nutrition_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False, index=True)
     assessment_date: Mapped[date] = mapped_column(Date, nullable=False)
     weight_kg: Mapped[str] = mapped_column(String(12), nullable=False, default="")
     height_cm: Mapped[str] = mapped_column(String(12), nullable=False, default="")
@@ -200,7 +210,7 @@ class NutritionPayload(BaseModel):
         return value
 
 
-PATIENT_MODULES = ("patients", "nursing", "reception", "therapy", "nutrition", "social", "hygiene", "xray", "psychology", "management")
+PATIENT_MODULES = ("patients", "nursing", "reception", "therapy", "nutrition", "social", "xray", "maintenance", "management")
 
 
 async def authorize_patient_module(request: Request) -> DemoPrincipal:
@@ -273,6 +283,19 @@ def create_vital_record(
 ) -> dict[str, object]:
     if db.get(Patient, payload.patient_reference) is None:
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    if not any(value.strip() for value in payload.values.values()) and not payload.not_applicable:
+        raise HTTPException(status_code=422, detail="Informe ao menos um dado coletado ou marque os sinais aplicáveis como não aferidos")
+    for field in payload.not_applicable:
+        if payload.values.get(field, "").strip():
+            raise HTTPException(status_code=422, detail="Um sinal não pode ter valor e estar marcado como não aferido")
+    saturation = payload.values.get("saturation", "").replace(",", ".")
+    if saturation and not 0 <= float(saturation) <= 100:
+        raise HTTPException(status_code=422, detail="A saturação deve estar entre 0 e 100%")
+    pressure = payload.values.get("pressure", "")
+    if pressure:
+        systolic, diastolic = (int(value) for value in pressure.split("/"))
+        if systolic == 0 or diastolic == 0:
+            raise HTTPException(status_code=422, detail="Informe os dois componentes da pressão arterial")
     record = VitalRecord(
         patient_reference=payload.patient_reference,
         actor_id=principal.user_id,
@@ -285,6 +308,7 @@ def create_vital_record(
     db.add(record)
     db.commit()
     db.refresh(record)
+    emit_audit_event(principal, "nursing", "vitals_recorded", payload.patient_reference)
     return serialize_record(record)
 
 
@@ -293,11 +317,43 @@ def list_patients(
     principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
     full_profile: bool = False,
+    include_inactive: bool = False,
 ) -> dict[str, list[dict[str, object]]]:
     if full_profile and not can_view_full_patient_profile(principal):
         raise HTTPException(status_code=403, detail="Acesso aos dados cadastrais completos não autorizado")
-    patients = db.scalars(select(Patient).where(Patient.active.is_(True)).order_by(Patient.room, Patient.bed)).all()
+    query = select(Patient).order_by(Patient.active.desc(), Patient.room, Patient.bed)
+    if not include_inactive:
+        query = query.where(Patient.active.is_(True))
+    patients = db.scalars(query).all()
+    emit_audit_event(principal, "patients", "patient_list_read", "patient_registry")
     return {"patients": [serialize_patient(patient, full_profile=full_profile) for patient in patients]}
+
+
+@app.get("/api/v1/nursing/patients/{patient_reference}")
+def get_patient(
+    patient_reference: str,
+    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    full_profile = can_view_full_patient_profile(principal)
+    emit_audit_event(principal, "patients", "patient_record_read", patient_reference)
+    return serialize_patient(patient, full_profile=full_profile)
+
+
+@app.post("/internal/v1/patients/resolve")
+def resolve_patient(
+    payload: dict[str, str],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    _: Annotated[None, Depends(require_service_token)],
+) -> dict[str, str]:
+    reference = payload.get("reference", "")
+    patient = db.get(Patient, reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+    return {"reference": patient.reference, "name": patient.name, "room": patient.room, "bed": patient.bed}
 
 
 @app.post("/api/v1/nursing/patients", status_code=201)
@@ -306,10 +362,15 @@ def create_patient(
     principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
+    if payload.cpf and db.scalar(select(Patient.reference).where(Patient.cpf == payload.cpf)):
+        raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este CPF")
+    if db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip())):
+        raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
     patient = Patient(reference=str(uuid.uuid4()), **payload.model_dump(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC), updated_by=principal.actor_name)
     db.add(patient)
     db.commit()
     db.refresh(patient)
+    emit_audit_event(principal, "patients", "patient_created", patient.reference)
     return serialize_patient(patient, full_profile=can_view_full_patient_profile(principal))
 
 
@@ -323,12 +384,43 @@ def update_patient(
     patient = db.get(Patient, patient_reference)
     if patient is None:
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    if payload.cpf and db.scalar(select(Patient.reference).where(Patient.cpf == payload.cpf, Patient.reference != patient_reference)):
+        raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este CPF")
+    if patient.active and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip(), Patient.reference != patient_reference)):
+        raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
     for key, value in payload.model_dump().items():
         setattr(patient, key, value)
     patient.updated_at = datetime.now(UTC)
     patient.updated_by = principal.actor_name
     db.commit()
     db.refresh(patient)
+    emit_audit_event(principal, "patients", "patient_updated", patient.reference)
+    return serialize_patient(patient, full_profile=can_view_full_patient_profile(principal))
+
+
+@app.patch("/api/v1/nursing/patients/{patient_reference}/status")
+def update_patient_status(
+    patient_reference: str,
+    payload: dict[str, bool],
+    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    active = payload.get("active")
+    if not isinstance(active, bool):
+        raise HTTPException(status_code=422, detail="Informe a situação ativa do paciente")
+    if active and not patient.active and db.scalar(select(Patient.reference).where(
+        Patient.active.is_(True), Patient.room == patient.room, Patient.bed == patient.bed,
+    )):
+        raise HTTPException(status_code=409, detail="O quarto e leito deste paciente já estão ocupados")
+    patient.active = active
+    patient.updated_at = datetime.now(UTC)
+    patient.updated_by = principal.actor_name
+    db.commit()
+    db.refresh(patient)
+    emit_audit_event(principal, "patients", "patient_status_changed", patient.reference)
     return serialize_patient(patient, full_profile=can_view_full_patient_profile(principal))
 
 
@@ -345,6 +437,7 @@ def list_patient_history(
     query = select(VitalRecord).where(VitalRecord.patient_reference == patient_reference).order_by(VitalRecord.recorded_at.desc())
     total = db.scalar(select(func.count(VitalRecord.id)).where(VitalRecord.patient_reference == patient_reference)) or 0
     records = db.scalars(query.offset(offset).limit(limit)).all()
+    emit_audit_event(_, "nursing", "patient_vitals_history_read", patient_reference)
     return {"records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
@@ -359,6 +452,7 @@ def serialize_patient(patient: Patient, *, full_profile: bool = False) -> dict[s
         "room": patient.room,
         "bed": patient.bed,
         "birth_date": patient.birth_date,
+        "active": patient.active,
     }
     if full_profile:
         result.update({key: getattr(patient, key) for key in PatientPayload.model_fields})
@@ -402,6 +496,7 @@ def list_vital_records(
         records_query.where(*filters).order_by(VitalRecord.recorded_at.desc()).offset(offset).limit(limit)
     ).all()
     total = db.scalar(count_query.where(*filters)) or 0
+    emit_audit_event(principal, "nursing", "vitals_query_read", patient_reference or "vitals_query")
     return {"records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
@@ -420,7 +515,7 @@ def serialize_record(record: VitalRecord) -> dict[str, object]:
 
 @app.get("/api/v1/nursing/nutrition")
 def list_nutrition_records(
-    _: Annotated[DemoPrincipal, Depends(NUTRITION_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(NUTRITION_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
     patient_reference: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -429,6 +524,7 @@ def list_nutrition_records(
     if patient_reference:
         query = query.where(NutritionRecord.patient_reference == patient_reference)
     records = db.scalars(query.limit(limit)).all()
+    emit_audit_event(principal, "nutrition", "nutrition_records_read", patient_reference or "nutrition_query")
     return {"records": [serialize_nutrition_record(record) for record in records]}
 
 
@@ -447,6 +543,7 @@ def create_nutrition_record(
     db.add(record)
     db.commit()
     db.refresh(record)
+    emit_audit_event(principal, "nutrition", "nutrition_record_created", payload.patient_reference)
     return serialize_nutrition_record(record)
 
 

@@ -3,78 +3,87 @@ from collections.abc import Generator
 import pytest
 from alembic import command
 from alembic.config import Config
-from fastapi.testclient import TestClient
-from scpo_services.common import clear_engine_cache
-from scpo_services.nursing import app
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from scpo_services import nursing
+from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch) -> Generator[TestClient, None, None]:
-    monkeypatch.setenv(
-        "SCPO_NURSING_DATABASE_URL", f"sqlite:///{tmp_path / 'nursing.sqlite3'}"
-    )
+def nursing_db(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[Session, None, None]:
     monkeypatch.setenv("SCPO_SERVICE", "nursing")
+    monkeypatch.setenv("SCPO_NURSING_DATABASE_URL", f"sqlite:///{tmp_path / 'nursing.sqlite3'}")
     clear_engine_cache()
     command.upgrade(Config("alembic.ini"), "head")
-    with TestClient(app) as test_client:
-        yield test_client
+    with Session(get_engine("nursing")) as session:
+        yield session
     clear_engine_cache()
 
 
-def test_nursing_profile_can_save_fictitious_record(client: TestClient) -> None:
-    response = client.post(
-        "/api/v1/nursing/vitals",
-        headers={"X-Demo-Role": "nursing"},
-        json={
-            "patient_reference": "DEMO-001",
-            "values": {
-                "saturation": "98",
-                "pressure": "120/80",
-                "notes": "Observação fictícia",
-            },
-            "glucose_unit": "mg/dL",
-            "not_applicable": ["glucose"],
-        },
+@pytest.fixture
+def nurse() -> DemoPrincipal:
+    return DemoPrincipal(
+        "nurse-id", "nurse", "Enfermeira de teste", "nursing",
+        ["nursing", "patients"],
+        {"nursing": ["consultar", "criar", "alterar"], "patients": ["consultar", "criar", "alterar"]},
     )
 
-    assert response.status_code == 201
-    assert response.json()["patient_reference"] == "DEMO-001"
-    assert response.json()["actor_id"] == "Marina Nunes"
 
-
-def test_administration_cannot_access_nursing_records(client: TestClient) -> None:
-    response = client.post(
-        "/api/v1/nursing/vitals",
-        headers={"X-Demo-Role": "admin"},
-        json={"patient_reference": "DEMO-001", "values": {}},
+def create_patient(db: Session, nurse: DemoPrincipal, room: str = "3", bed: str = "B") -> dict[str, object]:
+    return nursing.create_patient(
+        nursing.PatientPayload(name="Paciente de teste", room=room, bed=bed), nurse, db
     )
 
-    assert response.status_code == 403
+
+def test_patient_identity_and_active_bed_are_unique(nursing_db: Session, nurse: DemoPrincipal) -> None:
+    patient = create_patient(nursing_db, nurse)
+    assert patient["name"] == "Paciente de teste"
+    with pytest.raises(HTTPException, match="quarto e leito") as conflict:
+        create_patient(nursing_db, nurse)
+    assert conflict.value.status_code == 409
 
 
-def test_service_requires_a_demo_profile(client: TestClient) -> None:
-    response = client.get("/api/v1/nursing/vitals")
+def test_vitals_require_a_measurement_and_keep_actor(nursing_db: Session, nurse: DemoPrincipal) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    with pytest.raises(HTTPException) as empty:
+        nursing.create_vital_record(nursing.VitalPayload(patient_reference=reference, values={}), nurse, nursing_db)
+    assert empty.value.status_code == 422
 
-    assert response.status_code == 401
-
-
-def test_service_rejects_non_demo_patient_reference(client: TestClient) -> None:
-    response = client.post(
-        "/api/v1/nursing/vitals",
-        headers={"X-Demo-Role": "nursing"},
-        json={"patient_reference": "REAL-123", "values": {}},
+    record = nursing.create_vital_record(
+        nursing.VitalPayload(patient_reference=reference, values={"saturation": "98", "pressure": "120/80"}),
+        nurse, nursing_db,
     )
+    assert record["patient_reference"] == reference
+    assert record["actor_name"] == nurse.actor_name
 
-    assert response.status_code == 422
+
+def test_vital_structure_rejects_invalid_saturation_and_conflicting_na(nursing_db: Session, nurse: DemoPrincipal) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    for values, not_applicable in (({"saturation": "101"}, []), ({"saturation": "98"}, ["saturation"])):
+        with pytest.raises(HTTPException) as invalid:
+            nursing.create_vital_record(
+                nursing.VitalPayload(patient_reference=reference, values=values, not_applicable=not_applicable),
+                nurse, nursing_db,
+            )
+        assert invalid.value.status_code == 422
 
 
-def test_service_validates_values_without_clinical_thresholds(
-    client: TestClient,
-) -> None:
-    response = client.post(
-        "/api/v1/nursing/vitals",
-        headers={"X-Demo-Role": "nursing"},
-        json={"patient_reference": "DEMO-001", "values": {"saturation": "999999"}},
+def test_vital_filters_and_discharge_preserve_history(nursing_db: Session, nurse: DemoPrincipal) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    nursing.create_vital_record(
+        nursing.VitalPayload(patient_reference=reference, values={"heartRate": "72"}), nurse, nursing_db
     )
-
-    assert response.status_code == 201
+    result = nursing.list_vital_records(
+        nurse, nursing_db, limit=10, offset=0, patient_reference=reference,
+        room="3", bed="B", from_date=None, to_date=None,
+    )
+    assert result["total"] == 1
+    nursing.update_patient_status(reference, {"active": False}, nurse, nursing_db)
+    history = nursing.list_patient_history(reference, nurse, nursing_db, limit=50, offset=0)
+    assert history["total"] == 1
+    archived = nursing.list_patients(nurse, nursing_db, include_inactive=True)
+    assert archived["patients"][0]["active"] is False

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +13,8 @@ from .common import (
     database_session,
     require_demo_role,
     verify_database_migrated,
+    verify_patient_reference,
+    emit_audit_event,
 )
 
 
@@ -20,7 +22,7 @@ class ExamRequest(Base):
     __tablename__ = "exam_requests"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    patient_reference: Mapped[str] = mapped_column(String(32), nullable=False)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     exam_label: Mapped[str] = mapped_column(String(80), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="requested")
     created_at: Mapped[datetime] = mapped_column(
@@ -46,7 +48,7 @@ XRAY_ROLE = require_demo_role("xray")
 
 class ExamRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    patient_reference: Literal["DEMO-001"]
+    patient_reference: str = Field(min_length=1, max_length=36)
     exam_label: str = Field(min_length=1, max_length=80)
 
 
@@ -57,31 +59,28 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/xray/requests")
 def list_requests(
-    _: Annotated[DemoPrincipal, Depends(XRAY_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(XRAY_ROLE)],
     db: Annotated[Session, Depends(get_xray_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    return {
-        "requests": [
-            serialize_request(item)
-            for item in db.scalars(
-                select(ExamRequest).order_by(ExamRequest.created_at.desc())
-            ).all()
-        ]
-    }
+    requests = [serialize_request(item) for item in db.scalars(select(ExamRequest).order_by(ExamRequest.created_at.desc())).all()]
+    emit_audit_event(principal, "xray", "xray_requests_read", "exam_requests")
+    return {"requests": requests}
 
 
 @app.post("/api/v1/xray/requests", status_code=201)
 def create_request(
     payload: ExamRequestPayload,
-    _: Annotated[DemoPrincipal, Depends(XRAY_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(XRAY_ROLE)],
     db: Annotated[Session, Depends(get_xray_db)],
 ) -> dict[str, object]:
+    verify_patient_reference(payload.patient_reference)
     request = ExamRequest(
         **payload.model_dump(), status="requested", created_at=datetime.now(UTC)
     )
     db.add(request)
     db.commit()
     db.refresh(request)
+    emit_audit_event(principal, "xray", "xray_request_created", request.patient_reference)
     return serialize_request(request)
 
 

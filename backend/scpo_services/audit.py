@@ -2,7 +2,7 @@ import hmac
 import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -54,9 +54,9 @@ ADMIN_ROLE = require_demo_role("management")
 class AuditEventPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     actor_name: str = Field(min_length=1, max_length=100)
-    actor_role: Literal["management", "nursing", "pharmacy", "xray", "social", "nutrition", "hygiene", "reception", "therapy"]
-    action: Literal["account_status_changed", "user_created", "user_access_changed", "user_credentials_reset"]
-    module: Literal["management"]
+    actor_role: str = Field(min_length=1, max_length=40)
+    action: str = Field(min_length=1, max_length=60)
+    module: str = Field(min_length=1, max_length=40)
     target_id: str = Field(min_length=1, max_length=40)
 
 

@@ -13,6 +13,7 @@ from .common import (
     database_session,
     require_demo_role,
     verify_database_migrated,
+    emit_audit_event,
 )
 
 
@@ -62,29 +63,30 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/pharmacy/items")
 def list_items(
-    _: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    return {
-        "items": [
+    items = [
             serialize_item(item)
             for item in db.scalars(
                 select(InventoryItem).order_by(InventoryItem.item_name)
             ).all()
         ]
-    }
+    emit_audit_event(principal, "pharmacy", "inventory_read", "inventory_items")
+    return {"items": items}
 
 
 @app.post("/api/v1/pharmacy/items", status_code=201)
 def create_item(
     payload: InventoryPayload,
-    _: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, object]:
     item = InventoryItem(**payload.model_dump(), created_at=datetime.now(UTC))
     db.add(item)
     db.commit()
     db.refresh(item)
+    emit_audit_event(principal, "pharmacy", "inventory_item_created", str(item.id))
     return serialize_item(item)
 
 
