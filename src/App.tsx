@@ -39,7 +39,7 @@ type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursi
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 type Patient = {
-  reference: string; name: string; room: string; bed: string; birth_date?: string | null; sex?: string; phone?: string; email?: string
+  reference: string; name: string; room: string; bed: string; cpf?: string; birth_date?: string | null; sex?: string; phone?: string; email?: string
   address?: string; address_number?: string; address_complement?: string; neighborhood?: string; city?: string; state?: string; postal_code?: string
   responsible_name?: string; responsible_relationship?: string; responsible_phone?: string; responsible_address?: string
   responsible_address_number?: string; responsible_address_complement?: string; responsible_neighborhood?: string
@@ -53,6 +53,7 @@ type WorkOrder = { id: string; title: string; description: string; department: s
 type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string }
 type TherapyActivityStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 type TherapyActivity = { id: string; title: string; activity_type: string; description: string; location: string; starts_at: string; ends_at: string | null; patient_reference: string | null; status: TherapyActivityStatus; activity_report: string; report_updated_by: string | null; report_updated_at: string | null; created_by: string; created_at: string }
+type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; actor_name: string; created_at: string }
 
 type Profile = {
   id: ProfileId
@@ -301,7 +302,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
         <nav className="primary-nav">
           {visibleNavigation.map(({ id, label, icon: Icon }) => (
             <button key={id} type="button" className={`nav-link ${activeModule === id ? 'nav-link-active' : ''}`} onClick={() => navigate(id)} aria-current={activeModule === id ? 'page' : undefined}>
-              <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+              <Icon size={22} strokeWidth={1.9} /><span>{label}</span>
               {id === 'nursing' && <span className="nav-count">01</span>}
             </button>
           ))}
@@ -346,7 +347,8 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'admin' && <AdminPage />}
           {activeModule === 'management' && <ModulePlaceholder moduleId="management" onNavigate={navigate} />}
           {activeModule === 'about' && <AboutPage />}
-          {(['xray', 'social', 'nutrition', 'hygiene', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
+          {activeModule === 'nutrition' && <NutritionPage />}
+          {(['xray', 'social', 'hygiene', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
@@ -465,8 +467,43 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
 }
 
 const emptyPatientForm = {
-  name: '', room: '', bed: '', birth_date: '', sex: '', phone: '', email: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '', postal_code: '',
+  name: '', room: '', bed: '', cpf: '', birth_date: '', sex: '', phone: '', email: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '', postal_code: '',
   responsible_name: '', responsible_relationship: '', responsible_phone: '', responsible_address: '', responsible_address_number: '', responsible_address_complement: '', responsible_neighborhood: '', responsible_city: '', responsible_state: '', responsible_postal_code: '', photo_data: '',
+}
+
+type PatientFormData = typeof emptyPatientForm
+function AddressFields({ form, patients, prefix, onChange }: { form: PatientFormData; patients: Patient[]; prefix: '' | 'responsible_'; onChange: (key: keyof PatientFormData, value: string) => void }) {
+  const [lookupMessage, setLookupMessage] = useState('')
+  const key = (name: string) => `${prefix}${name}` as keyof PatientFormData
+  const value = (name: string) => form[key(name)]
+  async function lookupCep() {
+    const cep = value('postal_code').replace(/\D/g, '')
+    if (cep.length !== 8) { setLookupMessage('Informe um CEP com 8 dígitos para pesquisar.'); return }
+    const localMatches = patients.filter((patient) => (prefix ? patient.responsible_postal_code : patient.postal_code)?.replace(/\D/g, '') === cep).length
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+      if (!response.ok) throw new Error('Consulta indisponível')
+      const address = await response.json() as { erro?: boolean; logradouro?: string; bairro?: string; localidade?: string; uf?: string }
+      if (address.erro) throw new Error('CEP não encontrado')
+      onChange(key('address'), address.logradouro ?? '')
+      onChange(key('neighborhood'), address.bairro ?? '')
+      onChange(key('city'), address.localidade ?? '')
+      onChange(key('state'), address.uf ?? '')
+      setLookupMessage(`Endereço localizado${localMatches ? ` · também consta em ${localMatches} cadastro(s) existente(s)` : ''}. Revise e complete o número.`)
+    } catch {
+      setLookupMessage(`${localMatches ? `CEP não localizado online; consta em ${localMatches} cadastro(s) existente(s). ` : 'CEP não localizado online. '}Preencha o endereço manualmente.`)
+    }
+  }
+  return <><div className="patient-form-grid">
+    <label className="field"><span className="field-label">Logradouro</span><input maxLength={180} autoComplete="street-address" value={value('address')} onChange={(event) => onChange(key('address'), event.target.value)} /></label>
+    <label className="field"><span className="field-label">Número</span><input maxLength={24} value={value('address_number')} onChange={(event) => onChange(key('address_number'), event.target.value)} /></label>
+    <label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={value('address_complement')} onChange={(event) => onChange(key('address_complement'), event.target.value)} /></label>
+    <label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={value('neighborhood')} onChange={(event) => onChange(key('neighborhood'), event.target.value)} /></label>
+    <label className="field"><span className="field-label">Cidade</span><input maxLength={100} value={value('city')} onChange={(event) => onChange(key('city'), event.target.value)} /></label>
+    <label className="field"><span className="field-label">UF</span><input maxLength={2} value={value('state')} onChange={(event) => onChange(key('state'), event.target.value.toUpperCase())} /></label>
+    <label className="field"><span className="field-label">CEP</span><input inputMode="numeric" maxLength={9} autoComplete="postal-code" value={value('postal_code')} onChange={(event) => onChange(key('postal_code'), event.target.value)} onBlur={() => { if (value('postal_code').replace(/\D/g, '').length === 8) void lookupCep() }} /></label>
+    <button className="button button-secondary cep-search-button" type="button" onClick={() => void lookupCep()}><Search size={15} /> Pesquisar CEP</button>
+  </div>{lookupMessage && <p className="cep-lookup-message" role="status">{lookupMessage}</p>}</>
 }
 
 function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean }) {
@@ -555,7 +592,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
     } finally { setSaving(false) }
   }
 
-  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed} ${patient.responsible_name}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')))
+  const queryDigits = query.replace(/\D/g, '')
+  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed} ${patient.responsible_name} ${patient.cpf ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')) || (queryDigits.length > 0 && (patient.cpf ?? '').includes(queryDigits)))
   const patientAddress = (patient: Patient) => [patient.address, patient.address_number, patient.address_complement, patient.neighborhood, patient.city, patient.state, patient.postal_code].filter(Boolean).join(', ')
 
   function capturePhoto() {
@@ -595,6 +633,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : receptionMode ? 'Identificação e internação' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
       <div className="patient-form-grid">
         <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+        <label className="field"><span className="field-label">CPF</span><input inputMode="numeric" autoComplete="off" maxLength={14} value={form.cpf} onChange={(event) => setForm({ ...form, cpf: event.target.value.replace(/[^\d.-]/g, '').slice(0, 14) })} placeholder="000.000.000-00" /></label>
         <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={form.birth_date} onChange={(event) => setForm({ ...form, birth_date: event.target.value })} /></label>
         <label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
         <label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={form.bed} onChange={(event) => setForm({ ...form, bed: event.target.value })} /></label>
@@ -602,8 +641,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
         <label className="field"><span className="field-label">Telefone do paciente</span><input maxLength={40} autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
         <label className="field"><span className="field-label">E-mail do paciente</span><input type="email" maxLength={160} autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
       </div>
-      <fieldset className="patient-address-group"><legend>Endereço do paciente</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Logradouro</span><input maxLength={180} autoComplete="street-address" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} /></label><label className="field"><span className="field-label">Número</span><input maxLength={24} value={form.address_number} onChange={(event) => setForm({ ...form, address_number: event.target.value })} /></label><label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={form.address_complement} onChange={(event) => setForm({ ...form, address_complement: event.target.value })} /></label><label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={form.neighborhood} onChange={(event) => setForm({ ...form, neighborhood: event.target.value })} /></label><label className="field"><span className="field-label">Cidade</span><input maxLength={100} value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} /></label><label className="field"><span className="field-label">UF</span><input maxLength={2} value={form.state} onChange={(event) => setForm({ ...form, state: event.target.value.toUpperCase() })} /></label><label className="field"><span className="field-label">CEP</span><input maxLength={12} autoComplete="postal-code" value={form.postal_code} onChange={(event) => setForm({ ...form, postal_code: event.target.value })} /></label></div></fieldset>
-      <fieldset className="patient-address-group"><legend>Responsável pela internação</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Nome completo</span><input maxLength={120} value={form.responsible_name} onChange={(event) => setForm({ ...form, responsible_name: event.target.value })} /></label><label className="field"><span className="field-label">Vínculo com o paciente</span><input maxLength={60} value={form.responsible_relationship} onChange={(event) => setForm({ ...form, responsible_relationship: event.target.value })} placeholder="Ex.: filha, cônjuge" /></label><label className="field"><span className="field-label">Telefone de contato</span><input maxLength={40} autoComplete="tel" value={form.responsible_phone} onChange={(event) => setForm({ ...form, responsible_phone: event.target.value })} /></label><label className="field"><span className="field-label">Logradouro</span><input maxLength={180} value={form.responsible_address} onChange={(event) => setForm({ ...form, responsible_address: event.target.value })} /></label><label className="field"><span className="field-label">Número</span><input maxLength={24} value={form.responsible_address_number} onChange={(event) => setForm({ ...form, responsible_address_number: event.target.value })} /></label><label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={form.responsible_address_complement} onChange={(event) => setForm({ ...form, responsible_address_complement: event.target.value })} /></label><label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={form.responsible_neighborhood} onChange={(event) => setForm({ ...form, responsible_neighborhood: event.target.value })} /></label><label className="field"><span className="field-label">Cidade</span><input maxLength={100} value={form.responsible_city} onChange={(event) => setForm({ ...form, responsible_city: event.target.value })} /></label><label className="field"><span className="field-label">UF</span><input maxLength={2} value={form.responsible_state} onChange={(event) => setForm({ ...form, responsible_state: event.target.value.toUpperCase() })} /></label><label className="field"><span className="field-label">CEP</span><input maxLength={12} value={form.responsible_postal_code} onChange={(event) => setForm({ ...form, responsible_postal_code: event.target.value })} /></label></div></fieldset>
+      <fieldset className="patient-address-group"><legend>Endereço do paciente</legend><AddressFields form={form} patients={patients} prefix="" onChange={(key, value) => setForm((current) => ({ ...current, [key]: value }))} /></fieldset>
+      <fieldset className="patient-address-group"><legend>Responsável pela internação</legend><div className="patient-form-grid"><label className="field"><span className="field-label">Nome completo</span><input maxLength={120} value={form.responsible_name} onChange={(event) => setForm({ ...form, responsible_name: event.target.value })} /></label><label className="field"><span className="field-label">Vínculo com o paciente</span><input maxLength={60} value={form.responsible_relationship} onChange={(event) => setForm({ ...form, responsible_relationship: event.target.value })} placeholder="Ex.: filha, cônjuge" /></label><label className="field"><span className="field-label">Telefone de contato</span><input maxLength={40} autoComplete="tel" value={form.responsible_phone} onChange={(event) => setForm({ ...form, responsible_phone: event.target.value })} /></label></div><AddressFields form={form} patients={patients} prefix="responsible_" onChange={(key, value) => setForm((current) => ({ ...current, [key]: value }))} /></fieldset>
       <fieldset className="patient-address-group"><legend>Foto do paciente</legend><div className="patient-photo-editor">{form.photo_data ? <img src={form.photo_data} alt="Prévia da foto do paciente" /> : <span className="patient-photo-placeholder"><UserRound size={24} /></span>}<button className="button button-secondary" type="button" onClick={() => { setCameraError(''); setCameraOpen((open) => !open) }}><Camera size={16} /> {cameraOpen ? 'Fechar câmera' : 'Tirar foto'}</button><label className="button button-secondary" htmlFor="patient-photo">Escolher imagem</label><input id="patient-photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { loadPhoto(event.target.files?.[0]); event.currentTarget.value = '' }} /><button className="button button-secondary" type="button" onClick={() => setForm({ ...form, photo_data: '' })} disabled={!form.photo_data}>Remover foto</button><small>JPEG, PNG ou WebP · até 1 MB. A câmera requer HTTPS e permissão.</small>{cameraOpen && <div className="patient-camera-panel"><video ref={videoRef} autoPlay muted playsInline aria-label="Visualização da câmera para foto do paciente" />{(cameraError || (!navigator.mediaDevices?.getUserMedia ? 'A câmera precisa de HTTPS e de permissão do navegador. Você ainda pode escolher uma imagem do dispositivo.' : '')) && <p className="form-message form-message-error" role="alert">{cameraError || 'A câmera precisa de HTTPS e de permissão do navegador. Você ainda pode escolher uma imagem do dispositivo.'}</p>}<div><button className="button button-primary" type="button" onClick={capturePhoto} disabled={!navigator.mediaDevices?.getUserMedia}><Camera size={16} /> Capturar foto</button><button className="button button-secondary" type="button" onClick={() => setCameraOpen(false)}>Cancelar câmera</button></div></div>}</div></fieldset>
       <div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : editingReference ? 'Salvar alterações' : 'Cadastrar paciente'} <ArrowRight size={16} /></button></div>
     </form>}
@@ -1438,6 +1477,67 @@ function AccountRow({ user, onUpdate, onReset }: { user: Account; onUpdate: (use
   const [editModules, setEditModules] = useState(user.modules.filter((module) => module !== 'admin'))
   const [expanded, setExpanded] = useState(false)
   return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => void onReset(user)}>Redefinir senha/MFA</button><button className="user-action" type="button" onClick={() => { setEditModules(user.modules.filter((module) => module !== 'admin')); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
+}
+
+function NutritionPage() {
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [records, setRecords] = useState<NutritionRecordData[]>([])
+  const [selectedPatient, setSelectedPatient] = useState('')
+  const [patientQuery, setPatientQuery] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({ assessment_date: new Date().toLocaleDateString('en-CA'), weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '' })
+  async function loadRecords() {
+    try {
+      const response = await fetch('/api/v1/nursing/nutrition')
+      const data = await response.json() as { records?: NutritionRecordData[]; detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os registros nutricionais.')
+      setRecords(data.records ?? [])
+    } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os registros.') }
+  }
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/v1/nursing/patients')
+        const data = await response.json() as { patients?: Patient[]; detail?: string }
+        if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os pacientes.')
+        setPatients(data.patients ?? [])
+      } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes.') }
+      await loadRecords()
+    })()
+  }, [])
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedPatient) { setError('Selecione um paciente.'); return }
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const response = await fetch('/api/v1/nursing/nutrition', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, patient_reference: selectedPatient }) })
+      const data = await response.json() as NutritionRecordData & { detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar a avaliação.')
+      setForm({ ...form, weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '' })
+      setMessage('Avaliação nutricional registrada.')
+      await loadRecords()
+    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar a avaliação.') }
+    finally { setBusy(false) }
+  }
+  const filtered = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR').includes(patientQuery.trim().toLocaleLowerCase('pt-BR')))
+  const patientName = (reference: string) => { const patient = patients.find((item) => item.reference === reference); return patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente' }
+  return <section className="nutrition-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliação, dieta prescrita, alergias, restrições e aceitação alimentar.</p></div><span className="module-icon module-icon-nutrition"><HeartPulse size={24} /></span></div>
+    {message && <div className="form-message form-message-success" role="status">{message}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    <form className="nutrition-form" onSubmit={(event) => void submit(event)}>
+      <div className="section-heading"><div><p className="eyebrow">NOVA AVALIAÇÃO</p><h2>Dados nutricionais</h2></div></div>
+      <label className="field"><span className="field-label">Localizar paciente por nome, quarto ou leito</span><span className="search-input-wrap"><Search size={17} /><input value={patientQuery} onChange={(event) => setPatientQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>
+      <label className="field nutrition-patient-select"><span className="field-label">Paciente</span><select required value={selectedPatient} onChange={(event) => setSelectedPatient(event.target.value)}><option value="">Selecione o paciente</option>{filtered.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Quarto {patient.room}, leito {patient.bed}</option>)}</select></label>
+      <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Data da avaliação</span><input type="date" required value={form.assessment_date} onChange={(event) => setForm({ ...form, assessment_date: event.target.value })} /></label><label className="field"><span className="field-label">Peso</span><span className="input-with-unit"><input inputMode="decimal" value={form.weight_kg} onChange={(event) => setForm({ ...form, weight_kg: event.target.value })} placeholder="Ex.: 68,5" /><span className="unit-label">kg</span></span></label><label className="field"><span className="field-label">Altura</span><span className="input-with-unit"><input inputMode="decimal" value={form.height_cm} onChange={(event) => setForm({ ...form, height_cm: event.target.value })} placeholder="Ex.: 172" /><span className="unit-label">cm</span></span></label></div>
+      <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Tipo de dieta</span><select value={form.diet_type} onChange={(event) => setForm({ ...form, diet_type: event.target.value })}><option value="">Selecione</option><option>Geral</option><option>Branda</option><option>Pastosa</option><option>Líquida</option><option>Enteral</option><option>Jejum</option><option>Outra</option></select></label><label className="field"><span className="field-label">Aceitação alimentar</span><select value={form.appetite} onChange={(event) => setForm({ ...form, appetite: event.target.value })}><option value="">Selecione</option><option value="normal">Normal</option><option value="reduced">Reduzida</option><option value="poor">Baixa</option><option value="increased">Aumentada</option></select></label><label className="field"><span className="field-label">Hidratação</span><select value={form.hydration} onChange={(event) => setForm({ ...form, hydration: event.target.value })}><option value="">Selecione</option><option value="adequate">Adequada</option><option value="low">Baixa</option><option value="assisted">Necessita auxílio</option></select></label></div>
+      <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Alergias alimentares</span><textarea maxLength={500} value={form.allergies} onChange={(event) => setForm({ ...form, allergies: event.target.value })} placeholder="Descreva ou informe que não há alergias conhecidas" /></label><label className="field"><span className="field-label">Restrições alimentares</span><textarea maxLength={500} value={form.restrictions} onChange={(event) => setForm({ ...form, restrictions: event.target.value })} placeholder="Restrições e orientações dietéticas" /></label></div>
+      <label className="field"><span className="field-label">Evolução e observações</span><textarea maxLength={3000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Registro da avaliação e conduta nutricional" /></label>
+      <div className="patient-form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Registrar avaliação'} <ArrowRight size={16} /></button></div>
+    </form>
+    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO RECENTE</p><h2>Avaliações nutricionais</h2></div><span className="module-total">{records.length}</span></div>{records.length ? <div className="nutrition-record-list">{records.map((record) => <article className="nutrition-record-card" key={record.id}><div><h3>{patientName(record.patient_reference)}</h3><p>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${record.assessment_date}T00:00:00Z`))} · {record.diet_type || 'Dieta não informada'}</p>{record.weight_kg && <small>Peso: {record.weight_kg} kg</small>}{record.allergies && <small>Alergias: {record.allergies}</small>}{record.restrictions && <small>Restrições: {record.restrictions}</small>}{record.notes && <small>{record.notes}</small>}</div><span className="nutrition-author">{record.actor_name}</span></article>)}</div> : <div className="history-empty">Nenhuma avaliação nutricional registrada.</div>}</section>
+  </section>
 }
 
 function ModulePlaceholder({ moduleId, onNavigate }: { moduleId: ModuleId; onNavigate: (id: ModuleId) => void }) {

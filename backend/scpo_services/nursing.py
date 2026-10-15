@@ -41,6 +41,7 @@ class Patient(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     room: Mapped[str] = mapped_column(String(20), nullable=False)
     bed: Mapped[str] = mapped_column(String(20), nullable=False)
+    cpf: Mapped[str] = mapped_column(String(11), nullable=False, default="")
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     sex: Mapped[str] = mapped_column(String(24), nullable=False, default="")
     phone: Mapped[str] = mapped_column(String(40), nullable=False, default="")
@@ -87,6 +88,7 @@ app = FastAPI(
 )
 
 NURSING_ROLE = require_demo_role("nursing")
+NUTRITION_ROLE = require_demo_role("nutrition")
 VALUE_FIELDS = {
     "saturation",
     "pressure",
@@ -111,6 +113,7 @@ class PatientPayload(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     room: str = Field(min_length=1, max_length=20)
     bed: str = Field(min_length=1, max_length=20)
+    cpf: str = Field(default="", max_length=14)
     birth_date: date | None = None
     sex: str = Field(default="", max_length=24)
     phone: str = Field(default="", max_length=40)
@@ -139,6 +142,61 @@ class PatientPayload(BaseModel):
     def validate_photo(cls, value: str) -> str:
         if value and not re.fullmatch(r"data:image/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}", value):
             raise ValueError("A foto deve ser uma imagem JPEG, PNG ou WebP válida")
+        return value
+
+    @field_validator("cpf")
+    @classmethod
+    def validate_cpf(cls, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if not digits:
+            return ""
+        if len(digits) != 11 or len(set(digits)) == 1:
+            raise ValueError("Informe um CPF válido com 11 dígitos")
+        for length in (9, 10):
+            total = sum(int(digit) * (length + 1 - index) for index, digit in enumerate(digits[:length]))
+            check = (total * 10 % 11) % 10
+            if check != int(digits[length]):
+                raise ValueError("Informe um CPF válido")
+        return digits
+
+
+class NutritionRecord(Base):
+    __tablename__ = "nutrition_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    assessment_date: Mapped[date] = mapped_column(Date, nullable=False)
+    weight_kg: Mapped[str] = mapped_column(String(12), nullable=False, default="")
+    height_cm: Mapped[str] = mapped_column(String(12), nullable=False, default="")
+    diet_type: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    allergies: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    restrictions: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    appetite: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    hydration: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class NutritionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str = Field(min_length=1, max_length=36)
+    assessment_date: date
+    weight_kg: str = Field(default="", max_length=12)
+    height_cm: str = Field(default="", max_length=12)
+    diet_type: str = Field(default="", max_length=80)
+    allergies: str = Field(default="", max_length=500)
+    restrictions: str = Field(default="", max_length=500)
+    appetite: Literal["", "normal", "reduced", "poor", "increased"] = ""
+    hydration: Literal["", "adequate", "low", "assisted"] = ""
+    notes: str = Field(default="", max_length=3000)
+
+    @field_validator("weight_kg", "height_cm")
+    @classmethod
+    def validate_measurement(cls, value: str) -> str:
+        if value and not re.fullmatch(r"\d{1,3}(?:[.,]\d{1,2})?", value):
+            raise ValueError("Informe uma medida numérica válida")
         return value
 
 
@@ -357,4 +415,46 @@ def serialize_record(record: VitalRecord) -> dict[str, object]:
         "glucose_unit": record.glucose_unit,
         "not_applicable": record.not_applicable,
         "recorded_at": record.recorded_at.isoformat(),
+    }
+
+
+@app.get("/api/v1/nursing/nutrition")
+def list_nutrition_records(
+    _: Annotated[DemoPrincipal, Depends(NUTRITION_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    patient_reference: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> dict[str, object]:
+    query = select(NutritionRecord).order_by(NutritionRecord.assessment_date.desc(), NutritionRecord.id.desc())
+    if patient_reference:
+        query = query.where(NutritionRecord.patient_reference == patient_reference)
+    records = db.scalars(query.limit(limit)).all()
+    return {"records": [serialize_nutrition_record(record) for record in records]}
+
+
+@app.post("/api/v1/nursing/nutrition", status_code=201)
+def create_nutrition_record(
+    payload: NutritionPayload,
+    principal: Annotated[DemoPrincipal, Depends(NUTRITION_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    if db.get(Patient, payload.patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    record = NutritionRecord(
+        **payload.model_dump(), actor_id=principal.user_id, actor_name=principal.actor_name,
+        created_at=datetime.now(UTC),
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return serialize_nutrition_record(record)
+
+
+def serialize_nutrition_record(record: NutritionRecord) -> dict[str, object]:
+    return {
+        "id": record.id, "patient_reference": record.patient_reference,
+        "assessment_date": record.assessment_date.isoformat(), "weight_kg": record.weight_kg,
+        "height_cm": record.height_cm, "diet_type": record.diet_type, "allergies": record.allergies,
+        "restrictions": record.restrictions, "appetite": record.appetite, "hydration": record.hydration,
+        "notes": record.notes, "actor_name": record.actor_name, "created_at": record.created_at.isoformat(),
     }
