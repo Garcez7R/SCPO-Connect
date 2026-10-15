@@ -39,6 +39,34 @@ class VitalRecord(Base):
     void_reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
 
+class PatientObservation(Base):
+    __tablename__ = "patient_observations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False)
+    attention_level: Mapped[str] = mapped_column(String(12), nullable=False)
+    observation: Mapped[str] = mapped_column(String(2000), nullable=False)
+    treatment_status: Mapped[str] = mapped_column(String(24), nullable=False, default="in_progress")
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PatientObservationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attention_level: Literal["green", "yellow", "red"]
+    observation: str = Field(min_length=5, max_length=2000)
+    treatment_status: Literal["in_progress", "completed", "discharged"] = "in_progress"
+
+    @field_validator("observation")
+    @classmethod
+    def trim_observation(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("Registre uma observação objetiva com pelo menos cinco caracteres")
+        return value
+
+
 class Patient(Base):
     __tablename__ = "patients"
 
@@ -361,12 +389,15 @@ def list_patients(
     db: Annotated[Session, Depends(get_nursing_db)],
     full_profile: bool = False,
     include_inactive: bool = False,
+    include_archived: bool = False,
 ) -> dict[str, list[dict[str, object]]]:
     if full_profile and not can_view_full_patient_profile(principal):
         raise HTTPException(status_code=403, detail="Acesso aos dados cadastrais completos não autorizado")
     query = select(Patient).order_by(Patient.active.desc(), Patient.room, Patient.bed)
     if not include_inactive:
         query = query.where(Patient.active.is_(True))
+    elif not include_archived:
+        query = query.where(Patient.deleted_at.is_(None))
     patients = db.scalars(query).all()
     emit_audit_event(principal, "patients", "patient_list_read", "patient_registry")
     return {"patients": [serialize_patient(patient, principal=principal, full_profile=full_profile) for patient in patients]}
@@ -537,6 +568,37 @@ def list_patient_history(
     records = db.scalars(query.offset(offset).limit(limit)).all()
     emit_audit_event(_, "nursing", "patient_vitals_history_read", patient_reference)
     return {"records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/v1/nursing/patients/{patient_reference}/observations")
+def list_patient_observations(
+    patient_reference: str,
+    principal: Annotated[DemoPrincipal, PATIENT_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    if db.get(Patient, patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    rows = db.scalars(select(PatientObservation).where(PatientObservation.patient_reference == patient_reference).order_by(PatientObservation.created_at.desc())).all()
+    emit_audit_event(principal, "patients", "patient_observations_read", patient_reference)
+    return {"observations": [{"id": row.id, "attention_level": row.attention_level, "observation": row.observation, "treatment_status": row.treatment_status, "actor_name": row.actor_name, "created_at": row.created_at.isoformat()} for row in rows]}
+
+
+@app.post("/api/v1/nursing/patients/{patient_reference}/observations", status_code=201)
+def create_patient_observation(
+    patient_reference: str,
+    payload: PatientObservationPayload,
+    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    row = PatientObservation(patient_reference=patient_reference, attention_level=payload.attention_level, observation=payload.observation.strip(), treatment_status=payload.treatment_status, actor_id=principal.user_id, actor_name=principal.actor_name, created_at=datetime.now(UTC))
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    emit_audit_event(principal, "patients", "patient_observation_created", patient_reference)
+    return {"id": row.id, "attention_level": row.attention_level, "observation": row.observation, "treatment_status": row.treatment_status, "actor_name": row.actor_name, "created_at": row.created_at.isoformat()}
 
 
 @app.delete("/api/v1/nursing/vitals/{record_id}")

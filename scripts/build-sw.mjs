@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = fileURLToPath(new URL('../dist/', import.meta.url))
+const root = process.env.SCPO_BUILD_DIR ? resolve(process.env.SCPO_BUILD_DIR) : fileURLToPath(new URL('../dist/', import.meta.url))
 async function files(dir) {
   const entries = await readdir(dir, { withFileTypes: true })
   return (await Promise.all(entries.map((entry) => entry.isDirectory() ? files(join(dir, entry.name)) : join(dir, entry.name)))).flat()
