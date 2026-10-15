@@ -137,9 +137,8 @@ const emptyRecord = {
   venousCondition: '',
   venousNote: '',
   urine: '',
-  bowel: '',
+  bowelTube: '',
   pain: '',
-  painScale: '',
   notes: '',
   oxygenStatus: '',
   oxygenStartedAt: '',
@@ -180,12 +179,11 @@ const fieldLabels: Record<keyof RecordFields, string> = {
   glucose: 'Glicose',
   glucoseUnit: 'Unidade da glicose',
   venousSite: 'Local do acesso',
-  venousCondition: 'Condição informada',
+  venousCondition: 'Tipo de acesso',
   venousNote: 'Observação do acesso',
   urine: 'Eliminação urinária',
-  bowel: 'Eliminação intestinal',
+  bowelTube: 'Sonda intestinal',
   pain: 'Valor informado',
-  painScale: 'Escala utilizada',
   notes: 'Observações',
   oxygenStatus: 'Uso de oxigênio',
   oxygenStartedAt: 'Oxigênio ligado em',
@@ -816,7 +814,7 @@ function PatientHistoryPage({ patientReference, onBack }: { patientReference: st
     }).then(({ patientData, historyData }) => { if (current) { setPatients([patientData]); setRecords(historyData.records ?? []); setTotal(historyData.total ?? 0); setError('') } }).catch((loadError) => { if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao consultar o histórico.') }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }
   }, [patientReference, offset])
-  return <section className="patient-history-page page-enter"><div className="page-title-row"><div><p className="eyebrow">PRONTUÁRIO · ACESSO AUTORIZADO</p><h1>Histórico do paciente</h1><p className="welcome-copy">Registros de sinais vitais associados ao cadastro central.</p></div><button className="button button-secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Voltar aos pacientes</button></div>{patient && <section className="patient-history-summary">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}<div><h2>{patient.name}</h2><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}{patient.active === false ? ' · Alta registrada' : ''}</p>{patient.responsible_name && <small>Responsável pela internação: {patient.responsible_name} · {patient.responsible_phone || 'Contato não informado'}</small>}</div><span className="module-total">{total} {total === 1 ? 'registro' : 'registros'}</span></section>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}{loading ? <div className="history-empty">Carregando histórico…</div> : <VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} />}{!loading && total > pageSize && <nav className="history-pagination" aria-label="Paginação do histórico do paciente"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Mais antigas <ArrowRight size={15} /></button></div></nav>}</section>
+  return <section className="patient-history-page page-enter"><div className="page-title-row"><div><p className="eyebrow">PRONTUÁRIO · ACESSO AUTORIZADO</p><h1>Histórico do paciente</h1><p className="welcome-copy">Registros de sinais vitais associados ao cadastro central.</p></div><button className="button button-secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Voltar aos pacientes</button></div>{patient && <section className="patient-history-summary">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}<div><h2>{patient.name}</h2><p>Quarto {patient.room} · Leito {patient.bed}{patient.birth_date ? ` · ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}{patient.active === false ? ' · Alta registrada' : ''}</p>{patient.responsible_name && <small>Responsável pela internação: {patient.responsible_name} · {patient.responsible_phone || 'Contato não informado'}</small>}</div><span className="module-total">{total} {total === 1 ? 'registro' : 'registros'}</span></section>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}{loading ? <div className="history-empty">Carregando histórico…</div> : <><VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} /><VitalExtraDetails records={records} patientReference={patientReference} /></>}{!loading && total > pageSize && <nav className="history-pagination" aria-label="Paginação do histórico do paciente"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Mais antigas <ArrowRight size={15} /></button></div></nav>}</section>
 }
 
 const therapyActivityStatusLabels: Record<TherapyActivityStatus, string> = {
@@ -1416,7 +1414,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
   const vitalPrintRows: PrintRow[] = records.map((record) => {
     const patient = patients.find((item) => item.reference === record.patient_reference)
-    return { id: String(record.id), date: record.recorded_at, title: patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente', fields: [...Object.entries(record.values).map(([key, value]) => [key, value] as [string, string]), ['Unidade de glicose', record.glucose_unit], ['Profissional', record.actor_name]] }
+    return { id: String(record.id), date: record.recorded_at, title: patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente', fields: [...Object.entries(record.values).map(([key, value]) => [fieldLabels[key as keyof RecordFields] ?? (key === 'painScale' ? 'Escala utilizada' : key === 'bowel' ? 'Eliminação intestinal (registro anterior)' : key), value] as [string, string]), ['Unidade de glicose', record.glucose_unit], ['Profissional', record.actor_name]] }
   })
 
   function clearFilters() {
@@ -1448,7 +1446,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
     </section>
     <PrintSelectionPanel title="Coletas de sinais vitais" rows={vitalPrintRows} />
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {loadingRecords ? <div className="history-empty">Carregando coletas…</div> : <VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} onVoid={(id) => void voidRecord(id)} />}
+    {loadingRecords ? <div className="history-empty">Carregando coletas…</div> : <><VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} onVoid={(id) => void voidRecord(id)} /><VitalExtraDetails records={records} patientReference={patientReference} /></>}
     {!loadingRecords && total > pageSize && <nav className="history-pagination" aria-label="Paginação das coletas"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><span>Página {pageNumber} de {pageCount}</span><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Próxima <ArrowRight size={15} /></button></div></nav>}
   </section>
 }
@@ -1582,25 +1580,24 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
             </div>
           </FormSection>
 
-          <FormSection number="03" title="Acesso venoso" detail="Campos livres de acordo com a configuração institucional. Não representam protocolo.">
+          <FormSection number="03" title="Acesso venoso" detail="Informe o tipo de acesso e, se necessário, o local e uma observação.">
             <div className="field-grid field-grid-three">
               <TextField label="Local" value={record.venousSite} onChange={(value) => updateField('venousSite', value)} placeholder="Não informado" />
-              <label className="field"><span className="field-label">Condição informada</span><select value={record.venousCondition} onChange={(event) => updateField('venousCondition', event.target.value)}><option value="">Selecionar ou deixar em branco</option><option value="não se aplica">Não se aplica</option><option value="não informado">Não informado</option><option value="registrada">Registrada</option></select></label>
+              <label className="field"><span className="field-label">Tipo de acesso</span><select value={record.venousCondition} onChange={(event) => updateField('venousCondition', event.target.value)}><option value="">Selecione</option><option value="venoso periférico">Venoso periférico</option><option value="jugular">Jugular</option><option value="central">Central</option></select></label>
               <TextField label="Observação" value={record.venousNote} onChange={(value) => updateField('venousNote', value)} placeholder="Opcional" />
             </div>
           </FormSection>
 
-          <FormSection number="04" title="Eliminações" detail="Registre separadamente ou selecione “Não se aplica”.">
+          <FormSection number="04" title="Eliminações" detail="Informe a presença de eliminação urinária e o uso de sonda intestinal.">
             <div className="field-grid field-grid-two">
-              <label className="field"><span className="field-label">Urinária</span><select value={record.urine} onChange={(event) => updateField('urine', event.target.value)}><option value="">Não preenchida</option><option value="não se aplica">Não se aplica</option><option value="registrada">Registrada</option></select></label>
-              <label className="field"><span className="field-label">Intestinal</span><select value={record.bowel} onChange={(event) => updateField('bowel', event.target.value)}><option value="">Não preenchida</option><option value="não se aplica">Não se aplica</option><option value="registrada">Registrada</option></select></label>
+              <label className="field"><span className="field-label">Eliminação urinária</span><select value={record.urine} onChange={(event) => updateField('urine', event.target.value)}><option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option></select></label>
+              <label className="field"><span className="field-label">Sonda intestinal</span><select value={record.bowelTube} onChange={(event) => updateField('bowelTube', event.target.value)}><option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option></select></label>
             </div>
           </FormSection>
 
-          <FormSection number="05" title="Dor / algia" detail="Informe o valor e a escala utilizada, quando aplicável.">
-            <div className="field-grid field-grid-two">
+          <FormSection number="05" title="Dor / algia" detail="Informe o valor observado, quando aplicável.">
+            <div className="field-grid field-grid-one">
               <TextField label="Valor informado" value={record.pain} onChange={(value) => updateField('pain', value)} placeholder="Não preenchido" inputMode="decimal" />
-              <TextField label="Escala utilizada" value={record.painScale} onChange={(value) => updateField('painScale', value)} placeholder="Definição institucional" />
             </div>
           </FormSection>
 
@@ -1654,6 +1651,17 @@ function VitalHistory({ records, patients, patientReference, metric, onMetric, o
   const coordinates = points.map((point, index) => ({ ...point, x: points.length < 2 ? 50 : 8 + index * 84 / (points.length - 1), y: 90 - ((point.value - min) / span) * 72 }))
   const line = coordinates.map((point) => `${point.x},${point.y}`).join(' ')
   return <section className="vital-history"><div className="history-heading"><div><p className="eyebrow">CONSULTA DE REGISTROS</p><h2>Histórico de sinais vitais</h2><p className="welcome-copy">Confira os valores registrados, horário e profissional responsável.</p></div><label className="history-metric"><span className="field-label">Indicador</span><select value={metric} onChange={(event) => onMetric(event.target.value)}>{vitalMetrics.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label></div>{!patientReference ? <div className="history-empty"><Activity size={20} /><span>Selecione um paciente para visualizar a evolução no gráfico.</span></div> : points.length ? <><div className="history-chart"><svg viewBox="0 0 100 100" role="img" aria-label={`Gráfico de ${config.label}`} preserveAspectRatio="none"><line x1="5" y1="90" x2="95" y2="90" className="chart-axis" />{points.length > 1 && <polyline points={line} className="chart-line" />}{coordinates.map((point) => <circle key={`${point.label}-${point.index}`} cx={point.x} cy={point.y} r="2.1" className="chart-point"><title>{point.label}: {point.value} {config.unit}</title></circle>)}</svg></div><div className="history-values">{coordinates.slice(-5).reverse().map((point) => <span key={`${point.label}-${point.index}`}><strong>{point.value} {config.unit}</strong><small>{point.label}</small></span>)}</div></> : <div className="history-empty"><Activity size={20} /><span>Não há valores deste indicador no período consultado.</span></div>}{records.length > 0 && <div className="collection-list"><h3>Coletas recentes</h3>{records.map((record) => { const patient = patients.find((item) => item.reference === record.patient_reference); return <article className="collection-row" key={record.id}><div className="collection-row-heading"><strong>{patient?.name ?? 'Paciente'} · Qto {patient?.room ?? '—'} · Leito {patient?.bed ?? '—'}</strong><time>{dateTime(record.recorded_at)}</time></div><div className="collection-values">{[['Saturação', record.values.saturation && `${record.values.saturation}%`], ['Pressão', record.values.pressure], ['FC', record.values.heartRate && `${record.values.heartRate} bpm`], ['FR', record.values.respiratoryRate && `${record.values.respiratoryRate} rpm`], ['Glicose', record.values.glucose && `${record.values.glucose} ${record.glucose_unit}`], ['Dor', record.values.pain], ['Oxigênio', record.values.oxygenStatus], ['Lesões', record.values.wounds], ['Exame', record.values.examName]].filter(([, value]) => value).map(([label, value]) => <span key={label}><small>{label}</small><strong>{value}</strong></span>)}</div><small className="collection-actor">Registrado por {record.actor_name}</small>{onVoid && <button className="button button-danger" type="button" onClick={() => onVoid(record.id)}>Arquivar registro incorreto</button>}</article> })}</div>}</section>
+}
+
+function VitalExtraDetails({ records, patientReference }: { records: VitalRecordData[]; patientReference: string }) {
+  const labels: [keyof RecordFields, string][] = [['venousCondition', 'Tipo de acesso'], ['urine', 'Eliminação urinária'], ['bowelTube', 'Sonda intestinal']]
+  const rows = records.filter((record) => !patientReference || record.patient_reference === patientReference).map((record) => {
+    const fields = labels.filter(([key]) => record.values[key]).map(([key, label]) => [label, record.values[key]] as [string, string])
+    if (record.values.bowel) fields.push(['Eliminação intestinal (registro anterior)', record.values.bowel])
+    return { record, fields }
+  }).filter((item) => item.fields.length)
+  if (!rows.length) return null
+  return <section className="vital-extra-details"><div className="section-heading"><div><p className="eyebrow">ACESSOS E ELIMINAÇÕES</p><h2>Registros relacionados</h2></div></div><div className="vital-extra-list">{rows.map(({ record, fields }) => <article className="vital-extra-card" key={record.id}><div><strong>{record.actor_name}</strong><time>{dateTime(record.recorded_at)}</time></div><div className="collection-values">{fields.map(([label, value]) => <span key={label}><small>{label}</small><strong>{value}</strong></span>)}</div></article>)}</div></section>
 }
 
 function FormSection({ number, title, detail, children }: { number: string; title: string; detail: string; children: React.ReactNode }) {

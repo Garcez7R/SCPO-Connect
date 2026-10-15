@@ -138,8 +138,8 @@ VALUE_FIELDS = {
     "venousNote",
     "urine",
     "bowel",
+    "bowelTube",
     "pain",
-    "painScale",
     "notes",
     "oxygenStatus",
     "oxygenStartedAt",
@@ -327,6 +327,14 @@ class VitalPayload(BaseModel):
                 and not re.fullmatch(r"\d{1,4}/\d{1,4}", value)
             ):
                 raise ValueError("Formato inválido para pressão arterial")
+            allowed_choices = {
+                "venousCondition": {"venoso periférico", "jugular", "central"},
+                "urine": {"Sim", "Não"},
+                "bowel": {"Sim", "Não", "registrada", "não se aplica"},
+                "bowelTube": {"Sim", "Não"},
+            }.get(field)
+            if value and allowed_choices is not None and value not in allowed_choices:
+                raise ValueError("Opção inválida para o campo selecionado")
         if len(values.get("notes", "")) > 1000:
             raise ValueError("Observações excedem o limite permitido")
         return values

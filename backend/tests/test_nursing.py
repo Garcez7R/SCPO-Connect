@@ -4,6 +4,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from scpo_services import nursing
@@ -69,6 +70,24 @@ def test_vital_structure_rejects_invalid_saturation_and_conflicting_na(nursing_d
                 nurse, nursing_db,
             )
         assert invalid.value.status_code == 422
+
+
+def test_vital_elimination_and_venous_access_choices_are_restricted() -> None:
+    nursing.VitalPayload(
+        patient_reference="123e4567-e89b-12d3-a456-426614174000",
+        values={
+            "urine": "Sim",
+            "bowel": "Não",
+            "bowelTube": "Não",
+            "venousCondition": "venoso periférico",
+        },
+    )
+    for values in ({"urine": "Talvez"}, {"bowelTube": "Não sei"}, {"venousCondition": "registrada"}, {"painScale": "1-10"}):
+        with pytest.raises(ValidationError):
+            nursing.VitalPayload(
+                patient_reference="123e4567-e89b-12d3-a456-426614174000",
+                values=values,
+            )
 
 
 def test_vital_filters_and_discharge_preserve_history(nursing_db: Session, nurse: DemoPrincipal) -> None:

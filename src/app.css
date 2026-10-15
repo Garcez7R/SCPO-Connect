@@ -231,6 +231,12 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .field-grid-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .field-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .field-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.field-grid-one { grid-template-columns: minmax(0, 1fr); max-width: 520px; }
+.vital-extra-details { display: grid; gap: 12px; margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.vital-extra-list { display: grid; gap: 9px; }
+.vital-extra-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.vital-extra-card > div:first-child { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
+.vital-extra-card time { font-size: 11px; }
 .field { display: grid; min-width: 0; gap: 6px; color: var(--ink); }
 .field-label { color: #344e61; font-size: 10px; font-weight: 600; }
 .field input, .field select, .field textarea, .input-with-unit input { width: 100%; min-width: 0; min-height: 37px; padding: 0 10px; border: 1px solid #cfdbe2; border-radius: 5px; background: #fff; color: var(--ink); font-size: 11px; }
@@ -988,7 +994,7 @@ html[data-theme="dark"] {
   color: var(--ink);
 }
 html[data-theme="dark"] body { background: var(--page); color: var(--ink); }
-html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
 html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, .module-card-status, .field-hint, .patient-registry-identity p, .patient-registry-identity small, .work-order-meta, .pharmacy-item-description, .pharmacy-item-meta, .session-row, .app-footer, .breadcrumbs, .history-empty) { color: var(--muted); }
