@@ -1,12 +1,12 @@
 import re
 import uuid
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, select
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -189,13 +189,38 @@ def list_vital_records(
     principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
     patient_reference: str | None = None,
-) -> dict[str, list[dict[str, object]]]:
-    query = select(VitalRecord).order_by(VitalRecord.recorded_at.desc())
+    room: str | None = None,
+    bed: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> dict[str, object]:
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="A data inicial deve ser anterior ou igual à data final")
+
+    filters = []
     if patient_reference:
-        query = query.where(VitalRecord.patient_reference == patient_reference)
-    records = db.scalars(query.limit(limit)).all()
-    return {"records": [serialize_record(record) for record in records]}
+        filters.append(VitalRecord.patient_reference == patient_reference)
+    if room:
+        filters.append(Patient.room == room)
+    if bed:
+        filters.append(Patient.bed == bed)
+    if from_date:
+        filters.append(VitalRecord.recorded_at >= datetime.combine(from_date, time.min, UTC))
+    if to_date:
+        filters.append(VitalRecord.recorded_at < datetime.combine(to_date + timedelta(days=1), time.min, UTC))
+
+    records_query = select(VitalRecord)
+    count_query = select(func.count(VitalRecord.id))
+    if room or bed:
+        records_query = records_query.join(Patient, Patient.reference == VitalRecord.patient_reference)
+        count_query = count_query.join(Patient, Patient.reference == VitalRecord.patient_reference)
+    records = db.scalars(
+        records_query.where(*filters).order_by(VitalRecord.recorded_at.desc()).offset(offset).limit(limit)
+    ).all()
+    total = db.scalar(count_query.where(*filters)) or 0
+    return {"records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
 def serialize_record(record: VitalRecord) -> dict[str, object]:

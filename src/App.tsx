@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
   Brain,
   Building2,
+  CalendarDays,
   CheckCircle2,
   ClipboardList,
   ClipboardPlus,
@@ -20,6 +22,7 @@ import {
   Package,
   Pencil,
   ShieldCheck,
+  Search,
   Stethoscope,
   UsersRound,
   UserRound,
@@ -28,7 +31,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
-type ModuleId = 'home' | 'work-orders' | 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'about'
+type ModuleId = 'home' | 'work-orders' | 'patients' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 type Patient = { reference: string; name: string; room: string; bed: string }
@@ -36,6 +39,7 @@ type VitalRecordData = { id: number; patient_reference: string; actor_name: stri
 type WorkOrderStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
 type WorkOrderPriority = 'normal' | 'high' | 'urgent'
 type WorkOrder = { id: string; title: string; description: string; department: string; location: string; priority: WorkOrderPriority; status: WorkOrderStatus; requester_id: string; requester_name: string; updated_by: string; created_at: string; updated_at: string }
+type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string }
 
 type Profile = {
   id: ProfileId
@@ -219,13 +223,15 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || profile.modules.includes(item.id))
 
   function navigate(id: ModuleId) {
-    if (id !== 'about' && id !== 'work-orders' && !profile.modules.includes(id)) return
+    if (id === 'nursing-history' && !profile.modules.includes('nursing')) return
+    if (id !== 'about' && id !== 'work-orders' && id !== 'nursing-history' && !profile.modules.includes(id)) return
     setActiveModule(id)
     setMenuOpen(false)
   }
 
   const activeLabel = activeModule === 'home'
     ? 'Visão geral'
+    : activeModule === 'nursing-history' ? 'Coletas de sinais vitais'
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
 
   return (
@@ -275,14 +281,16 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
         <div className="page-content">
           {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
-          {activeModule === 'nursing' && <NursingPage profile={profile} />}
+          {activeModule === 'nursing' && <NursingPage profile={profile} onShowHistory={() => navigate('nursing-history')} />}
+          {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
+          {activeModule === 'pharmacy' && <PharmacyPage />}
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
           {activeModule === 'maintenance' && <MaintenanceQueuePage />}
           {activeModule === 'patients' && <PatientRegistryPage />}
           {activeModule === 'admin' && <AdminPage />}
           {activeModule === 'management' && <ModulePlaceholder moduleId="management" onNavigate={navigate} />}
           {activeModule === 'about' && <AboutPage />}
-          {(['pharmacy', 'xray', 'social', 'nutrition', 'hygiene', 'reception', 'therapy', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
+          {(['xray', 'social', 'nutrition', 'hygiene', 'reception', 'therapy', 'psychology'] as ModuleId[]).includes(activeModule) && <ModulePlaceholder moduleId={activeModule} onNavigate={navigate} />}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
@@ -399,7 +407,8 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ title: '', description: '', department: '', location: '', priority: 'normal' as WorkOrderPriority })
+  const [reviewing, setReviewing] = useState(false)
+  const [form, setForm] = useState({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', priority: 'normal' as WorkOrderPriority })
 
   async function loadOrders() {
     setLoading(true)
@@ -420,6 +429,7 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!reviewing) { setReviewing(true); return }
     setSaving(true)
     setNotice('')
     setError('')
@@ -427,12 +437,19 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
       const response = await fetch('/api/v1/maintenance/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, title: form.title.trim(), description: form.description.trim(), department: form.department.trim(), location: form.location.trim() }),
+        body: JSON.stringify({
+          title: form.title.trim(),
+          description: `Categoria: ${form.category}\n\n${form.description.trim()}`,
+          department: (form.department === 'Outro' ? form.customDepartment : form.department).trim(),
+          location: [form.unit && `Unidade: ${form.unit}`, form.location && `Local: ${form.location.trim()}`, form.assetCode && `Patrimônio: ${form.assetCode.trim()}`].filter(Boolean).join(' · '),
+          priority: form.priority,
+        }),
       })
       const data = await response.json() as WorkOrder & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível abrir a ordem de serviço.')
       setOrders((current) => [data, ...current])
-      setForm({ title: '', description: '', department: '', location: '', priority: 'normal' })
+      setForm({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', priority: 'normal' })
+      setReviewing(false)
       setNotice('Ordem de serviço aberta. A equipe de manutenção poderá acompanhar a solicitação.')
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Falha ao abrir a ordem de serviço.')
@@ -444,18 +461,24 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
   return <section className="work-orders-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">SERVIÇOS INTERNOS</p><h1>Abrir ordem de serviço</h1><p className="welcome-copy">Solicite reparos, instalações e apoio de manutenção. A solicitação fica vinculada à sua conta.</p></div><span className="module-icon module-icon-maintenance"><ClipboardPlus size={23} /></span></div>
     <form className="work-order-form" onSubmit={(event) => void submit(event)}>
-      <div className="section-heading"><div><p className="eyebrow">NOVA SOLICITAÇÃO</p><h2>Descreva o que precisa</h2></div></div>
-      <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Assunto</span><input required minLength={5} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: torneira com vazamento" /></label>
-        <label className="field"><span className="field-label">Setor solicitante</span><input required minLength={2} maxLength={100} value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} placeholder="Ex.: Enfermagem" /></label>
-        <label className="field"><span className="field-label">Local / patrimônio</span><input maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, leito B" /></label>
-        <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as WorkOrderPriority })}><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
-      </div>
-      <label className="field"><span className="field-label">Descrição do serviço</span><textarea required minLength={5} maxLength={1500} rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Informe o problema observado e o serviço solicitado." /></label>
-      <p className="work-order-privacy">Não inclua nome, diagnóstico ou outros dados de pacientes na descrição da ordem.</p>
+      <div className="section-heading"><div><p className="eyebrow">NOVA SOLICITAÇÃO</p><h2>{reviewing ? 'Revise antes de enviar' : 'Descreva o que precisa'}</h2><p className="welcome-copy">{reviewing ? 'Confira os dados do chamado e confirme a abertura.' : 'Informe o tipo de serviço, o local e o que precisa ser feito.'}</p></div></div>
+      {!reviewing ? <>
+        <div className="field-grid field-grid-two">
+          <label className="field"><span className="field-label">Tipo de serviço</span><select required value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option value="">Selecione uma categoria</option><option>Elétrica</option><option>Hidráulica</option><option>Climatização</option><option>Equipamento</option><option>Estrutura e mobiliário</option><option>Rede e telefonia</option><option>Outro serviço</option></select></label>
+          <label className="field"><span className="field-label">Assunto</span><input required minLength={5} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: torneira com vazamento" /></label>
+          <label className="field"><span className="field-label">Setor solicitante</span><select required value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value, customDepartment: '' })}><option value="">Selecione seu setor</option><option>Enfermagem</option><option>Farmácia</option><option>Raio X</option><option>Serviço Social</option><option>Nutrição</option><option>Higienização</option><option>Recepção</option><option>Administração</option><option>Outro</option></select></label>
+          {form.department === 'Outro' && <label className="field"><span className="field-label">Informe o setor</span><input required minLength={2} maxLength={100} value={form.customDepartment} onChange={(event) => setForm({ ...form, customDepartment: event.target.value })} /></label>}
+          <label className="field"><span className="field-label">Unidade</span><select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione a unidade</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outro</option></select></label>
+          <label className="field"><span className="field-label">Quarto, sala ou local</span><input maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
+          <label className="field"><span className="field-label">Número do patrimônio (opcional)</span><input maxLength={60} value={form.assetCode} onChange={(event) => setForm({ ...form, assetCode: event.target.value })} placeholder="Etiqueta do equipamento" /></label>
+          <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as WorkOrderPriority })}><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente quando houver impacto imediato no funcionamento ou na segurança.</span></label>
+        </div>
+        <label className="field"><span className="field-label">Descrição do serviço</span><textarea required minLength={5} maxLength={1450} rows={5} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descreva o problema observado, quando começou e o resultado esperado." /><span className="field-hint">{form.description.length}/1.450 caracteres</span></label>
+        <p className="work-order-privacy">Não inclua nome, diagnóstico ou outros dados de pacientes na descrição da ordem.</p>
+      </> : <div className="work-order-review"><div><small>Categoria</small><strong>{form.category}</strong></div><div><small>Assunto</small><strong>{form.title}</strong></div><div><small>Setor solicitante</small><strong>{form.department === 'Outro' ? form.customDepartment : form.department}</strong></div><div><small>Localização</small><strong>{[form.unit && `Unidade: ${form.unit}`, form.location && `Local: ${form.location}`, form.assetCode && `Patrimônio: ${form.assetCode}`].filter(Boolean).join(' · ') || 'Não informado'}</strong></div><div><small>Prioridade</small><strong>{workOrderPriorities[form.priority]}</strong></div><div className="work-order-review-description"><small>Descrição</small><p>{form.description}</p></div></div>}
       {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-      <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : 'Abrir ordem de serviço'} <ArrowRight size={16} /></button>
+      <div className="work-order-form-actions">{reviewing && <button className="button button-secondary" type="button" onClick={() => setReviewing(false)} disabled={saving}><ArrowLeft size={16} /> Editar solicitação</button>}<button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : reviewing ? 'Confirmar abertura' : 'Revisar solicitação'} {reviewing ? <BadgeCheck size={16} /> : <ArrowRight size={16} />}</button></div>
     </form>
     <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO</p><h2>Minhas solicitações</h2></div><button className="button button-secondary" type="button" onClick={() => void loadOrders()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div>
       {loading ? <div className="history-empty">Carregando solicitações…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} />)}</div> : <div className="history-empty"><ClipboardList size={20} /><span>Você ainda não abriu ordens de serviço.</span></div>}
@@ -520,6 +543,64 @@ function WorkOrderCard({ order, editable = false, status, note, onStatusChange, 
     <p className="work-order-description">{order.description}</p><div className="work-order-meta"><span><strong>Setor</strong>{order.department}</span>{order.location && <span><strong>Local</strong>{order.location}</span>}<span><strong>Solicitante</strong>{order.requester_name}</span><span><strong>Aberta em</strong>{dateTime(order.created_at)}</span><span><strong>Atualizada por</strong>{order.updated_by} · {dateTime(order.updated_at)}</span></div>
     {editable && <div className="work-order-actions"><label className="field"><span className="field-label">Status</span><select value={status ?? order.status} onChange={(event) => onStatusChange?.(event.target.value as WorkOrderStatus)}><option value="open">Aberta</option><option value="in_progress">Em curso</option><option value="completed">Finalizada</option><option value="cancelled">Cancelada</option></select></label><label className="field"><span className="field-label">Nota da atualização (opcional)</span><input maxLength={500} value={note ?? ''} onChange={(event) => onNoteChange?.(event.target.value)} placeholder="Ex.: peça solicitada" /></label><button className="button button-primary" type="button" disabled={saving} onClick={onSave}>{saving ? 'Salvando…' : 'Salvar andamento'}</button></div>}
   </article>
+}
+
+function PharmacyPage() {
+  const [items, setItems] = useState<PharmacyItem[]>([])
+  const [form, setForm] = useState({ item_name: '', balance: '', unit: '', lot: '', expiry_date: '' })
+  const [query, setQuery] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function loadItems() {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/v1/pharmacy/items')
+      const data = await response.json() as { items?: PharmacyItem[]; detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar o estoque.')
+      setItems(data.items ?? [])
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o estoque.')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { void loadItems() }, [])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: form.balance.replace(',', '.'), unit: form.unit.trim(), lot: form.lot.trim() }) })
+      const data = await response.json() as PharmacyItem & { detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível cadastrar o lote.')
+      setItems((current) => [...current, data].sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR')))
+      setForm({ item_name: '', balance: '', unit: '', lot: '', expiry_date: '' })
+      setShowForm(false)
+      setNotice('Lote cadastrado no estoque.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao cadastrar o lote.')
+    } finally { setSaving(false) }
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const expiredCount = items.filter((item) => item.expiry_date < today).length
+  const expiringCount = items.filter((item) => item.expiry_date >= today && item.expiry_date <= soon).length
+  const filteredItems = items.filter((item) => `${item.item_name} ${item.lot}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')))
+
+  return <section className="pharmacy-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>Estoque e validade</h1><p className="welcome-copy">Cadastre itens por lote e acompanhe saldo e prazo de validade.</p></div><button className="button button-primary" type="button" onClick={() => { setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button></div>
+    <div className="pharmacy-summary"><article><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article><article className={expiringCount ? 'pharmacy-summary-warning' : ''}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article><article className={expiredCount ? 'pharmacy-summary-danger' : ''}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article></div>
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Dados do item e do lote</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Item</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item" /></label><label className="field"><span className="field-label">Quantidade</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label><label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label><label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label><label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label></div><div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => setShowForm(false)} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div></form>}
+    <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar por item ou lote</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite o nome do item ou lote" /></span></label>
+      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => { const expired = item.expiry_date < today; const expiring = !expired && item.expiry_date <= soon; return <article className="pharmacy-item-card" key={item.id}><div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring ? 'pharmacy-expiring' : ''}`}>{expired ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : 'Dentro da validade'}</span></div><h3>{item.item_name}</h3><div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}</span></div><div className="pharmacy-item-meta"><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span></div></article> })}</div> : <div className="history-empty"><Package size={20} /><span>{query ? 'Nenhum item corresponde à busca.' : 'Nenhum lote cadastrado.'}</span></div>}
+    </section>
+  </section>
 }
 
 function AboutPage() {
@@ -604,7 +685,96 @@ function InstallAppButton() {
   </>
 }
 
-function NursingPage({ profile }: { profile: Profile }) {
+function NursingHistoryPage({ onBack }: { onBack: () => void }) {
+  const pageSize = 50
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [records, setRecords] = useState<VitalRecordData[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [room, setRoom] = useState('')
+  const [bed, setBed] = useState('')
+  const [patientReference, setPatientReference] = useState('')
+  const [metric, setMetric] = useState('saturation')
+  const [loadingPatients, setLoadingPatients] = useState(true)
+  const [loadingRecords, setLoadingRecords] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let current = true
+    fetch('/api/v1/nursing/patients').then(async (response) => {
+      if (!response.ok) throw new Error('Não foi possível carregar os pacientes.')
+      return await response.json() as { patients: Patient[] }
+    }).then((data) => { if (current) setPatients(data.patients) }).catch((loadError) => {
+      if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os pacientes.')
+    }).finally(() => { if (current) setLoadingPatients(false) })
+    return () => { current = false }
+  }, [])
+
+  useEffect(() => {
+    if (fromDate && toDate && fromDate > toDate) {
+      setError('A data inicial deve ser anterior ou igual à data final.')
+      setRecords([])
+      setTotal(0)
+      setLoadingRecords(false)
+      return
+    }
+    const controller = new AbortController()
+    const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) })
+    if (fromDate) params.set('from_date', fromDate)
+    if (toDate) params.set('to_date', toDate)
+    if (room) params.set('room', room)
+    if (bed) params.set('bed', bed)
+    if (patientReference) params.set('patient_reference', patientReference)
+    setLoadingRecords(true)
+    fetch(`/api/v1/nursing/vitals?${params.toString()}`, { signal: controller.signal }).then(async (response) => {
+      const data = await response.json() as { records?: VitalRecordData[]; total?: number; detail?: string }
+      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar as coletas.')
+      return data
+    }).then((data) => {
+      setRecords(data.records ?? [])
+      setTotal(data.total ?? 0)
+      setError('')
+    }).catch((loadError) => {
+      if (loadError instanceof DOMException && loadError.name === 'AbortError') return
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as coletas.')
+      setRecords([])
+      setTotal(0)
+    }).finally(() => { if (!controller.signal.aborted) setLoadingRecords(false) })
+    return () => controller.abort()
+  }, [fromDate, toDate, room, bed, patientReference, offset])
+
+  const visiblePatients = patients.filter((patient) => (!room || patient.room === room) && (!bed || patient.bed === bed))
+  const roomOptions = [...new Set(patients.map((patient) => patient.room))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
+  const bedOptions = [...new Set(patients.filter((patient) => !room || patient.room === room).map((patient) => patient.bed))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
+  const pageNumber = Math.floor(offset / pageSize) + 1
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+
+  function clearFilters() {
+    setFromDate(''); setToDate(''); setRoom(''); setBed(''); setPatientReference(''); setOffset(0)
+  }
+
+  return <section className="nursing-history-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Coletas registradas</h1><p className="welcome-copy">Consulte valores e evolução por paciente, quarto, leito e período.</p></div><button className="button button-secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Voltar à coleta</button></div>
+    <section className="history-filter-panel" aria-label="Filtros das coletas">
+      <div className="section-heading"><div><p className="eyebrow">CONSULTA</p><h2>Filtrar registros</h2></div><span className="module-total">{total} {total === 1 ? 'coleta' : 'coletas'}</span></div>
+      <div className="history-filter-grid">
+        <label className="field"><span className="field-label">Data inicial</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setFromDate(event.target.value); setOffset(0) }} /></label>
+        <label className="field"><span className="field-label">Data final</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setOffset(0) }} /></label>
+        <label className="field"><span className="field-label">Quarto</span><select value={room} onChange={(event) => { setRoom(event.target.value); setBed(''); setPatientReference(''); setOffset(0) }}><option value="">Todos os quartos</option>{roomOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label className="field"><span className="field-label">Leito</span><select value={bed} onChange={(event) => { setBed(event.target.value); setPatientReference(''); setOffset(0) }}><option value="">Todos os leitos</option>{bedOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label className="field history-filter-patient"><span className="field-label">Paciente</span><select value={patientReference} onChange={(event) => { setPatientReference(event.target.value); setOffset(0) }} disabled={loadingPatients}><option value="">Todos os pacientes</option>{visiblePatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label>
+      </div>
+      <button className="button button-secondary history-clear-button" type="button" onClick={clearFilters}>Limpar filtros</button>
+    </section>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {loadingRecords ? <div className="history-empty">Carregando coletas…</div> : <VitalHistory records={records} patients={patients} metric={metric} onMetric={setMetric} />}
+    {!loadingRecords && total > pageSize && <nav className="history-pagination" aria-label="Paginação das coletas"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><span>Página {pageNumber} de {pageCount}</span><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Próxima <ArrowRight size={15} /></button></div></nav>}
+  </section>
+}
+
+function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHistory: () => void }) {
   const [record, setRecord] = useState<RecordFields>({ ...emptyRecord })
   const [notApplicable, setNotApplicable] = useState<string[]>([])
   const [entryState, setEntryState] = useState<EntryState>('draft')
@@ -612,29 +782,23 @@ function NursingPage({ profile }: { profile: Profile }) {
   const [savedAt, setSavedAt] = useState('')
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientRef, setPatientRef] = useState('')
-  const [records, setRecords] = useState<VitalRecordData[]>([])
   const [historyError, setHistoryError] = useState('')
   const [showPatientForm, setShowPatientForm] = useState(false)
   const [newPatient, setNewPatient] = useState({ name: '', room: '', bed: '' })
-  const [historyMetric, setHistoryMetric] = useState('saturation')
 
   useEffect(() => {
     let current = true
-    Promise.all([
-      fetch('/api/v1/nursing/patients'),
-      fetch(`/api/v1/nursing/vitals?limit=100&patient_reference=${encodeURIComponent(patientRef)}`),
-    ]).then(async ([patientResponse, recordResponse]) => {
-      if (!patientResponse.ok || !recordResponse.ok) throw new Error('load-failed')
-      return Promise.all([patientResponse.json(), recordResponse.json()]) as Promise<[{ patients: Patient[] }, { records: VitalRecordData[] }]>
-    }).then(([patientData, recordData]) => {
+    fetch('/api/v1/nursing/patients').then(async (patientResponse) => {
+      if (!patientResponse.ok) throw new Error('load-failed')
+      return await patientResponse.json() as { patients: Patient[] }
+    }).then((patientData) => {
       if (!current) return
       setPatients(patientData.patients)
-      setRecords(recordData.records)
       setHistoryError('')
       if (!patientData.patients.some((item) => item.reference === patientRef) && patientData.patients[0]) setPatientRef(patientData.patients[0].reference)
     }).catch(() => { if (current) setHistoryError('Não foi possível carregar os dados. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
     return () => { current = false }
-  }, [profile.id, patientRef])
+  }, [profile.id])
 
   async function addPatient(event: FormEvent) {
     event.preventDefault()
@@ -673,8 +837,7 @@ function NursingPage({ profile }: { profile: Profile }) {
         }),
       })
       if (!response.ok) throw new Error('save-failed')
-      const saved = await response.json() as VitalRecordData
-      setRecords((items) => [saved, ...items])
+      await response.json()
       setEntryState('saved')
       setSavedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date()))
       setMessage('Coleta salva com sucesso.')
@@ -697,7 +860,7 @@ function NursingPage({ profile }: { profile: Profile }) {
 
   return (
     <section className="nursing-page page-enter">
-      <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Sinais vitais</h1><p className="welcome-copy">Registre sinais vitais e consulte as coletas anteriores por paciente.</p></div><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div>
+      <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Sinais vitais</h1><p className="welcome-copy">Registre uma nova coleta ou abra o histórico para consultar registros por período e localização.</p></div><div className="nursing-title-actions"><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       <div className="patient-strip"><span className="patient-avatar"><Stethoscope size={19} /></span><label className="patient-copy"><span>Paciente · quarto · leito</span><select value={patientRef} onChange={(event) => setPatientRef(event.target.value)}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
       {showPatientForm && <form className="patient-create-form" onSubmit={addPatient}><label className="field"><span className="field-label">Nome do paciente</span><input required value={newPatient.name} onChange={(event) => setNewPatient({ ...newPatient, name: event.target.value })} /></label><label className="field"><span className="field-label">Quarto</span><input required value={newPatient.room} onChange={(event) => setNewPatient({ ...newPatient, room: event.target.value })} /></label><label className="field"><span className="field-label">Leito</span><input required value={newPatient.bed} onChange={(event) => setNewPatient({ ...newPatient, bed: event.target.value })} /></label><button className="button button-primary" type="submit">Salvar paciente</button></form>}
       {historyError && <div className="form-message form-message-error" role="alert">{historyError}</div>}
@@ -757,7 +920,6 @@ function NursingPage({ profile }: { profile: Profile }) {
         </form>
       )}
 
-      <VitalHistory records={records.filter((item) => item.patient_reference === patientRef)} patients={patients} metric={historyMetric} onMetric={setHistoryMetric} />
       <div className="clinical-note"><ShieldCheck size={17} /><span>Os gráficos apresentam os valores registrados, sem interpretação clínica automática.</span></div>
     </section>
   )
