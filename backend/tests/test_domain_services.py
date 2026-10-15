@@ -80,3 +80,26 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     exam = xray.create_request(xray.ExamRequestPayload(patient_reference=reference, exam_label="Radiografia"), xray_user, domain_database["xray"])
     assert referral["patient_reference"] == reference
     assert exam["patient_reference"] == reference
+
+
+def test_psychology_queue_is_persisted_separately_from_social_referrals(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    reference = "123e4567-e89b-12d3-a456-426614174000"
+    monkeypatch.setattr(social, "verify_patient_reference", lambda value: {"reference": value})
+    monkeypatch.setattr(social, "emit_audit_event", lambda *args: None)
+    psychologist = DemoPrincipal("psych-1", "psych", "Psicóloga", "psychology", ["psychology"], {"psychology": ["consultar", "criar"]})
+    social_worker = DemoPrincipal("social-1", "social", "Assistente social", "social", ["social"], {"social": ["consultar", "criar"]})
+    social.create_referral(
+        social.ReferralPayload(patient_reference=reference, referral_type="Acompanhamento social"),
+        social_worker,
+        domain_database["social"],
+    )
+    referral = social.create_psychology_referral(
+        social.ReferralPayload(patient_reference=reference, referral_type="Acolhimento"),
+        psychologist,
+        domain_database["social"],
+    )
+    assert referral["status"] == "open"
+    assert social.list_psychology_referrals(psychologist, domain_database["social"])["referrals"][0]["id"] == referral["id"]
+    assert len(social.list_referrals(social_worker, domain_database["social"])["referrals"]) == 1

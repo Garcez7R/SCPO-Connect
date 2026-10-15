@@ -22,10 +22,12 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
+  Moon,
   Package,
   Pencil,
   Printer,
   ShieldCheck,
+  Sun,
   Search,
   Stethoscope,
   UsersRound,
@@ -109,6 +111,8 @@ const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; d
   { id: 'nutrition', label: 'Nutrição', short: 'Nutrição', icon: HeartPulse, description: 'Acompanhamento nutricional e necessidades alimentares.' },
   { id: 'reception', label: 'Recepção', short: 'Recepção', icon: UsersRound, description: 'Identificação, chegada e direcionamento de pacientes.' },
   { id: 'therapy', label: 'Oficina Terapêutica', short: 'Oficina terapêutica', icon: Activity, description: 'Agenda, participação e acompanhamento das atividades.' },
+  { id: 'psychology', label: 'Psicologia / Psiquiatria', short: 'Psicologia', icon: HeartPulse, description: 'Encaminhamentos e acompanhamento da fila de atendimento.' },
+  { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: ShieldCheck, description: 'Solicitações de higienização e acompanhamento pela manutenção.' },
   { id: 'maintenance', label: 'Fila de manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
   { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Administração institucional, usuários e configurações.' },
   { id: 'admin', label: 'Administração', short: 'Administração', icon: ShieldCheck, description: 'Usuários, funções e permissões.' },
@@ -259,6 +263,8 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [menuOpen, setMenuOpen] = useState(false)
   const [historyPatientReference, setHistoryPatientReference] = useState('')
   const [showBetaPopup, setShowBetaPopup] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem('scpo-theme') === 'dark')
+  const [fontZoom, setFontZoom] = useState(() => Number(window.localStorage.getItem('scpo-font-zoom') || '1'))
   const logoClickCount = useRef(0)
   const logoClickTimer = useRef<number | undefined>(undefined)
   const closeBetaPopup = useCallback(() => setShowBetaPopup(false), [])
@@ -266,6 +272,14 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => () => {
     if (logoClickTimer.current !== undefined) window.clearTimeout(logoClickTimer.current)
   }, [])
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
+    window.localStorage.setItem('scpo-theme', darkMode ? 'dark' : 'light')
+  }, [darkMode])
+  useEffect(() => {
+    document.documentElement.style.zoom = String(fontZoom)
+    window.localStorage.setItem('scpo-font-zoom', String(fontZoom))
+  }, [fontZoom])
   useEffect(() => {
     let timer = 0
     let lastActivity = Date.now()
@@ -374,6 +388,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
           <div className="topbar-right">
             <span className="session-role">{getGreeting()}, {profile.name.split(/\s+/)[0]}</span>
+            <div className="accessibility-controls" aria-label="Acessibilidade e aparência"><button className="icon-button appearance-button" type="button" aria-label={`Aumentar texto (${Math.round(fontZoom * 100)}%)`} title="Aumentar texto" onClick={() => setFontZoom((current) => current >= 1.2 ? 1 : Math.round((current + 0.1) * 10) / 10)}><span>A+</span></button><button className="icon-button appearance-button" type="button" aria-label={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} title={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} onClick={() => setDarkMode((current) => !current)}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}</button></div>
             <InstallAppButton />
             <button className="button button-secondary logout-button" type="button" onClick={async () => { await fetch('/api/v1/auth/logout', { method: 'POST' }); onLogout() }}><LogOut size={15} /> Sair</button>
           </div>
@@ -386,6 +401,8 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'pharmacy' && <PharmacyPage />}
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
           {activeModule === 'maintenance' && <MaintenanceQueuePage />}
+          {activeModule === 'hygiene' && <WorkOrdersPage user={user} defaultDepartment="Higienização" hidePatientLookup />}
+          {activeModule === 'psychology' && <PatientOperationsPage moduleId="psychology" />}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
           {activeModule === 'reception' && <PatientRegistryPage receptionMode />}
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
@@ -911,7 +928,7 @@ function getGreeting() {
   return hour >= 5 && hour < 12 ? 'Bom dia' : hour >= 12 && hour < 18 ? 'Boa tarde' : 'Boa noite'
 }
 
-function WorkOrdersPage({ user }: { user: AuthUser }) {
+function WorkOrdersPage({ user, defaultDepartment = '', hidePatientLookup = false }: { user: AuthUser; defaultDepartment?: string; hidePatientLookup?: boolean }) {
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [loading, setLoading] = useState(true)
@@ -919,7 +936,7 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [reviewing, setReviewing] = useState(false)
-  const [form, setForm] = useState({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' as WorkOrderPriority })
+  const [form, setForm] = useState({ title: '', category: '', description: '', department: defaultDepartment, customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' as WorkOrderPriority })
 
   async function loadOrders() {
     setLoading(true)
@@ -937,7 +954,7 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
   }
 
   useEffect(() => { void loadOrders() }, [user.id])
-  useEffect(() => { fetch('/api/v1/nursing/patients').then(async (response) => { const data = await response.json() as { patients?: Patient[] }; if (response.ok) setPatients(data.patients ?? []) }).catch(() => undefined) }, [])
+  useEffect(() => { if (hidePatientLookup) return; fetch('/api/v1/nursing/patients').then(async (response) => { const data = await response.json() as { patients?: Patient[] }; if (response.ok) setPatients(data.patients ?? []) }).catch(() => undefined) }, [hidePatientLookup])
   const orderPrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: order.title, fields: [['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -963,7 +980,7 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
       const data = await response.json() as WorkOrder & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível abrir a ordem de serviço.')
       setOrders((current) => [data, ...current])
-      setForm({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' })
+      setForm({ title: '', category: '', description: '', department: defaultDepartment, customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' })
       setReviewing(false)
       setNotice('Ordem de serviço aberta. A equipe de manutenção poderá acompanhar a solicitação.')
     } catch (submitError) {
@@ -979,13 +996,13 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
       <div className="section-heading"><div><p className="eyebrow">NOVA SOLICITAÇÃO</p><h2>{reviewing ? 'Revise antes de enviar' : 'Descreva o que precisa'}</h2><p className="welcome-copy">{reviewing ? 'Confira os dados do chamado e confirme a abertura.' : 'Informe o tipo de serviço, o local e o que precisa ser feito.'}</p></div></div>
       {!reviewing ? <>
         <div className="field-grid field-grid-two">
-          <label className="field"><span className="field-label">Tipo de serviço</span><select required value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option value="">Selecione uma categoria</option><option>Elétrica</option><option>Hidráulica</option><option>Climatização</option><option>Equipamento</option><option>Estrutura e mobiliário</option><option>Rede e telefonia</option><option>Outro serviço</option></select></label>
+          <label className="field"><span className="field-label">Tipo de serviço</span><select required value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option value="">Selecione uma categoria</option><option>Elétrica</option><option>Hidráulica</option><option>Climatização</option><option>Higienização</option><option>Equipamento</option><option>Estrutura e mobiliário</option><option>Rede e telefonia</option><option>Outro serviço</option></select></label>
           <label className="field"><span className="field-label">Assunto</span><input required minLength={5} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: torneira com vazamento" /></label>
-          <label className="field"><span className="field-label">Setor solicitante</span><select required value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value, customDepartment: '' })}><option value="">Selecione seu setor</option><option>Enfermagem</option><option>Farmácia</option><option>Raio X</option><option>Serviço Social</option><option>Nutrição</option><option>Higienização</option><option>Recepção</option><option>Administração</option><option>Outro</option></select></label>
+          <label className="field"><span className="field-label">Setor solicitante</span><select required value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value, customDepartment: '' })}><option value="">Selecione seu setor</option><option>Enfermagem</option><option>Farmácia</option><option>Raio X</option><option>Serviço Social</option><option>Nutrição</option><option>Higienização</option><option>Psicologia / Psiquiatria</option><option>Recepção</option><option>Administração</option><option>Outro</option></select></label>
           {form.department === 'Outro' && <label className="field"><span className="field-label">Informe o setor</span><input required minLength={2} maxLength={100} value={form.customDepartment} onChange={(event) => setForm({ ...form, customDepartment: event.target.value })} /></label>}
           <label className="field"><span className="field-label">Unidade</span><select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione a unidade</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outro</option></select></label>
           <label className="field"><span className="field-label">Quarto, sala ou local</span><input maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
-          <label className="field"><span className="field-label">Paciente relacionado (opcional)</span><select value={form.patientReference} onChange={(event) => setForm({ ...form, patientReference: event.target.value })}><option value="">Sem vínculo com paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label>
+          {!hidePatientLookup && <label className="field"><span className="field-label">Paciente relacionado (opcional)</span><select value={form.patientReference} onChange={(event) => setForm({ ...form, patientReference: event.target.value })}><option value="">Sem vínculo com paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label>}
           <label className="field"><span className="field-label">Número do patrimônio (opcional)</span><input maxLength={60} value={form.assetCode} onChange={(event) => setForm({ ...form, assetCode: event.target.value })} placeholder="Etiqueta do equipamento" /></label>
           <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as WorkOrderPriority })}><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente quando houver impacto imediato no funcionamento ou na segurança.</span></label>
         </div>
@@ -1061,7 +1078,7 @@ function MaintenanceQueuePage() {
     <div className="page-title-row"><div><p className="eyebrow">EQUIPE DE MANUTENÇÃO</p><h1>Fila de ordens de serviço</h1><p className="welcome-copy">Consulte solicitações de todos os setores e atualize o andamento do serviço.</p></div><span className="module-icon module-icon-maintenance"><Wrench size={23} /></span></div>
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
     <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions"><button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
-      <form className="maintenance-filters" onSubmit={(event) => { event.preventDefault(); void loadQueue(filters) }}><label className="field"><span className="field-label">De</span><input type="date" value={filters.from_date} onChange={(event) => setFilters({ ...filters, from_date: event.target.value })} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={filters.to_date} onChange={(event) => setFilters({ ...filters, to_date: event.target.value })} /></label><label className="field"><span className="field-label">Tipo de serviço</span><select value={filters.service_type} onChange={(event) => setFilters({ ...filters, service_type: event.target.value })}><option value="">Todos</option>{['Elétrica', 'Hidráulica', 'Climatização', 'Equipamento', 'Estrutura e mobiliário', 'Rede e telefonia', 'Outro serviço'].map((type) => <option key={type}>{type}</option>)}</select></label><label className="field"><span className="field-label">Setor solicitante</span><input value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })} placeholder="Todos os setores" /></label><label className="field"><span className="field-label">Status</span><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos</option>{Object.entries(workOrderStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select value={filters.priority} onChange={(event) => setFilters({ ...filters, priority: event.target.value })}><option value="">Todas</option>{Object.entries(workOrderPriorities).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Assunto, local ou solicitante" /></label><div className="maintenance-filter-actions"><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Filtrar</button><button className="button button-secondary" type="button" onClick={() => { const empty = { from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' }; setFilters(empty); void loadQueue(empty) }}>Limpar</button></div></form>
+      <form className="maintenance-filters" onSubmit={(event) => { event.preventDefault(); void loadQueue(filters) }}><label className="field"><span className="field-label">De</span><input type="date" value={filters.from_date} onChange={(event) => setFilters({ ...filters, from_date: event.target.value })} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={filters.to_date} onChange={(event) => setFilters({ ...filters, to_date: event.target.value })} /></label><label className="field"><span className="field-label">Tipo de serviço</span><select value={filters.service_type} onChange={(event) => setFilters({ ...filters, service_type: event.target.value })}><option value="">Todos</option>{['Elétrica', 'Hidráulica', 'Climatização', 'Higienização', 'Equipamento', 'Estrutura e mobiliário', 'Rede e telefonia', 'Outro serviço'].map((type) => <option key={type}>{type}</option>)}</select></label><label className="field"><span className="field-label">Setor solicitante</span><input value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })} placeholder="Todos os setores" /></label><label className="field"><span className="field-label">Status</span><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos</option>{Object.entries(workOrderStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select value={filters.priority} onChange={(event) => setFilters({ ...filters, priority: event.target.value })}><option value="">Todas</option>{Object.entries(workOrderPriorities).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Assunto, local ou solicitante" /></label><div className="maintenance-filter-actions"><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Filtrar</button><button className="button button-secondary" type="button" onClick={() => { const empty = { from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' }; setFilters(empty); void loadQueue(empty) }}>Limpar</button></div></form>
       <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{orders.length} ordens</strong>{Object.entries(workOrderStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status] ?? 0}</b></span>)}</div>
       {loading ? <div className="history-empty">Carregando fila…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} editable onStatusChange={(status) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status, note: '' }), status } }))} status={changes[order.id]?.status ?? order.status} note={changes[order.id]?.note ?? ''} onNoteChange={(note) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status }), note } }))} onSave={() => void saveStatus(order)} saving={false} />)}</div> : <div className="history-empty"><CheckCircle2 size={20} /><span>Nenhuma ordem de serviço corresponde aos filtros.</span></div>}
     </section>
@@ -1693,7 +1710,7 @@ const moduleLabels: Record<string, string> = {
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção',
   management: 'Gestão Hospitalar', admin: 'Administração',
 }
-const accessModules = Object.entries(moduleLabels).filter(([module]) => !['admin', 'hygiene', 'psychology'].includes(module))
+const accessModules = Object.entries(moduleLabels).filter(([module]) => module !== 'admin')
 
 function AdminPage() {
   const [users, setUsers] = useState<Account[]>([])
@@ -1855,12 +1872,13 @@ function NutritionPage() {
   </section>
 }
 
-type PatientOperationModule = 'xray' | 'social'
+type PatientOperationModule = 'xray' | 'social' | 'psychology'
 type PatientOperation = { id: number; patient_reference: string; exam_label?: string; referral_type?: string; status: string; created_at: string }
 
 function PatientOperationsPage({ moduleId }: { moduleId: PatientOperationModule }) {
   const isXray = moduleId === 'xray'
-  const endpoint = isXray ? '/api/v1/xray/requests' : '/api/v1/social/referrals'
+  const isPsychology = moduleId === 'psychology'
+  const endpoint = isXray ? '/api/v1/xray/requests' : isPsychology ? '/api/v1/psychology/referrals' : '/api/v1/social/referrals'
   const [patients, setPatients] = useState<Patient[]>([])
   const [items, setItems] = useState<PatientOperation[]>([])
   const [patientReference, setPatientReference] = useState('')
@@ -1890,15 +1908,15 @@ function PatientOperationsPage({ moduleId }: { moduleId: PatientOperationModule 
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patient_reference: patientReference, ...(isXray ? { exam_label: description.trim() } : { referral_type: description.trim() }) }) })
       const data = await response.json() as PatientOperation & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível registrar.')
-      setItems((current) => [data, ...current]); setDescription(''); setPatientReference(''); setNotice(isXray ? 'Solicitação de exame registrada.' : 'Encaminhamento registrado.')
+      setItems((current) => [data, ...current]); setDescription(''); setPatientReference(''); setNotice(isXray ? 'Solicitação de exame registrada.' : isPsychology ? 'Encaminhamento para atendimento registrado.' : 'Encaminhamento registrado.')
     } catch (submitError) { setError(submitError instanceof Error ? submitError.message : 'Falha ao registrar.') }
     finally { setSaving(false) }
   }
   const patientName = (reference: string) => { const patient = patients.find((item) => item.reference === reference); return patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente não localizado' }
-  return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">Registros vinculados ao cadastro compartilhado de pacientes.</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <Activity size={23} /> : <UsersRound size={23} />}</span></div>
+  return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : isPsychology ? 'PSICOLOGIA / PSIQUIATRIA' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : isPsychology ? 'Fila de atendimento' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">Registros vinculados ao cadastro compartilhado de pacientes.</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <Activity size={23} /> : moduleId === 'psychology' ? <HeartPulse size={23} /> : <UsersRound size={23} />}</span></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}{notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <form className="work-order-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVO REGISTRO</p><h2>{isXray ? 'Solicitar exame' : 'Registrar encaminhamento'}</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Paciente · quarto · leito</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione um paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label><label className="field"><span className="field-label">{isXray ? 'Exame solicitado' : 'Tipo de encaminhamento'}</span><input required minLength={2} maxLength={80} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={isXray ? 'Ex.: radiografia de tórax' : 'Ex.: acompanhamento familiar'} /></label></div><button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Salvando…' : 'Registrar'}</button></form>
-    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO</p><h2>{isXray ? 'Solicitações recentes' : 'Encaminhamentos recentes'}</h2></div><span className="module-total">{items.length}</span></div>{loading ? <div className="history-empty">Carregando registros…</div> : items.length ? <div className="work-order-list">{items.map((item) => <article className="work-order-card" key={item.id}><div><h3>{patientName(item.patient_reference)}</h3><p>{isXray ? item.exam_label : item.referral_type}</p></div><span>{item.status}</span><time>{dateTime(item.created_at)}</time></article>)}</div> : <div className="history-empty">Nenhum registro encontrado.</div>}</section>
+    <form className="work-order-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVO REGISTRO</p><h2>{isXray ? 'Solicitar exame' : isPsychology ? 'Encaminhar para atendimento' : 'Registrar encaminhamento'}</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Paciente · quarto · leito</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione um paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label><label className="field"><span className="field-label">{isXray ? 'Exame solicitado' : isPsychology ? 'Tipo de atendimento' : 'Tipo de encaminhamento'}</span><input required minLength={2} maxLength={80} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={isXray ? 'Ex.: radiografia de tórax' : isPsychology ? 'Ex.: acolhimento, avaliação, acompanhamento' : 'Ex.: acompanhamento familiar'} /></label></div>{isPsychology && <p className="work-order-privacy">Registre apenas o tipo de atendimento nesta fila. Não inclua anotações clínicas ou detalhes sensíveis.</p>}<button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Salvando…' : 'Registrar'}</button></form>
+    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO</p><h2>{isXray ? 'Solicitações recentes' : isPsychology ? 'Encaminhamentos recentes' : 'Encaminhamentos recentes'}</h2></div><span className="module-total">{items.length}</span></div>{loading ? <div className="history-empty">Carregando registros…</div> : items.length ? <div className="work-order-list">{items.map((item) => <article className="work-order-card" key={item.id}><div><h3>{patientName(item.patient_reference)}</h3><p>{isXray ? item.exam_label : item.referral_type}</p></div><span>{item.status === 'open' ? 'Aberto' : item.status}</span><time>{dateTime(item.created_at)}</time></article>)}</div> : <div className="history-empty">Nenhum registro encontrado.</div>}</section>
   </section>
 }
 

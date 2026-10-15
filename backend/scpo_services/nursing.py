@@ -281,7 +281,7 @@ class VoidPayload(BaseModel):
         return value
 
 
-PATIENT_MODULES = ("patients", "nursing", "reception", "therapy", "nutrition", "social", "xray", "maintenance", "management")
+PATIENT_MODULES = ("patients", "nursing", "reception", "therapy", "nutrition", "social", "xray", "maintenance", "psychology", "management")
 
 
 async def authorize_patient_module(request: Request) -> DemoPrincipal:

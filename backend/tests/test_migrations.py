@@ -39,6 +39,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         assert len(tables) == 3
     elif service == "maintenance":
         assert len(tables) == 3
+    elif service == "social":
+        assert len(tables) == 3
+        assert "psychology_referrals" in tables
     elif service == "pharmacy":
         assert len(tables) == 2
         assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}

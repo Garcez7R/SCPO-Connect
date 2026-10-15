@@ -30,6 +30,16 @@ class Referral(Base):
     )
 
 
+class PsychologyReferral(Base):
+    __tablename__ = "psychology_referrals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    referral_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 def get_social_db():
     yield from database_session("social")
 
@@ -42,6 +52,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="SCPO Connect · Serviço Social", version="1.0.0", lifespan=lifespan)
 SOCIAL_ROLE = require_demo_role("social")
+PSYCHOLOGY_ROLE = require_demo_role("psychology")
 
 
 class ReferralPayload(BaseModel):
@@ -87,6 +98,45 @@ def create_referral(
     db.refresh(referral)
     emit_audit_event(principal, "social", "social_referral_created", referral.patient_reference)
     return serialize_referral(referral)
+
+
+@app.get("/api/v1/psychology/referrals")
+def list_psychology_referrals(
+    principal: Annotated[DemoPrincipal, Depends(PSYCHOLOGY_ROLE)],
+    db: Annotated[Session, Depends(get_social_db)],
+) -> dict[str, list[dict[str, object]]]:
+    rows = db.scalars(
+        select(PsychologyReferral).order_by(PsychologyReferral.created_at.desc())
+    ).all()
+    emit_audit_event(principal, "psychology", "psychology_referrals_read", "psychology_referrals")
+    return {"referrals": [serialize_psychology_referral(item) for item in rows]}
+
+
+@app.post("/api/v1/psychology/referrals", status_code=201)
+def create_psychology_referral(
+    payload: ReferralPayload,
+    principal: Annotated[DemoPrincipal, Depends(PSYCHOLOGY_ROLE)],
+    db: Annotated[Session, Depends(get_social_db)],
+) -> dict[str, object]:
+    verify_patient_reference(payload.patient_reference)
+    referral = PsychologyReferral(
+        **payload.model_dump(), status="open", created_at=datetime.now(UTC)
+    )
+    db.add(referral)
+    db.commit()
+    db.refresh(referral)
+    emit_audit_event(principal, "psychology", "psychology_referral_created", str(referral.id))
+    return serialize_psychology_referral(referral)
+
+
+def serialize_psychology_referral(referral: PsychologyReferral) -> dict[str, object]:
+    return {
+        "id": referral.id,
+        "patient_reference": referral.patient_reference,
+        "referral_type": referral.referral_type,
+        "status": referral.status,
+        "created_at": referral.created_at.isoformat(),
+    }
 
 
 def serialize_referral(referral: Referral) -> dict[str, object]:

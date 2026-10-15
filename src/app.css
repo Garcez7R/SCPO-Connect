@@ -121,6 +121,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .breadcrumbs strong { color: var(--ink); font-weight: 600; }
 .crumb-divider { color: #b7c2ca; }
 .topbar-right { gap: 11px; }
+.accessibility-controls { display: flex; align-items: center; gap: 5px; }
+.appearance-button { display: inline-flex; min-width: 38px; min-height: 38px; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.appearance-button > span { font-size: 13px; font-weight: 700; }
 .profile-switch-label { color: var(--subtle); font-size: 11px; }
 .profile-switch { width: 190px; min-height: 34px; padding: 0 27px 0 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink); font-size: 11px; }
 .page-content { width: min(100%, 1380px); min-height: calc(100vh - 105px); margin: 0 auto; padding: 33px 38px 30px; }
@@ -171,9 +174,9 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-icon-admin { background: #edf1f5; color: #516778; }
 .module-icon-psychology { background: #f3eef9; color: #73549a; }
 .module-icon-maintenance { background: #edf3f5; color: #426a7a; }
-.module-card-title { margin-top: 12px; color: var(--ink); font-size: 13px; font-weight: 600; }
-.module-card-description { max-width: 29ch; margin-top: 4px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
-.module-card-status { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 13px; color: var(--muted); font-size: 10px; }
+.module-card-title { margin-top: 12px; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.35; }
+.module-card-description { max-width: 34ch; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.module-card-status { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 13px; color: var(--muted); font-size: 11px; }
 .module-card-status .status-dot { width: 6px; height: 6px; }
 .status-ready { color: #377052; }
 .status-later { color: var(--subtle); }
@@ -610,7 +613,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .patient-card-identifiers { color: var(--ink) !important; font-weight: 600; }
 .patient-modal-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; align-items: center; justify-items: center; padding: 3vh 3vw; background: rgb(15 28 38 / 58%); overflow: auto; }
 .patient-detail-modal { display: grid; position: relative; width: min(1100px, 94vw); height: min(90vh, 900px); max-height: 90dvh; gap: 20px; padding: 24px clamp(18px, 4vw, 48px); overflow: auto; border: 1px solid rgb(255 255 255 / 75%); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 28%); }
-.patient-detail-toolbar { position: fixed; z-index: 1002; top: 22px; right: clamp(20px, 5vw, 68px); display: flex; gap: 8px; }
+.patient-detail-toolbar { position: fixed; z-index: 1002; top: calc(3vh + 64px); right: calc(3vw + 20px); display: flex; gap: 8px; }
 .patient-follow-up-dialog { display: grid; align-self: stretch; justify-self: stretch; gap: 20px; padding: 24px clamp(18px, 5vw, 64px); overflow: auto; background: var(--surface); }
 .patient-follow-up-dialog h2 { margin: 3px 0; }
 .patient-observation-form,.patient-observation-list { display: grid; gap: 14px; }
@@ -623,7 +626,8 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .patient-archive-dialog { display: grid; align-self: center; justify-self: center; width: min(520px, calc(100% - 32px)); gap: 16px; padding: 24px; border-radius: 12px; background: var(--surface); box-shadow: 0 24px 80px rgb(0 0 0 / 25%); }
 .patient-archive-dialog h2,.patient-archive-dialog p { margin: 0; }
 .patient-archive-dialog p { color: var(--muted); line-height: 1.6; }
-.patient-detail-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.patient-detail-header { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 155px 16px 0; border-bottom: 1px solid var(--line); }
+.patient-detail-header > button { position: absolute; top: -5px; right: 0; z-index: 1004; }
 .patient-detail-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .patient-detail-identity > img { width: 68px; height: 68px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
 .patient-detail-identity h2 { margin: 3px 0; font-size: 21px; }
@@ -639,7 +643,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .patient-detail-sections .patient-detail-alert { border-color: #efcfaa; background: #fff9f0; }
 .patient-detail-alert h3, .patient-detail-alert p { color: #8a4e11; }
 .patient-detail-actions { display: flex; justify-content: flex-end; gap: 9px; }
-@media (max-width: 700px) { .patient-modal-backdrop { padding: 2vh 2vw; } .patient-detail-modal { width: 96vw; height: 94dvh; max-height: 94dvh; gap: 15px; padding: 16px; border-radius: 12px; } .patient-detail-header { align-items: flex-start; padding-right: 96px; } .patient-detail-toolbar { top: 12px; right: 12px; gap: 5px; } .patient-detail-toolbar .button { min-height: 38px; padding: 7px; font-size: 10px; } .patient-detail-identity > img { width: 54px; height: 54px; } .patient-detail-identity h2 { font-size: 17px; } .patient-detail-grid { grid-template-columns: 1fr; } .patient-detail-actions { flex-direction: column; } .patient-detail-actions .button { width: 100%; min-height: 44px; } }
+@media (max-width: 700px) { .patient-modal-backdrop { padding: 2vh 2vw; } .patient-detail-modal { width: 96vw; height: 94dvh; max-height: 94dvh; gap: 15px; padding: 16px; border-radius: 12px; } .patient-detail-header { align-items: flex-start; padding: 48px 0 14px; } .patient-detail-header > button { top: 0; right: 0; } .patient-detail-toolbar { top: calc(2vh + 58px); right: 3vw; gap: 5px; } .patient-detail-toolbar .button { min-height: 38px; padding: 7px; font-size: 11px; } .patient-detail-identity > img { width: 54px; height: 54px; } .patient-detail-identity h2 { font-size: 17px; } .patient-detail-grid { grid-template-columns: 1fr; } .patient-detail-actions { flex-direction: column; } .patient-detail-actions .button { width: 100%; min-height: 44px; } }
 @media print { body.print-patient-detail * { visibility: hidden !important; } body.print-patient-detail .patient-detail-modal, body.print-patient-detail .patient-detail-modal * { visibility: visible !important; } body.print-patient-detail .patient-modal-backdrop { position: static; display: block; overflow: visible; background: #fff; } body.print-patient-detail .patient-detail-modal { position: absolute; inset: 0; width: 100%; height: auto; max-height: none; padding: 0; overflow: visible; border: 0; box-shadow: none; } body.print-patient-detail .patient-detail-header > button, body.print-patient-detail .patient-detail-actions, body.print-patient-detail .patient-detail-toolbar, body.print-patient-detail .patient-follow-up-dialog { display: none !important; } }
 .button-danger { min-height: 38px; padding: 7px 10px; border: 1px solid #e6c6c6; border-radius: 5px; background: #fff7f6; color: #9a3d3d; font-size: 11px; font-weight: 600; cursor: pointer; }
 .button-danger:hover { background: #fcebea; }
@@ -962,3 +966,41 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
   .nursing-page .history-chart { height: 160px; }
 }
  .print-selection-panel{display:grid;gap:14px;padding:18px;border:1px solid #dce5eb;border-radius:16px;background:#fff;margin:18px 0}.print-selection-heading{display:flex;justify-content:space-between;align-items:center;gap:14px}.print-selection-heading h3{margin:3px 0}.print-selection-heading small{color:#607486}.print-selection-filters{display:flex;align-items:end;flex-wrap:wrap;gap:10px}.print-selection-filters .field{flex:1 1 150px}.print-selection-list{display:grid;gap:8px;max-height:280px;overflow:auto}.print-selection-list>label{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid #e5ebef;border-radius:10px}.print-selection-list>label>span{flex:1}.print-selection-list time{color:#607486;font-size:.85rem}.print-selection-list input[type=checkbox]{width:18px;height:18px}@media(max-width:640px){.print-selection-heading{align-items:flex-start;flex-direction:column}.print-selection-list>label{flex-wrap:wrap}.print-selection-list time{margin-left:auto}}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #101820;
+  --surface: #192630;
+  --ink: #e9f0f4;
+  --muted: #bdc9d0;
+  --subtle: #9dabb4;
+  --line: #354650;
+  --blue: #79bfdf;
+  --blue-dark: #9ad7f1;
+  --blue-pale: #243d49;
+  --green: #79c59e;
+  --green-pale: #233b30;
+  --amber: #efc16e;
+  --amber-pale: #44371f;
+  --red: #f08c91;
+  --red-pale: #48292d;
+  --shadow: 0 2px 12px rgb(0 0 0 / 20%);
+  background: var(--page);
+  color: var(--ink);
+}
+html[data-theme="dark"] body { background: var(--page); color: var(--ink); }
+html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
+html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
+html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, .module-card-status, .field-hint, .patient-registry-identity p, .patient-registry-identity small, .work-order-meta, .pharmacy-item-description, .pharmacy-item-meta, .session-row, .app-footer, .breadcrumbs, .history-empty) { color: var(--muted); }
+html[data-theme="dark"] :is(.nav-link:hover, .appearance-button:hover, .button-secondary:hover) { background-color: #263944; color: var(--ink); }
+html[data-theme="dark"] .patient-modal-backdrop { background: rgb(0 0 0 / 72%); }
+html[data-theme="dark"] :is(.pharmacy-summary-warning, .pharmacy-level-count.level-attention) { border-color: #705b31; background: #332d20; }
+html[data-theme="dark"] :is(.pharmacy-summary-danger, .pharmacy-level-count.level-critical) { border-color: #693b40; background: #352528; }
+html[data-theme="dark"] .pharmacy-level-count.level-healthy { border-color: #315744; background: #21372d; }
+html[data-theme="dark"] .module-card-status .status-dot { background: currentColor; }
+html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { filter: none; }
+@media (max-width: 620px) {
+  .accessibility-controls { gap: 3px; }
+  .appearance-button { width: 34px; min-width: 34px; min-height: 36px; padding: 5px; }
+  .install-button { min-height: 36px; padding: 6px 7px; font-size: 10px; }
+}
