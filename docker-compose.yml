@@ -1,0 +1,153 @@
+x-backend-environment: &backend-environment
+  PYTHONPATH: /app/backend
+  SCPO_SERVICE_TOKEN: ${SCPO_SERVICE_TOKEN:?Configure SCPO_SERVICE_TOKEN in .env}
+  SCPO_ACCESS_API_URL: http://access:8000
+
+x-backend-service: &backend-service
+  build:
+    context: .
+    dockerfile: Dockerfile.backend
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER:?Configure POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Configure POSTGRES_PASSWORD in .env}
+      SCPO_ACCESS_DB_USER: ${SCPO_ACCESS_DB_USER:?Configure SCPO_ACCESS_DB_USER in .env}
+      SCPO_ACCESS_DB_PASSWORD: ${SCPO_ACCESS_DB_PASSWORD:?Configure SCPO_ACCESS_DB_PASSWORD in .env}
+      SCPO_AUDIT_DB_USER: ${SCPO_AUDIT_DB_USER:?Configure SCPO_AUDIT_DB_USER in .env}
+      SCPO_AUDIT_DB_PASSWORD: ${SCPO_AUDIT_DB_PASSWORD:?Configure SCPO_AUDIT_DB_PASSWORD in .env}
+      SCPO_NURSING_DB_USER: ${SCPO_NURSING_DB_USER:?Configure SCPO_NURSING_DB_USER in .env}
+      SCPO_NURSING_DB_PASSWORD: ${SCPO_NURSING_DB_PASSWORD:?Configure SCPO_NURSING_DB_PASSWORD in .env}
+      SCPO_PHARMACY_DB_USER: ${SCPO_PHARMACY_DB_USER:?Configure SCPO_PHARMACY_DB_USER in .env}
+      SCPO_PHARMACY_DB_PASSWORD: ${SCPO_PHARMACY_DB_PASSWORD:?Configure SCPO_PHARMACY_DB_PASSWORD in .env}
+      SCPO_SOCIAL_DB_USER: ${SCPO_SOCIAL_DB_USER:?Configure SCPO_SOCIAL_DB_USER in .env}
+      SCPO_SOCIAL_DB_PASSWORD: ${SCPO_SOCIAL_DB_PASSWORD:?Configure SCPO_SOCIAL_DB_PASSWORD in .env}
+      SCPO_XRAY_DB_USER: ${SCPO_XRAY_DB_USER:?Configure SCPO_XRAY_DB_USER in .env}
+      SCPO_XRAY_DB_PASSWORD: ${SCPO_XRAY_DB_PASSWORD:?Configure SCPO_XRAY_DB_PASSWORD in .env}
+      SCPO_MAINTENANCE_DB_USER: ${SCPO_MAINTENANCE_DB_USER:?Configure SCPO_MAINTENANCE_DB_USER in .env}
+      SCPO_MAINTENANCE_DB_PASSWORD: ${SCPO_MAINTENANCE_DB_PASSWORD:?Configure SCPO_MAINTENANCE_DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init/01-create-databases.sh:/docker-entrypoint-initdb.d/01-create-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [backend]
+
+  access:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=access alembic upgrade head && uvicorn scpo_services.access:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: access
+      SCPO_SESSION_SIGNING_KEY: ${SCPO_SESSION_SIGNING_KEY:?Configure SCPO_SESSION_SIGNING_KEY in .env}
+      SCPO_MFA_ENCRYPTION_KEY: ${SCPO_MFA_ENCRYPTION_KEY:?Configure SCPO_MFA_ENCRYPTION_KEY in .env}
+      SCPO_BOOTSTRAP_ADMIN_TOKEN: ${SCPO_BOOTSTRAP_ADMIN_TOKEN:?Configure SCPO_BOOTSTRAP_ADMIN_TOKEN in .env}
+      SCPO_COOKIE_SECURE: "true"
+      SCPO_AUDIT_API_URL: http://audit:8000
+      SCPO_ACCESS_DATABASE_URL: postgresql+psycopg://${SCPO_ACCESS_DB_USER}:${SCPO_ACCESS_DB_PASSWORD}@db:5432/scpo_access
+    networks: [backend]
+
+  audit:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=audit alembic upgrade head && uvicorn scpo_services.audit:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: audit
+      SCPO_AUDIT_DATABASE_URL: postgresql+psycopg://${SCPO_AUDIT_DB_USER}:${SCPO_AUDIT_DB_PASSWORD}@db:5432/scpo_audit
+    networks: [backend]
+
+  nursing:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=nursing alembic upgrade head && uvicorn scpo_services.nursing:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: nursing
+      SCPO_NURSING_DATABASE_URL: postgresql+psycopg://${SCPO_NURSING_DB_USER}:${SCPO_NURSING_DB_PASSWORD}@db:5432/scpo_nursing
+    networks: [backend]
+
+  pharmacy:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=pharmacy alembic upgrade head && uvicorn scpo_services.pharmacy:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: pharmacy
+      SCPO_PHARMACY_DATABASE_URL: postgresql+psycopg://${SCPO_PHARMACY_DB_USER}:${SCPO_PHARMACY_DB_PASSWORD}@db:5432/scpo_pharmacy
+    networks: [backend]
+
+  social:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=social alembic upgrade head && uvicorn scpo_services.social:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: social
+      SCPO_SOCIAL_DATABASE_URL: postgresql+psycopg://${SCPO_SOCIAL_DB_USER}:${SCPO_SOCIAL_DB_PASSWORD}@db:5432/scpo_social
+    networks: [backend]
+
+  xray:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=xray alembic upgrade head && uvicorn scpo_services.xray:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: xray
+      SCPO_XRAY_DATABASE_URL: postgresql+psycopg://${SCPO_XRAY_DB_USER}:${SCPO_XRAY_DB_PASSWORD}@db:5432/scpo_xray
+    networks: [backend]
+
+  maintenance:
+    <<: *backend-service
+    command: ["sh", "-c", "SCPO_SERVICE=maintenance alembic upgrade head && uvicorn scpo_services.maintenance:app --host 0.0.0.0 --port 8000"]
+    environment:
+      <<: *backend-environment
+      SCPO_SERVICE: maintenance
+      SCPO_MAINTENANCE_DATABASE_URL: postgresql+psycopg://${SCPO_MAINTENANCE_DB_USER}:${SCPO_MAINTENANCE_DB_PASSWORD}@db:5432/scpo_maintenance
+    networks: [backend]
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    networks: [backend]
+
+  proxy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      SCPO_INTERNAL_HOST: ${SCPO_INTERNAL_HOST:-localhost}
+      SCPO_HTTPS_PORT: ${SCPO_HTTPS_PORT:-8443}
+    ports:
+      - "${SCPO_BIND_ADDRESS:-0.0.0.0}:${SCPO_HTTP_PORT:-8080}:80"
+      - "${SCPO_BIND_ADDRESS:-0.0.0.0}:${SCPO_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - access
+      - audit
+      - nursing
+      - pharmacy
+      - social
+      - xray
+      - maintenance
+    networks: [backend]
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    driver: bridge

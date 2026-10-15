@@ -1,0 +1,17 @@
+{
+  "name": "SCPO Connect",
+  "short_name": "SCPO Connect",
+  "description": "Plataforma interna de apoio às equipes da Santa Casa de Pedro Osório.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fa",
+  "theme_color": "#246b8e",
+  "display_override": ["standalone", "minimal-ui"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/scpo-connect-install-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/scpo-connect-install-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

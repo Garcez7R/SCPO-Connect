@@ -1,0 +1,40 @@
+{
+	admin off
+	auto_https disable_redirects
+}
+
+{$SCPO_INTERNAL_HOST:127.0.0.1}:{$SCPO_DEV_HTTPS_PORT:8444} {
+	tls internal
+	encode zstd gzip
+	root * ./dist
+
+	handle /api/v1/auth/* {
+		reverse_proxy 127.0.0.1:8002
+	}
+	handle /api/v1/access/* {
+		reverse_proxy 127.0.0.1:8002
+	}
+	handle /api/v1/audit/* {
+		reverse_proxy 127.0.0.1:8006
+	}
+	handle /api/v1/nursing/* {
+		reverse_proxy 127.0.0.1:8001
+	}
+	handle /api/v1/pharmacy/* {
+		reverse_proxy 127.0.0.1:8003
+	}
+	handle /api/v1/xray/* {
+		reverse_proxy 127.0.0.1:8004
+	}
+	handle /api/v1/social/* {
+		reverse_proxy 127.0.0.1:8005
+	}
+	handle /api/v1/maintenance/* {
+		reverse_proxy 127.0.0.1:8007
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

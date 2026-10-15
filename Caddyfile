@@ -1,0 +1,55 @@
+{
+	auto_https disable_redirects
+}
+
+http://{$SCPO_INTERNAL_HOST:localhost} {
+	redir https://{$SCPO_INTERNAL_HOST:localhost}:{$SCPO_HTTPS_PORT:8443}{uri} 308
+}
+
+{$SCPO_INTERNAL_HOST:localhost} {
+	tls internal
+
+	@auth path /api/v1/auth/*
+	handle @auth {
+		reverse_proxy access:8000
+	}
+
+	@access path /api/v1/access/*
+	handle @access {
+		reverse_proxy access:8000
+	}
+
+	@audit path /api/v1/audit/*
+	handle @audit {
+		reverse_proxy audit:8000
+	}
+
+	@nursing path /api/v1/nursing/*
+	handle @nursing {
+		reverse_proxy nursing:8000
+	}
+
+	@pharmacy path /api/v1/pharmacy/*
+	handle @pharmacy {
+		reverse_proxy pharmacy:8000
+	}
+
+	@social path /api/v1/social/*
+	handle @social {
+		reverse_proxy social:8000
+	}
+
+	@xray path /api/v1/xray/*
+	handle @xray {
+		reverse_proxy xray:8000
+	}
+
+	@maintenance path /api/v1/maintenance/*
+	handle @maintenance {
+		reverse_proxy maintenance:8000
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

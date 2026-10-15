@@ -1,0 +1,34 @@
+import { createHash } from 'node:crypto'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = fileURLToPath(new URL('../dist/', import.meta.url))
+async function files(dir) {
+  const entries = await readdir(dir, { withFileTypes: true })
+  return (await Promise.all(entries.map((entry) => entry.isDirectory() ? files(join(dir, entry.name)) : join(dir, entry.name)))).flat()
+}
+const staticFiles = await files(root)
+const fingerprint = await Promise.all(staticFiles.filter((file) => !file.endsWith('/sw.js')).map(async (file) => `${relative(root, file)}:${createHash('sha256').update(await readFile(file)).digest('hex')}`))
+const version = createHash('sha256').update(fingerprint.sort().join('\n')).digest('hex').slice(0, 16)
+const source = `const CACHE = 'scpo-connect-${version}';
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil((async () => {
+  for (const key of await caches.keys()) if (key.startsWith('scpo-connect-') && key !== CACHE) await caches.delete(key);
+  await self.clients.claim();
+})()));
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (!/\\.(?:js|css|png|svg|woff2?)$/.test(url.pathname)) return;
+  event.respondWith((async () => {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    const response = await fetch(request);
+    if (response.ok) (await caches.open(CACHE)).put(request, response.clone());
+    return response;
+  })());
+});
+`
+await writeFile(join(root, 'sw.js'), source)
