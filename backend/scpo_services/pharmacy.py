@@ -26,6 +26,12 @@ class InventoryItem(Base):
     unit: Mapped[str] = mapped_column(String(24), nullable=False)
     lot: Mapped[str] = mapped_column(String(80), nullable=False)
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    barcode: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(40), nullable=False, default="Medicamento")
+    presentation: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    storage_location: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    minimum_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -54,6 +60,12 @@ class InventoryPayload(BaseModel):
     unit: str = Field(min_length=1, max_length=24)
     lot: str = Field(min_length=1, max_length=80)
     expiry_date: date
+    barcode: str = Field(default="", max_length=40)
+    category: str = Field(default="Medicamento", min_length=2, max_length=40)
+    presentation: str = Field(default="", max_length=120)
+    supplier: str = Field(default="", max_length=120)
+    storage_location: str = Field(default="", max_length=80)
+    minimum_balance: str = Field(default="0", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
 
 
 @app.get("/health")
@@ -99,4 +111,10 @@ def serialize_item(item: InventoryItem) -> dict[str, object]:
         "lot": item.lot,
         "expiry_date": item.expiry_date.isoformat(),
         "created_at": item.created_at.isoformat(),
+        "barcode": item.barcode,
+        "category": item.category,
+        "presentation": item.presentation,
+        "supplier": item.supplier,
+        "storage_location": item.storage_location,
+        "minimum_balance": item.minimum_balance,
     }

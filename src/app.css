@@ -492,7 +492,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .history-pagination > div { display: flex; align-items: center; gap: 10px; }
 .history-pagination .button { min-height: 38px; padding: 7px 11px; font-size: 12px; }
-.pharmacy-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.pharmacy-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .pharmacy-summary article { display: grid; gap: 5px; padding: 17px 19px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .pharmacy-summary article > span { color: var(--muted); font-size: 12px; }
 .pharmacy-summary article > strong { color: var(--ink); font-size: 25px; line-height: 1.1; }
@@ -503,6 +503,10 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .pharmacy-summary .pharmacy-summary-danger > strong { color: #a4232e; }
 .pharmacy-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .pharmacy-form-actions .button { min-height: 42px; }
+.pharmacy-scan-field { align-content: start; }
+.pharmacy-scan-field > .button { justify-self: start; min-height: 42px; }
+.pharmacy-scanner-video { width: min(100%, 420px); max-height: 280px; border-radius: 8px; background: #17232d; object-fit: cover; }
+.pharmacy-item-description { margin: -7px 0 0; color: var(--muted); font-size: 12px; }
 .pharmacy-search { max-width: 480px; }
 .search-input-wrap { position: relative; display: block; }
 .search-input-wrap > svg { position: absolute; top: 50%; left: 12px; color: var(--subtle); transform: translateY(-50%); }
@@ -765,7 +769,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
   .history-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .history-filter-patient { grid-column: 1 / -1; }
   .pharmacy-item-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pharmacy-summary { gap: 8px; }
+  .pharmacy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .pharmacy-summary article { padding: 13px; }
   .pharmacy-summary article > span { min-height: 28px; font-size: 10px; }
 }
