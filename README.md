@@ -42,7 +42,7 @@ Enfermagem, Farmácia, Raio X, Serviço Social, Nutrição, Higienização, Rece
 | --- | --- |
 | Interface e PWA | React, TypeScript e Vite |
 | APIs | Python, FastAPI, SQLAlchemy e Alembic |
-| Desenvolvimento local | SQLite, com um banco por domínio em `data/local/` |
+| Desenvolvimento local | SQLite em `data/local/`; cadastro de pacientes, sinais vitais e agenda terapêutica compartilham o banco clínico |
 | Instalação com containers | Docker Compose e PostgreSQL 17 |
 | HTTPS interno | Caddy com autoridade certificadora local |
 

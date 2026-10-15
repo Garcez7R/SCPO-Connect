@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-for service in access audit nursing pharmacy social xray maintenance therapy; do
+for service in access audit nursing pharmacy social xray maintenance; do
   role_variable="SCPO_${service^^}_DB_USER"
   password_variable="SCPO_${service^^}_DB_PASSWORD"
   role="${!role_variable:?Configure ${role_variable} before initializing PostgreSQL}"

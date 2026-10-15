@@ -29,12 +29,12 @@ class TherapyActivity(Base):
 
 
 def get_therapy_db():
-    yield from database_session("therapy")
+    yield from database_session("nursing")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    verify_database_migrated("therapy")
+    verify_database_migrated("nursing")
     yield
 
 

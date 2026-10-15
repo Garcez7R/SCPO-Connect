@@ -6,7 +6,7 @@ from sqlalchemy.engine import Engine
 
 config = context.config
 target_metadata = Base.metadata
-SUPPORTED_SERVICES = {"access", "audit", "nursing", "pharmacy", "social", "xray", "maintenance", "therapy"}
+SUPPORTED_SERVICES = {"access", "audit", "nursing", "pharmacy", "social", "xray", "maintenance"}
 
 
 def get_service() -> str:

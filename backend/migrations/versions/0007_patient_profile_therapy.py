@@ -1,4 +1,4 @@
-"""Expand the shared patient profile and add therapy activities."""
+"""Expand the shared patient profile."""
 
 import os
 
@@ -47,22 +47,6 @@ def upgrade() -> None:
         for name, column_type, nullable in columns:
             if name not in existing_columns:
                 op.add_column("patients", sa.Column(name, column_type, nullable=nullable, server_default="" if not nullable and name not in {"created_at", "updated_at", "birth_date"} else None))
-    elif service == "therapy":
-        op.create_table(
-            "therapy_activities",
-            sa.Column("id", sa.String(36), primary_key=True),
-            sa.Column("title", sa.String(120), nullable=False),
-            sa.Column("activity_type", sa.String(40), nullable=False),
-            sa.Column("description", sa.String(1000), nullable=False, server_default=""),
-            sa.Column("location", sa.String(120), nullable=False),
-            sa.Column("starts_at", sa.DateTime(timezone=True), nullable=False),
-            sa.Column("ends_at", sa.DateTime(timezone=True), nullable=True),
-            sa.Column("patient_reference", sa.String(36), nullable=True),
-            sa.Column("status", sa.String(16), nullable=False, server_default="scheduled"),
-            sa.Column("created_by", sa.String(120), nullable=False),
-            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        )
-        op.create_index("ix_therapy_activities_starts_at", "therapy_activities", ["starts_at"])
 
 
 def downgrade() -> None:
@@ -70,6 +54,3 @@ def downgrade() -> None:
     if service == "nursing":
         for name in ("updated_by", "updated_at", "created_at", "photo_data", "responsible_postal_code", "responsible_state", "responsible_city", "responsible_neighborhood", "responsible_address_complement", "responsible_address_number", "responsible_address", "responsible_phone", "responsible_relationship", "responsible_name", "postal_code", "state", "city", "neighborhood", "address_complement", "address_number", "address", "email", "phone", "sex", "birth_date"):
             op.drop_column("patients", name)
-    elif service == "therapy":
-        op.drop_index("ix_therapy_activities_starts_at", table_name="therapy_activities")
-        op.drop_table("therapy_activities")
