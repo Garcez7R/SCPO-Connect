@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Activity,
@@ -215,6 +215,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [showBetaPopup, setShowBetaPopup] = useState(false)
   const logoClickCount = useRef(0)
   const logoClickTimer = useRef<number | undefined>(undefined)
+  const closeBetaPopup = useCallback(() => setShowBetaPopup(false), [])
 
   useEffect(() => () => {
     if (logoClickTimer.current !== undefined) window.clearTimeout(logoClickTimer.current)
@@ -351,7 +352,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
-      {showBetaPopup && <BetaCelebration onClose={() => setShowBetaPopup(false)} />}
+      {showBetaPopup && <BetaCelebration onClose={closeBetaPopup} />}
     </div>
   )
 }
