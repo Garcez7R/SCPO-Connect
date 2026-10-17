@@ -13,9 +13,11 @@ export default defineConfig({
       '/api/v1/reception': 'http://127.0.0.1:8001',
       '/api/v1/pharmacy': 'http://127.0.0.1:8003',
       '/api/v1/social': 'http://127.0.0.1:8005',
+      '/api/v1/psychology': 'http://127.0.0.1:8005',
       '/api/v1/xray': 'http://127.0.0.1:8004',
       '/api/v1/maintenance': 'http://127.0.0.1:8007',
       '/api/v1/hygiene': 'http://127.0.0.1:8007',
+      '/api/v1/backup': 'http://127.0.0.1:8009',
     },
   },
 })

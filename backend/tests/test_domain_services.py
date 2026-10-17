@@ -239,6 +239,12 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     referral = social.create_referral(social.ReferralPayload(patient_reference=reference, referral_type="Acompanhamento"), social_user, domain_database["social"])
     exam = xray.create_request(xray.ExamRequestPayload(patient_reference=reference, exam_label="Radiografia"), xray_user, domain_database["xray"])
     assert referral["patient_reference"] == reference
+    assert social.update_referral(
+        referral["id"],
+        social.ReferralUpdatePayload(status="in_progress"),
+        social_user,
+        domain_database["social"],
+    )["status"] == "in_progress"
     assert exam["patient_reference"] == reference
     assert exam["status"] == "requested"
 

@@ -62,6 +62,7 @@ start_service social 8005
 start_service audit 8006
 start_service maintenance 8007
 start_service therapy 8008
+start_service backup 8009
 printf '\nAPIs em execução. Ctrl+C encerra todos os serviços. Logs em .logs/\n'
 
 cleanup() {

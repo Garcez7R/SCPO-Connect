@@ -1,14 +1,14 @@
 from collections.abc import Generator
+from datetime import date
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy.orm import Session
-
 from scpo_services import nursing
 from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
+from sqlalchemy.orm import Session
 
 
 @pytest.fixture
@@ -43,6 +43,107 @@ def test_patient_identity_and_active_bed_are_unique(nursing_db: Session, nurse: 
     with pytest.raises(HTTPException, match="quarto e leito") as conflict:
         create_patient(nursing_db, nurse)
     assert conflict.value.status_code == 409
+
+
+def test_emergency_arrival_can_create_central_patient_without_admission(
+    nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    receptionist = DemoPrincipal(
+        "reception-id", "reception", "Recepcionista", "reception",
+        ["reception"], {"reception": ["consultar", "criar", "alterar"]},
+    )
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_name="Pessoa em emergência",
+            new_patient=nursing.EmergencyPatientPayload(
+                name="Pessoa em emergência",
+                allergies="Penicilina",
+                allergies_status="known",
+            ),
+            reason="Atendimento de emergência",
+        ),
+        receptionist,
+        nursing_db,
+    )
+
+    patient = nursing_db.get(nursing.Patient, arrival["patient_reference"])
+    assert patient is not None
+    assert (patient.room, patient.bed) == ("", "")
+    assert patient.active is True
+    assert patient.allergies_status == "known"
+    assert arrival["allergies_status"] == "known"
+    assert "allergies" not in arrival
+
+    queue = nursing.list_emergency_arrivals(receptionist, nursing_db, 25, 0, None, "")
+    queued_arrival = queue["arrivals"][0]
+    assert queued_arrival["allergies_status"] == "known"
+    assert "allergies" not in queued_arrival
+
+    reception_profile = nursing.serialize_patient(patient, principal=receptionist, full_profile=True)
+    assert "allergies" not in reception_profile
+    assert "allergies_status" not in reception_profile
+
+    clinical_profile = nursing.serialize_patient(patient, principal=nurse, full_profile=True)
+    assert clinical_profile["allergies"] == "Penicilina"
+    assert clinical_profile["allergies_status"] == "known"
+
+
+def test_patient_allergy_status_requires_clear_details() -> None:
+    with pytest.raises(ValidationError):
+        nursing.PatientPayload(
+            name="Paciente",
+            room="1",
+            bed="A",
+            allergies="",
+            allergies_status="known",
+        )
+    with pytest.raises(ValidationError):
+        nursing.PatientPayload(
+            name="Paciente",
+            room="1",
+            bed="A",
+            allergies="Amendoim",
+            allergies_status="none_known",
+        )
+
+
+def test_nutrition_can_confirm_no_known_allergies_and_clear_shared_alert(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    patient_data = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Paciente de teste",
+            room="3",
+            bed="B",
+            allergies="Látex",
+            allergies_status="known",
+        ),
+        nurse,
+        nursing_db,
+    )
+    nutritionist = DemoPrincipal(
+        "nutrition-id", "nutrition", "Nutricionista", "nutrition",
+        ["nutrition"], {"nutrition": ["consultar", "criar"]},
+    )
+
+    nursing.create_nutrition_record(
+        nursing.NutritionPayload(
+            patient_reference=str(patient_data["reference"]),
+            assessment_date=date.today(),
+            allergies_status="none_known",
+        ),
+        nutritionist,
+        nursing_db,
+    )
+
+    patient = nursing_db.get(nursing.Patient, str(patient_data["reference"]))
+    assert patient is not None
+    assert patient.allergies == ""
+    assert patient.allergies_status == "none_known"
 
 
 def test_vitals_require_a_measurement_and_keep_actor(nursing_db: Session, nurse: DemoPrincipal) -> None:

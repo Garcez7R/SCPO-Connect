@@ -29,11 +29,23 @@
 	handle /api/v1/social/* {
 		reverse_proxy 127.0.0.1:8005
 	}
+	handle /api/v1/psychology/* {
+		reverse_proxy 127.0.0.1:8005
+	}
 	handle /api/v1/maintenance/* {
 		reverse_proxy 127.0.0.1:8007
 	}
+	handle /api/v1/hygiene/* {
+		reverse_proxy 127.0.0.1:8007
+	}
+	handle /api/v1/reception/* {
+		reverse_proxy 127.0.0.1:8001
+	}
 	handle /api/v1/therapy/* {
 		reverse_proxy 127.0.0.1:8008
+	}
+	handle /api/v1/backup/* {
+		reverse_proxy 127.0.0.1:8009
 	}
 
 	handle {

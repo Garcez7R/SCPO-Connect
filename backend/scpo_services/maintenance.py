@@ -172,7 +172,7 @@ def list_hygiene_requests(
 @app.post("/api/v1/hygiene/requests", status_code=201)
 def create_hygiene_request(
     payload: HygieneRequestCreate,
-    principal: Annotated[DemoPrincipal, Depends(authenticated_principal)],
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)

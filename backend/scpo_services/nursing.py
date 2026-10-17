@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -88,6 +88,7 @@ class Patient(Base):
     cpf: Mapped[str] = mapped_column(String(11), nullable=False, default="")
     sus_card: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     allergies: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    allergies_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     deletion_reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
@@ -103,6 +104,7 @@ class Patient(Base):
     state: Mapped[str] = mapped_column(String(2), nullable=False, default="")
     postal_code: Mapped[str] = mapped_column(String(12), nullable=False, default="")
     responsible_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    responsible_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
     responsible_relationship: Mapped[str] = mapped_column(String(60), nullable=False, default="")
     responsible_phone: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     responsible_address: Mapped[str] = mapped_column(String(180), nullable=False, default="")
@@ -117,6 +119,20 @@ class Patient(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+def validate_cpf_number(value: str) -> str:
+    digits = re.sub(r"\D", "", value)
+    if not digits:
+        return ""
+    if len(digits) != 11 or len(set(digits)) == 1:
+        raise ValueError("Informe um CPF válido com 11 dígitos")
+    for length in (9, 10):
+        total = sum(int(digit) * (length + 1 - index) for index, digit in enumerate(digits[:length]))
+        check = (total * 10 % 11) % 10
+        if check != int(digits[length]):
+            raise ValueError("Informe um CPF válido")
+    return digits
 
 
 class EmergencyArrival(Base):
@@ -139,17 +155,18 @@ class EmergencyArrival(Base):
 class EmergencyArrivalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     patient_reference: str | None = Field(default=None, max_length=36)
-    patient_name: str = Field(min_length=2, max_length=120)
+    patient_name: str = Field(default="", max_length=120)
+    new_patient: "EmergencyPatientPayload | None" = None
     arrival_mode: Literal["walk_in", "ambulance", "other"] = "walk_in"
     reason: str = Field(min_length=3, max_length=1000)
 
-    @field_validator("patient_name")
-    @classmethod
-    def trim_patient_name(cls, value: str) -> str:
-        value = value.strip()
-        if len(value) < 2:
+    @model_validator(mode="after")
+    def validate_patient_source(self) -> "EmergencyArrivalPayload":
+        if self.new_patient and self.patient_reference:
+            raise ValueError("Escolha um paciente existente ou crie um novo cadastro")
+        if not self.new_patient and not self.patient_reference and len(self.patient_name.strip()) < 2:
             raise ValueError("Informe o nome da pessoa atendida")
-        return value
+        return self
 
     @field_validator("reason")
     @classmethod
@@ -158,6 +175,52 @@ class EmergencyArrivalPayload(BaseModel):
         if len(value) < 3:
             raise ValueError("Informe o motivo da procura")
         return value
+
+
+class EmergencyPatientPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=120)
+    cpf: str = Field(default="", max_length=14)
+    sus_card: str = Field(default="", max_length=20)
+    birth_date: date | None = None
+    sex: str = Field(default="", max_length=24)
+    phone: str = Field(default="", max_length=40)
+    allergies: str = Field(default="", max_length=1000)
+    allergies_status: Literal["unknown", "none_known", "known"] = "unknown"
+
+    @field_validator("name")
+    @classmethod
+    def trim_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Informe o nome completo")
+        return value
+
+    @field_validator("cpf")
+    @classmethod
+    def validate_cpf(cls, value: str) -> str:
+        return validate_cpf_number(value)
+
+    @field_validator("sus_card")
+    @classmethod
+    def normalize_sus_card(cls, value: str) -> str:
+        return re.sub(r"\D", "", value)
+
+    @field_validator("allergies")
+    @classmethod
+    def trim_allergies(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_allergy_status(self) -> "EmergencyPatientPayload":
+        if self.allergies_status == "known" and not self.allergies:
+            raise ValueError("Descreva a alergia conhecida")
+        if self.allergies_status != "known" and self.allergies:
+            raise ValueError("Descreva alergias somente quando o status for 'known'")
+        return self
+
+
+EmergencyArrivalPayload.model_rebuild()
 
 
 class EmergencyArrivalStatusPayload(BaseModel):
@@ -220,6 +283,7 @@ class PatientPayload(BaseModel):
     cpf: str = Field(default="", max_length=14)
     sus_card: str = Field(default="", max_length=20)
     allergies: str = Field(default="", max_length=1000)
+    allergies_status: Literal["unknown", "none_known", "known"] = "unknown"
     birth_date: date | None = None
     sex: str = Field(default="", max_length=24)
     phone: str = Field(default="", max_length=40)
@@ -232,6 +296,7 @@ class PatientPayload(BaseModel):
     state: str = Field(default="", max_length=2)
     postal_code: str = Field(default="", max_length=12)
     responsible_name: str = Field(default="", max_length=120)
+    responsible_status: Literal["unknown", "not_applicable", "provided"] = "unknown"
     responsible_relationship: str = Field(default="", max_length=60)
     responsible_phone: str = Field(default="", max_length=40)
     responsible_address: str = Field(default="", max_length=180)
@@ -261,17 +326,20 @@ class PatientPayload(BaseModel):
     @field_validator("cpf")
     @classmethod
     def validate_cpf(cls, value: str) -> str:
-        digits = re.sub(r"\D", "", value)
-        if not digits:
-            return ""
-        if len(digits) != 11 or len(set(digits)) == 1:
-            raise ValueError("Informe um CPF válido com 11 dígitos")
-        for length in (9, 10):
-            total = sum(int(digit) * (length + 1 - index) for index, digit in enumerate(digits[:length]))
-            check = (total * 10 % 11) % 10
-            if check != int(digits[length]):
-                raise ValueError("Informe um CPF válido")
-        return digits
+        return validate_cpf_number(value)
+
+    @field_validator("allergies")
+    @classmethod
+    def trim_allergies(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_allergy_status(self) -> "PatientPayload":
+        if self.allergies_status == "known" and not self.allergies:
+            raise ValueError("Descreva a alergia conhecida")
+        if self.allergies_status != "known" and self.allergies:
+            raise ValueError("Descreva alergias somente quando o status for 'known'")
+        return self
 
     @field_validator("sus_card")
     @classmethod
@@ -311,12 +379,26 @@ class NutritionPayload(BaseModel):
     height_cm: str = Field(default="", max_length=12)
     diet_type: str = Field(default="", max_length=80)
     allergies: str = Field(default="", max_length=500)
+    allergies_status: Literal["unknown", "none_known", "known"] | None = None
     restrictions: str = Field(default="", max_length=500)
     appetite: Literal["", "normal", "reduced", "poor", "increased"] = ""
     hydration: Literal["", "adequate", "low", "assisted"] = ""
     notes: str = Field(default="", max_length=3000)
     fasting_at: datetime | None = None
     fasting_reason: str = Field(default="", max_length=500)
+
+    @field_validator("allergies")
+    @classmethod
+    def trim_allergies(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_allergy_status(self) -> "NutritionPayload":
+        if self.allergies_status == "known" and not self.allergies:
+            raise ValueError("Descreva as alergias conhecidas")
+        if self.allergies_status in {"unknown", "none_known"} and self.allergies:
+            raise ValueError("Descreva alergias somente quando o status for 'known'")
+        return self
 
     @field_validator("weight_kg", "height_cm")
     @classmethod
@@ -487,8 +569,9 @@ def list_emergency_arrivals(
             (EmergencyArrival.patient_name.ilike(search_pattern))
             | (EmergencyArrival.reason.ilike(search_pattern))
         )
-    arrivals = db.scalars(
-        select(EmergencyArrival)
+    rows = db.execute(
+        select(EmergencyArrival, Patient.allergies_status)
+        .outerjoin(Patient, EmergencyArrival.patient_reference == Patient.reference)
         .where(*filters)
         .order_by(
             case(
@@ -512,7 +595,7 @@ def list_emergency_arrivals(
     ).all()
     emit_audit_event(principal, "reception", "emergency_arrivals_read", "emergency_queue")
     return {
-        "arrivals": [serialize_emergency_arrival(arrival) for arrival in arrivals],
+        "arrivals": [serialize_emergency_arrival(arrival, allergies_status) for arrival, allergies_status in rows],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -532,10 +615,40 @@ def create_emergency_arrival(
         if patient is None or not patient.active:
             raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
     now = datetime.now(UTC)
+    if payload.new_patient:
+        patient_payload = payload.new_patient
+        if patient_payload.cpf and db.scalar(
+            select(Patient.reference).where(Patient.cpf == patient_payload.cpf)
+        ):
+            raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este CPF")
+        if patient_payload.sus_card and db.scalar(
+            select(Patient.reference).where(Patient.sus_card == patient_payload.sus_card)
+        ):
+            raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
+        patient = Patient(
+            reference=str(uuid.uuid4()),
+            name=patient_payload.name,
+            room="",
+            bed="",
+            cpf=patient_payload.cpf,
+            sus_card=patient_payload.sus_card,
+            allergies=patient_payload.allergies,
+            allergies_status=patient_payload.allergies_status,
+            birth_date=patient_payload.birth_date,
+            sex=patient_payload.sex,
+            phone=patient_payload.phone,
+            responsible_status="unknown",
+            created_at=now,
+            updated_at=now,
+            updated_by=principal.actor_name,
+            active=True,
+        )
+        db.add(patient)
+        db.flush()
     arrival = EmergencyArrival(
         id=str(uuid.uuid4()),
         patient_reference=patient.reference if patient else None,
-        patient_name=patient.name if patient else payload.patient_name,
+        patient_name=patient.name if patient else payload.patient_name.strip(),
         arrival_mode=payload.arrival_mode,
         reason=payload.reason,
         status="waiting",
@@ -547,8 +660,10 @@ def create_emergency_arrival(
     db.add(arrival)
     db.commit()
     db.refresh(arrival)
+    if payload.new_patient and patient:
+        emit_audit_event(principal, "patients", "emergency_patient_created", patient.reference)
     emit_audit_event(principal, "reception", "emergency_arrival_created", arrival.id)
-    return serialize_emergency_arrival(arrival)
+    return serialize_emergency_arrival(arrival, patient.allergies_status if patient else "unknown")
 
 
 @app.patch("/api/v1/reception/arrivals/{arrival_id}")
@@ -569,14 +684,19 @@ def update_emergency_arrival(
     db.commit()
     db.refresh(arrival)
     emit_audit_event(principal, "reception", "emergency_arrival_status_updated", arrival.id)
-    return serialize_emergency_arrival(arrival)
+    patient = db.get(Patient, arrival.patient_reference) if arrival.patient_reference else None
+    return serialize_emergency_arrival(arrival, patient.allergies_status if patient else "unknown")
 
 
-def serialize_emergency_arrival(arrival: EmergencyArrival) -> dict[str, object]:
+def serialize_emergency_arrival(
+    arrival: EmergencyArrival,
+    allergies_status: str = "unknown",
+) -> dict[str, object]:
     return {
         "id": arrival.id,
         "patient_reference": arrival.patient_reference,
         "patient_name": arrival.patient_name,
+        "allergies_status": allergies_status,
         "arrival_mode": arrival.arrival_mode,
         "reason": arrival.reason,
         "status": arrival.status,
@@ -675,7 +795,7 @@ def create_patient(
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este CPF")
     if payload.sus_card and db.scalar(select(Patient.reference).where(Patient.sus_card == payload.sus_card)):
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
-    if db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip())):
+    if payload.room.strip() and payload.bed.strip() and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip())):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
     patient = Patient(reference=str(uuid.uuid4()), **payload.model_dump(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC), updated_by=principal.actor_name)
     db.add(patient)
@@ -699,7 +819,7 @@ def update_patient(
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este CPF")
     if payload.sus_card and db.scalar(select(Patient.reference).where(Patient.sus_card == payload.sus_card, Patient.reference != patient_reference)):
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
-    if patient.active and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip(), Patient.reference != patient_reference)):
+    if patient.active and payload.room.strip() and payload.bed.strip() and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip(), Patient.reference != patient_reference)):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
     for key, value in payload.model_dump().items():
         setattr(patient, key, value)
@@ -724,7 +844,7 @@ def update_patient_status(
     active = payload.get("active")
     if not isinstance(active, bool):
         raise HTTPException(status_code=422, detail="Informe a situação ativa do paciente")
-    if active and not patient.active and db.scalar(select(Patient.reference).where(
+    if active and not patient.active and patient.room and patient.bed and db.scalar(select(Patient.reference).where(
         Patient.active.is_(True), Patient.room == patient.room, Patient.bed == patient.bed,
     )):
         raise HTTPException(status_code=409, detail="O quarto e leito deste paciente já estão ocupados")
@@ -807,6 +927,13 @@ def can_view_full_patient_profile(principal: DemoPrincipal) -> bool:
     return any(module in principal.modules and "consultar" in principal.permissions.get(module, []) for module in ("patients", "reception", "management"))
 
 
+def can_view_patient_allergies(principal: DemoPrincipal) -> bool:
+    return any(
+        module in principal.modules and "consultar" in principal.permissions.get(module, [])
+        for module in ("nursing", "nutrition", "therapy", "xray", "psychology", "management")
+    )
+
+
 def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profile: bool = False) -> dict[str, object]:
     result: dict[str, object] = {
         "reference": patient.reference,
@@ -816,11 +943,16 @@ def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profil
         "birth_date": patient.birth_date,
         "active": patient.active,
     }
-    if full_profile or any(module in principal.modules and "consultar" in principal.permissions.get(module, []) for module in ("nursing", "nutrition")):
-        result["allergies"] = patient.allergies
     if full_profile:
-        result.update({key: getattr(patient, key) for key in PatientPayload.model_fields})
+        result.update({
+            key: getattr(patient, key)
+            for key in PatientPayload.model_fields
+            if key not in {"allergies", "allergies_status"} or can_view_patient_allergies(principal)
+        })
         result.update({"created_at": patient.created_at.isoformat() if patient.created_at else None, "updated_at": patient.updated_at.isoformat() if patient.updated_at else None, "updated_by": patient.updated_by})
+    if can_view_patient_allergies(principal):
+        result["allergies"] = patient.allergies
+        result["allergies_status"] = patient.allergies_status
     return result
 
 
@@ -962,13 +1094,23 @@ def create_nutrition_record(
     patient = db.get(Patient, payload.patient_reference)
     if patient is None or not patient.active:
         raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
-    if payload.allergies.strip() and payload.allergies.strip() != patient.allergies:
-        patient.allergies = payload.allergies.strip()
+    if payload.allergies_status is not None and (
+        payload.allergies_status != patient.allergies_status
+        or payload.allergies != patient.allergies
+    ):
+        patient.allergies = payload.allergies
+        patient.allergies_status = payload.allergies_status
+        patient.updated_at = datetime.now(UTC)
+        patient.updated_by = principal.actor_name
+        emit_audit_event(principal, "patients", "patient_allergies_updated", patient.reference)
+    elif payload.allergies.strip() and payload.allergies.strip() != patient.allergies:
+        patient.allergies = payload.allergies
+        patient.allergies_status = "known"
         patient.updated_at = datetime.now(UTC)
         patient.updated_by = principal.actor_name
         emit_audit_event(principal, "patients", "patient_allergies_updated", patient.reference)
     record = NutritionRecord(
-        **payload.model_dump(), actor_id=principal.user_id, actor_name=principal.actor_name,
+        **payload.model_dump(exclude={"allergies_status"}), actor_id=principal.user_id, actor_name=principal.actor_name,
         created_at=datetime.now(UTC),
     )
     db.add(record)

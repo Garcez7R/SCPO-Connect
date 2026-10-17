@@ -1,16 +1,19 @@
 # Arquitetura
 
-O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada domínio como um processo FastAPI independente. Os serviços compartilham somente utilitários de conexão e a identidade de demonstração; não importam modelos uns dos outros nem consultam tabelas alheias.
+O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada domínio como um processo FastAPI independente. Os serviços compartilham utilitários de conexão e a identidade de demonstração. Os módulos que usam bancos separados validam referências de pacientes por API interna; Oficina Terapêutica compartilha o banco clínico de Enfermagem.
 
 | Serviço | Aplicação | Banco próprio | API versionada |
 | --- | --- | --- | --- |
 | Identidade e acesso | `scpo_services.access` | `scpo_access` | `/api/v1/access` |
 | Auditoria | `scpo_services.audit` | `scpo_audit` | `/api/v1/audit` |
 | Enfermagem | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/nursing` |
+| Recepção | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/reception` |
 | Farmácia | `scpo_services.pharmacy` | `scpo_pharmacy` | `/api/v1/pharmacy` |
-| Serviço Social | `scpo_services.social` | `scpo_social` | `/api/v1/social` |
+| Serviço Social e Psicologia/Psiquiatria | `scpo_services.social` | `scpo_social` | `/api/v1/social`, `/api/v1/psychology` |
 | Raio X | `scpo_services.xray` | `scpo_xray` | `/api/v1/xray` |
-| Manutenção e ordens de serviço | `scpo_services.maintenance` | `scpo_maintenance` | `/api/v1/maintenance` |
+| Manutenção e Higienização | `scpo_services.maintenance` | `scpo_maintenance` | `/api/v1/maintenance`, `/api/v1/hygiene` |
+| Oficina Terapêutica | `scpo_services.therapy` | `scpo_nursing` (compartilhado) | `/api/v1/therapy` |
+| Backup | `scpo_services.backup` | Bancos dos serviços | `/api/v1/backup` |
 
 Em desenvolvimento, cada API usa SQLite no diretório ignorado `data/local/`. No Compose, cada processo usa um banco PostgreSQL e uma credencial próprios; as APIs não recebem o usuário administrativo nem as senhas dos demais serviços. A API de acesso registra alterações no serviço de auditoria por HTTP interno autenticado por `SCPO_SERVICE_TOKEN`; não escreve diretamente no banco de auditoria. Somente Identidade e Auditoria recebem esse token. Ordens de serviço mantêm seu próprio histórico de abertura e alterações de status com a autoria do funcionário.
 

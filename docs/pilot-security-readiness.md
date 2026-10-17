@@ -17,7 +17,7 @@ As validações de sinais vitais cobrem presença, formato, consistência entre 
 5. Validar finalidade e base legal, controlador/operador, encarregado, retenção, direitos dos titulares, resposta a incidentes, backup/recuperação e fluxos clínicos com as áreas responsáveis.
 6. Revisar e aprovar o piloto com TI, segurança, encarregado de dados, jurídico e responsáveis assistenciais; habilitar dados reais somente depois de identidade, autorização, autoria, auditoria e fluxos validados.
 
-As áreas atualmente disponíveis na interface são cadastro de pacientes, Enfermagem, Farmácia (cadastro e consulta de estoque), Raio X, Serviço Social, Nutrição, Recepção, Oficina Terapêutica, Manutenção e Gestão Hospitalar. Higienização e Psicologia/Psiquiatria não aparecem como áreas operacionais até terem fluxos e permissões próprios. Gestão Hospitalar tem acesso clínico total; a liberação desse perfil depende de auditoria confiável e validação institucional. A proposta de campos e acesso por área está em [cadastro central e acesso aos dados](patient-access-model.md).
+As áreas atualmente disponíveis na interface incluem cadastro de pacientes, Enfermagem, Farmácia (cadastro e consulta de estoque), Raio X, Serviço Social, Nutrição, Recepção, Oficina Terapêutica, Manutenção, Higienização, Psicologia/Psiquiatria e Gestão Hospitalar. Os fluxos da aplicação são demonstrativos e não substituem protocolos assistenciais; a disponibilidade da tela não equivale à aprovação institucional. Gestão Hospitalar tem acesso clínico amplo no protótipo; a liberação desse perfil depende de auditoria confiável e validação institucional. A proposta de campos e acesso por área está em [cadastro central e acesso aos dados](patient-access-model.md).
 
 ## Referências
 

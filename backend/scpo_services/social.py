@@ -75,6 +75,19 @@ class ReferralPayload(BaseModel):
     patient_reference: str = Field(min_length=1, max_length=36)
     referral_type: str = Field(min_length=1, max_length=80)
 
+    @field_validator("referral_type")
+    @classmethod
+    def trim_referral_type(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Informe o tipo de encaminhamento")
+        return value
+
+
+class ReferralUpdatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["open", "scheduled", "in_progress", "completed", "cancelled"]
+
 
 class PsychologyReferralPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -139,6 +152,25 @@ def create_referral(
     db.commit()
     db.refresh(referral)
     emit_audit_event(principal, "social", "social_referral_created", referral.patient_reference)
+    return serialize_referral(referral)
+
+
+@app.patch("/api/v1/social/referrals/{referral_id}")
+def update_referral(
+    referral_id: int,
+    payload: ReferralUpdatePayload,
+    principal: Annotated[DemoPrincipal, Depends(SOCIAL_ROLE)],
+    db: Annotated[Session, Depends(get_social_db)],
+) -> dict[str, object]:
+    referral = db.get(Referral, referral_id)
+    if referral is None:
+        raise HTTPException(status_code=404, detail="Encaminhamento não encontrado")
+    if referral.status in {"completed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="O encaminhamento já foi encerrado")
+    referral.status = payload.status
+    db.commit()
+    db.refresh(referral)
+    emit_audit_event(principal, "social", "social_referral_status_updated", str(referral.id))
     return serialize_referral(referral)
 
 

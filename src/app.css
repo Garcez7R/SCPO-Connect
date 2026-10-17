@@ -172,7 +172,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-icon-xray { background: #f0eff8; color: #65549b; }
 .module-icon-social { background: #fff4e7; color: #9a620e; }
 .module-icon-admin { background: #edf1f5; color: #516778; }
-.module-icon-psychology { background: #f3eef9; color: #73549a; }
+.module-icon-psychology { background: #eaf3f7; color: #246b8e; }
 .module-icon-maintenance { background: #edf3f5; color: #426a7a; }
 .module-card-title { margin-top: 12px; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.35; }
 .module-card-description { max-width: 34ch; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -582,12 +582,12 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .work-order-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .work-order-form-actions .button { min-height: 44px; }
 .psychology-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
-.psychology-privacy { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #d8cbe8; border-radius: 8px; background: #f7f3fb; color: #5b437a; font-size: 12px; line-height: 1.55; }
+.psychology-privacy { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #cbdfe8; border-radius: 8px; background: #f0f7fa; color: #255c76; font-size: 12px; line-height: 1.55; }
 .psychology-privacy svg { flex: 0 0 auto; margin-top: 1px; }
 .psychology-tabs { display: flex; flex-wrap: wrap; gap: 7px; padding-bottom: 2px; border-bottom: 1px solid var(--line); }
 .service-tabs { display: flex; flex-wrap: wrap; gap: 7px; overflow-x: auto; border-bottom: 1px solid var(--line); }
 .psychology-tab { display: inline-flex; min-height: 42px; align-items: center; gap: 8px; padding: 8px 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.psychology-tab.is-active { border-bottom-color: #73549a; color: #60437f; }
+.psychology-tab.is-active { border-bottom-color: var(--blue); color: var(--blue-dark); }
 .psychology-tab span { display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 11px; background: var(--blue-pale); color: var(--blue-dark); font-size: 10px; }
 .psychology-panel { display: grid; gap: 15px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .psychology-panel .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
@@ -612,11 +612,6 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .psychology-encounter-field { display: grid; gap: 4px; }
 .psychology-encounter-field strong { color: var(--subtle); font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
 .psychology-encounter-field p { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.psychology-guidance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.psychology-guidance article { display: flex; align-items: flex-start; gap: 12px; padding: 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
-.psychology-guidance article > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 8px; background: #f3eef9; color: #73549a; }
-.psychology-guidance h2 { margin: 2px 0 6px; color: var(--ink); font-size: 13px; }
-.psychology-guidance p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 .hygiene-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
 .hygiene-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .hygiene-summary article { display: grid; gap: 5px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
@@ -741,6 +736,12 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .clinical-alert svg { flex: 0 0 auto; }
 .clinical-alert div { display: grid; gap: 3px; }
 .clinical-alert span { font-size: 12px; line-height: 1.5; }
+.clinical-alert-clear { border-color: #c9e2d5; background: #f0f8f3; color: #2b6548; }
+.clinical-alert-unknown { border-color: #e6c98f; background: #fff8e9; color: #76500f; }
+.patient-registry-card .clinical-alert { margin-top: 8px; padding: 9px 10px; }
+.patient-registry-card .clinical-alert span { font-size: 11px; }
+.emergency-patient-toggle > span:last-child { display: flex; align-items: center; gap: 8px; min-height: 40px; color: var(--ink); }
+.emergency-patient-toggle input[type="checkbox"] { width: 18px; height: 18px; }
 .care-plan-strip, .fasting-plan-panel { display: grid; gap: 9px; padding: 13px 15px; border: 1px solid #d6e4eb; border-radius: 7px; background: #f2f8fb; color: #31566b; }
 .care-plan-strip strong, .fasting-plan-panel strong { font-size: 12px; }
 .care-plan-strip > span, .fasting-plan-panel small { font-size: 11px; line-height: 1.5; }
@@ -931,7 +932,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
   .xray-status-control { max-width: none; }
   .nutrition-context-card { padding: 11px; }
   .psychology-panel { gap: 13px; padding: 15px; }
-  .psychology-filter-row, .psychology-guidance { grid-template-columns: 1fr; }
+  .psychology-filter-row { grid-template-columns: 1fr; }
   .psychology-referral-actions { grid-template-columns: 1fr; }
   .psychology-referral-main, .psychology-encounter-heading { align-items: flex-start; flex-direction: column; }
   .psychology-encounter-heading > div:last-child { justify-items: start; }
@@ -1098,8 +1099,10 @@ html[data-theme="dark"] body { background: var(--page); color: var(--ink); }
 html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .nutrition-context-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .hygiene-panel, .hygiene-summary article, .hygiene-request-card, .xray-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
-html[data-theme="dark"] .psychology-privacy { border-color: #544469; background: #30283b; color: #d4c1ef; }
-html[data-theme="dark"] .psychology-tab.is-active { color: #d4c1ef; }
+html[data-theme="dark"] .psychology-privacy { border-color: #355d70; background: #203743; color: #b5e3f5; }
+html[data-theme="dark"] .psychology-tab.is-active { color: var(--blue-dark); }
+html[data-theme="dark"] .clinical-alert-clear { border-color: #315744; background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .clinical-alert-unknown { border-color: #705b31; background: #332d20; color: #f1ce86; }
 html[data-theme="dark"] .psychology-priority.is-priority { background: #44371f; color: #efc16e; }
 html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, .module-card-status, .field-hint, .patient-registry-identity p, .patient-registry-identity small, .work-order-meta, .pharmacy-item-description, .pharmacy-item-meta, .session-row, .app-footer, .breadcrumbs, .history-empty) { color: var(--muted); }
 html[data-theme="dark"] :is(.nav-link:hover, .appearance-button:hover, .button-secondary:hover) { background-color: #263944; color: var(--ink); }
