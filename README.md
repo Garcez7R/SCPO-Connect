@@ -28,6 +28,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Ordens de serviço: abertura por funcionários, vínculo opcional com paciente e fila de execução da manutenção.
 - Solicitações de Raio X e encaminhamentos de Serviço Social ligados ao cadastro compartilhado de pacientes.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
+- Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.

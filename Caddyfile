@@ -64,6 +64,11 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 		reverse_proxy maintenance:8000
 	}
 
+	@hygiene path /api/v1/hygiene/*
+	handle @hygiene {
+		reverse_proxy maintenance:8000
+	}
+
 	@therapy path /api/v1/therapy/*
 	handle @therapy {
 		reverse_proxy therapy:8000

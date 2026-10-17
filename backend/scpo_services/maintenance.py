@@ -6,11 +6,20 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import DateTime, ForeignKey, Integer, String, case, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from .common import Base, DemoPrincipal, authenticated_principal, database_session, get_engine, verify_database_migrated, verify_patient_reference, emit_audit_event
+from .common import (
+    Base,
+    DemoPrincipal,
+    authenticated_principal,
+    database_session,
+    emit_audit_event,
+    require_demo_role,
+    verify_database_migrated,
+    verify_patient_reference,
+)
 
 
 class WorkOrder(Base):
@@ -46,6 +55,26 @@ class WorkOrderEvent(Base):
     happened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class HygieneRequest(Base):
+    __tablename__ = "hygiene_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    custom_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    unit: Mapped[str] = mapped_column(String(80), nullable=False)
+    area: Mapped[str] = mapped_column(String(32), nullable=False)
+    location: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    priority: Mapped[str] = mapped_column(String(12), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    assignee: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    requester_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    requester_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 def get_maintenance_db():
     yield from database_session("maintenance")
 
@@ -58,6 +87,136 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="SCPO Connect · Ordens de Serviço", version="1.0.0", lifespan=lifespan)
 AUTHENTICATED = Depends(authenticated_principal)
+HYGIENE_ROLE = require_demo_role("hygiene")
+
+
+class HygieneRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_type: Literal["routine", "spot", "after_procedure", "restock", "other"]
+    custom_type: str | None = Field(default=None, min_length=3, max_length=80)
+    unit: str = Field(min_length=2, max_length=80)
+    area: Literal["room", "bathroom", "shared", "clinical", "circulation", "other"]
+    location: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=1000)
+    priority: Literal["normal", "high", "urgent"] = "normal"
+
+    @field_validator("unit", "location", "description", "custom_type", mode="before")
+    @classmethod
+    def trim_hygiene_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_custom_type(self) -> "HygieneRequestCreate":
+        if self.request_type == "other" and not self.custom_type:
+            raise ValueError("Informe o tipo da solicitação")
+        if self.request_type != "other" and self.custom_type:
+            raise ValueError("Tipo personalizado só pode ser informado para outra solicitação")
+        return self
+
+
+class HygieneRequestUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["open", "in_progress", "completed", "cancelled"] | None = None
+    assignee: str | None = Field(default=None, max_length=120)
+
+    @field_validator("assignee", mode="before")
+    @classmethod
+    def trim_assignee(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+def _serialize_hygiene_request(request: HygieneRequest) -> dict[str, object]:
+    return {
+        "id": request.id,
+        "request_type": request.request_type,
+        "custom_type": request.custom_type,
+        "unit": request.unit,
+        "area": request.area,
+        "location": request.location,
+        "description": request.description,
+        "priority": request.priority,
+        "status": request.status,
+        "assignee": request.assignee,
+        "requester_id": request.requester_id,
+        "requester_name": request.requester_name,
+        "updated_by": request.updated_by,
+        "created_at": request.created_at.isoformat(),
+        "updated_at": request.updated_at.isoformat(),
+    }
+
+
+@app.get("/api/v1/hygiene/requests")
+def list_hygiene_requests(
+    principal: Annotated[DemoPrincipal, Depends(HYGIENE_ROLE)],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, list[dict[str, object]]]:
+    priority_order = case(
+        (HygieneRequest.priority == "urgent", 0),
+        (HygieneRequest.priority == "high", 1),
+        else_=2,
+    )
+    status_order = case(
+        (HygieneRequest.status == "open", 0),
+        (HygieneRequest.status == "in_progress", 1),
+        else_=2,
+    )
+    requests = db.scalars(
+        select(HygieneRequest).order_by(
+            status_order, priority_order, HygieneRequest.created_at.asc()
+        ).limit(500)
+    ).all()
+    emit_audit_event(principal, "hygiene", "hygiene_requests_read", "hygiene_queue")
+    return {"requests": [_serialize_hygiene_request(item) for item in requests]}
+
+
+@app.post("/api/v1/hygiene/requests", status_code=201)
+def create_hygiene_request(
+    payload: HygieneRequestCreate,
+    principal: Annotated[DemoPrincipal, Depends(HYGIENE_ROLE)],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    request = HygieneRequest(
+        id=str(uuid.uuid4()),
+        **payload.model_dump(),
+        status="open",
+        assignee="",
+        requester_id=principal.user_id,
+        requester_name=principal.actor_name,
+        updated_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    emit_audit_event(principal, "hygiene", "hygiene_request_created", request.id)
+    return _serialize_hygiene_request(request)
+
+
+@app.patch("/api/v1/hygiene/requests/{request_id}")
+def update_hygiene_request(
+    request_id: str,
+    payload: HygieneRequestUpdate,
+    principal: Annotated[DemoPrincipal, Depends(HYGIENE_ROLE)],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="Informe uma alteração para a solicitação")
+    request = db.get(HygieneRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Solicitação de higienização não encontrada")
+    if request.status in {"completed", "cancelled"} and changes.get("status", request.status) != request.status:
+        raise HTTPException(status_code=409, detail="Solicitação encerrada; abra uma nova solicitação para novo atendimento")
+    for field, value in changes.items():
+        setattr(request, field, value)
+    request.updated_by = principal.actor_name
+    request.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(request)
+    emit_audit_event(principal, "hygiene", "hygiene_request_updated", request.id)
+    return _serialize_hygiene_request(request)
 
 
 class WorkOrderCreate(BaseModel):

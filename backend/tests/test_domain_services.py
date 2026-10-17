@@ -6,7 +6,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
-from scpo_services import access, audit, pharmacy, social, xray
+from scpo_services import access, audit, maintenance, pharmacy, social, xray
 from scpo_services.common import (
     DemoPrincipal,
     clear_engine_cache,
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 @pytest.fixture
 def domain_database(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[dict[str, Session], None, None]:
-    services = ("access", "audit", "nursing", "pharmacy", "social", "xray")
+    services = ("access", "audit", "maintenance", "nursing", "pharmacy", "social", "xray")
     for service in services:
         monkeypatch.setenv("SCPO_SERVICE", service)
         monkeypatch.setenv(f"SCPO_{service.upper()}_DATABASE_URL", f"sqlite:///{tmp_path / f'{service}.sqlite3'}")
@@ -190,3 +190,59 @@ def test_psychology_routes_require_module_permission(monkeypatch: pytest.MonkeyP
     with pytest.raises(HTTPException) as denied:
         asyncio.run(authorize(request))
     assert denied.value.status_code == 403
+
+
+def test_hygiene_requests_have_a_dedicated_assignable_queue(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(maintenance, "emit_audit_event", lambda *args: None)
+    hygiene_worker = DemoPrincipal(
+        "hygiene-1",
+        "hygiene",
+        "Equipe de Higienização",
+        "hygiene",
+        ["hygiene"],
+        {"hygiene": ["consultar", "criar", "alterar"]},
+    )
+    request = maintenance.create_hygiene_request(
+        maintenance.HygieneRequestCreate(
+            request_type="spot",
+            unit=" Hospital ",
+            area="room",
+            location=" Quarto 3 ",
+            description=" Limpeza pontual solicitada ",
+            priority="high",
+        ),
+        hygiene_worker,
+        domain_database["maintenance"],
+    )
+    assert request["unit"] == "Hospital"
+    assert request["location"] == "Quarto 3"
+    assert request["status"] == "open"
+    assert request["requester_name"] == "Equipe de Higienização"
+
+    updated = maintenance.update_hygiene_request(
+        request["id"],
+        maintenance.HygieneRequestUpdate(
+            status="in_progress",
+            assignee=" Profissional 1 ",
+        ),
+        hygiene_worker,
+        domain_database["maintenance"],
+    )
+    assert updated["status"] == "in_progress"
+    assert updated["assignee"] == "Profissional 1"
+    assert maintenance.list_hygiene_requests(
+        hygiene_worker, domain_database["maintenance"]
+    )["requests"][0]["id"] == request["id"]
+
+
+def test_hygiene_custom_request_requires_a_description() -> None:
+    with pytest.raises(ValidationError):
+        maintenance.HygieneRequestCreate(
+            request_type="other",
+            custom_type=None,
+            unit="Hospital",
+            area="other",
+            location="Corredor",
+        )

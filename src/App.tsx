@@ -112,7 +112,7 @@ const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; d
   { id: 'reception', label: 'Recepção', short: 'Recepção', icon: UsersRound, description: 'Identificação, chegada e direcionamento de pacientes.' },
   { id: 'therapy', label: 'Oficina Terapêutica', short: 'Oficina terapêutica', icon: Activity, description: 'Agenda, participação e acompanhamento das atividades.' },
   { id: 'psychology', label: 'Psicologia / Psiquiatria', short: 'Psicologia', icon: HeartPulse, description: 'Encaminhamentos e acompanhamento da fila de atendimento.' },
-  { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: ShieldCheck, description: 'Solicitações de higienização e acompanhamento pela manutenção.' },
+  { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: ShieldCheck, description: 'Pedidos de limpeza por área e acompanhamento da equipe.' },
   { id: 'maintenance', label: 'Fila de manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
   { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Administração institucional, usuários e configurações.' },
   { id: 'admin', label: 'Administração', short: 'Administração', icon: ShieldCheck, description: 'Usuários, funções e permissões.' },
@@ -399,7 +399,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'pharmacy' && <PharmacyPage />}
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
           {activeModule === 'maintenance' && <MaintenanceQueuePage />}
-          {activeModule === 'hygiene' && <WorkOrdersPage user={user} defaultDepartment="Higienização" hidePatientLookup />}
+          {activeModule === 'hygiene' && <HygienePage user={user} />}
           {activeModule === 'psychology' && <PsychologyPage />}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
           {activeModule === 'reception' && <PatientRegistryPage receptionMode />}
@@ -1015,6 +1015,178 @@ function WorkOrdersPage({ user, defaultDepartment = '', hidePatientLookup = fals
       {loading ? <div className="history-empty">Carregando solicitações…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} />)}</div> : <div className="history-empty"><ClipboardList size={20} /><span>Você ainda não abriu ordens de serviço.</span></div>}
     </section>
     <PrintSelectionPanel title="Minhas ordens de serviço" rows={orderPrintRows} />
+  </section>
+}
+
+type HygieneStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
+type HygienePriority = 'normal' | 'high' | 'urgent'
+type HygieneRequestType = 'routine' | 'spot' | 'after_procedure' | 'restock' | 'other'
+type HygieneArea = 'room' | 'bathroom' | 'shared' | 'clinical' | 'circulation' | 'other'
+type HygieneRequest = {
+  id: string
+  request_type: HygieneRequestType
+  custom_type: string | null
+  unit: string
+  area: HygieneArea
+  location: string
+  description: string
+  priority: HygienePriority
+  status: HygieneStatus
+  assignee: string
+  requester_name: string
+  updated_by: string
+  created_at: string
+  updated_at: string
+}
+
+const hygieneRequestTypes: Record<HygieneRequestType, string> = {
+  routine: 'Higienização programada',
+  spot: 'Limpeza pontual',
+  after_procedure: 'Limpeza após procedimento',
+  restock: 'Reposição de material',
+  other: 'Outra solicitação',
+}
+
+const hygieneAreas: Record<HygieneArea, string> = {
+  room: 'Quarto / leito',
+  bathroom: 'Banheiro',
+  shared: 'Área comum',
+  clinical: 'Consultório / sala',
+  circulation: 'Área de circulação',
+  other: 'Outro local',
+}
+
+const hygieneStatuses: Record<HygieneStatus, string> = {
+  open: 'Aguardando atendimento',
+  in_progress: 'Em andamento',
+  completed: 'Concluída',
+  cancelled: 'Cancelada',
+}
+
+function HygienePage({ user }: { user: AuthUser }) {
+  const [requests, setRequests] = useState<HygieneRequest[]>([])
+  const [form, setForm] = useState({
+    request_type: 'routine' as HygieneRequestType,
+    custom_type: '',
+    unit: '',
+    area: '' as HygieneArea | '',
+    location: '',
+    description: '',
+    priority: 'normal' as HygienePriority,
+  })
+  const [drafts, setDrafts] = useState<Record<string, { status: HygieneStatus; assignee: string }>>({})
+  const [filter, setFilter] = useState<'active' | 'all' | HygieneStatus>('active')
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [updating, setUpdating] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function loadRequests() {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/v1/hygiene/requests')
+      const data = await response.json() as { requests?: HygieneRequest[]; detail?: unknown }
+      if (!response.ok) throw new Error(readableApiError(data.detail))
+      setRequests(data.requests ?? [])
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as solicitações de higienização.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void loadRequests() }, [user.id])
+
+  const visibleRequests = requests.filter((request) => {
+    const matchesStatus = filter === 'all' || (filter === 'active'
+      ? request.status === 'open' || request.status === 'in_progress'
+      : request.status === filter)
+    const searchable = `${request.unit} ${request.location} ${request.description} ${request.custom_type ?? ''} ${request.requester_name} ${request.assignee} ${hygieneAreas[request.area]} ${hygieneRequestTypes[request.request_type]}`.toLocaleLowerCase('pt-BR')
+    return matchesStatus && searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
+  })
+  const activeCount = requests.filter((request) => request.status === 'open' || request.status === 'in_progress').length
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch('/api/v1/hygiene/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, custom_type: form.custom_type.trim() || null }),
+      })
+      const data = await response.json() as HygieneRequest & { detail?: unknown }
+      if (!response.ok) throw new Error(readableApiError(data.detail))
+      setRequests((current) => [data, ...current])
+      setForm({ request_type: 'routine', custom_type: '', unit: '', area: '', location: '', description: '', priority: 'normal' })
+      setNotice('Solicitação adicionada à fila de Higienização.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao registrar a solicitação.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveRequest(request: HygieneRequest) {
+    const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
+    setUpdating(request.id)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch(`/api/v1/hygiene/requests/${request.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: draft.status, assignee: draft.assignee }),
+      })
+      const data = await response.json() as HygieneRequest & { detail?: unknown }
+      if (!response.ok) throw new Error(readableApiError(data.detail))
+      setRequests((current) => current.map((item) => item.id === data.id ? data : item))
+      setDrafts((current) => { const next = { ...current }; delete next[request.id]; return next })
+      setNotice('Solicitação atualizada.')
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar a solicitação.')
+    } finally {
+      setUpdating('')
+    }
+  }
+
+  return <section className="hygiene-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">ROTINA OPERACIONAL</p><h1>Higienização</h1><p className="welcome-copy">Organize pedidos de limpeza por unidade e local, atribua o atendimento e acompanhe a fila da equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
+    <div className="hygiene-summary" aria-label="Resumo da fila"><article><strong>{activeCount}</strong><span>Solicitações ativas</span></article><article><strong>{requests.filter((request) => request.status === 'open').length}</strong><span>Aguardando atendimento</span></article><article><strong>{requests.filter((request) => request.status === 'in_progress').length}</strong><span>Em andamento</span></article></div>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    <form className="hygiene-panel" onSubmit={(event) => void submit(event)}>
+      <div className="section-heading"><div><p className="eyebrow">NOVO PEDIDO</p><h2>Solicitar higienização</h2><p className="welcome-copy">Informe o serviço e o local para direcionar a equipe.</p></div></div>
+      <div className="field-grid field-grid-two">
+        <label className="field"><span className="field-label">Tipo de solicitação</span><select required value={form.request_type} onChange={(event) => setForm({ ...form, request_type: event.target.value as HygieneRequestType, custom_type: '' })}>{Object.entries(hygieneRequestTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Unidade</span><select required value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outra unidade</option></select></label>
+        <label className="field"><span className="field-label">Área</span><select required value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value as HygieneArea })}><option value="">Selecione</option>{Object.entries(hygieneAreas).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Quarto, sala ou referência do local</span><input required minLength={2} maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
+        <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as HygienePriority })}><option value="normal">Rotina</option><option value="high">Prioritária</option><option value="urgent">Urgente</option></select><span className="field-hint">A prioridade urgente deve seguir os critérios e canais definidos pela instituição.</span></label>
+        {form.request_type === 'other' && <label className="field"><span className="field-label">Tipo de solicitação</span><input required minLength={3} maxLength={80} value={form.custom_type} onChange={(event) => setForm({ ...form, custom_type: event.target.value })} placeholder="Descreva o serviço necessário" /></label>}
+        <label className="field hygiene-field-wide"><span className="field-label">{form.request_type === 'restock' ? 'Material e quantidade' : 'Detalhes para a equipe (opcional)'}</span><textarea maxLength={1000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder={form.request_type === 'restock' ? 'Informe o material e a quantidade necessária' : 'Inclua apenas informações operacionais sobre o local ou serviço'} /></label>
+      </div>
+      <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : 'Adicionar à fila'} <ArrowRight size={16} /></button>
+    </form>
+    <section className="hygiene-panel">
+      <div className="section-heading"><div><p className="eyebrow">PAINEL DA EQUIPE</p><h2>Fila de solicitações</h2></div><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
+      <div className="hygiene-filters"><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Buscar por local ou serviço</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label></div>
+      {loading ? <div className="history-empty">Carregando fila…</div> : visibleRequests.length ? <div className="hygiene-request-list">{visibleRequests.map((request) => {
+        const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
+        return <article className="hygiene-request-card" key={request.id}>
+          <div className="hygiene-request-heading"><div><span className={`work-order-priority priority-${request.priority}`}>{workOrderPriorities[request.priority]}</span><h3>{request.request_type === 'other' ? request.custom_type : hygieneRequestTypes[request.request_type]}</h3><p>{request.unit} · {hygieneAreas[request.area]} · {request.location}</p></div><span className={`work-order-status status-${request.status}`}>{hygieneStatuses[request.status]}</span></div>
+          {request.description && <p className="hygiene-request-description">{request.description}</p>}
+          <div className="hygiene-request-meta"><span>Solicitado por <strong>{request.requester_name}</strong></span><time>{dateTime(request.created_at)}</time></div>
+          <div className="hygiene-request-controls"><label className="field"><span className="field-label">Responsável</span><input maxLength={120} value={draft.assignee} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, assignee: event.target.value } }))} placeholder="Atribuir membro da equipe" /></label><label className="field"><span className="field-label">Situação</span><select value={draft.status} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, status: event.target.value as HygieneStatus } }))}><option value="open">Aguardando atendimento</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select></label><button className="button button-secondary" type="button" onClick={() => void saveRequest(request)} disabled={updating === request.id || (draft.status === request.status && draft.assignee === request.assignee)}>{updating === request.id ? 'Salvando…' : 'Salvar atualização'}</button></div>
+          <small className="hygiene-updated">Última atualização por {request.updated_by} · {dateTime(request.updated_at)}</small>
+        </article>
+      })}</div> : <div className="history-empty">Nenhuma solicitação corresponde a este filtro.</div>}
+    </section>
   </section>
 }
 
