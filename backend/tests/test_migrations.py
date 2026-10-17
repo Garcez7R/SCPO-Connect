@@ -1,8 +1,12 @@
 import pytest
 from alembic import command
 from alembic.config import Config
-from scpo_services.common import clear_engine_cache, get_engine
-from sqlalchemy import inspect
+from scpo_services.common import (
+    clear_engine_cache,
+    get_engine,
+    verify_database_migrated,
+)
+from sqlalchemy import inspect, text
 
 
 @pytest.mark.parametrize(
@@ -30,18 +34,26 @@ def test_each_service_migration_creates_only_its_owned_table(
     tables = set(inspect(get_engine(service)).get_table_names())
     assert table in tables
     assert "alembic_version" in tables
+    with get_engine(service).connect() as connection:
+        revision = connection.exec_driver_sql(
+            "SELECT version_num FROM alembic_version"
+        ).scalar_one()
+    assert revision == "0020_psychology_encounters"
     if service == "nursing":
         assert len(tables) == 6
         report_columns = {column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")}
         assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
         assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records"))
-    elif service == "access":
-        assert len(tables) == 3
-    elif service == "maintenance":
+    elif service == "access" or service == "maintenance":
         assert len(tables) == 3
     elif service == "social":
-        assert len(tables) == 3
+        assert len(tables) == 4
         assert "psychology_referrals" in tables
+        assert "psychology_encounters" in tables
+        assert "priority" in {
+            column["name"]
+            for column in inspect(get_engine(service)).get_columns("psychology_referrals")
+        }
     elif service == "pharmacy":
         assert len(tables) == 2
         assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}
@@ -54,6 +66,64 @@ def test_each_service_migration_creates_only_its_owned_table(
         assert any(index["name"].endswith("patient_reference") for index in inspect(get_engine(service)).get_indexes(table))
     if service == "maintenance":
         assert "patient_reference" in {column["name"] for column in inspect(get_engine(service)).get_columns(table)}
+    clear_engine_cache()
+
+
+def test_deployed_psychology_revision_is_recognized(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = "nursing"
+    monkeypatch.setenv("SCPO_SERVICE", service)
+    monkeypatch.setenv(
+        "SCPO_NURSING_DATABASE_URL", f"sqlite:///{tmp_path / 'nursing.sqlite3'}"
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+
+    command.upgrade(config, "0019_psychology_initial")
+    with get_engine(service).begin() as connection:
+        connection.exec_driver_sql(
+            "UPDATE alembic_version SET version_num = '0019_psychology_initial'"
+        )
+
+    command.upgrade(config, "head")
+    verify_database_migrated(service)
+    clear_engine_cache()
+
+
+def test_psychology_upgrade_preserves_existing_referrals(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_SERVICE", "social")
+    monkeypatch.setenv(
+        "SCPO_SOCIAL_DATABASE_URL", f"sqlite:///{tmp_path / 'social.sqlite3'}"
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+    command.upgrade(config, "0019_psychology_initial")
+
+    with get_engine("social").begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO psychology_referrals "
+                "(patient_reference, referral_type, status, created_at) "
+                "VALUES (:reference, :type, :status, :created_at)"
+            ),
+            {
+                "reference": "123e4567-e89b-12d3-a456-426614174000",
+                "type": "Acolhimento",
+                "status": "open",
+                "created_at": "2026-10-17 12:00:00",
+            },
+        )
+
+    command.upgrade(config, "head")
+    with get_engine("social").connect() as connection:
+        row = connection.execute(
+            text("SELECT referral_type, priority FROM psychology_referrals")
+        ).one()
+    assert row == ("Acolhimento", "routine")
+    verify_database_migrated("social")
     clear_engine_cache()
 
 

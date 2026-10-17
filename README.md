@@ -27,6 +27,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço: abertura por funcionários, vínculo opcional com paciente e fila de execução da manutenção.
 - Solicitações de Raio X e encaminhamentos de Serviço Social ligados ao cadastro compartilhado de pacientes.
+- Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.
@@ -35,7 +36,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 
 ### Áreas de trabalho
 
-Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Nutrição, Recepção, Oficina Terapêutica, Manutenção e Gestão Hospitalar. Higienização e Psicologia / Psiquiatria não aparecem como áreas operacionais até terem fluxos funcionais definidos.
+Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Psicologia / Psiquiatria, Nutrição, Recepção, Oficina Terapêutica, Manutenção e Gestão Hospitalar. Higienização não aparece como área operacional até ter fluxos funcionais definidos.
 
 ## Arquitetura
 

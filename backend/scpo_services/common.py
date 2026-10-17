@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,7 +71,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0018_psychology_referrals"
+    expected_revision = "0020_psychology_encounters"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."

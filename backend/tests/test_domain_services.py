@@ -1,13 +1,19 @@
+import asyncio
 from collections.abc import Generator
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import HTTPException, Request
 from pydantic import ValidationError
+from scpo_services import access, audit, pharmacy, social, xray
+from scpo_services.common import (
+    DemoPrincipal,
+    clear_engine_cache,
+    get_engine,
+    require_demo_role,
+)
 from sqlalchemy.orm import Session
-
-from scpo_services import access, audit, nursing, pharmacy, social, xray
-from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
 
 
 @pytest.fixture
@@ -86,8 +92,9 @@ def test_psychology_queue_is_persisted_separately_from_social_referrals(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:
     reference = "123e4567-e89b-12d3-a456-426614174000"
+    audit_events = []
     monkeypatch.setattr(social, "verify_patient_reference", lambda value: {"reference": value})
-    monkeypatch.setattr(social, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(social, "emit_audit_event", lambda *args: audit_events.append(args))
     psychologist = DemoPrincipal("psych-1", "psych", "Psicóloga", "psychology", ["psychology"], {"psychology": ["consultar", "criar"]})
     social_worker = DemoPrincipal("social-1", "social", "Assistente social", "social", ["social"], {"social": ["consultar", "criar"]})
     social.create_referral(
@@ -96,10 +103,90 @@ def test_psychology_queue_is_persisted_separately_from_social_referrals(
         domain_database["social"],
     )
     referral = social.create_psychology_referral(
-        social.ReferralPayload(patient_reference=reference, referral_type="Acolhimento"),
+        social.PsychologyReferralPayload(
+            patient_reference=reference,
+            referral_type="Acolhimento",
+            priority="priority",
+        ),
         psychologist,
         domain_database["social"],
     )
     assert referral["status"] == "open"
+    assert referral["priority"] == "priority"
     assert social.list_psychology_referrals(psychologist, domain_database["social"])["referrals"][0]["id"] == referral["id"]
     assert len(social.list_referrals(social_worker, domain_database["social"])["referrals"]) == 1
+
+    updated = social.update_psychology_referral(
+        referral["id"],
+        social.PsychologyReferralUpdatePayload(status="scheduled"),
+        psychologist,
+        domain_database["social"],
+    )
+    assert updated["status"] == "scheduled"
+
+    encounter = social.create_psychology_encounter(
+        social.PsychologyEncounterPayload(
+            patient_reference=reference,
+            encounter_type="intake",
+            objective="  Acolhimento inicial  ",
+            evolution="  Registro clínico confidencial  ",
+            plan="  Acompanhamento  ",
+        ),
+        psychologist,
+        domain_database["social"],
+    )
+    assert encounter["objective"] == "Acolhimento inicial"
+    assert encounter["evolution"] == "Registro clínico confidencial"
+    assert encounter["actor_name"] == "Psicóloga"
+    assert social.list_psychology_encounters(
+        psychologist, domain_database["social"], patient_reference=reference
+    )["encounters"][0]["id"] == encounter["id"]
+    assert all("Registro clínico confidencial" not in repr(event) for event in audit_events)
+
+
+def test_psychology_encounters_require_structured_content() -> None:
+    with pytest.raises(ValidationError):
+        social.PsychologyEncounterPayload(
+            patient_reference="123e4567-e89b-12d3-a456-426614174000",
+            encounter_type="intake",
+            objective="  ",
+            evolution="",
+        )
+    with pytest.raises(ValidationError):
+        social.PsychologyEncounterPayload(
+            patient_reference="123e4567-e89b-12d3-a456-426614174000",
+            encounter_type="unknown",
+            objective="Acolhimento",
+            evolution="Registro",
+        )
+
+
+def test_psychology_routes_require_module_permission(monkeypatch: pytest.MonkeyPatch) -> None:
+    principal = DemoPrincipal(
+        "psych-1",
+        "psych",
+        "Psicóloga",
+        "psychology",
+        ["psychology"],
+        {"psychology": ["consultar", "criar", "alterar"]},
+    )
+
+    async def resolve_principal(_request: Request) -> DemoPrincipal:
+        return principal
+
+    monkeypatch.setattr("scpo_services.common.authenticated_principal", resolve_principal)
+    authorize = require_demo_role("psychology")
+    request = Request({"type": "http", "method": "GET", "headers": [], "path": "/"})
+    assert asyncio.run(authorize(request)) == principal
+
+    principal = DemoPrincipal(
+        "social-1",
+        "social",
+        "Assistente social",
+        "social",
+        ["social"],
+        {"social": ["consultar"]},
+    )
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(authorize(request))
+    assert denied.value.status_code == 403
