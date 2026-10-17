@@ -113,7 +113,7 @@ const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; d
   { id: 'therapy', label: 'Oficina Terapêutica', short: 'Oficina terapêutica', icon: Activity, description: 'Agenda, participação e acompanhamento das atividades.' },
   { id: 'psychology', label: 'Psicologia / Psiquiatria', short: 'Psicologia', icon: HeartPulse, description: 'Encaminhamentos e acompanhamento da fila de atendimento.' },
   { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: ShieldCheck, description: 'Pedidos de limpeza por área e acompanhamento da equipe.' },
-  { id: 'maintenance', label: 'Fila de manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
+  { id: 'maintenance', label: 'Manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
   { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Administração institucional, usuários e configurações.' },
   { id: 'admin', label: 'Administração', short: 'Administração', icon: ShieldCheck, description: 'Usuários, funções e permissões.' },
 ]
@@ -254,6 +254,26 @@ function readableApiError(detail: unknown): string {
     if (typeof message === 'string') return message
   }
   return 'Não foi possível concluir esta etapa. Confira os campos e tente novamente.'
+}
+
+async function readApiResponse<T>(response: Response): Promise<T> {
+  const body = await response.text()
+  let data: unknown
+  try {
+    data = body ? JSON.parse(body) as unknown : {}
+  } catch {
+    const plainText = body.trim()
+    const usefulText = plainText && !plainText.startsWith('<') ? plainText.slice(0, 180) : ''
+    const detail = usefulText || `O servidor não retornou JSON válido (HTTP ${response.status}).`
+    throw new Error(response.ok ? detail : `HTTP ${response.status}: ${detail}`)
+  }
+  if (!response.ok) {
+    const detail = data && typeof data === 'object' && 'detail' in data
+      ? (data as { detail: unknown }).detail
+      : `Erro HTTP ${response.status}.`
+    throw new Error(readableApiError(detail))
+  }
+  return data as T
 }
 
 function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
@@ -409,7 +429,8 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'management' && <ManagementPage onNavigate={navigate} />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage />}
-          {(['xray', 'social'] as ModuleId[]).includes(activeModule) && <PatientOperationsPage moduleId={activeModule as 'xray' | 'social'} />}
+          {activeModule === 'xray' && <XrayPage user={user} />}
+          {activeModule === 'social' && <PatientOperationsPage moduleId="social" />}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
@@ -926,22 +947,26 @@ function getGreeting() {
   return hour >= 5 && hour < 12 ? 'Bom dia' : hour >= 12 && hour < 18 ? 'Boa tarde' : 'Boa noite'
 }
 
-function WorkOrdersPage({ user, defaultDepartment = '', hidePatientLookup = false }: { user: AuthUser; defaultDepartment?: string; hidePatientLookup?: boolean }) {
+function WorkOrdersPage({ user }: { user: AuthUser }) {
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
+  const [serviceTab, setServiceTab] = useState<'maintenance' | 'hygiene'>('maintenance')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [reviewing, setReviewing] = useState(false)
-  const [form, setForm] = useState({ title: '', category: '', description: '', department: defaultDepartment, customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' as WorkOrderPriority })
+  const [form, setForm] = useState({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' as WorkOrderPriority })
+  const canLookupPatients = user.modules.some((module) =>
+    ['patients', 'nursing', 'reception', 'therapy', 'nutrition', 'social', 'xray', 'maintenance', 'psychology', 'management'].includes(module)
+      && user.permissions[module]?.includes('consultar'),
+  )
 
   async function loadOrders() {
     setLoading(true)
     try {
       const response = await fetch('/api/v1/maintenance/orders')
-      const data = await response.json() as { orders?: WorkOrder[]; detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar suas solicitações.')
+      const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
       setOrders(data.orders ?? [])
       setError('')
     } catch (loadError) {
@@ -952,7 +977,13 @@ function WorkOrdersPage({ user, defaultDepartment = '', hidePatientLookup = fals
   }
 
   useEffect(() => { void loadOrders() }, [user.id])
-  useEffect(() => { if (hidePatientLookup) return; fetch('/api/v1/nursing/patients').then(async (response) => { const data = await response.json() as { patients?: Patient[] }; if (response.ok) setPatients(data.patients ?? []) }).catch(() => undefined) }, [hidePatientLookup])
+  useEffect(() => {
+    if (!canLookupPatients) return
+    fetch('/api/v1/nursing/patients')
+      .then((response) => readApiResponse<{ patients?: Patient[] }>(response))
+      .then((data) => setPatients(data.patients ?? []))
+      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes.'))
+  }, [canLookupPatients, user.id])
   const orderPrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: order.title, fields: [['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -975,10 +1006,9 @@ function WorkOrdersPage({ user, defaultDepartment = '', hidePatientLookup = fals
           priority: form.priority,
         }),
       })
-      const data = await response.json() as WorkOrder & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível abrir a ordem de serviço.')
+      const data = await readApiResponse<WorkOrder>(response)
       setOrders((current) => [data, ...current])
-      setForm({ title: '', category: '', description: '', department: defaultDepartment, customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' })
+      setForm({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' })
       setReviewing(false)
       setNotice('Ordem de serviço aberta. A equipe de manutenção poderá acompanhar a solicitação.')
     } catch (submitError) {
@@ -989,18 +1019,23 @@ function WorkOrdersPage({ user, defaultDepartment = '', hidePatientLookup = fals
   }
 
   return <section className="work-orders-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">SERVIÇOS INTERNOS</p><h1>Abrir ordem de serviço</h1><p className="welcome-copy">Solicite reparos, instalações e apoio de manutenção. A solicitação fica vinculada à sua conta.</p></div><span className="module-icon module-icon-maintenance"><ClipboardPlus size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">SERVIÇOS INTERNOS</p><h1>Ordens de serviço</h1><p className="welcome-copy">Escolha o serviço para encaminhar o pedido à equipe responsável.</p></div><span className="module-icon module-icon-maintenance"><ClipboardPlus size={23} /></span></div>
+    <div className="service-tabs" role="tablist" aria-label="Tipo de ordem de serviço">
+      <button className={`psychology-tab ${serviceTab === 'maintenance' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={serviceTab === 'maintenance'} onClick={() => { setServiceTab('maintenance'); setError(''); setNotice('') }}><Wrench size={16} /> Manutenção</button>
+      <button className={`psychology-tab ${serviceTab === 'hygiene' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={serviceTab === 'hygiene'} onClick={() => { setServiceTab('hygiene'); setError(''); setNotice('') }}><ShieldCheck size={16} /> Higienização</button>
+    </div>
+    {serviceTab === 'maintenance' ? <>
     <form className="work-order-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVA SOLICITAÇÃO</p><h2>{reviewing ? 'Revise antes de enviar' : 'Descreva o que precisa'}</h2><p className="welcome-copy">{reviewing ? 'Confira os dados do chamado e confirme a abertura.' : 'Informe o tipo de serviço, o local e o que precisa ser feito.'}</p></div></div>
       {!reviewing ? <>
         <div className="field-grid field-grid-two">
-          <label className="field"><span className="field-label">Tipo de serviço</span><select required value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option value="">Selecione uma categoria</option><option>Elétrica</option><option>Hidráulica</option><option>Climatização</option><option>Higienização</option><option>Equipamento</option><option>Estrutura e mobiliário</option><option>Rede e telefonia</option><option>Outro serviço</option></select></label>
+          <label className="field"><span className="field-label">Tipo de serviço</span><select required value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option value="">Selecione uma categoria</option><option>Elétrica</option><option>Hidráulica</option><option>Climatização</option><option>Equipamento</option><option>Estrutura e mobiliário</option><option>Rede e telefonia</option><option>Outro serviço</option></select></label>
           <label className="field"><span className="field-label">Assunto</span><input required minLength={5} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: torneira com vazamento" /></label>
           <label className="field"><span className="field-label">Setor solicitante</span><select required value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value, customDepartment: '' })}><option value="">Selecione seu setor</option><option>Enfermagem</option><option>Farmácia</option><option>Raio X</option><option>Serviço Social</option><option>Nutrição</option><option>Higienização</option><option>Psicologia / Psiquiatria</option><option>Recepção</option><option>Administração</option><option>Outro</option></select></label>
           {form.department === 'Outro' && <label className="field"><span className="field-label">Informe o setor</span><input required minLength={2} maxLength={100} value={form.customDepartment} onChange={(event) => setForm({ ...form, customDepartment: event.target.value })} /></label>}
           <label className="field"><span className="field-label">Unidade</span><select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione a unidade</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outro</option></select></label>
           <label className="field"><span className="field-label">Quarto, sala ou local</span><input maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
-          {!hidePatientLookup && <label className="field"><span className="field-label">Paciente relacionado (opcional)</span><select value={form.patientReference} onChange={(event) => setForm({ ...form, patientReference: event.target.value })}><option value="">Sem vínculo com paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label>}
+          {canLookupPatients && <label className="field"><span className="field-label">Paciente relacionado (opcional)</span><select value={form.patientReference} onChange={(event) => setForm({ ...form, patientReference: event.target.value })}><option value="">Sem vínculo com paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label>}
           <label className="field"><span className="field-label">Número do patrimônio (opcional)</span><input maxLength={60} value={form.assetCode} onChange={(event) => setForm({ ...form, assetCode: event.target.value })} placeholder="Etiqueta do equipamento" /></label>
           <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as WorkOrderPriority })}><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente quando houver impacto imediato no funcionamento ou na segurança.</span></label>
         </div>
@@ -1015,6 +1050,7 @@ function WorkOrdersPage({ user, defaultDepartment = '', hidePatientLookup = fals
       {loading ? <div className="history-empty">Carregando solicitações…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} />)}</div> : <div className="history-empty"><ClipboardList size={20} /><span>Você ainda não abriu ordens de serviço.</span></div>}
     </section>
     <PrintSelectionPanel title="Minhas ordens de serviço" rows={orderPrintRows} />
+    </> : <HygieneRequestForm />}
   </section>
 }
 
@@ -1063,8 +1099,7 @@ const hygieneStatuses: Record<HygieneStatus, string> = {
   cancelled: 'Cancelada',
 }
 
-function HygienePage({ user }: { user: AuthUser }) {
-  const [requests, setRequests] = useState<HygieneRequest[]>([])
+function HygieneRequestForm() {
   const [form, setForm] = useState({
     request_type: 'routine' as HygieneRequestType,
     custom_type: '',
@@ -1074,11 +1109,57 @@ function HygienePage({ user }: { user: AuthUser }) {
     description: '',
     priority: 'normal' as HygienePriority,
   })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch('/api/v1/hygiene/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, custom_type: form.custom_type.trim() || null }),
+      })
+      await readApiResponse<HygieneRequest>(response)
+      setForm({ request_type: 'routine', custom_type: '', unit: '', area: '', location: '', description: '', priority: 'normal' })
+      setNotice('Solicitação enviada à equipe de Higienização.')
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Falha ao registrar a solicitação.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <section className="hygiene-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">ORDEM DE SERVIÇO · HIGIENIZAÇÃO</p><h1>Solicitar higienização</h1><p className="welcome-copy">Informe o serviço e o local para direcionar o pedido à equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    <form className="hygiene-panel" onSubmit={(event) => void submit(event)}>
+      <div className="field-grid field-grid-two">
+        <label className="field"><span className="field-label">Tipo de solicitação</span><select required value={form.request_type} onChange={(event) => setForm({ ...form, request_type: event.target.value as HygieneRequestType, custom_type: '' })}>{Object.entries(hygieneRequestTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Unidade</span><select required value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outra unidade</option></select></label>
+        <label className="field"><span className="field-label">Área</span><select required value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value as HygieneArea })}><option value="">Selecione</option>{Object.entries(hygieneAreas).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Quarto, sala ou referência do local</span><input required minLength={2} maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
+        <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as HygienePriority })}><option value="normal">Rotina</option><option value="high">Prioritária</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente conforme os critérios e canais definidos pela instituição.</span></label>
+        {form.request_type === 'other' && <label className="field"><span className="field-label">Tipo de solicitação</span><input required minLength={3} maxLength={80} value={form.custom_type} onChange={(event) => setForm({ ...form, custom_type: event.target.value })} placeholder="Descreva o serviço necessário" /></label>}
+        <label className="field hygiene-field-wide"><span className="field-label">{form.request_type === 'restock' ? 'Material e quantidade' : 'Detalhes operacionais (opcional)'}</span><textarea maxLength={1000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder={form.request_type === 'restock' ? 'Informe o material e a quantidade necessária' : 'Descreva o serviço e condições relevantes do local'} /></label>
+      </div>
+      <p className="work-order-privacy">Não inclua nomes, diagnósticos ou outros dados de pacientes na descrição.</p>
+      <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : 'Enviar solicitação'} <ArrowRight size={16} /></button>
+    </form>
+  </section>
+}
+
+function HygienePage({ user }: { user: AuthUser }) {
+  const [requests, setRequests] = useState<HygieneRequest[]>([])
   const [drafts, setDrafts] = useState<Record<string, { status: HygieneStatus; assignee: string }>>({})
   const [filter, setFilter] = useState<'active' | 'all' | HygieneStatus>('active')
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [updating, setUpdating] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -1087,8 +1168,7 @@ function HygienePage({ user }: { user: AuthUser }) {
     setLoading(true)
     try {
       const response = await fetch('/api/v1/hygiene/requests')
-      const data = await response.json() as { requests?: HygieneRequest[]; detail?: unknown }
-      if (!response.ok) throw new Error(readableApiError(data.detail))
+      const data = await readApiResponse<{ requests?: HygieneRequest[] }>(response)
       setRequests(data.requests ?? [])
       setError('')
     } catch (loadError) {
@@ -1109,29 +1189,6 @@ function HygienePage({ user }: { user: AuthUser }) {
   })
   const activeCount = requests.filter((request) => request.status === 'open' || request.status === 'in_progress').length
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch('/api/v1/hygiene/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, custom_type: form.custom_type.trim() || null }),
-      })
-      const data = await response.json() as HygieneRequest & { detail?: unknown }
-      if (!response.ok) throw new Error(readableApiError(data.detail))
-      setRequests((current) => [data, ...current])
-      setForm({ request_type: 'routine', custom_type: '', unit: '', area: '', location: '', description: '', priority: 'normal' })
-      setNotice('Solicitação adicionada à fila de Higienização.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao registrar a solicitação.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function saveRequest(request: HygieneRequest) {
     const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
     setUpdating(request.id)
@@ -1143,8 +1200,7 @@ function HygienePage({ user }: { user: AuthUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: draft.status, assignee: draft.assignee }),
       })
-      const data = await response.json() as HygieneRequest & { detail?: unknown }
-      if (!response.ok) throw new Error(readableApiError(data.detail))
+      const data = await readApiResponse<HygieneRequest>(response)
       setRequests((current) => current.map((item) => item.id === data.id ? data : item))
       setDrafts((current) => { const next = { ...current }; delete next[request.id]; return next })
       setNotice('Solicitação atualizada.')
@@ -1156,23 +1212,10 @@ function HygienePage({ user }: { user: AuthUser }) {
   }
 
   return <section className="hygiene-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">ROTINA OPERACIONAL</p><h1>Higienização</h1><p className="welcome-copy">Organize pedidos de limpeza por unidade e local, atribua o atendimento e acompanhe a fila da equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
     <div className="hygiene-summary" aria-label="Resumo da fila"><article><strong>{activeCount}</strong><span>Solicitações ativas</span></article><article><strong>{requests.filter((request) => request.status === 'open').length}</strong><span>Aguardando atendimento</span></article><article><strong>{requests.filter((request) => request.status === 'in_progress').length}</strong><span>Em andamento</span></article></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <form className="hygiene-panel" onSubmit={(event) => void submit(event)}>
-      <div className="section-heading"><div><p className="eyebrow">NOVO PEDIDO</p><h2>Solicitar higienização</h2><p className="welcome-copy">Informe o serviço e o local para direcionar a equipe.</p></div></div>
-      <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Tipo de solicitação</span><select required value={form.request_type} onChange={(event) => setForm({ ...form, request_type: event.target.value as HygieneRequestType, custom_type: '' })}>{Object.entries(hygieneRequestTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">Unidade</span><select required value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outra unidade</option></select></label>
-        <label className="field"><span className="field-label">Área</span><select required value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value as HygieneArea })}><option value="">Selecione</option>{Object.entries(hygieneAreas).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">Quarto, sala ou referência do local</span><input required minLength={2} maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
-        <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as HygienePriority })}><option value="normal">Rotina</option><option value="high">Prioritária</option><option value="urgent">Urgente</option></select><span className="field-hint">A prioridade urgente deve seguir os critérios e canais definidos pela instituição.</span></label>
-        {form.request_type === 'other' && <label className="field"><span className="field-label">Tipo de solicitação</span><input required minLength={3} maxLength={80} value={form.custom_type} onChange={(event) => setForm({ ...form, custom_type: event.target.value })} placeholder="Descreva o serviço necessário" /></label>}
-        <label className="field hygiene-field-wide"><span className="field-label">{form.request_type === 'restock' ? 'Material e quantidade' : 'Detalhes para a equipe (opcional)'}</span><textarea maxLength={1000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder={form.request_type === 'restock' ? 'Informe o material e a quantidade necessária' : 'Inclua apenas informações operacionais sobre o local ou serviço'} /></label>
-      </div>
-      <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : 'Adicionar à fila'} <ArrowRight size={16} /></button>
-    </form>
     <section className="hygiene-panel">
       <div className="section-heading"><div><p className="eyebrow">PAINEL DA EQUIPE</p><h2>Fila de solicitações</h2></div><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
       <div className="hygiene-filters"><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Buscar por local ou serviço</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label></div>
@@ -1203,8 +1246,7 @@ function MaintenanceQueuePage() {
     try {
       const params = new URLSearchParams(Object.entries(nextFilters).filter(([, value]) => value))
       const response = await fetch(`/api/v1/maintenance/queue${params.size ? `?${params}` : ''}`)
-      const data = await response.json() as { orders?: WorkOrder[]; detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar a fila de manutenção.')
+      const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
       setOrders(data.orders ?? [])
       setError('')
     } catch (loadError) {
@@ -1234,8 +1276,7 @@ function MaintenanceQueuePage() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: change.status, note: change.note }),
       })
-      const data = await response.json() as WorkOrder & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível atualizar a ordem.')
+      const data = await readApiResponse<WorkOrder>(response)
       setOrders((current) => current.map((item) => item.id === data.id ? data : item))
       setChanges((current) => { const next = { ...current }; delete next[order.id]; return next })
       setNotice(`Ordem atualizada para “${workOrderStatuses[data.status]}”.`)
@@ -1245,14 +1286,14 @@ function MaintenanceQueuePage() {
   }
 
   return <section className="work-orders-page page-enter maintenance-queue-page">
-    <div className="page-title-row"><div><p className="eyebrow">EQUIPE DE MANUTENÇÃO</p><h1>Fila de ordens de serviço</h1><p className="welcome-copy">Consulte solicitações de todos os setores e atualize o andamento do serviço.</p></div><span className="module-icon module-icon-maintenance"><Wrench size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · MANUTENÇÃO</p><h1>Manutenção</h1><p className="welcome-copy">Consulte solicitações de todos os setores e atualize o andamento dos serviços.</p></div><span className="module-icon module-icon-maintenance"><Wrench size={23} /></span></div>
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
     <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions"><button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
       <form className="maintenance-filters" onSubmit={(event) => { event.preventDefault(); void loadQueue(filters) }}><label className="field"><span className="field-label">De</span><input type="date" value={filters.from_date} onChange={(event) => setFilters({ ...filters, from_date: event.target.value })} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={filters.to_date} onChange={(event) => setFilters({ ...filters, to_date: event.target.value })} /></label><label className="field"><span className="field-label">Tipo de serviço</span><select value={filters.service_type} onChange={(event) => setFilters({ ...filters, service_type: event.target.value })}><option value="">Todos</option>{['Elétrica', 'Hidráulica', 'Climatização', 'Higienização', 'Equipamento', 'Estrutura e mobiliário', 'Rede e telefonia', 'Outro serviço'].map((type) => <option key={type}>{type}</option>)}</select></label><label className="field"><span className="field-label">Setor solicitante</span><input value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })} placeholder="Todos os setores" /></label><label className="field"><span className="field-label">Status</span><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos</option>{Object.entries(workOrderStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select value={filters.priority} onChange={(event) => setFilters({ ...filters, priority: event.target.value })}><option value="">Todas</option>{Object.entries(workOrderPriorities).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Assunto, local ou solicitante" /></label><div className="maintenance-filter-actions"><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Filtrar</button><button className="button button-secondary" type="button" onClick={() => { const empty = { from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' }; setFilters(empty); void loadQueue(empty) }}>Limpar</button></div></form>
       <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{orders.length} ordens</strong>{Object.entries(workOrderStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status] ?? 0}</b></span>)}</div>
       {loading ? <div className="history-empty">Carregando fila…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} editable onStatusChange={(status) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status, note: '' }), status } }))} status={changes[order.id]?.status ?? order.status} note={changes[order.id]?.note ?? ''} onNoteChange={(note) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status }), note } }))} onSave={() => void saveStatus(order)} saving={false} />)}</div> : <div className="history-empty"><CheckCircle2 size={20} /><span>Nenhuma ordem de serviço corresponde aos filtros.</span></div>}
     </section>
-    <PrintSelectionPanel title="Relatório da fila de manutenção" rows={maintenancePrintRows} />
+    <PrintSelectionPanel title="Relatório de Manutenção" rows={maintenancePrintRows} />
   </section>
 }
 
@@ -1276,6 +1317,7 @@ function PharmacyPage() {
   const [items, setItems] = useState<PharmacyItem[]>([])
   const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [query, setQuery] = useState('')
+  const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1340,8 +1382,7 @@ function PharmacyPage() {
     setLoading(true)
     try {
       const response = await fetch('/api/v1/pharmacy/items')
-      const data = await response.json() as { items?: PharmacyItem[]; detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar o estoque.')
+      const data = await readApiResponse<{ items?: PharmacyItem[] }>(response)
       setItems(data.items ?? [])
       setError('')
     } catch (loadError) {
@@ -1356,8 +1397,7 @@ function PharmacyPage() {
     setSaving(true); setError(''); setNotice('')
     try {
       const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: form.balance.replace(',', '.'), unit: form.unit.trim(), lot: form.lot.trim() }) })
-      const data = await response.json() as PharmacyItem & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível cadastrar o lote.')
+      const data = await readApiResponse<PharmacyItem>(response)
       setItems((current) => [...current, data].sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR')))
       setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
       setShowForm(false)
@@ -1367,8 +1407,10 @@ function PharmacyPage() {
     } finally { setSaving(false) }
   }
 
-  const today = new Date().toISOString().slice(0, 10)
-  const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+  const soonDate = new Date(`${today}T12:00:00`)
+  soonDate.setDate(soonDate.getDate() + 30)
+  const soon = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(soonDate)
   const expiredCount = items.filter((item) => item.expiry_date < today).length
   const expiringCount = items.filter((item) => item.expiry_date >= today && item.expiry_date <= soon).length
   const stockLevels = items.map(stockLevel)
@@ -1376,17 +1418,35 @@ function PharmacyPage() {
   const attentionCount = stockLevels.filter((level) => level === 'attention').length
   const healthyCount = stockLevels.filter((level) => level === 'healthy').length
   const unconfiguredCount = stockLevels.filter((level) => level === 'unconfigured').length
-  const filteredItems = items.filter((item) => `${item.item_name} ${item.lot} ${item.barcode} ${item.category} ${item.active_ingredient} ${item.presentation} ${item.storage_location}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')))
+  const filteredItems = items.filter((item) => {
+    const matchesSearch = `${item.item_name} ${item.lot} ${item.barcode} ${item.category} ${item.active_ingredient} ${item.presentation} ${item.storage_location}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'))
+    const level = stockLevel(item)
+    const matchesFilter = stockFilter === 'all'
+      || (stockFilter === 'expired' && item.expiry_date < today)
+      || (stockFilter === 'expiring' && item.expiry_date >= today && item.expiry_date <= soon)
+      || (stockFilter === 'critical' && level === 'critical')
+      || (stockFilter === 'attention' && level === 'attention')
+    return matchesSearch && matchesFilter
+  }).sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.item_name.localeCompare(b.item_name, 'pt-BR'))
   const pharmacyPrintRows: PrintRow[] = filteredItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
 
   return <section className="pharmacy-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>Estoque e validade</h1><p className="welcome-copy">Cadastre itens por lote e acompanhe saldo e prazo de validade.</p></div><button className="button button-primary" type="button" onClick={() => { setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button></div>
     <div className="pharmacy-summary"><article><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article><article className={expiringCount ? 'pharmacy-summary-warning' : ''}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article><article className={expiredCount ? 'pharmacy-summary-danger' : ''}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article><article className={criticalCount ? 'pharmacy-summary-danger' : ''}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No limite mínimo ou abaixo</small></article></div>
+    <div className="pharmacy-quick-filters" role="group" aria-label="Filtrar estoque">
+      {([
+        ['all', 'Todos', items.length],
+        ['critical', 'Estoque crítico', criticalCount],
+        ['attention', 'Atenção', attentionCount],
+        ['expired', 'Vencidos', expiredCount],
+        ['expiring', 'Vencem em 30 dias', expiringCount],
+      ] as const).map(([value, label, count]) => <button className={`button ${stockFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" key={value} aria-pressed={stockFilter === value} onClick={() => setStockFilter(value)}>{label}<span>{count}</span></button>)}
+    </div>
     <PharmacyStockOverview items={items} onSaved={(updated) => setItems((current) => current.map((item) => item.id === updated.id ? updated : item))} counts={{ critical: criticalCount, attention: attentionCount, healthy: healthyCount, unconfigured: unconfiguredCount }} />
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Código de barras / GTIN</span><input inputMode="numeric" autoComplete="off" maxLength={40} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value.slice(0, 40) })} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault() }} placeholder="Leia com o leitor USB ou digite" /><span className="field-hint">O leitor USB funciona como teclado: clique aqui e leia o código.</span></label><div className="field pharmacy-scan-field"><span className="field-label">Leitura pela câmera</span><button className="button button-secondary" type="button" onClick={() => { setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>{cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage}</span></>}</div><label className="field"><span className="field-label">Nome do produto</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item ou medicamento" /></label><label className="field"><span className="field-label">Categoria</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Medicamento</option><option>Material hospitalar</option><option>Material de consumo</option><option>Higiene e limpeza</option><option>Outro</option></select></label><label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label><label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label><label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label><label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label><label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label><label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label><label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label><label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label><label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label></div><div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div></form>}
-    <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, código, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
-      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => { const expired = item.expiry_date < today; const expiring = !expired && item.expiry_date <= soon; const low = Number(item.minimum_balance.replace(',', '.')) > 0 && Number(item.balance.replace(',', '.')) <= Number(item.minimum_balance.replace(',', '.')); return <article className="pharmacy-item-card" key={item.id}><div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired ? <AlertTriangle size={14} /> : expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Abaixo do mínimo' : 'Dentro da validade'}</span></div><h3>{item.item_name}</h3><p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p><div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low ? ` · mínimo ${item.minimum_balance}` : ''}</span></div><div className="pharmacy-item-meta"><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div></article> })}</div> : <div className="history-empty"><Package size={20} /><span>{query ? 'Nenhum item corresponde à busca.' : 'Nenhum lote cadastrado.'}</span></div>}
+    <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
+      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => { const expired = item.expiry_date < today; const expiring = !expired && item.expiry_date <= soon; const low = Number(item.minimum_balance.replace(',', '.')) > 0 && Number(item.balance.replace(',', '.')) <= Number(item.minimum_balance.replace(',', '.')); return <article className="pharmacy-item-card" key={item.id}><div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired ? <AlertTriangle size={14} /> : expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Abaixo do mínimo' : 'Dentro da validade'}</span></div><h3>{item.item_name}</h3><p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p><div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low ? ` · mínimo ${item.minimum_balance}` : ''}</span></div><div className="pharmacy-item-meta"><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div></article> })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
     </section>
     <PrintSelectionPanel title="Relatório de estoque por lote" rows={pharmacyPrintRows} />
   </section>
@@ -1419,8 +1479,7 @@ function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem
     setSaving(true); setMessage('')
     try {
       const response = await fetch(`/api/v1/pharmacy/items/${item.id}/stock-thresholds`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minimum_balance: minimum.replace(',', '.'), average_balance: average.replace(',', '.') }) })
-      const data = await response.json() as PharmacyItem & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar as metas.')
+      const data = await readApiResponse<PharmacyItem>(response)
       onSaved(data); setEditing(null); setMessage(`Metas atualizadas para ${item.item_name}.`)
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao salvar metas.') }
     finally { setSaving(false) }
@@ -1992,15 +2051,15 @@ function NutritionPage() {
   const [records, setRecords] = useState<NutritionRecordData[]>([])
   const [selectedPatient, setSelectedPatient] = useState('')
   const [patientQuery, setPatientQuery] = useState('')
+  const [recordQuery, setRecordQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [form, setForm] = useState({ assessment_date: new Date().toLocaleDateString('en-CA'), weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '', fasting_at: '', fasting_reason: '' })
   async function loadRecords() {
     try {
-      const response = await fetch('/api/v1/nursing/nutrition')
-      const data = await response.json() as { records?: NutritionRecordData[]; detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os registros nutricionais.')
+      const response = await fetch('/api/v1/nursing/nutrition?limit=100')
+      const data = await readApiResponse<{ records?: NutritionRecordData[] }>(response)
       setRecords(data.records ?? [])
     } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os registros.') }
   }
@@ -2008,8 +2067,7 @@ function NutritionPage() {
     void (async () => {
       try {
         const response = await fetch('/api/v1/nursing/patients')
-        const data = await response.json() as { patients?: Patient[]; detail?: string }
-        if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os pacientes.')
+        const data = await readApiResponse<{ patients?: Patient[] }>(response)
         setPatients(data.patients ?? [])
       } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes.') }
       await loadRecords()
@@ -2021,8 +2079,7 @@ function NutritionPage() {
     setBusy(true); setError(''); setMessage('')
     try {
       const response = await fetch('/api/v1/nursing/nutrition', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, fasting_at: form.fasting_at ? new Date(form.fasting_at).toISOString() : null, patient_reference: selectedPatient }) })
-      const data = await response.json() as NutritionRecordData & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar a avaliação.')
+      await readApiResponse<NutritionRecordData>(response)
       setForm({ ...form, weight_kg: '', height_cm: '', diet_type: '', allergies: '', restrictions: '', appetite: '', hydration: '', notes: '', fasting_at: '', fasting_reason: '' })
       setMessage('Avaliação nutricional registrada.')
       await loadRecords()
@@ -2031,16 +2088,22 @@ function NutritionPage() {
   }
   const filtered = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR').includes(patientQuery.trim().toLocaleLowerCase('pt-BR')))
   const patientName = (reference: string) => { const patient = patients.find((item) => item.reference === reference); return patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente' }
-  const nutritionPrintRows: PrintRow[] = records.map((record) => ({ id: String(record.id), date: record.assessment_date, title: patientName(record.patient_reference), fields: [['Peso', record.weight_kg ? `${record.weight_kg} kg` : ''], ['Altura', record.height_cm ? `${record.height_cm} cm` : ''], ['Dieta', record.diet_type], ['Alergias', record.allergies], ['Restrições', record.restrictions], ['Jejum', record.fasting_at ? `${dateTime(record.fasting_at)} · ${record.fasting_reason || ''}` : ''], ['Aceitação', record.appetite], ['Hidratação', record.hydration], ['Observações', record.notes], ['Profissional', record.actor_name]] }))
+  const selectedPatientRecord = records.find((record) => record.patient_reference === selectedPatient)
+  const visibleRecords = records.filter((record) => {
+    const searchable = `${patientName(record.patient_reference)} ${record.diet_type} ${record.allergies} ${record.restrictions} ${record.notes}`.toLocaleLowerCase('pt-BR')
+    return (!selectedPatient || record.patient_reference === selectedPatient) && searchable.includes(recordQuery.trim().toLocaleLowerCase('pt-BR'))
+  })
+  const nutritionPrintRows: PrintRow[] = visibleRecords.map((record) => ({ id: String(record.id), date: record.assessment_date, title: patientName(record.patient_reference), fields: [['Peso', record.weight_kg ? `${record.weight_kg} kg` : ''], ['Altura', record.height_cm ? `${record.height_cm} cm` : ''], ['Dieta', record.diet_type], ['Alergias', record.allergies], ['Restrições', record.restrictions], ['Jejum', record.fasting_at ? `${dateTime(record.fasting_at)} · ${record.fasting_reason || ''}` : ''], ['Aceitação', record.appetite], ['Hidratação', record.hydration], ['Observações', record.notes], ['Profissional', record.actor_name]] }))
   return <section className="nutrition-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliação, dieta prescrita, alergias, restrições e aceitação alimentar.</p></div><span className="module-icon module-icon-nutrition"><HeartPulse size={24} /></span></div>
     {message && <div className="form-message form-message-success" role="status">{message}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
     <PrintSelectionPanel title="Avaliações nutricionais" rows={nutritionPrintRows} />
     <form className="nutrition-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVA AVALIAÇÃO</p><h2>Dados nutricionais</h2></div></div>
-      <label className="field"><span className="field-label">Localizar paciente por nome, quarto ou leito</span><span className="search-input-wrap"><Search size={17} /><input value={patientQuery} onChange={(event) => setPatientQuery(event.target.value)} placeholder="Digite para pesquisar" /></span></label>
-      <label className="field nutrition-patient-select"><span className="field-label">Paciente</span><select required value={selectedPatient} onChange={(event) => setSelectedPatient(event.target.value)}><option value="">Selecione o paciente</option>{filtered.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Quarto {patient.room}, leito {patient.bed}</option>)}</select></label>
+      <label className="field"><span className="field-label">Localizar paciente por nome, quarto ou leito</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={patientQuery} onChange={(event) => { setPatientQuery(event.target.value); setSelectedPatient('') }} placeholder="Digite para pesquisar" /></span></label>
+      <label className="field nutrition-patient-select"><span className="field-label">Paciente</span><select required value={selectedPatient} onChange={(event) => { const reference = event.target.value; const patient = patients.find((item) => item.reference === reference); setSelectedPatient(reference); setForm((current) => ({ ...current, allergies: patient?.allergies ?? '' })) }}><option value="">Selecione o paciente</option>{filtered.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Quarto {patient.room}, leito {patient.bed}</option>)}</select></label>
       {patients.find((patient) => patient.reference === selectedPatient)?.allergies && <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alerta cadastral · alergias</strong><span>{patients.find((patient) => patient.reference === selectedPatient)?.allergies}</span></div></div>}
+      {selectedPatientRecord && <div className="nutrition-context-card"><strong>Última avaliação deste paciente</strong><span>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatientRecord.assessment_date}T00:00:00Z`))} · {selectedPatientRecord.diet_type || 'Dieta não informada'}</span>{selectedPatientRecord.fasting_at && new Date(selectedPatientRecord.fasting_at) >= new Date() && <span className="fasting-alert">Jejum programado: {dateTime(selectedPatientRecord.fasting_at)} · {selectedPatientRecord.fasting_reason || 'sem observação'}</span>}</div>}
       <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Data da avaliação</span><input type="date" required value={form.assessment_date} onChange={(event) => setForm({ ...form, assessment_date: event.target.value })} /></label><label className="field"><span className="field-label">Peso</span><span className="input-with-unit"><input inputMode="decimal" value={form.weight_kg} onChange={(event) => setForm({ ...form, weight_kg: event.target.value })} placeholder="Ex.: 68,5" /><span className="unit-label">kg</span></span></label><label className="field"><span className="field-label">Altura</span><span className="input-with-unit"><input inputMode="decimal" value={form.height_cm} onChange={(event) => setForm({ ...form, height_cm: event.target.value })} placeholder="Ex.: 172" /><span className="unit-label">cm</span></span></label></div>
       <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Tipo de dieta</span><select value={form.diet_type} onChange={(event) => setForm({ ...form, diet_type: event.target.value })}><option value="">Selecione</option><option>Geral</option><option>Branda</option><option>Pastosa</option><option>Líquida</option><option>Enteral</option><option>Jejum</option><option>Outra</option></select></label><label className="field"><span className="field-label">Aceitação alimentar</span><select value={form.appetite} onChange={(event) => setForm({ ...form, appetite: event.target.value })}><option value="">Selecione</option><option value="normal">Normal</option><option value="reduced">Reduzida</option><option value="poor">Baixa</option><option value="increased">Aumentada</option></select></label><label className="field"><span className="field-label">Hidratação</span><select value={form.hydration} onChange={(event) => setForm({ ...form, hydration: event.target.value })}><option value="">Selecione</option><option value="adequate">Adequada</option><option value="low">Baixa</option><option value="assisted">Necessita auxílio</option></select></label></div>
       <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Alergias alimentares</span><textarea maxLength={500} value={form.allergies} onChange={(event) => setForm({ ...form, allergies: event.target.value })} placeholder="Descreva ou informe que não há alergias conhecidas" /></label><label className="field"><span className="field-label">Restrições alimentares</span><textarea maxLength={500} value={form.restrictions} onChange={(event) => setForm({ ...form, restrictions: event.target.value })} placeholder="Restrições e orientações dietéticas" /></label></div>
@@ -2048,7 +2111,148 @@ function NutritionPage() {
       <label className="field"><span className="field-label">Evolução e observações</span><textarea maxLength={3000} value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Registro da avaliação e conduta nutricional" /></label>
       <div className="patient-form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Registrar avaliação'} <ArrowRight size={16} /></button></div>
     </form>
-    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO RECENTE</p><h2>Avaliações nutricionais</h2></div><span className="module-total">{records.length}</span></div>{records.length ? <div className="nutrition-record-list">{records.map((record) => <article className="nutrition-record-card" key={record.id}><div><h3>{patientName(record.patient_reference)}</h3><p>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${record.assessment_date}T00:00:00Z`))} · {record.diet_type || 'Dieta não informada'}</p>{record.weight_kg && <small>Peso: {record.weight_kg} kg</small>}{record.allergies && <small>Alergias: {record.allergies}</small>}{record.restrictions && <small>Restrições: {record.restrictions}</small>}{record.fasting_at && <small className="fasting-alert">Jejum programado: {dateTime(record.fasting_at)} · {record.fasting_reason || 'sem observação'}</small>}{record.notes && <small>{record.notes}</small>}</div><div className="nutrition-record-actions"><span className="nutrition-author">{record.actor_name}</span><button className="button button-danger" type="button" onClick={async () => { const reason = window.prompt('Motivo para corrigir/remover esta avaliação (o registro será preservado na auditoria):'); if (!reason?.trim()) return; const response = await fetch(`/api/v1/nursing/nutrition/${record.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) }); if (response.ok) await loadRecords(); else setError('Não foi possível arquivar a avaliação.') }}>Arquivar</button></div></article>)}</div> : <div className="history-empty">Nenhuma avaliação nutricional registrada.</div>}</section>
+    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO RECENTE</p><h2>Avaliações nutricionais</h2></div><span className="module-total">{visibleRecords.length}</span></div><label className="field nutrition-record-search"><span className="field-label">Filtrar histórico {selectedPatient ? 'do paciente selecionado' : ''}</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={recordQuery} onChange={(event) => setRecordQuery(event.target.value)} placeholder="Paciente, dieta ou orientação" /></span></label>{visibleRecords.length ? <div className="nutrition-record-list">{visibleRecords.map((record) => <article className="nutrition-record-card" key={record.id}><div><h3>{patientName(record.patient_reference)}</h3><p>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${record.assessment_date}T00:00:00Z`))} · {record.diet_type || 'Dieta não informada'}</p>{record.weight_kg && <small>Peso: {record.weight_kg} kg</small>}{record.allergies && <small>Alergias: {record.allergies}</small>}{record.restrictions && <small>Restrições: {record.restrictions}</small>}{record.fasting_at && <small className="fasting-alert">Jejum programado: {dateTime(record.fasting_at)} · {record.fasting_reason || 'sem observação'}</small>}{record.notes && <small>{record.notes}</small>}</div><div className="nutrition-record-actions"><span className="nutrition-author">{record.actor_name}</span><button className="button button-danger" type="button" onClick={async () => { const reason = window.prompt('Motivo para corrigir/remover esta avaliação (o registro será preservado na auditoria):'); if (!reason?.trim()) return; try { const response = await fetch(`/api/v1/nursing/nutrition/${record.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) }); await readApiResponse(response); await loadRecords() } catch (archiveError) { setError(archiveError instanceof Error ? archiveError.message : 'Não foi possível arquivar a avaliação.') } }}>Arquivar</button></div></article>)}</div> : <div className="history-empty">{records.length ? 'Nenhuma avaliação corresponde à busca.' : 'Nenhuma avaliação nutricional registrada.'}</div>}</section>
+  </section>
+}
+
+type XrayStatus = 'requested' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+type XrayRequest = { id: number; patient_reference: string; exam_label: string; status: XrayStatus; created_at: string }
+
+const xrayStatuses: Record<XrayStatus, string> = {
+  requested: 'Solicitado',
+  scheduled: 'Agendado',
+  in_progress: 'Em execução',
+  completed: 'Concluído',
+  cancelled: 'Cancelado',
+}
+
+function XrayPage({ user }: { user: AuthUser }) {
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [requests, setRequests] = useState<XrayRequest[]>([])
+  const [patientSearch, setPatientSearch] = useState('')
+  const [patientReference, setPatientReference] = useState('')
+  const [examLabel, setExamLabel] = useState('')
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'active' | 'all' | XrayStatus>('active')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [updating, setUpdating] = useState<number | null>(null)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const canUpdate = user.permissions.xray?.includes('alterar') ?? false
+
+  async function loadData() {
+    setLoading(true)
+    try {
+      const [patientResponse, requestResponse] = await Promise.all([
+        fetch('/api/v1/nursing/patients'),
+        fetch('/api/v1/xray/requests'),
+      ])
+      const [patientData, requestData] = await Promise.all([
+        readApiResponse<{ patients?: Patient[] }>(patientResponse),
+        readApiResponse<{ requests?: XrayRequest[] }>(requestResponse),
+      ])
+      setPatients(patientData.patients ?? [])
+      setRequests(requestData.requests ?? [])
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os dados de Raio X.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void loadData() }, [user.id])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch('/api/v1/xray/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patient_reference: patientReference, exam_label: examLabel.trim() }),
+      })
+      const data = await readApiResponse<XrayRequest>(response)
+      setRequests((current) => [data, ...current])
+      setPatientReference('')
+      setPatientSearch('')
+      setExamLabel('')
+      setNotice('Exame incluído na fila de Raio X.')
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Falha ao solicitar o exame.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function updateStatus(request: XrayRequest, status: XrayStatus) {
+    setUpdating(request.id)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch(`/api/v1/xray/requests/${request.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const updated = await readApiResponse<XrayRequest>(response)
+      setRequests((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setNotice(`Exame atualizado: ${xrayStatuses[updated.status]}.`)
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar o exame.')
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const activeCount = requests.filter((request) => request.status === 'requested' || request.status === 'scheduled' || request.status === 'in_progress').length
+  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR').includes(patientSearch.trim().toLocaleLowerCase('pt-BR')))
+  const visibleRequests = requests.filter((request) => {
+    const matchesStatus = filter === 'all' || (filter === 'active'
+      ? request.status === 'requested' || request.status === 'scheduled' || request.status === 'in_progress'
+      : request.status === filter)
+    const patient = patients.find((item) => item.reference === request.patient_reference)
+    const searchable = `${patient?.name ?? ''} ${patient?.room ?? ''} ${patient?.bed ?? ''} ${request.exam_label}`.toLocaleLowerCase('pt-BR')
+    return matchesStatus && searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
+  })
+  const patientName = (reference: string) => {
+    const patient = patients.find((item) => item.reference === reference)
+    return patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente não localizado'
+  }
+
+  return <section className="xray-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">ROTINA OPERACIONAL · RAIO X</p><h1>Fila de exames</h1><p className="welcome-copy">Registre solicitações e acompanhe cada exame até sua conclusão.</p></div><span className="module-icon module-icon-xray"><Activity size={23} /></span></div>
+    <div className="hygiene-summary" aria-label="Resumo da fila de Raio X"><article><strong>{requests.length}</strong><span>Total de solicitações</span></article><article><strong>{activeCount}</strong><span>Exames ativos</span></article><article><strong>{requests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    <form className="hygiene-panel" onSubmit={(event) => void submit(event)}>
+      <div className="section-heading"><div><p className="eyebrow">NOVO EXAME</p><h2>Adicionar à fila</h2></div></div>
+      <div className="field-grid field-grid-two">
+        <label className="field"><span className="field-label">Buscar paciente por nome, quarto ou leito</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Digite para filtrar pacientes" /></label>
+        <label className="field"><span className="field-label">Paciente</span><select required value={patientReference} onChange={(event) => { setPatientReference(event.target.value); const selected = patients.find((patient) => patient.reference === event.target.value); if (selected) setPatientSearch(`${selected.name} · Qto ${selected.room} · Leito ${selected.bed}`) }}><option value="">Selecione um paciente</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Qto {patient.room} · Leito {patient.bed}</option>)}</select></label>
+        <label className="field xray-field-wide"><span className="field-label">Exame solicitado</span><input required minLength={2} maxLength={80} value={examLabel} onChange={(event) => setExamLabel(event.target.value)} placeholder="Ex.: radiografia de tórax" /></label>
+      </div>
+      <p className="work-order-privacy">Registre somente o nome do exame neste campo. Não inclua diagnóstico ou dados clínicos adicionais.</p>
+      <button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Registrando…' : 'Solicitar exame'} <ArrowRight size={16} /></button>
+    </form>
+    <section className="patient-list-panel xray-queue-panel">
+      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações <span className="module-total">{visibleRequests.length}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadData()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
+      <div className="service-tabs" role="tablist" aria-label="Filtrar exames por situação">
+        {([
+          ['active', 'Ativos'],
+          ['all', 'Todos'],
+          ...Object.entries(xrayStatuses),
+        ] as [typeof filter, string][]).map(([value, label]) => <button className={`psychology-tab ${filter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={filter === value} key={value} onClick={() => setFilter(value)}>{label}{value === 'active' && <span>{activeCount}</span>}</button>)}
+      </div>
+      <label className="field xray-search"><span className="field-label">Buscar por paciente, quarto, leito ou exame</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar um exame" /></span></label>
+      {loading ? <div className="history-empty">Carregando fila de exames…</div> : visibleRequests.length ? <div className="xray-request-list">{visibleRequests.map((request) => <article className="xray-request-card" key={request.id}>
+        <div className="xray-request-main"><div><h3>{patientName(request.patient_reference)}</h3><p>{request.exam_label}</p><time>{dateTime(request.created_at)}</time></div><span className={`work-order-status status-${request.status === 'requested' ? 'open' : request.status === 'scheduled' ? 'in_progress' : request.status === 'in_progress' ? 'in_progress' : request.status === 'completed' ? 'completed' : 'cancelled'}`}>{xrayStatuses[request.status]}</span></div>
+        {canUpdate && <label className="field xray-status-control"><span className="field-label">Atualizar situação</span><select value={request.status} disabled={updating === request.id || request.status === 'completed' || request.status === 'cancelled'} onChange={(event) => void updateStatus(request, event.target.value as XrayStatus)}><option value="requested">Solicitado</option><option value="scheduled">Agendado</option><option value="in_progress">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
+      </article>)}</div> : <div className="history-empty"><Activity size={20} /><span>{requests.length ? 'Nenhum exame corresponde a este filtro.' : 'Nenhuma solicitação de exame foi registrada.'}</span></div>}
+    </section>
   </section>
 }
 

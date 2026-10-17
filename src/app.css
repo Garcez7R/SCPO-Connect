@@ -510,6 +510,11 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .pharmacy-summary .pharmacy-summary-warning > strong { color: #8b5c08; }
 .pharmacy-summary .pharmacy-summary-danger { border-color: #f0c8c8; background: #fff8f8; }
 .pharmacy-summary .pharmacy-summary-danger > strong { color: #a4232e; }
+.pharmacy-quick-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.pharmacy-quick-filters .button { min-height: 39px; gap: 8px; }
+.pharmacy-quick-filters .button span { display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 12px; background: rgb(255 255 255 / 22%); font-size: 10px; }
+.pharmacy-quick-filters .button-secondary span { background: var(--blue-pale); color: var(--blue-dark); }
+.pharmacy-search { max-width: 480px; }
 .pharmacy-stock-overview { display: grid; gap: 10px; }
 .pharmacy-stock-levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .pharmacy-level-count { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 2px 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
@@ -550,7 +555,6 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .pharmacy-scan-field > .button { justify-self: start; min-height: 42px; }
 .pharmacy-scanner-video { width: min(100%, 420px); max-height: 280px; border-radius: 8px; background: #17232d; object-fit: cover; }
 .pharmacy-item-description { margin: -7px 0 0; color: var(--muted); font-size: 12px; }
-.pharmacy-search { max-width: 480px; }
 .search-input-wrap { position: relative; display: block; }
 .search-input-wrap > svg { position: absolute; top: 50%; left: 12px; color: var(--subtle); transform: translateY(-50%); }
 .search-input-wrap input { width: 100%; min-height: 43px; padding: 0 12px 0 38px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); font: inherit; }
@@ -581,6 +585,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .psychology-privacy { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #d8cbe8; border-radius: 8px; background: #f7f3fb; color: #5b437a; font-size: 12px; line-height: 1.55; }
 .psychology-privacy svg { flex: 0 0 auto; margin-top: 1px; }
 .psychology-tabs { display: flex; flex-wrap: wrap; gap: 7px; padding-bottom: 2px; border-bottom: 1px solid var(--line); }
+.service-tabs { display: flex; flex-wrap: wrap; gap: 7px; overflow-x: auto; border-bottom: 1px solid var(--line); }
 .psychology-tab { display: inline-flex; min-height: 42px; align-items: center; gap: 8px; padding: 8px 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .psychology-tab.is-active { border-bottom-color: #73549a; color: #60437f; }
 .psychology-tab span { display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 11px; background: var(--blue-pale); color: var(--blue-dark); font-size: 10px; }
@@ -649,12 +654,26 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .nutrition-form { display: grid; gap: 15px; margin-bottom: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .nutrition-form .section-heading { margin: 0; }
 .nutrition-patient-select { max-width: 600px; }
+.nutrition-context-card { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; line-height: 1.5; }
+.nutrition-context-card strong { color: var(--ink); font-size: 12px; }
+.nutrition-record-search { max-width: 560px; }
 .nutrition-record-list { display: grid; }
 .nutrition-record-card { display: flex; justify-content: space-between; gap: 18px; padding: 14px 0; border-top: 1px solid #edf1f4; }
 .nutrition-record-card h3 { margin: 0; color: var(--ink); font-size: 13px; }
 .nutrition-record-card p { margin: 5px 0; color: var(--muted); font-size: 11px; }
 .nutrition-record-card small { display: block; margin-top: 5px; color: #536778; font-size: 11px; }
 .nutrition-author { color: var(--subtle); font-size: 10px; white-space: nowrap; }
+.xray-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
+.xray-field-wide { grid-column: 1 / -1; }
+.xray-queue-panel { display: grid; gap: 14px; }
+.xray-search { max-width: 560px; }
+.xray-request-list { display: grid; gap: 10px; }
+.xray-request-card { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.xray-request-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.xray-request-main h3 { margin: 0; color: var(--ink); font-size: 14px; }
+.xray-request-main p { margin: 5px 0; color: var(--muted); font-size: 12px; }
+.xray-request-main time { color: var(--subtle); font-size: 10px; }
+.xray-status-control { max-width: 320px; }
 .patient-address-group .patient-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .patient-photo-editor { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .patient-photo-editor > img, .patient-photo-placeholder { display: grid; width: 72px; height: 72px; place-items: center; border-radius: 50%; object-fit: cover; background: #edf4f6; color: var(--blue); }
@@ -903,6 +922,14 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
   .hygiene-filters, .hygiene-request-controls { grid-template-columns: 1fr; }
   .hygiene-request-heading { flex-direction: column; }
   .hygiene-panel > .button, .hygiene-request-controls .button { width: 100%; justify-content: center; }
+  .service-tabs { flex-wrap: nowrap; }
+  .service-tabs .psychology-tab { flex: 0 0 auto; }
+  .pharmacy-quick-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pharmacy-quick-filters .button { justify-content: space-between; padding-inline: 9px; font-size: 11px; }
+  .xray-field-wide { grid-column: auto; }
+  .xray-request-main { flex-direction: column; }
+  .xray-status-control { max-width: none; }
+  .nutrition-context-card { padding: 11px; }
   .psychology-panel { gap: 13px; padding: 15px; }
   .psychology-filter-row, .psychology-guidance { grid-template-columns: 1fr; }
   .psychology-referral-actions { grid-template-columns: 1fr; }
@@ -1068,7 +1095,7 @@ html[data-theme="dark"] {
   color: var(--ink);
 }
 html[data-theme="dark"] body { background: var(--page); color: var(--ink); }
-html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .hygiene-panel, .hygiene-summary article, .hygiene-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .nutrition-context-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .hygiene-panel, .hygiene-summary article, .hygiene-request-card, .xray-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
 html[data-theme="dark"] .psychology-privacy { border-color: #544469; background: #30283b; color: #d4c1ef; }

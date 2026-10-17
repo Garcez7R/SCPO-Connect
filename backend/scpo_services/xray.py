@@ -1,8 +1,8 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import DateTime, Integer, String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -11,10 +11,10 @@ from .common import (
     Base,
     DemoPrincipal,
     database_session,
+    emit_audit_event,
     require_demo_role,
     verify_database_migrated,
     verify_patient_reference,
-    emit_audit_event,
 )
 
 
@@ -52,6 +52,11 @@ class ExamRequestPayload(BaseModel):
     exam_label: str = Field(min_length=1, max_length=80)
 
 
+class ExamRequestUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["requested", "scheduled", "in_progress", "completed", "cancelled"]
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"service": "xray", "status": "ok"}
@@ -81,6 +86,28 @@ def create_request(
     db.commit()
     db.refresh(request)
     emit_audit_event(principal, "xray", "xray_request_created", request.patient_reference)
+    return serialize_request(request)
+
+
+@app.patch("/api/v1/xray/requests/{request_id}")
+def update_request(
+    request_id: int,
+    payload: ExamRequestUpdate,
+    principal: Annotated[DemoPrincipal, Depends(XRAY_ROLE)],
+    db: Annotated[Session, Depends(get_xray_db)],
+) -> dict[str, object]:
+    request = db.get(ExamRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Solicitação de exame não encontrada")
+    if request.status in {"completed", "cancelled"} and payload.status != request.status:
+        raise HTTPException(
+            status_code=409,
+            detail="Solicitação encerrada; registre uma nova solicitação para novo atendimento",
+        )
+    request.status = payload.status
+    db.commit()
+    db.refresh(request)
+    emit_audit_event(principal, "xray", "xray_request_status_changed", request.patient_reference)
     return serialize_request(request)
 
 

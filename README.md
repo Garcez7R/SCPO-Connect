@@ -25,8 +25,11 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
 - Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
 - Permissões por módulo e ações, verificadas também pelas APIs.
-- Ordens de serviço: abertura por funcionários, vínculo opcional com paciente e fila de execução da manutenção.
-- Solicitações de Raio X e encaminhamentos de Serviço Social ligados ao cadastro compartilhado de pacientes.
+- Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
+- Raio X: solicitação vinculada ao cadastro do paciente e fila com situação de solicitado, agendado, em execução, concluído ou cancelado.
+- Encaminhamentos de Serviço Social ligados ao cadastro compartilhado de pacientes.
+- Farmácia: inventário por lote com filtros rápidos de estoque crítico, validade vencida e validade próxima.
+- Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e busca no histórico recente.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
@@ -37,7 +40,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 
 ### Áreas de trabalho
 
-Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Psicologia / Psiquiatria, Nutrição, Recepção, Oficina Terapêutica, Manutenção e Gestão Hospitalar. Higienização não aparece como área operacional até ter fluxos funcionais definidos.
+Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Psicologia / Psiquiatria, Nutrição, Recepção, Oficina Terapêutica, Manutenção, Higienização e Gestão Hospitalar.
 
 ## Arquitetura
 

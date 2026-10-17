@@ -172,7 +172,7 @@ def list_hygiene_requests(
 @app.post("/api/v1/hygiene/requests", status_code=201)
 def create_hygiene_request(
     payload: HygieneRequestCreate,
-    principal: Annotated[DemoPrincipal, Depends(HYGIENE_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(authenticated_principal)],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
@@ -228,6 +228,13 @@ class WorkOrderCreate(BaseModel):
     location: str = Field(default="", max_length=120)
     patient_reference: str | None = Field(default=None, max_length=36)
     priority: Literal["normal", "high", "urgent"] = "normal"
+
+    @field_validator("service_type")
+    @classmethod
+    def route_hygiene_to_dedicated_queue(cls, value: str) -> str:
+        if value.strip().casefold() in {"higienização", "higienizacao"}:
+            raise ValueError("Solicitações de higienização devem usar a fila própria")
+        return value
 
 
 class WorkOrderUpdate(BaseModel):

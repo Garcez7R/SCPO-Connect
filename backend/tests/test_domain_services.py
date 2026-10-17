@@ -81,11 +81,35 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     monkeypatch.setattr(social, "emit_audit_event", lambda *args: None)
     monkeypatch.setattr(xray, "emit_audit_event", lambda *args: None)
     social_user = DemoPrincipal("social-1", "social", "Assistente social", "social", ["social"], {"social": ["consultar", "criar"]})
-    xray_user = DemoPrincipal("xray-1", "xray", "Técnica de radiologia", "xray", ["xray"], {"xray": ["consultar", "criar"]})
+    xray_user = DemoPrincipal("xray-1", "xray", "Técnica de radiologia", "xray", ["xray"], {"xray": ["consultar", "criar", "alterar"]})
     referral = social.create_referral(social.ReferralPayload(patient_reference=reference, referral_type="Acompanhamento"), social_user, domain_database["social"])
     exam = xray.create_request(xray.ExamRequestPayload(patient_reference=reference, exam_label="Radiografia"), xray_user, domain_database["xray"])
     assert referral["patient_reference"] == reference
     assert exam["patient_reference"] == reference
+    assert exam["status"] == "requested"
+
+    scheduled = xray.update_request(
+        exam["id"],
+        xray.ExamRequestUpdate(status="scheduled"),
+        xray_user,
+        domain_database["xray"],
+    )
+    assert scheduled["status"] == "scheduled"
+    completed = xray.update_request(
+        exam["id"],
+        xray.ExamRequestUpdate(status="completed"),
+        xray_user,
+        domain_database["xray"],
+    )
+    assert completed["status"] == "completed"
+    with pytest.raises(HTTPException) as closed_request:
+        xray.update_request(
+            exam["id"],
+            xray.ExamRequestUpdate(status="scheduled"),
+            xray_user,
+            domain_database["xray"],
+        )
+    assert closed_request.value.status_code == 409
 
 
 def test_psychology_queue_is_persisted_separately_from_social_referrals(
@@ -245,4 +269,15 @@ def test_hygiene_custom_request_requires_a_description() -> None:
             unit="Hospital",
             area="other",
             location="Corredor",
+        )
+
+
+@pytest.mark.parametrize("service_type", ["Higienização", "higienizacao"])
+def test_hygiene_is_not_created_as_a_maintenance_order(service_type: str) -> None:
+    with pytest.raises(ValidationError, match="fila própria"):
+        maintenance.WorkOrderCreate(
+            title="Solicitação de limpeza",
+            description="Limpeza de área comum",
+            service_type=service_type,
+            department="Enfermagem",
         )
