@@ -14,8 +14,8 @@ from sqlalchemy import inspect, text
     [
         ("access", "demo_users"),
         ("audit", "audit_events"),
-        ("nursing", "vital_records"),
-        ("pharmacy", "inventory_items"),
+        ("nursing", "emergency_arrivals"),
+        ("pharmacy", "pharmacy_stock_movements"),
         ("social", "social_referrals"),
         ("xray", "exam_requests"),
         ("maintenance", "work_orders"),
@@ -38,12 +38,13 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0021_hygiene_requests"
+    assert revision == "0022_stock_movements_emergency_arrivals"
     if service == "nursing":
-        assert len(tables) == 6
+        assert len(tables) == 7
         report_columns = {column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")}
         assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
         assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records"))
+        assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("emergency_arrivals"))
     elif service == "access":
         assert len(tables) == 3
     elif service == "maintenance":
@@ -58,7 +59,7 @@ def test_each_service_migration_creates_only_its_owned_table(
             for column in inspect(get_engine(service)).get_columns("psychology_referrals")
         }
     elif service == "pharmacy":
-        assert len(tables) == 2
+        assert len(tables) == 3
         assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}
     else:
         assert len(tables) == 2
@@ -142,4 +143,40 @@ def test_therapy_migration_adds_report_fields_to_shared_nursing_database(
     inspector = inspect(get_engine("nursing"))
     report_columns = {column["name"] for column in inspector.get_columns("therapy_activities")}
     assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
+    clear_engine_cache()
+
+
+def test_pharmacy_migration_records_existing_stock_as_legacy_baseline(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_SERVICE", "pharmacy")
+    monkeypatch.setenv(
+        "SCPO_PHARMACY_DATABASE_URL", f"sqlite:///{tmp_path / 'pharmacy.sqlite3'}"
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+    command.upgrade(config, "0021_hygiene_requests")
+
+    with get_engine("pharmacy").begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO inventory_items "
+                "(item_name, balance, unit, lot, expiry_date, barcode, category, "
+                "active_ingredient, presentation, supplier, storage_location, "
+                "minimum_balance, average_balance, created_at) "
+                "VALUES ('Soro', '12,5', 'frasco', 'L-01', '2027-02-01', '', "
+                "'Medicamento', '', '', '', '', '0', '0', '2026-01-01 10:00:00')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with get_engine("pharmacy").connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT movement_type, quantity, balance_after, actor_name "
+                "FROM pharmacy_stock_movements"
+            )
+        ).one()
+    assert row == ("opening_balance", "12,5", "12,5", "Saldo legado (migração)")
+    verify_database_migrated("pharmacy")
     clear_engine_cache()

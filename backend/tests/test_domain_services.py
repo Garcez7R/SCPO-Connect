@@ -6,7 +6,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
-from scpo_services import access, audit, maintenance, pharmacy, social, xray
+from scpo_services import access, audit, maintenance, nursing, pharmacy, social, xray
 from scpo_services.common import (
     DemoPrincipal,
     clear_engine_cache,
@@ -72,6 +72,160 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     listed = pharmacy.list_items(pharmacist, domain_database["pharmacy"])
     assert listed["items"][0]["lot"] == "L-01"
     assert listed["items"][0]["average_balance"] == "10"
+    movements = pharmacy.list_stock_movements(pharmacist, domain_database["pharmacy"])
+    assert movements["total"] == 1
+    assert movements["movements"][0]["movement_type"] == "entry"
+    assert movements["movements"][0]["actor_name"] == "Farmacêutica"
+
+    issued = pharmacy.create_stock_movement(
+        item["id"],
+        pharmacy.StockMovementPayload(
+            movement_type="issue", quantity="2,5", reason="Dispensação diária"
+        ),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+    assert issued["quantity"] == "-2.5"
+    assert issued["balance_after"] == "9.5"
+    assert issued["actor_id"] == pharmacist.user_id
+    assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "9.5"
+    with pytest.raises(HTTPException) as negative_balance:
+        pharmacy.create_stock_movement(
+            item["id"],
+            pharmacy.StockMovementPayload(
+                movement_type="issue", quantity="10", reason="Retirada maior que saldo"
+            ),
+            pharmacist,
+            domain_database["pharmacy"],
+        )
+    assert negative_balance.value.status_code == 409
+
+
+def test_reception_records_emergency_arrival_without_inpatient_bed(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    events = []
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: events.append(args))
+    receptionist = DemoPrincipal(
+        "reception-1",
+        "reception",
+        "Recepcionista",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar", "alterar"]},
+    )
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_name="Pessoa sem cadastro",
+            arrival_mode="ambulance",
+            reason="Procura por atendimento de emergência",
+        ),
+        receptionist,
+        domain_database["nursing"],
+    )
+    assert arrival["status"] == "waiting"
+    assert arrival["patient_reference"] is None
+    assert arrival["patient_name"] == "Pessoa sem cadastro"
+    assert arrival["created_by"] == "Recepcionista"
+    db = domain_database["nursing"]
+    db.add(
+        nursing.Patient(
+            reference="123e4567-e89b-12d3-a456-426614174000",
+            name="Paciente já cadastrado",
+            room="1",
+            bed="A",
+        )
+    )
+    db.commit()
+    linked_arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_reference="123e4567-e89b-12d3-a456-426614174000",
+            patient_name="Nome informado alternativo",
+            reason="Chegada vinculada ao cadastro existente",
+        ),
+        receptionist,
+        db,
+    )
+    assert linked_arrival["patient_name"] == "Paciente já cadastrado"
+    assert linked_arrival["patient_reference"] == "123e4567-e89b-12d3-a456-426614174000"
+
+    listed = nursing.list_emergency_arrivals(
+        receptionist, domain_database["nursing"], status="waiting"
+    )
+    assert listed["total"] == 2
+    assert listed["status_counts"]["waiting"] == 2
+    updated = nursing.update_emergency_arrival(
+        arrival["id"],
+        nursing.EmergencyArrivalStatusPayload(status="in_service"),
+        receptionist,
+        domain_database["nursing"],
+    )
+    assert updated["status"] == "in_service"
+    completed = nursing.update_emergency_arrival(
+        arrival["id"],
+        nursing.EmergencyArrivalStatusPayload(status="completed"),
+        receptionist,
+        domain_database["nursing"],
+    )
+    assert completed["status"] == "completed"
+    with pytest.raises(HTTPException) as closed_arrival:
+        nursing.update_emergency_arrival(
+            arrival["id"],
+            nursing.EmergencyArrivalStatusPayload(status="waiting"),
+            receptionist,
+            domain_database["nursing"],
+        )
+    assert closed_arrival.value.status_code == 409
+    assert all("Procura por atendimento" not in repr(event) for event in events)
+
+
+def test_nutrition_history_search_and_pagination_run_in_the_api(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    db = domain_database["nursing"]
+    db.add(
+        nursing.Patient(
+            reference="123e4567-e89b-12d3-a456-426614174000",
+            name="Paciente Nutrição",
+            room="12",
+            bed="A",
+        )
+    )
+    db.commit()
+    nutritionist = DemoPrincipal(
+        "nutrition-1",
+        "nutrition",
+        "Nutricionista",
+        "nutrition",
+        ["nutrition"],
+        {"nutrition": ["consultar", "criar"]},
+    )
+    for assessment_date, diet_type in [
+        ("2026-04-01", "Dieta com baixo sódio"),
+        ("2026-03-01", "Dieta geral"),
+    ]:
+        nursing.create_nutrition_record(
+            nursing.NutritionPayload(
+                patient_reference="123e4567-e89b-12d3-a456-426614174000",
+                assessment_date=assessment_date,
+                diet_type=diet_type,
+            ),
+            nutritionist,
+            db,
+        )
+
+    filtered = nursing.list_nutrition_records(
+        nutritionist, db, q="baixo sódio", limit=10, offset=0
+    )
+    assert filtered["total"] == 1
+    assert filtered["records"][0]["diet_type"] == "Dieta com baixo sódio"
+
+    page = nursing.list_nutrition_records(
+        nutritionist, db, limit=1, offset=1
+    )
+    assert page["total"] == 2
+    assert page["records"][0]["diet_type"] == "Dieta geral"
 
 
 def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:

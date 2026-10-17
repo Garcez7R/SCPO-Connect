@@ -1114,3 +1114,50 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
   .appearance-button { width: 34px; min-width: 34px; min-height: 36px; padding: 5px; }
   .install-button { min-height: 36px; padding: 6px 7px; font-size: 10px; }
 }
+
+.reception-page, .nutrition-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
+.pharmacy-movement-ledger { display: grid; gap: 14px; margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.pharmacy-movement-ledger .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
+.pharmacy-movement-ledger h3 { margin: 2px 0 4px; color: var(--ink); font-size: 17px; }
+.pharmacy-movement-ledger .welcome-copy { margin: 0; }
+.pharmacy-movement-list, .reception-arrival-list { display: grid; gap: 10px; }
+.pharmacy-movement-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(120px, .6fr) minmax(120px, .6fr); align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.pharmacy-movement-row > div:first-child { display: grid; gap: 4px; }
+.pharmacy-movement-row strong, .pharmacy-movement-values > span { color: var(--ink); font-size: 12px; }
+.pharmacy-movement-row small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.pharmacy-movement-values { display: grid; gap: 4px; }
+.pharmacy-movement-author { text-align: right; }
+.pharmacy-ledger-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; }
+.pharmacy-ledger-pagination > div { display: flex; gap: 8px; }
+.pharmacy-movement-toggle { justify-self: start; }
+.pharmacy-stock-movement-form { display: grid; gap: 11px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.nutrition-history-filters, .reception-search { display: grid; grid-template-columns: minmax(170px, .8fr) minmax(220px, 1.5fr) auto auto; align-items: end; gap: 11px; }
+.nutrition-history-filters > .button, .reception-search > .button { min-height: 42px; }
+.reception-search { grid-template-columns: minmax(220px, 1fr) auto; }
+.reception-reason-field { grid-column: 1 / -1; }
+.reception-reason-field textarea { min-height: 84px; resize: vertical; }
+.reception-arrival-card { display: grid; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.reception-arrival-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.reception-arrival-heading h3 { margin: 0 0 4px; color: var(--ink); font-size: 14px; }
+.reception-arrival-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.reception-arrival-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.reception-arrival-meta span { display: grid; gap: 4px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.reception-arrival-meta strong { color: var(--subtle); font-size: 9px; text-transform: uppercase; }
+.reception-status-control { max-width: 270px; }
+html[data-theme="dark"] :is(.pharmacy-movement-ledger, .pharmacy-movement-row, .reception-arrival-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .pharmacy-stock-movement-form { border-color: var(--line); background: #111c23; }
+@media (max-width: 760px) {
+  .nutrition-history-filters { grid-template-columns: 1fr 1fr; }
+  .nutrition-history-filters .field:nth-child(2) { grid-column: 1 / -1; grid-row: 1; }
+  .reception-arrival-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pharmacy-movement-row { grid-template-columns: 1fr 1fr; }
+  .pharmacy-movement-author { grid-column: 1 / -1; text-align: left; }
+}
+@media (max-width: 520px) {
+  .nutrition-history-filters, .reception-search { grid-template-columns: 1fr; }
+  .nutrition-history-filters .field:nth-child(2) { grid-column: auto; grid-row: auto; }
+  .nutrition-history-filters > .button, .reception-search > .button { width: 100%; justify-content: center; }
+  .reception-arrival-heading { align-items: flex-start; flex-direction: column; }
+  .pharmacy-movement-ledger .section-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .pharmacy-ledger-pagination { align-items: flex-start; flex-direction: column; }
+}

@@ -6,17 +6,28 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, func, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    case,
+    func,
+    select,
+)
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
     Base,
     DemoPrincipal,
     database_session,
-    get_engine,
+    emit_audit_event,
     require_demo_role,
     require_service_token,
-    emit_audit_event,
     verify_database_migrated,
 )
 
@@ -106,6 +117,52 @@ class Patient(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class EmergencyArrival(Base):
+    __tablename__ = "emergency_arrivals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    patient_reference: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("patients.reference", ondelete="SET NULL"), nullable=True
+    )
+    patient_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    arrival_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EmergencyArrivalPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str | None = Field(default=None, max_length=36)
+    patient_name: str = Field(min_length=2, max_length=120)
+    arrival_mode: Literal["walk_in", "ambulance", "other"] = "walk_in"
+    reason: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("patient_name")
+    @classmethod
+    def trim_patient_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Informe o nome da pessoa atendida")
+        return value
+
+    @field_validator("reason")
+    @classmethod
+    def trim_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Informe o motivo da procura")
+        return value
+
+
+class EmergencyArrivalStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["waiting", "in_service", "completed", "cancelled"]
 
 
 def get_nursing_db():
@@ -411,6 +468,125 @@ def list_patients(
     return {"patients": [serialize_patient(patient, principal=principal, full_profile=full_profile) for patient in patients]}
 
 
+@app.get("/api/v1/reception/arrivals")
+def list_emergency_arrivals(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    status: Literal["waiting", "in_service", "completed", "cancelled"] | None = None,
+    q: Annotated[str, Query(max_length=120)] = "",
+) -> dict[str, object]:
+    filters = []
+    if status:
+        filters.append(EmergencyArrival.status == status)
+    search_term = q.strip()
+    if search_term:
+        search_pattern = f"%{search_term}%"
+        filters.append(
+            (EmergencyArrival.patient_name.ilike(search_pattern))
+            | (EmergencyArrival.reason.ilike(search_pattern))
+        )
+    arrivals = db.scalars(
+        select(EmergencyArrival)
+        .where(*filters)
+        .order_by(
+            case(
+                (EmergencyArrival.status == "waiting", 0),
+                (EmergencyArrival.status == "in_service", 1),
+                else_=2,
+            ),
+            EmergencyArrival.created_at.desc(),
+            EmergencyArrival.id.desc(),
+        )
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    total = db.scalar(
+        select(func.count(EmergencyArrival.id)).where(*filters)
+    ) or 0
+    grouped_counts = db.execute(
+        select(EmergencyArrival.status, func.count(EmergencyArrival.id)).group_by(
+            EmergencyArrival.status
+        )
+    ).all()
+    emit_audit_event(principal, "reception", "emergency_arrivals_read", "emergency_queue")
+    return {
+        "arrivals": [serialize_emergency_arrival(arrival) for arrival in arrivals],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "status_counts": {key: count for key, count in grouped_counts},
+    }
+
+
+@app.post("/api/v1/reception/arrivals", status_code=201)
+def create_emergency_arrival(
+    payload: EmergencyArrivalPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = None
+    if payload.patient_reference:
+        patient = db.get(Patient, payload.patient_reference)
+        if patient is None or not patient.active:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+    now = datetime.now(UTC)
+    arrival = EmergencyArrival(
+        id=str(uuid.uuid4()),
+        patient_reference=patient.reference if patient else None,
+        patient_name=patient.name if patient else payload.patient_name,
+        arrival_mode=payload.arrival_mode,
+        reason=payload.reason,
+        status="waiting",
+        created_by=principal.actor_name,
+        updated_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(arrival)
+    db.commit()
+    db.refresh(arrival)
+    emit_audit_event(principal, "reception", "emergency_arrival_created", arrival.id)
+    return serialize_emergency_arrival(arrival)
+
+
+@app.patch("/api/v1/reception/arrivals/{arrival_id}")
+def update_emergency_arrival(
+    arrival_id: str,
+    payload: EmergencyArrivalStatusPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    arrival = db.get(EmergencyArrival, arrival_id)
+    if arrival is None:
+        raise HTTPException(status_code=404, detail="Atendimento não encontrado")
+    if arrival.status in {"completed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="O atendimento já foi encerrado")
+    arrival.status = payload.status
+    arrival.updated_by = principal.actor_name
+    arrival.updated_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(arrival)
+    emit_audit_event(principal, "reception", "emergency_arrival_status_updated", arrival.id)
+    return serialize_emergency_arrival(arrival)
+
+
+def serialize_emergency_arrival(arrival: EmergencyArrival) -> dict[str, object]:
+    return {
+        "id": arrival.id,
+        "patient_reference": arrival.patient_reference,
+        "patient_name": arrival.patient_name,
+        "arrival_mode": arrival.arrival_mode,
+        "reason": arrival.reason,
+        "status": arrival.status,
+        "created_by": arrival.created_by,
+        "updated_by": arrival.updated_by,
+        "created_at": arrival.created_at.isoformat(),
+        "updated_at": arrival.updated_at.isoformat(),
+    }
+
+
 @app.get("/api/v1/nursing/patients/duplicates")
 def find_patient_duplicates(
     principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
@@ -706,15 +882,45 @@ def serialize_record(record: VitalRecord) -> dict[str, object]:
 def list_nutrition_records(
     principal: Annotated[DemoPrincipal, Depends(NUTRITION_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
+    q: Annotated[str, Query(max_length=120)] = "",
     patient_reference: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
-    query = select(NutritionRecord).where(NutritionRecord.voided_at.is_(None)).order_by(NutritionRecord.assessment_date.desc(), NutritionRecord.id.desc())
+    filters = [NutritionRecord.voided_at.is_(None)]
     if patient_reference:
-        query = query.where(NutritionRecord.patient_reference == patient_reference)
-    records = db.scalars(query.limit(limit)).all()
+        filters.append(NutritionRecord.patient_reference == patient_reference)
+    if q.strip():
+        search_pattern = f"%{q.strip()}%"
+        filters.append(
+            (Patient.name.ilike(search_pattern))
+            | (Patient.room.ilike(search_pattern))
+            | (Patient.bed.ilike(search_pattern))
+            | (NutritionRecord.diet_type.ilike(search_pattern))
+            | (NutritionRecord.allergies.ilike(search_pattern))
+            | (NutritionRecord.restrictions.ilike(search_pattern))
+            | (NutritionRecord.notes.ilike(search_pattern))
+        )
+    query = (
+        select(NutritionRecord)
+        .join(Patient, Patient.reference == NutritionRecord.patient_reference)
+        .where(*filters)
+        .order_by(NutritionRecord.assessment_date.desc(), NutritionRecord.id.desc())
+    )
+    count_query = (
+        select(func.count(NutritionRecord.id))
+        .join(Patient, Patient.reference == NutritionRecord.patient_reference)
+        .where(*filters)
+    )
+    records = db.scalars(query.offset(offset).limit(limit)).all()
+    total = db.scalar(count_query) or 0
     emit_audit_event(principal, "nutrition", "nutrition_records_read", patient_reference or "nutrition_query")
-    return {"records": [serialize_nutrition_record(record) for record in records]}
+    return {
+        "records": [serialize_nutrition_record(record) for record in records],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @app.get("/api/v1/nursing/patients/{patient_reference}/nutrition-plan")

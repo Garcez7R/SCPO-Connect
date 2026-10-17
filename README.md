@@ -20,7 +20,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 
 ## Recursos
 
-- Cadastro central de pacientes com quarto, leito, data de nascimento, foto, contatos e endereços do paciente e do responsável pela internação.
+- Cadastro central de pacientes com quarto, leito, data de nascimento, foto, contatos e endereços do paciente e do responsável pela internação; pessoas sem cadastro ou leito podem ser registradas na fila própria da emergência.
 - Histórico individual de sinais vitais, com consulta separada e controle de acesso por perfil.
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
 - Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
@@ -28,8 +28,9 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
 - Raio X: solicitação vinculada ao cadastro do paciente e fila com situação de solicitado, agendado, em execução, concluído ou cancelado.
 - Encaminhamentos de Serviço Social ligados ao cadastro compartilhado de pacientes.
-- Farmácia: inventário por lote com filtros rápidos de estoque crítico, validade vencida e validade próxima.
-- Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e busca no histórico recente.
+- Farmácia: inventário por lote com filtros rápidos de estoque crítico e validade, movimentações com autoria e saldo resultante e consulta paginada do livro de estoque.
+- Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado com busca no servidor e filtro por paciente.
+- Recepção: fluxos separados de admissão/internação e chegada à emergência, com fila operacional e vínculo opcional ao cadastro de pacientes.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
@@ -52,7 +53,7 @@ Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Psicologi
 | Instalação com containers | Docker Compose e PostgreSQL 17 |
 | HTTPS interno | Caddy com autoridade certificadora local |
 
-As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem e cadastro central de pacientes, Farmácia, Oficina Terapêutica, Raio X, Serviço Social e Manutenção. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
+As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem e cadastro central de pacientes (incluindo a fila de Recepção), Farmácia, Oficina Terapêutica, Raio X, Serviço Social e Manutenção. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
 
 ## Executar para desenvolvimento
 
