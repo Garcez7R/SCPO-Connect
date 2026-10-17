@@ -38,13 +38,14 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0023_patient_allergy_status"
+    assert revision == "0024_patient_linked_medications_and_results"
     if service == "nursing":
-        assert len(tables) == 7
+        assert len(tables) == 8
         patient_columns = {
             column["name"] for column in inspect(get_engine(service)).get_columns("patients")
         }
         assert {"allergies_status", "responsible_status"} <= patient_columns
+        assert "medication_administrations" in tables
         report_columns = {column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")}
         assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
         assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records"))
@@ -63,8 +64,13 @@ def test_each_service_migration_creates_only_its_owned_table(
             for column in inspect(get_engine(service)).get_columns("psychology_referrals")
         }
     elif service == "pharmacy":
-        assert len(tables) == 3
+        assert len(tables) == 4
         assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}
+        assert "medication_dispensations" in tables
+    elif service == "xray":
+        assert {"result", "result_recorded_by", "result_recorded_at"} <= {
+            column["name"] for column in inspect(get_engine(service)).get_columns("exam_requests")
+        }
     else:
         assert len(tables) == 2
     if service in {"social", "xray"}:

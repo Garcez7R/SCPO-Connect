@@ -28,6 +28,7 @@ from .common import (
     emit_audit_event,
     require_demo_role,
     require_service_token,
+    resolve_medication_dispensation,
     verify_database_migrated,
 )
 
@@ -152,6 +153,22 @@ class EmergencyArrival(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class MedicationAdministration(Base):
+    __tablename__ = "medication_administrations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dispensation_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    medication_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    dose: Mapped[str] = mapped_column(String(80), nullable=False)
+    unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    administered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class EmergencyArrivalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     patient_reference: str | None = Field(default=None, max_length=36)
@@ -226,6 +243,33 @@ EmergencyArrivalPayload.model_rebuild()
 class EmergencyArrivalStatusPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["waiting", "in_service", "completed", "cancelled"]
+
+
+class EmergencyAdmissionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    room: str = Field(min_length=1, max_length=20)
+    bed: str = Field(min_length=1, max_length=20)
+
+    @field_validator("room", "bed")
+    @classmethod
+    def trim_bed_location(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Informe quarto e leito")
+        return value
+
+
+class MedicationAdministrationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    dispensation_id: str = Field(min_length=1, max_length=36)
+    patient_reference: str = Field(min_length=1, max_length=36)
+    status: Literal["administered", "refused", "held"]
+    reason: str = Field(default="", max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def trim_reason(cls, value: str) -> str:
+        return value.strip()
 
 
 def get_nursing_db():
@@ -420,7 +464,7 @@ class VoidPayload(BaseModel):
         return value
 
 
-PATIENT_MODULES = ("patients", "nursing", "reception", "therapy", "nutrition", "social", "xray", "maintenance", "psychology", "management")
+PATIENT_MODULES = ("patients", "nursing", "pharmacy", "reception", "therapy", "nutrition", "social", "xray", "maintenance", "psychology", "management")
 
 
 async def authorize_patient_module(request: Request) -> DemoPrincipal:
@@ -688,6 +732,104 @@ def update_emergency_arrival(
     return serialize_emergency_arrival(arrival, patient.allergies_status if patient else "unknown")
 
 
+@app.post("/api/v1/reception/arrivals/{arrival_id}/admission")
+def admit_emergency_arrival(
+    arrival_id: str,
+    payload: EmergencyAdmissionPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    arrival = db.get(EmergencyArrival, arrival_id)
+    if arrival is None:
+        raise HTTPException(status_code=404, detail="Atendimento não encontrado")
+    if arrival.status in {"completed", "cancelled", "admitted"}:
+        raise HTTPException(status_code=409, detail="O atendimento não pode ser convertido em internação")
+    if not arrival.patient_reference:
+        raise HTTPException(status_code=409, detail="Vincule ou crie o cadastro central do paciente antes da internação")
+    patient = db.get(Patient, arrival.patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+    occupied = db.scalar(
+        select(Patient.reference).where(
+            Patient.active.is_(True),
+            Patient.room == payload.room,
+            Patient.bed == payload.bed,
+            Patient.reference != patient.reference,
+        )
+    )
+    if occupied:
+        raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
+    now = datetime.now(UTC)
+    patient.room = payload.room
+    patient.bed = payload.bed
+    patient.updated_at = now
+    patient.updated_by = principal.actor_name
+    arrival.status = "admitted"
+    arrival.updated_by = principal.actor_name
+    arrival.updated_at = now
+    db.commit()
+    emit_audit_event(principal, "reception", "emergency_arrival_admitted", arrival.id)
+    return {
+        "arrival": serialize_emergency_arrival(arrival, patient.allergies_status),
+        "patient": serialize_patient(patient, principal=principal),
+    }
+
+
+@app.get("/api/v1/nursing/medication-administrations")
+def list_medication_administrations(
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    patient_reference: str | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    query = select(MedicationAdministration)
+    if patient_reference:
+        query = query.where(MedicationAdministration.patient_reference == patient_reference)
+    records = db.scalars(
+        query.order_by(MedicationAdministration.administered_at.desc()).limit(500)
+    ).all()
+    emit_audit_event(principal, "nursing", "medication_administrations_read", "medication_administrations")
+    return {"administrations": [serialize_medication_administration(record) for record in records]}
+
+
+@app.post("/api/v1/nursing/medication-administrations", status_code=201)
+def create_medication_administration(
+    payload: MedicationAdministrationPayload,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    dispensation = resolve_medication_dispensation(payload.dispensation_id)
+    if dispensation["patient_reference"] != payload.patient_reference:
+        raise HTTPException(status_code=409, detail="A dispensação não pertence ao paciente selecionado")
+    patient = db.get(Patient, payload.patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+    if db.scalar(
+        select(MedicationAdministration.id).where(
+            MedicationAdministration.dispensation_id == payload.dispensation_id
+        )
+    ):
+        raise HTTPException(status_code=409, detail="Esta dispensação já foi registrada na Enfermagem")
+    if payload.status != "administered" and len(payload.reason) < 3:
+        raise HTTPException(status_code=422, detail="Informe o motivo da recusa ou suspensão")
+    record = MedicationAdministration(
+        dispensation_id=dispensation["id"],
+        patient_reference=patient.reference,
+        medication_name=dispensation["medication_name"],
+        dose=dispensation["quantity"],
+        unit=dispensation["unit"],
+        status=payload.status,
+        reason=payload.reason,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        administered_at=datetime.now(UTC),
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    emit_audit_event(principal, "nursing", "medication_administration_recorded", str(record.id))
+    return serialize_medication_administration(record)
+
+
 def serialize_emergency_arrival(
     arrival: EmergencyArrival,
     allergies_status: str = "unknown",
@@ -704,6 +846,21 @@ def serialize_emergency_arrival(
         "updated_by": arrival.updated_by,
         "created_at": arrival.created_at.isoformat(),
         "updated_at": arrival.updated_at.isoformat(),
+    }
+
+
+def serialize_medication_administration(record: MedicationAdministration) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "dispensation_id": record.dispensation_id,
+        "patient_reference": record.patient_reference,
+        "medication_name": record.medication_name,
+        "dose": record.dose,
+        "unit": record.unit,
+        "status": record.status,
+        "reason": record.reason,
+        "actor_name": record.actor_name,
+        "administered_at": record.administered_at.isoformat(),
     }
 
 
@@ -930,7 +1087,7 @@ def can_view_full_patient_profile(principal: DemoPrincipal) -> bool:
 def can_view_patient_allergies(principal: DemoPrincipal) -> bool:
     return any(
         module in principal.modules and "consultar" in principal.permissions.get(module, [])
-        for module in ("nursing", "nutrition", "therapy", "xray", "psychology", "management")
+        for module in ("nursing", "nutrition", "pharmacy", "therapy", "xray", "psychology", "management")
     )
 
 

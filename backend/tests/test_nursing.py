@@ -89,6 +89,99 @@ def test_emergency_arrival_can_create_central_patient_without_admission(
     assert clinical_profile["allergies_status"] == "known"
 
 
+def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
+    nursing_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    receptionist = DemoPrincipal(
+        "reception-id", "reception", "Recepcionista", "reception",
+        ["reception"], {"reception": ["consultar", "criar", "alterar"]},
+    )
+    patient = nursing.create_patient(
+        nursing.PatientPayload(name="Pessoa atendida", room="", bed=""),
+        receptionist,
+        nursing_db,
+    )
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_reference=str(patient["reference"]),
+            patient_name="Pessoa atendida",
+            reason="Atendimento de emergência",
+        ),
+        receptionist,
+        nursing_db,
+    )
+
+    admitted = nursing.admit_emergency_arrival(
+        arrival["id"],
+        nursing.EmergencyAdmissionPayload(room="10", bed="A"),
+        receptionist,
+        nursing_db,
+    )
+    assert admitted["arrival"]["status"] == "admitted"
+    assert admitted["patient"]["room"] == "10"
+    assert admitted["patient"]["bed"] == "A"
+
+    with pytest.raises(HTTPException) as already_admitted:
+        nursing.admit_emergency_arrival(
+            arrival["id"],
+            nursing.EmergencyAdmissionPayload(room="10", bed="A"),
+            receptionist,
+            nursing_db,
+        )
+    assert already_admitted.value.status_code == 409
+
+
+def test_emergency_admission_rejects_unlinked_patient_and_occupied_bed(
+    nursing_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    receptionist = DemoPrincipal(
+        "reception-id", "reception", "Recepcionista", "reception",
+        ["reception"], {"reception": ["consultar", "criar", "alterar"]},
+    )
+    unlinked = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(patient_name="Pessoa sem cadastro", reason="Atendimento"),
+        receptionist,
+        nursing_db,
+    )
+    with pytest.raises(HTTPException) as missing_patient:
+        nursing.admit_emergency_arrival(
+            unlinked["id"],
+            nursing.EmergencyAdmissionPayload(room="1", bed="A"),
+            receptionist,
+            nursing_db,
+        )
+    assert missing_patient.value.status_code == 409
+
+    nursing.create_patient(
+        nursing.PatientPayload(name="Paciente internado", room="1", bed="A"),
+        receptionist,
+        nursing_db,
+    )
+    incoming = nursing.create_patient(
+        nursing.PatientPayload(name="Paciente incoming", room="", bed=""),
+        receptionist,
+        nursing_db,
+    )
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_reference=str(incoming["reference"]),
+            reason="Atendimento de emergência",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    with pytest.raises(HTTPException) as occupied:
+        nursing.admit_emergency_arrival(
+            arrival["id"],
+            nursing.EmergencyAdmissionPayload(room="1", bed="A"),
+            receptionist,
+            nursing_db,
+        )
+    assert occupied.value.status_code == 409
+
+
 def test_patient_allergy_status_requires_clear_details() -> None:
     with pytest.raises(ValidationError):
         nursing.PatientPayload(

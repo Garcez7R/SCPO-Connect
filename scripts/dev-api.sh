@@ -8,6 +8,8 @@ export UV_CACHE_DIR="$PWD/data/uv-cache"
 export SCPO_SERVICE_TOKEN="${SCPO_SERVICE_TOKEN:-$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')}"
 export SCPO_AUDIT_API_URL="${SCPO_AUDIT_API_URL:-http://127.0.0.1:8006}"
 export SCPO_ACCESS_API_URL="${SCPO_ACCESS_API_URL:-http://127.0.0.1:8002}"
+export SCPO_NURSING_API_URL="${SCPO_NURSING_API_URL:-http://127.0.0.1:8001}"
+export SCPO_PHARMACY_API_URL="${SCPO_PHARMACY_API_URL:-http://127.0.0.1:8003}"
 export SCPO_COOKIE_SECURE="${SCPO_COOKIE_SECURE:-false}"
 auth_keys_file="$PWD/data/local/auth.keys.env"
 if [[ ! -f "$auth_keys_file" ]]; then

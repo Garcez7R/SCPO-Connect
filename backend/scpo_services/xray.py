@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import DateTime, Integer, String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -25,6 +25,9 @@ class ExamRequest(Base):
     patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     exam_label: Mapped[str] = mapped_column(String(80), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="requested")
+    result: Mapped[str] = mapped_column(String(4000), nullable=False, default="")
+    result_recorded_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    result_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -54,7 +57,24 @@ class ExamRequestPayload(BaseModel):
 
 class ExamRequestUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["requested", "scheduled", "in_progress", "completed", "cancelled"]
+    status: Literal["requested", "scheduled", "in_progress", "completed", "cancelled"] | None = None
+    result: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("result")
+    @classmethod
+    def trim_result(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Informe um resultado objetivo com pelo menos três caracteres")
+        return value
+
+    @model_validator(mode="after")
+    def require_change(self) -> "ExamRequestUpdate":
+        if self.status is None and self.result is None:
+            raise ValueError("Informe a situação ou o resultado")
+        return self
 
 
 @app.get("/health")
@@ -99,15 +119,25 @@ def update_request(
     request = db.get(ExamRequest, request_id)
     if request is None:
         raise HTTPException(status_code=404, detail="Solicitação de exame não encontrada")
-    if request.status in {"completed", "cancelled"} and payload.status != request.status:
+    if request.status in {"completed", "cancelled"} and payload.status not in {None, request.status}:
         raise HTTPException(
             status_code=409,
             detail="Solicitação encerrada; registre uma nova solicitação para novo atendimento",
         )
-    request.status = payload.status
+    if payload.status is not None:
+        request.status = payload.status
+    if payload.result is not None:
+        request.result = payload.result
+        request.result_recorded_by = principal.actor_name
+        request.result_recorded_at = datetime.now(UTC)
     db.commit()
     db.refresh(request)
-    emit_audit_event(principal, "xray", "xray_request_status_changed", request.patient_reference)
+    emit_audit_event(
+        principal,
+        "xray",
+        "xray_result_recorded" if payload.result is not None else "xray_request_status_changed",
+        request.patient_reference,
+    )
     return serialize_request(request)
 
 
@@ -117,5 +147,8 @@ def serialize_request(request: ExamRequest) -> dict[str, object]:
         "patient_reference": request.patient_reference,
         "exam_label": request.exam_label,
         "status": request.status,
+        "result": request.result,
+        "result_recorded_by": request.result_recorded_by,
+        "result_recorded_at": request.result_recorded_at.isoformat() if request.result_recorded_at else None,
         "created_at": request.created_at.isoformat(),
     }

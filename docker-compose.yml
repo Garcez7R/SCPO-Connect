@@ -4,6 +4,7 @@ x-backend-environment: &backend-environment
   SCPO_ACCESS_API_URL: http://access:8000
   SCPO_AUDIT_API_URL: http://audit:8000
   SCPO_NURSING_API_URL: http://nursing:8000
+  SCPO_PHARMACY_API_URL: http://pharmacy:8000
 
 x-backend-service: &backend-service
   build:
@@ -90,6 +91,11 @@ services:
       <<: *backend-environment
       SCPO_SERVICE: pharmacy
       SCPO_PHARMACY_DATABASE_URL: postgresql+psycopg://${SCPO_PHARMACY_DB_USER}:${SCPO_PHARMACY_DB_PASSWORD}@db:5432/scpo_pharmacy
+    depends_on:
+      db:
+        condition: service_healthy
+      nursing:
+        condition: service_healthy
     networks: [backend]
 
   social:

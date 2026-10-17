@@ -71,7 +71,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0023_patient_allergy_status"
+    expected_revision = "0024_patient_linked_medications_and_results"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."
@@ -173,6 +173,37 @@ def verify_patient_reference(reference: str) -> dict[str, str]:
         return {"reference": str(data["reference"]), "name": str(data["name"]), "room": str(data["room"]), "bed": str(data["bed"])}
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=503, detail="Resposta inválida do cadastro de pacientes") from exc
+
+
+def resolve_medication_dispensation(dispensation_id: str) -> dict[str, str]:
+    pharmacy_url = os.getenv("SCPO_PHARMACY_API_URL", "http://pharmacy:8000").rstrip("/")
+    service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
+    if not service_token:
+        raise HTTPException(status_code=503, detail="Validação da dispensação indisponível")
+    try:
+        response = httpx.post(
+            f"{pharmacy_url}/internal/v1/pharmacy/dispensations/resolve",
+            headers={"X-Service-Token": service_token},
+            json={"id": dispensation_id},
+            timeout=3.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Serviço de Farmácia indisponível") from exc
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail="Dispensação não encontrada ou indisponível")
+    if response.status_code != 200:
+        raise HTTPException(status_code=503, detail="Não foi possível validar a dispensação")
+    try:
+        data = response.json()
+        return {
+            "id": str(data["id"]),
+            "patient_reference": str(data["patient_reference"]),
+            "medication_name": str(data["medication_name"]),
+            "quantity": str(data["quantity"]),
+            "unit": str(data["unit"]),
+        }
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="Resposta inválida da Farmácia") from exc
 
 
 def emit_audit_event(principal: DemoPrincipal, module: str, action: str, target_id: str) -> None:

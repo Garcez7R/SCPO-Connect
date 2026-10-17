@@ -1,11 +1,13 @@
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
+import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, func, select
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, func, select, update
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -14,6 +16,8 @@ from .common import (
     database_session,
     emit_audit_event,
     require_demo_role,
+    require_service_token,
+    verify_patient_reference,
     verify_database_migrated,
 )
 
@@ -56,6 +60,25 @@ class PharmacyStockMovement(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class MedicationDispense(Base):
+    __tablename__ = "medication_dispensations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False)
+    medication_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    quantity: Mapped[str] = mapped_column(String(32), nullable=False)
+    unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    instructions: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    prescription_reference: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    prescriber_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    allergy_reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="dispensed")
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 def get_pharmacy_db():
     yield from database_session("pharmacy")
 
@@ -70,6 +93,7 @@ app = FastAPI(
     title="SCPO Connect · Serviço de Farmácia", version="1.0.0", lifespan=lifespan
 )
 PHARMACY_ROLE = require_demo_role("pharmacy")
+DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "management")
 
 
 class InventoryPayload(BaseModel):
@@ -108,6 +132,22 @@ class StockMovementPayload(BaseModel):
         if len(value) < 3:
             raise ValueError("Informe o motivo da movimentação")
         return value
+
+
+class MedicationDispensePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str = Field(min_length=1, max_length=36)
+    item_id: int = Field(gt=0)
+    quantity: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    instructions: str = Field(default="", max_length=500)
+    prescription_reference: str = Field(min_length=2, max_length=80)
+    prescriber_name: str = Field(min_length=2, max_length=120)
+    allergy_reviewed: bool
+
+    @field_validator("instructions", "prescription_reference", "prescriber_name")
+    @classmethod
+    def trim_instructions(cls, value: str) -> str:
+        return value.strip()
 
 
 def parse_stock_quantity(value: str) -> Decimal:
@@ -231,12 +271,21 @@ def create_stock_movement(
         raise HTTPException(status_code=422, detail="O saldo excede o limite permitido")
 
     now = datetime.now(UTC)
-    item.balance = format_stock_quantity(new_balance)
+    previous_balance = item.balance
+    updated_balance = format_stock_quantity(new_balance)
+    changed = db.execute(
+        update(InventoryItem)
+        .where(InventoryItem.id == item.id, InventoryItem.balance == previous_balance)
+        .values(balance=updated_balance)
+        .execution_options(synchronize_session=False)
+    )
+    if changed.rowcount != 1:
+        raise HTTPException(status_code=409, detail="O saldo do lote foi alterado em outra operação. Atualize e tente novamente")
     movement = PharmacyStockMovement(
         item_id=item.id,
         movement_type=payload.movement_type,
         quantity=format_stock_quantity(delta),
-        balance_after=item.balance,
+        balance_after=updated_balance,
         reason=payload.reason.strip(),
         actor_id=principal.user_id,
         actor_name=principal.actor_name,
@@ -248,6 +297,113 @@ def create_stock_movement(
     db.refresh(item)
     emit_audit_event(principal, "pharmacy", "stock_movement_created", str(item.id))
     return serialize_stock_movement(movement)
+
+
+@app.get("/api/v1/pharmacy/dispensations")
+def list_dispensations(
+    principal: Annotated[DemoPrincipal, Depends(DISPENSATION_READ_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+    patient_reference: str | None = None,
+    status: Literal["dispensed", "cancelled"] | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    query = select(MedicationDispense)
+    if patient_reference:
+        query = query.where(MedicationDispense.patient_reference == patient_reference)
+    if status:
+        query = query.where(MedicationDispense.status == status)
+    records = db.scalars(
+        query.order_by(MedicationDispense.created_at.desc()).limit(500)
+    ).all()
+    emit_audit_event(principal, "pharmacy", "medication_dispensations_read", "medication_dispensations")
+    return {"dispensations": [serialize_dispensation(record) for record in records]}
+
+
+@app.post("/api/v1/pharmacy/dispensations", status_code=201)
+def create_dispensation(
+    payload: MedicationDispensePayload,
+    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    patient = verify_patient_reference(payload.patient_reference)
+    if not payload.allergy_reviewed:
+        raise HTTPException(status_code=422, detail="Confirme a revisão das alergias do paciente antes de dispensar")
+    item = db.scalar(
+        select(InventoryItem).where(InventoryItem.id == payload.item_id).with_for_update()
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+    if item.category.casefold() != "medicamento":
+        raise HTTPException(status_code=422, detail="Somente itens da categoria medicamento podem ser dispensados")
+    if item.expiry_date < date.today():
+        raise HTTPException(status_code=409, detail="Lote vencido não pode ser dispensado")
+    amount = parse_stock_quantity(payload.quantity)
+    if amount <= 0:
+        raise HTTPException(status_code=422, detail="Informe uma quantidade maior que zero")
+    balance = parse_stock_quantity(item.balance)
+    if amount > balance:
+        raise HTTPException(status_code=409, detail="Saldo insuficiente para a dispensação")
+
+    now = datetime.now(UTC)
+    previous_balance = item.balance
+    updated_balance = format_stock_quantity(balance - amount)
+    changed = db.execute(
+        update(InventoryItem)
+        .where(InventoryItem.id == item.id, InventoryItem.balance == previous_balance)
+        .values(balance=updated_balance)
+        .execution_options(synchronize_session=False)
+    )
+    if changed.rowcount != 1:
+        raise HTTPException(status_code=409, detail="O saldo do lote foi alterado em outra operação. Atualize e tente novamente")
+    dispense = MedicationDispense(
+        id=str(uuid.uuid4()),
+        patient_reference=patient["reference"],
+        item_id=item.id,
+        medication_name=item.item_name,
+        quantity=format_stock_quantity(amount),
+        unit=item.unit,
+        instructions=payload.instructions,
+        prescription_reference=payload.prescription_reference.strip(),
+        prescriber_name=payload.prescriber_name.strip(),
+        allergy_reviewed=payload.allergy_reviewed,
+        status="dispensed",
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        created_at=now,
+    )
+    db.add(dispense)
+    db.add(
+        PharmacyStockMovement(
+            item_id=item.id,
+            movement_type="issue",
+            quantity=format_stock_quantity(-amount),
+            balance_after=updated_balance,
+            reason="Dispensação vinculada ao paciente.",
+            actor_id=principal.user_id,
+            actor_name=principal.actor_name,
+            created_at=now,
+        )
+    )
+    db.commit()
+    emit_audit_event(principal, "pharmacy", "medication_dispensed", dispense.id)
+    return serialize_dispensation(dispense)
+
+
+@app.post("/internal/v1/pharmacy/dispensations/resolve")
+def resolve_dispensation(
+    payload: dict[str, str],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+    _: Annotated[None, Depends(require_service_token)],
+) -> dict[str, str]:
+    dispensation = db.get(MedicationDispense, payload.get("id", ""))
+    if dispensation is None or dispensation.status != "dispensed":
+        raise HTTPException(status_code=404, detail="Dispensação não encontrada ou indisponível")
+    return {
+        "id": dispensation.id,
+        "patient_reference": dispensation.patient_reference,
+        "medication_name": dispensation.medication_name,
+        "quantity": dispensation.quantity,
+        "unit": dispensation.unit,
+    }
 
 
 @app.patch("/api/v1/pharmacy/items/{item_id}/stock-thresholds")
@@ -301,4 +457,22 @@ def serialize_stock_movement(movement: PharmacyStockMovement) -> dict[str, objec
         "actor_id": movement.actor_id,
         "actor_name": movement.actor_name,
         "created_at": movement.created_at.isoformat(),
+    }
+
+
+def serialize_dispensation(dispensation: MedicationDispense) -> dict[str, object]:
+    return {
+        "id": dispensation.id,
+        "patient_reference": dispensation.patient_reference,
+        "item_id": dispensation.item_id,
+        "medication_name": dispensation.medication_name,
+        "quantity": dispensation.quantity,
+        "unit": dispensation.unit,
+        "instructions": dispensation.instructions,
+        "prescription_reference": dispensation.prescription_reference,
+        "prescriber_name": dispensation.prescriber_name,
+        "allergy_reviewed": dispensation.allergy_reviewed,
+        "status": dispensation.status,
+        "actor_name": dispensation.actor_name,
+        "created_at": dispensation.created_at.isoformat(),
     }

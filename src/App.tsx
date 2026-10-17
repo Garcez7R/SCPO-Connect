@@ -79,6 +79,8 @@ type WorkOrderPriority = 'normal' | 'high' | 'urgent'
 type WorkOrder = { id: string; title: string; description: string; service_type: string; department: string; location: string; patient_reference?: string | null; priority: WorkOrderPriority; status: WorkOrderStatus; requester_id: string; requester_name: string; updated_by: string; created_at: string; updated_at: string }
 type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
 type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_balance' | 'entry' | 'issue' | 'adjustment'; quantity: string; balance_after: string; reason: string; actor_name: string; created_at: string }
+type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
+type MedicationAdministration = { id: number; dispensation_id: string; patient_reference: string; medication_name: string; dose: string; unit: string; status: 'administered' | 'refused' | 'held'; reason: string; actor_name: string; administered_at: string }
 type TherapyActivityStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 type TherapyActivity = { id: string; title: string; activity_type: string; description: string; location: string; starts_at: string; ends_at: string | null; patient_reference: string | null; status: TherapyActivityStatus; activity_report: string; report_updated_by: string | null; report_updated_at: string | null; created_by: string; created_at: string }
 type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; fasting_at?: string | null; fasting_reason?: string; actor_name: string; created_at: string }
@@ -441,7 +443,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
           {activeModule === 'nursing' && <NursingPage profile={profile} onShowHistory={() => navigate('nursing-history')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
-          {activeModule === 'pharmacy' && <PharmacyPage />}
+          {activeModule === 'pharmacy' && <PharmacyPage user={user} />}
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
           {activeModule === 'maintenance' && <MaintenanceQueuePage />}
           {activeModule === 'hygiene' && <HygienePage user={user} />}
@@ -615,7 +617,7 @@ function AddressFields({ form, patients, prefix, onChange }: { form: PatientForm
 }
 
 type ReceptionTab = 'emergency' | 'admissions'
-type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled'
+type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
 type EmergencyArrival = { id: string; patient_reference: string | null; patient_name: string; allergies_status?: Patient['allergies_status']; arrival_mode: 'walk_in' | 'ambulance' | 'other'; reason: string; status: EmergencyArrivalStatus; created_by: string; updated_by: string; created_at: string; updated_at: string }
 type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
 
@@ -624,13 +626,14 @@ const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
   in_service: 'Em atendimento',
   completed: 'Concluído',
   cancelled: 'Cancelado',
+  admitted: 'Internado',
 }
 
 function ReceptionPage({ user }: { user: AuthUser }) {
   const [tab, setTab] = useState<ReceptionTab>('emergency')
   const [patients, setPatients] = useState<Patient[]>([])
   const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
-  const [counts, setCounts] = useState<EmergencyArrivalCounts>({ waiting: 0, in_service: 0, completed: 0, cancelled: 0 })
+  const [counts, setCounts] = useState<EmergencyArrivalCounts>({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0 })
   const [patientReference, setPatientReference] = useState('')
   const [patientName, setPatientName] = useState('')
   const [createCentralPatient, setCreateCentralPatient] = useState(false)
@@ -645,6 +648,7 @@ function ReceptionPage({ user }: { user: AuthUser }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [updating, setUpdating] = useState('')
+  const [admissionDraft, setAdmissionDraft] = useState<Record<string, { room: string; bed: string }>>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const canCreate = user.permissions.reception?.includes('criar') ?? false
@@ -660,7 +664,7 @@ function ReceptionPage({ user }: { user: AuthUser }) {
       const data = await readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(response)
       setArrivals(data.arrivals ?? [])
       setTotal(data.total ?? 0)
-      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, ...data.status_counts })
+      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...data.status_counts })
       setOffset(pageOffset)
       setError('')
     } catch (loadError) {
@@ -682,7 +686,7 @@ function ReceptionPage({ user }: { user: AuthUser }) {
       setPatients(patientData.patients ?? [])
       setArrivals(arrivalsData.arrivals ?? [])
       setTotal(arrivalsData.total ?? 0)
-      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, ...arrivalsData.status_counts })
+      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...arrivalsData.status_counts })
       setError('')
     }).catch((loadError) => {
       if (current) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a Recepção.')
@@ -717,7 +721,7 @@ function ReceptionPage({ user }: { user: AuthUser }) {
     } finally { setSaving(false) }
   }
 
-  async function updateArrival(arrival: EmergencyArrival, status: EmergencyArrivalStatus) {
+  async function updateArrival(arrival: EmergencyArrival, status: Exclude<EmergencyArrivalStatus, 'admitted'>) {
     setUpdating(arrival.id); setError(''); setNotice('')
     try {
       const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}`, {
@@ -730,6 +734,28 @@ function ReceptionPage({ user }: { user: AuthUser }) {
       await loadArrivals(statusFilter, query, offset)
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar o atendimento.')
+    } finally { setUpdating('') }
+  }
+
+  async function admitArrival(arrival: EmergencyArrival) {
+    const location = admissionDraft[arrival.id]
+    if (!location?.room.trim() || !location.bed.trim()) return
+    setUpdating(arrival.id); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}/admission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room: location.room.trim(), bed: location.bed.trim() }),
+      })
+      await readApiResponse(response)
+      setNotice(`${arrival.patient_name} foi vinculado à internação no quarto ${location.room}, leito ${location.bed}.`)
+      setAdmissionDraft((current) => { const next = { ...current }; delete next[arrival.id]; return next })
+      await loadArrivals(statusFilter, query, offset)
+      const patientResponse = await fetch('/api/v1/nursing/patients')
+      const patientData = await readApiResponse<{ patients?: Patient[] }>(patientResponse)
+      setPatients(patientData.patients ?? [])
+    } catch (admissionError) {
+      setError(admissionError instanceof Error ? admissionError.message : 'Não foi possível concluir a internação.')
     } finally { setUpdating('') }
   }
 
@@ -775,8 +801,7 @@ function ReceptionPage({ user }: { user: AuthUser }) {
           {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`psychology-tab ${statusFilter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
         </div>
         <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
-        {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}><div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div><ReceptionAllergyAlert status={arrival.allergies_status} /><div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>{canUpdate && <label className="field reception-status-control"><span className="field-label">Situação operacional</span><select value={arrival.status} disabled={updating === arrival.id || arrival.status === 'completed' || arrival.status === 'cancelled'} onChange={(event) => void updateArrival(arrival, event.target.value as EmergencyArrivalStatus)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}</article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}
-        <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
+        {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}><div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div><ReceptionAllergyAlert status={arrival.allergies_status} /><div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>{canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span>        <select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}{canUpdate && arrival.patient_reference && ['waiting', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}><label className="field"><span className="field-label">Quarto para internação</span><input required maxLength={20} value={admissionDraft[arrival.id]?.room ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: event.target.value, bed: current[arrival.id]?.bed ?? '' } }))} /></label><label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={admissionDraft[arrival.id]?.bed ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: current[arrival.id]?.room ?? '', bed: event.target.value } }))} /></label><button className="button button-secondary" type="submit" disabled={updating === arrival.id}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button></form>}</article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}        <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
       </section>
     </>}
   </section>
@@ -834,7 +859,6 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   }, [cameraOpen])
 
   async function loadPatients() {
-    setLoading(true)
     try {
       const response = await fetch('/api/v1/nursing/patients?full_profile=true&include_inactive=true')
       const data = await response.json() as { patients?: Patient[]; detail?: string }
@@ -846,6 +870,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
     } finally { setLoading(false) }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadPatients() }, [])
 
   useEffect(() => {
@@ -1164,7 +1189,6 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
   )
 
   async function loadOrders() {
-    setLoading(true)
     try {
       const response = await fetch('/api/v1/maintenance/orders')
       const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
@@ -1177,6 +1201,7 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
     }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadOrders() }, [user.id])
   useEffect(() => {
     if (!canLookupPatients) return
@@ -1366,7 +1391,6 @@ function HygienePage({ user }: { user: AuthUser }) {
   const [notice, setNotice] = useState('')
 
   async function loadRequests() {
-    setLoading(true)
     try {
       const response = await fetch('/api/v1/hygiene/requests')
       const data = await readApiResponse<{ requests?: HygieneRequest[] }>(response)
@@ -1379,6 +1403,7 @@ function HygienePage({ user }: { user: AuthUser }) {
     }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadRequests() }, [user.id])
 
   const visibleRequests = requests.filter((request) => {
@@ -1443,7 +1468,6 @@ function MaintenanceQueuePage() {
   const [changes, setChanges] = useState<Record<string, { status: WorkOrderStatus; note: string }>>({})
 
   async function loadQueue(nextFilters = filters) {
-    setLoading(true)
     try {
       const params = new URLSearchParams(Object.entries(nextFilters).filter(([, value]) => value))
       const response = await fetch(`/api/v1/maintenance/queue${params.size ? `?${params}` : ''}`)
@@ -1457,6 +1481,7 @@ function MaintenanceQueuePage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
   useEffect(() => { void loadQueue() }, [])
 
   function printResults() {
@@ -1514,8 +1539,12 @@ function WorkOrderCard({ order, editable = false, status, note, onStatusChange, 
   </article>
 }
 
-function PharmacyPage() {
+function PharmacyPage({ user }: { user: AuthUser }) {
   const [items, setItems] = useState<PharmacyItem[]>([])
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
+  const [dispenseForm, setDispenseForm] = useState({ patient_reference: '', item_id: '', quantity: '', instructions: '', prescription_reference: '', prescriber_name: '', allergy_reviewed: false })
+  const [dispensing, setDispensing] = useState(false)
   const [movements, setMovements] = useState<PharmacyMovement[]>([])
   const [movementTotal, setMovementTotal] = useState(0)
   const [movementOffset, setMovementOffset] = useState(0)
@@ -1542,18 +1571,16 @@ function PharmacyPage() {
     let scanning = false
     const Detector = (window as Window & { BarcodeDetector?: { new (options?: { formats: string[] }): { detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]> }; getSupportedFormats?: () => Promise<string[]> } }).BarcodeDetector
     if (!Detector) {
-      setCameraScannerMessage('A leitura pela câmera não está disponível neste navegador. Use o leitor USB ou digite o código.')
       return () => { cancelled = true }
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraScannerMessage('A câmera exige HTTPS e permissão do navegador. Use o leitor USB ou digite o código.')
       return () => { cancelled = true }
     }
-    setCameraScannerMessage('Aponte a câmera para o código de barras.')
+    const videoElement = barcodeVideoRef.current
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(async (mediaStream) => {
       stream = mediaStream
       if (cancelled) { mediaStream.getTracks().forEach((track) => track.stop()); return }
-      const video = barcodeVideoRef.current
+      const video = videoElement
       if (!video) return
       video.srcObject = mediaStream
       await video.play()
@@ -1581,12 +1608,16 @@ function PharmacyPage() {
       cancelled = true
       window.clearInterval(timer)
       stream?.getTracks().forEach((track) => track.stop())
-      if (barcodeVideoRef.current) barcodeVideoRef.current.srcObject = null
+      if (videoElement) videoElement.srcObject = null
     }
   }, [cameraScannerOpen])
+  const barcodeCameraUnavailable = !(window as Window & { BarcodeDetector?: unknown }).BarcodeDetector
+    ? 'A leitura pela câmera não está disponível neste navegador. Use o leitor USB ou digite o código.'
+    : !navigator.mediaDevices?.getUserMedia
+      ? 'A câmera exige HTTPS e permissão do navegador. Use o leitor USB ou digite o código.'
+      : ''
 
-  async function loadItems(offset = movementOffset) {
-    setLoading(true)
+  const loadItems = useCallback(async (offset = movementOffset) => {
     try {
       const [itemResponse, movementResponse] = await Promise.all([
         fetch('/api/v1/pharmacy/items'),
@@ -1604,9 +1635,30 @@ function PharmacyPage() {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o estoque.')
     } finally { setLoading(false) }
-  }
+  }, [movementOffset])
 
-  useEffect(() => { void loadItems() }, [])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void loadItems() }, [loadItems])
+
+  useEffect(() => {
+    let current = true
+    Promise.all([
+      fetch('/api/v1/nursing/patients'),
+      fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
+    ]).then(async ([patientResponse, dispenseResponse]) => {
+      const [patientData, dispenseData] = await Promise.all([
+        readApiResponse<{ patients?: Patient[] }>(patientResponse),
+        readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
+      ])
+      if (current) {
+        setPatients(patientData.patients ?? [])
+        setDispensations(dispenseData.dispensations ?? [])
+      }
+    }).catch((loadError) => {
+      if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes e dispensações.')
+    })
+    return () => { current = false }
+  }, [user.id])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1641,6 +1693,27 @@ function PharmacyPage() {
       setError(movementError instanceof Error ? movementError.message : 'Falha ao registrar movimentação.')
     } finally { setMovementSaving(false) }
   }
+
+  async function submitDispensation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setDispensing(true); setError(''); setNotice('')
+    try {
+      const response = await fetch('/api/v1/pharmacy/dispensations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...dispenseForm, item_id: Number(dispenseForm.item_id), quantity: dispenseForm.quantity.replace(',', '.') }),
+      })
+      const data = await readApiResponse<MedicationDispensation>(response)
+      setDispensations((current) => [data, ...current])
+      setDispenseForm({ patient_reference: '', item_id: '', quantity: '', instructions: '', prescription_reference: '', prescriber_name: '', allergy_reviewed: false })
+      setNotice('Dispensação registrada, vinculada ao paciente e debitada do lote.')
+      await loadItems(0)
+    } catch (dispenseError) {
+      setError(dispenseError instanceof Error ? dispenseError.message : 'Não foi possível registrar a dispensação.')
+    } finally { setDispensing(false) }
+  }
+
+  const dispensePatient = patients.find((patient) => patient.reference === dispenseForm.patient_reference)
 
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
   const soonDate = new Date(`${today}T12:00:00`)
@@ -1679,7 +1752,23 @@ function PharmacyPage() {
     </div>
     <PharmacyStockOverview items={items} onSaved={(updated) => setItems((current) => current.map((item) => item.id === updated.id ? updated : item))} counts={{ critical: criticalCount, attention: attentionCount, healthy: healthyCount, unconfigured: unconfiguredCount }} />
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Código de barras / GTIN</span><input inputMode="numeric" autoComplete="off" maxLength={40} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value.slice(0, 40) })} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault() }} placeholder="Leia com o leitor USB ou digite" /><span className="field-hint">O leitor USB funciona como teclado: clique aqui e leia o código.</span></label><div className="field pharmacy-scan-field"><span className="field-label">Leitura pela câmera</span><button className="button button-secondary" type="button" onClick={() => { setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>{cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage}</span></>}</div><label className="field"><span className="field-label">Nome do produto</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item ou medicamento" /></label><label className="field"><span className="field-label">Categoria</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Medicamento</option><option>Material hospitalar</option><option>Material de consumo</option><option>Higiene e limpeza</option><option>Outro</option></select></label><label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label><label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label><label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label><label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label><label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label><label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label><label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label><label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label><label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label></div><div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div></form>}
+    <section className="pharmacy-dispensation-panel">
+      <div className="section-heading"><div><p className="eyebrow">SAÍDA ASSISTENCIAL</p><h2>Dispensar para paciente</h2><p className="welcome-copy">Registre a prescrição, confirme as alergias e selecione o lote dispensado. A Enfermagem receberá o vínculo para registrar a administração.</p></div></div>
+      <form className="field-grid field-grid-two" onSubmit={(event) => void submitDispensation(event)}>
+        <label className="field"><span className="field-label">Paciente</span><select required value={dispenseForm.patient_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, patient_reference: event.target.value, allergy_reviewed: false })}><option value="">Selecione</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>
+        <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => setDispenseForm({ ...dispenseForm, item_id: event.target.value })}><option value="">Selecione lote válido</option>{items.filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento' && item.expiry_date >= today && Number(item.balance.replace(',', '.')) > 0).map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot} · saldo {item.balance} {item.unit}</option>)}</select></label>
+        <label className="field"><span className="field-label">Quantidade</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Referência da prescrição</span><input required minLength={2} maxLength={80} value={dispenseForm.prescription_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, prescription_reference: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Profissional prescritor</span><input required minLength={2} maxLength={120} value={dispenseForm.prescriber_name} onChange={(event) => setDispenseForm({ ...dispenseForm, prescriber_name: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Instruções para administração (conforme prescrição)</span><input maxLength={500} value={dispenseForm.instructions} onChange={(event) => setDispenseForm({ ...dispenseForm, instructions: event.target.value })} /></label>
+        {dispensePatient && <PatientAllergyAlert patient={dispensePatient} />}
+        <label className="field pharmacy-allergy-confirm"><span><input type="checkbox" required checked={dispenseForm.allergy_reviewed} onChange={(event) => setDispenseForm({ ...dispenseForm, allergy_reviewed: event.target.checked })} /> Revisei o status e os detalhes de alergia do paciente.</span></label>
+        <button className="button button-primary" type="submit" disabled={dispensing || !patients.length}>{dispensing ? 'Registrando…' : 'Registrar dispensação'} <ArrowRight size={16} /></button>
+      </form>
+      <p className="work-order-privacy">O registro não substitui validação farmacêutica, prescrição institucional ou protocolo de dispensação. Confirme dose, unidade, paciente, alergias e lote antes de concluir.</p>
+      {!!dispensations.length && <div className="pharmacy-dispensation-list"><h3>Dispensações aguardando registro da Enfermagem</h3>{dispensations.map((item) => <article key={item.id}><strong>{patients.find((patient) => patient.reference === item.patient_reference)?.name ?? 'Paciente vinculado'} · {item.medication_name}</strong><span>{item.quantity} {item.unit} · prescrição {item.prescription_reference} · {dateTime(item.created_at)}</span></article>)}</div>}
+    </section>
+    {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2></div></div>    <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Código de barras / GTIN</span><input inputMode="numeric" autoComplete="off" maxLength={40} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value.slice(0, 40) })} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault() }} placeholder="Leia com o leitor USB ou digite" /><span className="field-hint">O leitor USB funciona como teclado: clique aqui e leia o código.</span></label><div className="field pharmacy-scan-field"><span className="field-label">Leitura pela câmera</span><button className="button button-secondary" type="button" onClick={() => { setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>{cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span></>}</div><label className="field"><span className="field-label">Nome do produto</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item ou medicamento" /></label><label className="field"><span className="field-label">Categoria</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Medicamento</option><option>Material hospitalar</option><option>Material de consumo</option><option>Higiene e limpeza</option><option>Outro</option></select></label><label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label><label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label><label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label><label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label><label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label><label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label><label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label><label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label><label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label></div><div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div></form>}
     <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
       {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => { const expired = item.expiry_date < today; const expiring = !expired && item.expiry_date <= soon; const low = Number(item.minimum_balance.replace(',', '.')) > 0 && Number(item.balance.replace(',', '.')) <= Number(item.minimum_balance.replace(',', '.')); return <article className="pharmacy-item-card" key={item.id}><div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired ? <AlertTriangle size={14} /> : expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Abaixo do mínimo' : 'Dentro da validade'}</span></div><h3>{item.item_name}</h3><p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p><div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low ? ` · mínimo ${item.minimum_balance}` : ''}</span></div><div className="pharmacy-item-meta"><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div><button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>{movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada</option><option value="issue">Saída / dispensação</option><option value="adjustment">Ajuste de inventário</option></select></label><label className="field"><span className="field-label">Quantidade {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: dispensação, recebimento da nota fiscal" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : 'Registrar movimentação'}</button></form>}</article> })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
       <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade, saldo após a operação, responsável e motivo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item?.unit ?? ''}</span><small>Saldo: {movement.balance_after} {item?.unit ?? ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 25)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>
@@ -1790,11 +1879,10 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
 function InstallAppButton() {
   const [installPrompt, setInstallPrompt] = useState<Event | null>(deferredInstallPrompt)
   const [helpOpen, setHelpOpen] = useState(false)
-  const [installed, setInstalled] = useState(false)
+  const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone))
   useEffect(() => {
     const promptReady = () => setInstallPrompt(deferredInstallPrompt)
     const installedListener = () => { setInstalled(true); setInstallPrompt(null) }
-    setInstalled(window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone))
     window.addEventListener('scpo-install-ready', promptReady)
     window.addEventListener('appinstalled', installedListener)
     return () => { window.removeEventListener('scpo-install-ready', promptReady); window.removeEventListener('appinstalled', installedListener) }
@@ -1829,6 +1917,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
   const [loadingPatients, setLoadingPatients] = useState(true)
   const [loadingRecords, setLoadingRecords] = useState(true)
   const [error, setError] = useState('')
+  const invalidDateRange = Boolean(fromDate && toDate && fromDate > toDate)
 
   useEffect(() => {
     let current = true
@@ -1842,13 +1931,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
   }, [])
 
   useEffect(() => {
-    if (fromDate && toDate && fromDate > toDate) {
-      setError('A data inicial deve ser anterior ou igual à data final.')
-      setRecords([])
-      setTotal(0)
-      setLoadingRecords(false)
-      return
-    }
+    if (invalidDateRange) return
     const controller = new AbortController()
     const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) })
     if (fromDate) params.set('from_date', fromDate)
@@ -1856,6 +1939,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
     if (room) params.set('room', room)
     if (bed) params.set('bed', bed)
     if (patientReference) params.set('patient_reference', patientReference)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingRecords(true)
     fetch(`/api/v1/nursing/vitals?${params.toString()}`, { signal: controller.signal }).then(async (response) => {
       const data = await response.json() as { records?: VitalRecordData[]; total?: number; detail?: string }
@@ -1872,7 +1956,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
       setTotal(0)
     }).finally(() => { if (!controller.signal.aborted) setLoadingRecords(false) })
     return () => controller.abort()
-  }, [fromDate, toDate, room, bed, patientReference, offset])
+  }, [fromDate, toDate, room, bed, patientReference, offset, invalidDateRange])
 
   const visiblePatients = patients.filter((patient) => (!room || patient.room === room) && (!bed || patient.bed === bed))
   const roomOptions = [...new Set(patients.map((patient) => patient.room))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))
@@ -1912,8 +1996,9 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
       <button className="button button-secondary history-clear-button" type="button" onClick={clearFilters}>Limpar filtros</button>
     </section>
     <PrintSelectionPanel title="Coletas de sinais vitais" rows={vitalPrintRows} />
+    {invalidDateRange && <div className="form-message form-message-error" role="alert">A data inicial deve ser anterior ou igual à data final.</div>}
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {loadingRecords ? <div className="history-empty">Carregando coletas…</div> : <><VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} onVoid={(id) => void voidRecord(id)} /><VitalExtraDetails records={records} patientReference={patientReference} /></>}
+    {invalidDateRange ? null : loadingRecords ? <div className="history-empty">Carregando coletas…</div> : <><VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} onVoid={(id) => void voidRecord(id)} /><VitalExtraDetails records={records} patientReference={patientReference} /></>}
     {!loadingRecords && total > pageSize && <nav className="history-pagination" aria-label="Paginação das coletas"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><span>Página {pageNumber} de {pageCount}</span><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Próxima <ArrowRight size={15} /></button></div></nav>}
   </section>
 }
@@ -1930,20 +2015,35 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
   const [showPatientForm, setShowPatientForm] = useState(false)
   const [newPatient, setNewPatient] = useState({ name: '', room: '', bed: '' })
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null)
+  const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
+  const [administrations, setAdministrations] = useState<MedicationAdministration[]>([])
+  const [medicationStatus, setMedicationStatus] = useState<MedicationAdministration['status']>('administered')
+  const [medicationReason, setMedicationReason] = useState('')
+  const [selectedDispensation, setSelectedDispensation] = useState('')
+  const [medicationSaving, setMedicationSaving] = useState(false)
 
   useEffect(() => {
     let current = true
-    fetch('/api/v1/nursing/patients').then(async (patientResponse) => {
-      if (!patientResponse.ok) throw new Error('load-failed')
-      return await patientResponse.json() as { patients: Patient[] }
-    }).then((patientData) => {
+    Promise.all([
+      fetch('/api/v1/nursing/patients'),
+      fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
+      fetch('/api/v1/nursing/medication-administrations'),
+    ]).then(async ([patientResponse, dispenseResponse, administrationResponse]) => {
+      const [patientData, dispenseData, administrationData] = await Promise.all([
+        readApiResponse<{ patients?: Patient[] }>(patientResponse),
+        readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
+        readApiResponse<{ administrations?: MedicationAdministration[] }>(administrationResponse),
+      ])
       if (!current) return
-      setPatients(patientData.patients)
+      const patientRows = patientData.patients ?? []
+      setPatients(patientRows)
+      setDispensations(dispenseData.dispensations ?? [])
+      setAdministrations(administrationData.administrations ?? [])
       setHistoryError('')
-      if (!patientData.patients.some((item) => item.reference === patientRef) && patientData.patients[0]) setPatientRef(patientData.patients[0].reference)
-    }).catch(() => { if (current) setHistoryError('Não foi possível carregar os dados. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
+      if (!patientRows.some((item) => item.reference === patientRef) && patientRows[0]) setPatientRef(patientRows[0].reference)
+    }).catch((loadError) => { if (current) setHistoryError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os dados. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
     return () => { current = false }
-  }, [profile.id])
+  }, [profile.id, patientRef])
 
   useEffect(() => {
     if (!patientRef) return
@@ -2003,6 +2103,32 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
     }
   }
 
+  async function saveMedicationAdministration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedDispensation || !patientRef) return
+    setMedicationSaving(true); setMessage('')
+    try {
+      const response = await fetch('/api/v1/nursing/medication-administrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dispensation_id: selectedDispensation,
+          patient_reference: patientRef,
+          status: medicationStatus,
+          reason: medicationReason.trim(),
+        }),
+      })
+      const record = await readApiResponse<MedicationAdministration>(response)
+      setAdministrations((current) => [record, ...current])
+      setSelectedDispensation('')
+      setMedicationReason('')
+      setMedicationStatus('administered')
+      setMessage('Registro de administração atualizado.')
+    } catch (saveError) {
+      setMessage(saveError instanceof Error ? saveError.message : 'Não foi possível registrar a administração.')
+    } finally { setMedicationSaving(false) }
+  }
+
   function resetRecord() {
     setRecord({ ...emptyRecord })
     setNotApplicable([])
@@ -2019,6 +2145,18 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
       <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Sinais vitais</h1><p className="welcome-copy">Registre uma nova coleta ou abra o histórico para consultar registros por período e localização.</p></div><div className="nursing-title-actions"><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       <div className="patient-strip"><span className="patient-avatar"><Stethoscope size={19} /></span><label className="patient-copy"><span>Paciente</span><select value={patientRef} onChange={(event) => { setPatientRef(event.target.value); setNutritionPlan(null) }}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
       <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
+      <section className="nursing-medication-panel">
+        <div className="section-heading"><div><p className="eyebrow">FARMÁCIA → ENFERMAGEM</p><h2>Dispensações deste paciente</h2><p className="welcome-copy">A Farmácia registra lote, prescrição e baixa de estoque; a Enfermagem registra administração, recusa ou suspensão.</p></div></div>
+        {historyError && <div className="form-message form-message-error" role="alert">{historyError}</div>}
+        {dispensations.filter((item) => item.patient_reference === patientRef && !administrations.some((record) => record.dispensation_id === item.id)).length > 0 ? <form className="field-grid field-grid-two" onSubmit={(event) => void saveMedicationAdministration(event)}>
+          <label className="field"><span className="field-label">Dispensação pendente</span><select required value={selectedDispensation} onChange={(event) => setSelectedDispensation(event.target.value)}><option value="">Selecione</option>{dispensations.filter((item) => item.patient_reference === patientRef && !administrations.some((record) => record.dispensation_id === item.id)).map((item) => <option key={item.id} value={item.id}>{item.medication_name} · {item.quantity} {item.unit} · {dateTime(item.created_at)}</option>)}</select></label>
+          <label className="field"><span className="field-label">Resultado</span><select value={medicationStatus} onChange={(event) => setMedicationStatus(event.target.value as MedicationAdministration['status'])}><option value="administered">Administrado</option><option value="refused">Recusado pelo paciente</option><option value="held">Suspenso / não administrado</option></select></label>
+          {medicationStatus !== 'administered' && <label className="field"><span className="field-label">Motivo</span><input required minLength={3} maxLength={500} value={medicationReason} onChange={(event) => setMedicationReason(event.target.value)} /></label>}
+          <button className="button button-primary" type="submit" disabled={medicationSaving || !selectedDispensation}>{medicationSaving ? 'Salvando…' : 'Registrar ação de Enfermagem'}</button>
+        </form> : <p className="history-empty">Não há dispensações pendentes para o paciente selecionado.</p>}
+        {!!administrations.filter((record) => record.patient_reference === patientRef).length && <div className="nursing-medication-history">{administrations.filter((record) => record.patient_reference === patientRef).map((record) => <article key={record.id}><strong>{record.medication_name} · {record.dose} {record.unit}</strong><span>{record.status === 'administered' ? 'Administrado' : record.status === 'refused' ? 'Recusado' : 'Suspenso'} · {record.actor_name} · {dateTime(record.administered_at)}</span>{record.reason && <small>{record.reason}</small>}</article>)}</div>}
+        <p className="work-order-privacy">Confirme paciente, alergias, prescrição, dose e momento correto segundo o protocolo institucional. Este registro não é prescrição nem orientação clínica automatizada.</p>
+      </section>
       {nutritionPlan && (nutritionPlan.assessment_date || nutritionPlan.fasting_at) && <div className="care-plan-strip"><strong>Plano alimentar compartilhado</strong>{nutritionPlan.assessment_date && <span>Avaliação de {new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${nutritionPlan.assessment_date}T00:00:00Z`))} · {nutritionPlan.diet_type || 'Tipo de dieta não informado'}{nutritionPlan.restrictions ? ` · Restrições: ${nutritionPlan.restrictions}` : ''}</span>}{nutritionPlan.fasting_at && <span className="fasting-alert">Jejum programado: {dateTime(nutritionPlan.fasting_at)}{nutritionPlan.fasting_reason ? ` · ${nutritionPlan.fasting_reason}` : ''}</span>}</div>}
       {showPatientForm && <form className="patient-create-form" onSubmit={addPatient}><label className="field"><span className="field-label">Nome do paciente</span><input required value={newPatient.name} onChange={(event) => setNewPatient({ ...newPatient, name: event.target.value })} /></label><label className="field"><span className="field-label">Quarto</span><input required value={newPatient.room} onChange={(event) => setNewPatient({ ...newPatient, room: event.target.value })} /></label><label className="field"><span className="field-label">Leito</span><input required value={newPatient.bed} onChange={(event) => setNewPatient({ ...newPatient, bed: event.target.value })} /></label><button className="button button-primary" type="submit">Salvar paciente</button></form>}
       {historyError && <div className="form-message form-message-error" role="alert">{historyError}</div>}
@@ -2208,6 +2346,7 @@ function AdminPage() {
       setStatus('unavailable')
     }
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadUsers() }, [])
 
   function toggleModule(module: string) {
@@ -2297,7 +2436,7 @@ function NutritionPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [form, setForm] = useState({ assessment_date: new Date().toLocaleDateString('en-CA'), weight_kg: '', height_cm: '', diet_type: '', allergies: '', allergies_status: 'unknown' as NonNullable<Patient['allergies_status']>, restrictions: '', appetite: '', hydration: '', notes: '', fasting_at: '', fasting_reason: '' })
-  async function loadRecords(patientReference = recordPatientFilter, query = recordQuery, offset = 0) {
+  const loadRecords = useCallback(async (patientReference = recordPatientFilter, query = recordQuery, offset = 0) => {
     setRecordsLoading(true)
     try {
       const params = new URLSearchParams({ limit: '25', offset: String(offset) })
@@ -2311,7 +2450,7 @@ function NutritionPage() {
       setError('')
     } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os registros.') }
     finally { setRecordsLoading(false) }
-  }
+  }, [recordPatientFilter, recordQuery])
   useEffect(() => {
     void (async () => {
       try {
@@ -2321,7 +2460,7 @@ function NutritionPage() {
       } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes.') }
       await loadRecords()
     })()
-  }, [])
+  }, [loadRecords])
   useEffect(() => {
     if (!selectedPatient) return
     let current = true
@@ -2383,7 +2522,7 @@ function NutritionPage() {
 }
 
 type XrayStatus = 'requested' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
-type XrayRequest = { id: number; patient_reference: string; exam_label: string; status: XrayStatus; created_at: string }
+type XrayRequest = { id: number; patient_reference: string; exam_label: string; status: XrayStatus; result: string; result_recorded_by: string; result_recorded_at: string | null; created_at: string }
 
 const xrayStatuses: Record<XrayStatus, string> = {
   requested: 'Solicitado',
@@ -2404,6 +2543,7 @@ function XrayPage({ user }: { user: AuthUser }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [updating, setUpdating] = useState<number | null>(null)
+  const [resultDrafts, setResultDrafts] = useState<Record<number, string>>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const canUpdate = user.permissions.xray?.includes('alterar') ?? false
@@ -2429,6 +2569,7 @@ function XrayPage({ user }: { user: AuthUser }) {
     }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadData() }, [user.id])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -2475,6 +2616,25 @@ function XrayPage({ user }: { user: AuthUser }) {
     }
   }
 
+  async function saveResult(request: XrayRequest) {
+    const result = (resultDrafts[request.id] ?? '').trim()
+    if (result.length < 3) return
+    setUpdating(request.id); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/xray/requests/${request.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ result }),
+      })
+      const updated = await readApiResponse<XrayRequest>(response)
+      setRequests((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setResultDrafts((current) => { const next = { ...current }; delete next[request.id]; return next })
+      setNotice('Resultado registrado na solicitação do exame.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar o resultado.')
+    } finally { setUpdating(null) }
+  }
+
   const activeCount = requests.filter((request) => request.status === 'requested' || request.status === 'scheduled' || request.status === 'in_progress').length
   const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR').includes(patientSearch.trim().toLocaleLowerCase('pt-BR')))
   const visibleRequests = requests.filter((request) => {
@@ -2518,6 +2678,8 @@ function XrayPage({ user }: { user: AuthUser }) {
       <label className="field xray-search"><span className="field-label">Buscar por paciente, quarto, leito ou exame</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar um exame" /></span></label>
       {loading ? <div className="history-empty">Carregando fila de exames…</div> : visibleRequests.length ? <div className="xray-request-list">{visibleRequests.map((request) => <article className="xray-request-card" key={request.id}>
         <div className="xray-request-main"><div><h3>{patientName(request.patient_reference)}</h3><p>{request.exam_label}</p><time>{dateTime(request.created_at)}</time></div><span className={`work-order-status status-${request.status === 'requested' ? 'open' : request.status === 'scheduled' ? 'in_progress' : request.status === 'in_progress' ? 'in_progress' : request.status === 'completed' ? 'completed' : 'cancelled'}`}>{xrayStatuses[request.status]}</span></div>
+        {request.result && <div className="xray-result"><strong>Resultado registrado</strong><p>{request.result}</p><small>{request.result_recorded_by}{request.result_recorded_at ? ` · ${dateTime(request.result_recorded_at)}` : ''}</small></div>}
+        {canUpdate && <form className="xray-result-form" onSubmit={(event) => { event.preventDefault(); void saveResult(request) }}><label className="field"><span className="field-label">{request.result ? 'Atualizar resultado' : 'Resultado do exame'}</span><textarea required minLength={3} maxLength={4000} rows={3} value={resultDrafts[request.id] ?? ''} onChange={(event) => setResultDrafts((current) => ({ ...current, [request.id]: event.target.value }))} placeholder="Registre o laudo/resultado conforme fluxo institucional" /></label><button className="button button-secondary" type="submit" disabled={updating === request.id || (resultDrafts[request.id] ?? '').trim().length < 3}>{updating === request.id ? 'Salvando…' : request.result ? 'Atualizar resultado' : 'Salvar resultado'}</button></form>}
         {canUpdate && <label className="field xray-status-control"><span className="field-label">Atualizar situação</span><select value={request.status} disabled={updating === request.id || request.status === 'completed' || request.status === 'cancelled'} onChange={(event) => void updateStatus(request, event.target.value as XrayStatus)}><option value="requested">Solicitado</option><option value="scheduled">Agendado</option><option value="in_progress">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
       </article>)}</div> : <div className="history-empty"><Activity size={20} /><span>{requests.length ? 'Nenhum exame corresponde a este filtro.' : 'Nenhuma solicitação de exame foi registrada.'}</span></div>}
     </section>

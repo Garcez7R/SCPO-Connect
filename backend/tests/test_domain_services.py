@@ -54,6 +54,7 @@ def test_audit_accepts_minimum_clinical_access_event_without_payload() -> None:
 
 def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
     monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(pharmacy, "verify_patient_reference", lambda reference: {"reference": reference, "name": "Paciente"})
     pharmacist = DemoPrincipal("pharm-1", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
     item = pharmacy.create_item(
         pharmacy.InventoryPayload(item_name="Soro", balance="12", unit="unidade", lot="L-01", expiry_date="2027-02-01"),
@@ -89,6 +90,48 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     assert issued["balance_after"] == "9.5"
     assert issued["actor_id"] == pharmacist.user_id
     assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "9.5"
+    nurse = DemoPrincipal("nurse-1", "nurse", "Enfermeira", "nursing", ["nursing"], {"nursing": ["consultar", "criar"]})
+    patient = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Paciente da dispensação",
+            room="7",
+            bed="A",
+            allergies="Dipirona",
+            allergies_status="known",
+        ),
+        nurse,
+        domain_database["nursing"],
+    )
+    dispensation = pharmacy.create_dispensation(
+        pharmacy.MedicationDispensePayload(
+            patient_reference=str(patient["reference"]),
+            item_id=item["id"],
+            quantity="1",
+            prescription_reference="PRESC-001",
+            prescriber_name="Dr. Teste",
+            allergy_reviewed=True,
+        ),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+    assert dispensation["patient_reference"] == patient["reference"]
+    assert dispensation["prescription_reference"] == "PRESC-001"
+    assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "8.5"
+    assert pharmacy.list_dispensations(nurse, domain_database["pharmacy"])["dispensations"][0]["id"] == dispensation["id"]
+    with pytest.raises(HTTPException) as allergy_unreviewed:
+        pharmacy.create_dispensation(
+            pharmacy.MedicationDispensePayload(
+                patient_reference=str(patient["reference"]),
+                item_id=item["id"],
+                quantity="1",
+                prescription_reference="PRESC-002",
+                prescriber_name="Dr. Teste",
+                allergy_reviewed=False,
+            ),
+            pharmacist,
+            domain_database["pharmacy"],
+        )
+    assert allergy_unreviewed.value.status_code == 422
     with pytest.raises(HTTPException) as negative_balance:
         pharmacy.create_stock_movement(
             item["id"],
@@ -99,6 +142,44 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
             domain_database["pharmacy"],
         )
     assert negative_balance.value.status_code == 409
+
+
+def test_nursing_records_patient_linked_dispensation_once(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(
+        nursing,
+        "resolve_medication_dispensation",
+        lambda identifier: {
+            "id": identifier,
+            "patient_reference": "123e4567-e89b-12d3-a456-426614174000",
+            "medication_name": "Soro",
+            "quantity": "2",
+            "unit": "frasco",
+        },
+    )
+    db = domain_database["nursing"]
+    patient = nursing.Patient(
+        reference="123e4567-e89b-12d3-a456-426614174000",
+        name="Paciente Medicado",
+        room="4",
+        bed="B",
+    )
+    db.add(patient)
+    db.commit()
+    nurse = DemoPrincipal("nurse-2", "nurse", "Enfermeira", "nursing", ["nursing"], {"nursing": ["consultar", "criar"]})
+    payload = nursing.MedicationAdministrationPayload(
+        dispensation_id="dispense-123",
+        patient_reference=patient.reference,
+        status="held",
+        reason="Paciente em jejum",
+    )
+    record = nursing.create_medication_administration(payload, nurse, db)
+    assert record["medication_name"] == "Soro"
+    assert record["status"] == "held"
+    assert nursing.list_medication_administrations(nurse, db, patient.reference)["administrations"][0]["id"] == record["id"]
+    with pytest.raises(HTTPException) as duplicate:
+        nursing.create_medication_administration(payload, nurse, db)
+    assert duplicate.value.status_code == 409
 
 
 def test_reception_records_emergency_arrival_without_inpatient_bed(
@@ -262,6 +343,15 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
         domain_database["xray"],
     )
     assert completed["status"] == "completed"
+    result_record = xray.update_request(
+        exam["id"],
+        xray.ExamRequestUpdate(result="Sem alterações agudas"),
+        xray_user,
+        domain_database["xray"],
+    )
+    assert result_record["result"] == "Sem alterações agudas"
+    assert result_record["result_recorded_by"] == xray_user.actor_name
+    assert result_record["result_recorded_at"] is not None
     with pytest.raises(HTTPException) as closed_request:
         xray.update_request(
             exam["id"],
