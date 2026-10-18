@@ -14,6 +14,9 @@
 	handle /api/v1/access/* {
 		reverse_proxy 127.0.0.1:8002
 	}
+	handle /api/v1/system-admin/* {
+		reverse_proxy 127.0.0.1:8002
+	}
 	handle /api/v1/audit/* {
 		reverse_proxy 127.0.0.1:8006
 	}

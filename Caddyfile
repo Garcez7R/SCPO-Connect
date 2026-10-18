@@ -29,6 +29,11 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 		reverse_proxy access:8000
 	}
 
+	@system_admin path /api/v1/system-admin/*
+	handle @system_admin {
+		reverse_proxy access:8000
+	}
+
 	@audit path /api/v1/audit/*
 	handle @audit {
 		reverse_proxy audit:8000

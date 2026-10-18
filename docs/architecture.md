@@ -4,7 +4,7 @@ O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada dom
 
 | Serviço | Aplicação | Banco próprio | API versionada |
 | --- | --- | --- | --- |
-| Identidade e acesso | `scpo_services.access` | `scpo_access` | `/api/v1/access` |
+| Identidade e acesso | `scpo_services.access` | `scpo_access` | `/api/v1/access`, `/api/v1/system-admin` |
 | Auditoria | `scpo_services.audit` | `scpo_audit` | `/api/v1/audit` |
 | Enfermagem | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/nursing` |
 | Recepção | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/reception` |

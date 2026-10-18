@@ -4,6 +4,10 @@
 
 O login local, troca obrigatória da senha inicial, MFA TOTP, sessão HttpOnly assinada e verificação de permissões no backend foram implementados. `X-Demo-Role` deixou de ser aceito. A integração com AD Zentyal está adiada. A implementação ainda precisa de revisão e validação antes de qualquer uso com dados reais. A trilha registra operações de administração de contas; acessos e alterações clínicas ainda não estão auditados.
 
+O perfil **Superadministrador do Sistema** é um privilégio independente dos módulos de Gestão Hospitalar e Administração. O login definido por `SCPO_SUPERADMIN_USERNAME` (padrão `rgarcez`) é marcado na migração ou no bootstrap. A conta não pode ser alterada pelos administradores comuns; redefinição de credenciais, encerramento de sessões, MFA e backup são operações exclusivas do superadministrador. As senhas temporárias são aleatórias, exibidas uma única vez e exigem troca e novo cadastro de MFA. O serviço não oferece um fluxo alternativo para promover outra conta.
+
+A Administração comum apresenta guias separadas para usuários/permissões e logs de auditoria. A Gestão Hospitalar é uma visão de indicadores operacionais agregados já disponíveis; não é um sistema financeiro/ERP hospitalar completo. Os logs e a recuperação de acesso continuam dependendo de validação operacional da instituição e da melhoria de durabilidade e resistência à alteração da trilha.
+
 | Controle | Estado | Para dados reais |
 | --- | --- | --- |
 | Identidade de usuário | Contas locais com senha e MFA TOTP | Revisar requisitos, recuperação, rotação de segredos e procedimento de suporte |

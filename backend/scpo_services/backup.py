@@ -30,8 +30,8 @@ class ExportRequest(BaseModel):
 
 
 def _require_admin(principal: DemoPrincipal) -> None:
-    if principal.role != "master" or "management" not in principal.modules or "administrar" not in principal.permissions.get("management", []):
-        raise HTTPException(status_code=403, detail="Somente o admin master pode exportar backups")
+    if not principal.is_superuser:
+        raise HTTPException(status_code=403, detail="Somente o superadministrador do sistema pode exportar backups")
 
 
 def _connection_args(service: str) -> tuple[list[str], dict[str, str]]:

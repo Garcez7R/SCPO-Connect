@@ -40,7 +40,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import PrintSelectionPanel, { type PrintRow } from './components/PrintSelectionPanel'
 
-type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'about'
+type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 type Patient = {
@@ -104,13 +104,13 @@ type Profile = {
   modules: ModuleId[]
 }
 
-type AuthUser = { id: string; username: string; name: string; role: ProfileId; modules: ModuleId[]; permissions: Record<string, string[]>; mfa_enabled: boolean }
+type AuthUser = { id: string; username: string; name: string; role: ProfileId; modules: ModuleId[]; permissions: Record<string, string[]>; mfa_enabled: boolean; is_superuser: boolean }
 
 const roleLabels: Record<ProfileId, string> = {
   patients: 'Cadastro de pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Raio X', social: 'Serviço Social',
   nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica',
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção',
-  management: 'Administrador master',
+  management: 'Gestão Hospitalar',
 }
 
 const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; description: string }[] = [
@@ -124,7 +124,7 @@ const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; d
   { id: 'psychology', label: 'Psicologia / Psiquiatria', short: 'Psicologia', icon: HeartPulse, description: 'Encaminhamentos e acompanhamento da fila de atendimento.' },
   { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: ShieldCheck, description: 'Pedidos de limpeza por área e acompanhamento da equipe.' },
   { id: 'maintenance', label: 'Manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
-  { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Administração institucional, usuários e configurações.' },
+  { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Indicadores operacionais agregados e acompanhamento da instituição.' },
   { id: 'admin', label: 'Administração', short: 'Administração', icon: ShieldCheck, description: 'Usuários, funções e permissões.' },
 ]
 
@@ -133,6 +133,7 @@ const navigation: { id: ModuleId; label: string; icon: LucideIcon }[] = [
   { id: 'work-orders', label: 'Abrir ordem de serviço', icon: ClipboardPlus },
   { id: 'patients', label: 'Pacientes', icon: UserRound },
   ...modules.map(({ id, label, icon }) => ({ id, label, icon })),
+  { id: 'system-admin', label: 'Administração do Sistema', icon: ShieldCheck },
   { id: 'about', label: 'Sobre e conformidade', icon: Info },
 ]
 
@@ -297,17 +298,18 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const profile: Profile = {
     id: role,
     name: user.name,
-    role: roleLabels[role],
+    role: user.is_superuser ? 'Superadministrador do Sistema' : roleLabels[role],
     initials: user.name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join(''),
     modules: ['home', ...user.modules, 'about'],
   }
   const canReviewTherapyReports = profile.modules.includes('management')
-  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports))
+  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || (item.id === 'system-admin' && user.is_superuser) || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports))
 
   function navigate(id: ModuleId) {
     if (id === 'nursing-history' && !profile.modules.includes('nursing')) return
     if (id === 'patient-history' && !profile.modules.includes('patients')) return
-    if (id !== 'about' && id !== 'work-orders' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
+    if (id === 'system-admin' && !user.is_superuser) return
+    if (id !== 'about' && id !== 'work-orders' && id !== 'system-admin' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
     setActiveModule(id)
     setMenuOpen(false)
   }
@@ -397,6 +399,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
           {activeModule === 'admin' && <AdminPage />}
           {activeModule === 'management' && <ManagementPage onNavigate={navigate} />}
+          {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage />}
           {activeModule === 'xray' && <XrayPage user={user} />}
@@ -2139,7 +2142,7 @@ function SavedConfirmation({ savedAt, actorName, patient, onReset }: { savedAt: 
   )
 }
 
-type Account = { id: string; username: string; name: string; modules: string[]; permissions: Record<string, string[]>; active: boolean; must_change_password: boolean; mfa_enabled: boolean }
+type Account = { id: string; username: string; name: string; modules: string[]; permissions: Record<string, string[]>; active: boolean; must_change_password: boolean; mfa_enabled: boolean; is_superuser: boolean }
 
 const moduleLabels: Record<string, string> = {
   patients: 'Pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Raio X', social: 'Serviço Social',
@@ -2150,6 +2153,7 @@ const moduleLabels: Record<string, string> = {
 const accessModules = Object.entries(moduleLabels).filter(([module]) => module !== 'admin')
 
 function AdminPage() {
+  const [tab, setTab] = useState<'users' | 'audit'>('users')
   const [users, setUsers] = useState<Account[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [notice, setNotice] = useState('')
@@ -2209,7 +2213,7 @@ function AdminPage() {
       setName('')
       setUsername('')
       setSelectedModules([])
-      setNotice(`Conta ${data.username} criada. Senha inicial: ${data.initial_password}. No primeiro acesso, será obrigatória a troca de senha e a ativação do MFA.`)
+      setNotice(`Conta ${data.username} criada. Senha temporária de uso único: ${data.initial_password}. Entregue-a diretamente ao usuário; a troca e a ativação do MFA serão obrigatórias no primeiro acesso.`)
       await loadUsers()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Falha ao criar a conta.')
@@ -2231,35 +2235,26 @@ function AdminPage() {
     }
   }
 
-  async function resetCredentials(user: Account) {
-    if (!window.confirm(`Redefinir senha e MFA de ${user.name}? A senha temporária será 0000.`)) return
-    try {
-      const response = await fetch(`/api/v1/access/users/${user.id}/reset-credentials`, { method: 'POST' })
-      const data = await response.json() as { initial_password?: string; detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível redefinir as credenciais.')
-      setNotice(`Credenciais de ${user.username} redefinidas. Senha inicial: ${data.initial_password}; a troca e o MFA serão obrigatórios no próximo acesso.`)
-      await loadUsers()
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Falha ao redefinir credenciais.')
-    }
-  }
-
   return <section className="admin-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">GESTÃO HOSPITALAR · ADMINISTRADOR MASTER</p><h1>Usuários e permissões</h1><p className="welcome-copy">Crie contas individuais e conceda acesso a um ou mais módulos.</p></div><span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span></div>
-    <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Senha inicial com troca obrigatória e MFA.</strong><span>Novas contas começam com 0000. No primeiro acesso, o usuário define uma senha pessoal e configura um aplicativo autenticador.</span></div></div>
+    <div className="page-title-row"><div><p className="eyebrow">ADMINISTRAÇÃO</p><h1>{tab === 'users' ? 'Usuários e permissões' : 'Logs de auditoria'}</h1><p className="welcome-copy">{tab === 'users' ? 'Crie contas individuais e conceda acesso aos módulos.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div><span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span></div>
+    <div className="admin-tabs" role="group" aria-label="Seções de Administração"><button className={`button ${tab === 'users' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={tab === 'users'} onClick={() => setTab('users')}>Usuários e permissões</button><button className={`button ${tab === 'audit' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={tab === 'audit'} onClick={() => setTab('audit')}>Logs de auditoria</button></div>
+    {tab === 'users' && <>
+    <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Senha temporária exclusiva, troca obrigatória e MFA.</strong><span>Uma senha aleatória de uso único é gerada para cada conta. Entregue-a ao titular por um canal seguro.</span></div></div>
     {status === 'unavailable' && <div className="form-message form-message-error" role="alert">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</div>}
     {notice && <div className="form-message" role="status">{notice}</div>}
     <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos permitidos</legend><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset><div className="form-actions"><span className="draft-hint">Selecione um ou mais módulos. Permissões serão registradas na auditoria.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
-    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((user) => <AccountRow key={user.id} user={user} onUpdate={updateAccount} onReset={resetCredentials} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
+    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((user) => <AccountRow key={user.id} user={user} onUpdate={updateAccount} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
     <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Acesso individual por módulo</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Consultar</strong> abrir registros autorizados</span><span><strong>Criar</strong> adicionar registros no módulo</span><span><strong>Alterar</strong> modificar registros autorizados</span><span><strong>Excluir</strong> arquivar registros clínicos com justificativa</span><span><strong>Administrar</strong> usuários e permissões</span></div></section>
+    </>}
+    {tab === 'audit' && <AuditLogPanel />}
   </section>
 }
 
-function AccountRow({ user, onUpdate, onReset }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void>; onReset: (user: Account) => Promise<void> }) {
+function AccountRow({ user, onUpdate }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void> }) {
   const [editModules, setEditModules] = useState(user.modules.filter((module) => module !== 'admin'))
   const [editPermissions, setEditPermissions] = useState(user.permissions)
   const [expanded, setExpanded] = useState(false)
-  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => void onReset(user)}>Redefinir senha/MFA</button><button className="user-action" type="button" onClick={() => { setEditModules(user.modules.filter((module) => module !== 'admin')); setEditPermissions(user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? ['consultar', 'criar', 'alterar']])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
+  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => { setEditModules(user.modules.filter((module) => module !== 'admin')); setEditPermissions(user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? ['consultar', 'criar', 'alterar']])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
 }
 
 function NutritionPage() {
@@ -2967,10 +2962,15 @@ function ExecutiveDashboard() {
 }
 
 function ManagementPage({ onNavigate }: { onNavigate: (id: ModuleId) => void }) {
-  const [events, setEvents] = useState<AuditEvent[]>([])
-  const [error, setError] = useState('')
-  useEffect(() => { fetch('/api/v1/audit/events').then(async (response) => { const data = await response.json() as { events?: AuditEvent[]; detail?: string }; if (!response.ok) throw new Error(data.detail ?? 'Não foi possível consultar a auditoria.'); setEvents(data.events ?? []) }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a auditoria.')) }, [])
-  return <section className="admin-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Gestão Hospitalar</h1><p className="welcome-copy">Indicadores operacionais, contas, permissões e auditoria administrativa.</p></div><button className="button button-primary" type="button" onClick={() => onNavigate('admin')}><ShieldCheck size={16} /> Usuários e permissões</button></div><ExecutiveDashboard /><BackupExportPanel /><section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Eventos recentes</h2><p className="welcome-copy">Ações administrativas registradas pelo sistema.</p></div><span className="module-total">{events.length}</span></div>{error ? <div className="form-message form-message-error" role="alert">{error}</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {event.actor_role}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{event.action}</strong></span><span><small>Módulo</small><strong>{event.module}</strong></span><span><small>Registro</small><strong>{event.target_id}</strong></span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section></section>
+  const shortcuts: { id: ModuleId; label: string }[] = [
+    { id: 'patients', label: 'Cadastro de pacientes' },
+    { id: 'reception', label: 'Recepção e chegadas' },
+    { id: 'nursing', label: 'Enfermagem' },
+    { id: 'pharmacy', label: 'Farmácia e estoque' },
+    { id: 'maintenance', label: 'Manutenção' },
+    { id: 'admin', label: 'Administração e auditoria' },
+  ]
+  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{shortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
 }
 
 function BackupExportPanel() {
@@ -2991,6 +2991,94 @@ function BackupExportPanel() {
     finally { setBusy(false) }
   }
   return <section className="patient-list-panel backup-panel"><div className="section-heading"><div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos em um arquivo .rgs protegido por senha.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div><form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}><label className="field"><span className="field-label">Senha de criptografia</span><input required minLength={12} maxLength={128} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label><button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar backup .rgs'}</button></form>{message && <div className="form-message form-message-success" role="status">{message}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}<p className="field-hint">A restauração deve ocorrer em bancos isolados; a opção de importação ficará disponível quando o destino isolado estiver configurado.</p></section>
+}
+
+function AuditLogPanel() {
+  const [events, setEvents] = useState<AuditEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const loadEvents = useCallback(async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/v1/audit/events')
+      const data = await readApiResponse<{ events?: AuditEvent[] }>(response)
+      setEvents(data.events ?? [])
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a auditoria.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadEvents(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadEvents])
+  return <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Logs de auditoria</h2><p className="welcome-copy">Eventos administrativos recentes, sem conteúdo clínico detalhado.</p></div><button className="button button-secondary" type="button" onClick={() => void loadEvents()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar logs'}</button></div>{error ? <div className="form-message form-message-error" role="alert">{error}</div> : loading && !events.length ? <div className="history-empty">Carregando registros…</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {event.actor_role}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{event.action}</strong></span><span><small>Módulo</small><strong>{event.module}</strong></span><span><small>Registro</small><strong>{event.target_id}</strong></span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section>
+}
+
+function SystemAdminPage() {
+  const [tab, setTab] = useState<'backup' | 'recovery'>('backup')
+  const [users, setUsers] = useState<Account[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [resetAccounts, setResetAccounts] = useState<{ username: string; temporary_password: string }[]>([])
+  const loadUsers = useCallback(async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/v1/system-admin/users')
+      const data = await readApiResponse<{ users?: Account[] }>(response)
+      setUsers(data.users ?? [])
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar as contas.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadUsers(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadUsers])
+  async function resetAllCredentials() {
+    if (!window.confirm(`Isto redefinirá senha e MFA de ${users.length} conta(s), encerrará as sessões e exigirá novo cadastro de senha e MFA. Continuar?`)) return
+    setBusy(true)
+    setError('')
+    setResetAccounts([])
+    try {
+      const response = await fetch('/api/v1/system-admin/reset-credentials', { method: 'POST' })
+      const data = await readApiResponse<{ accounts?: { username: string; temporary_password: string }[] }>(response)
+      setResetAccounts(data.accounts ?? [])
+      await loadUsers()
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Não foi possível redefinir as credenciais.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function resetOneCredentials(user: Account) {
+    if (!window.confirm(`Redefinir senha, MFA e sessões de ${user.name}?`)) return
+    setBusy(true)
+    setError('')
+    setResetAccounts([])
+    try {
+      const response = await fetch(`/api/v1/system-admin/users/${user.id}/reset-credentials`, { method: 'POST' })
+      const data = await readApiResponse<{ initial_password: string }>(response)
+      setResetAccounts([{ username: user.username, temporary_password: data.initial_password }])
+      await loadUsers()
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Não foi possível redefinir as credenciais.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <section className="system-admin-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div>
+    <div className="admin-tabs" role="group" aria-label="Seções da Administração do Sistema"><button className={`button ${tab === 'backup' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={tab === 'backup'} onClick={() => setTab('backup')}>Backup</button><button className={`button ${tab === 'recovery' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={tab === 'recovery'} onClick={() => setTab('recovery')}>Recuperação de acesso</button></div>
+    {tab === 'backup' && <BackupExportPanel />}
+    {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel"><div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha e o MFA atuais serão revogados. Cada usuário receberá uma senha temporária aleatória, de uso único, e deverá configurar novos fatores de autenticação.</p></div></div><div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · a conta superadministradora é sempre excluída</span><button className="button button-danger" type="button" onClick={() => void resetAllCredentials()} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>{error && <div className="form-message form-message-error" role="alert">{error}</div>}{resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>Mostradas somente nesta sessão. Copie e entregue cada senha ao titular por canal seguro; não feche nem atualize a página antes de registrá-las.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}{!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((user) => <article key={user.id}><span>{user.name} · {user.username}{user.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(user)} disabled={busy}>Redefinir senha e MFA</button></article>)}</div></details>}</section>}
+  </section>
 }
 
 export default App

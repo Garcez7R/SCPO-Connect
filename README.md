@@ -92,7 +92,7 @@ caddy run --config Caddyfile.local --adapter caddyfile
 
 Abra `https://<IP-ou-DNS-da-VM>:8444` em um dispositivo da rede local, substituindo o marcador pelo endereço informado. O Caddy local usa uma CA própria; para o navegador considerar a conexão confiável, instale a raiz pública `data/local/scpo-local-root.crt` em cada dispositivo e confira a impressão digital por um canal independente.
 
-Na primeira abertura, crie o usuário administrador usando o token armazenado em `data/local/bootstrap-admin.token`. As contas iniciais recebem a senha `0000`, exigem troca no primeiro acesso e devem configurar o MFA. Mantenha o token e os arquivos de `data/local/` fora do Git.
+Na primeira abertura, crie a conta inicial usando o token armazenado em `data/local/bootstrap-admin.token`; defina para ela o login `rgarcez` para habilitar o perfil exclusivo de Superadministrador do Sistema (ou configure `SCPO_SUPERADMIN_USERNAME` antes da migração). A senha de bootstrap exige troca e ativação de MFA. Contas criadas posteriormente recebem senhas temporárias aleatórias de uso único. Mantenha o token e os arquivos de `data/local/` fora do Git.
 
 Para desenvolver a interface com atualização instantânea no computador, use `npm run dev -- --host 127.0.0.1`. Os logs locais são gravados em `.logs/`.
 

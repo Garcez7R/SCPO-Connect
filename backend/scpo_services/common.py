@@ -27,6 +27,7 @@ class DemoPrincipal:
     role: str
     modules: list[str]
     permissions: dict[str, list[str]]
+    is_superuser: bool = False
 
 
 _engines: dict[str, Engine] = {}
@@ -71,7 +72,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0025_patient_flow_risk"
+    expected_revision = "0026_system_admin"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."
@@ -114,9 +115,10 @@ async def authenticated_principal(request: Request) -> DemoPrincipal:
             user_id=str(data["id"]),
             username=str(data["username"]),
             actor_name=str(data["name"]),
-            role=str(data["role"]),
+            role="system_admin" if data.get("is_superuser") else str(data["role"]),
             modules=list(data["modules"]),
             permissions={str(k): list(v) for k, v in data["permissions"].items()},
+            is_superuser=bool(data.get("is_superuser", False)),
         )
     except HTTPException:
         raise

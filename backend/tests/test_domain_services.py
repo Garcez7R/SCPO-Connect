@@ -4,15 +4,25 @@ from collections.abc import Generator
 import pytest
 from alembic import command
 from alembic.config import Config
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 from pydantic import ValidationError
-from scpo_services import access, audit, maintenance, nursing, pharmacy, social, xray
+from scpo_services import (
+    access,
+    audit,
+    backup,
+    maintenance,
+    nursing,
+    pharmacy,
+    social,
+    xray,
+)
 from scpo_services.common import (
     DemoPrincipal,
     clear_engine_cache,
     get_engine,
     require_demo_role,
 )
+from scpo_services.security import SESSION_COOKIE, issue_session, verify_password
 from sqlalchemy.orm import Session
 
 
@@ -37,6 +47,84 @@ def test_master_profile_resolves_all_server_modules() -> None:
     assert response["role"] == "management"
     assert set(response["modules"]) == access.MODULES
     assert set(response["permissions"]) == access.MODULES
+    assert response["is_superuser"] is False
+
+
+def test_superadmin_is_explicit_and_reserved() -> None:
+    user = access._new_user("rgarcez", "Mantenedor", ["management"], access._all_permissions())
+    user.is_superuser = True
+    response = access._user_response(user)
+    assert response["is_superuser"] is True
+    assert set(response["modules"]) == access.MODULES
+    with pytest.raises(HTTPException) as error:
+        access._prevent_superuser_changes(user)
+    assert error.value.status_code == 403
+
+
+def test_management_cannot_recover_credentials_or_change_superadmin(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    manager = access._new_user("manager", "Gestor", ["management"], access._all_permissions())
+    manager.mfa_enabled = True
+    manager.mfa_secret_encrypted = "encrypted"
+    root = access._new_user("rgarcez", "Mantenedor", ["management"], access._all_permissions())
+    root.is_superuser = True
+    nurse = access._new_user("nurse", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
+    db.add_all([manager, root, nurse])
+    db.commit()
+
+    manager_token = issue_session(manager.id, "active", manager.session_version)
+    manager_request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={manager_token}".encode())],
+        "query_string": b"",
+    })
+    with pytest.raises(HTTPException) as error:
+        access.list_system_admin_users(manager_request, db)
+    assert error.value.status_code == 403
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            access.update_user(
+                root.id,
+                access.UserUpdatePayload(name="Alteração indevida"),
+                manager_request,
+                db,
+            )
+        )
+    assert error.value.status_code == 403
+
+    async def record_audit(*_args) -> None:
+        return None
+
+    monkeypatch.setattr(access, "record_audit_event", record_audit)
+    root_token = issue_session(root.id, "active", root.session_version)
+    root_request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={root_token}".encode())],
+        "query_string": b"",
+    })
+    result = asyncio.run(access.reset_all_user_credentials(root_request, Response(), db))
+    assert {account["username"] for account in result["accounts"]} == {"manager", "nurse"}
+    manager_result = next(account for account in result["accounts"] if account["username"] == "manager")
+    db.refresh(manager)
+    assert verify_password(manager_result["temporary_password"], manager.password_hash)
+    assert manager.must_change_password is True
+    assert manager.mfa_enabled is False
+    assert manager.mfa_secret_encrypted is None
+    assert manager.session_version == 2
+    assert root.session_version == 1
+    with pytest.raises(HTTPException) as error:
+        backup._require_admin(
+            DemoPrincipal("manager", "manager", "Gestor", "management", ["management"], {"management": ["administrar"]})
+        )
+    assert error.value.status_code == 403
 
 
 def test_audit_accepts_minimum_clinical_access_event_without_payload() -> None:

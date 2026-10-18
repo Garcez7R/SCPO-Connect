@@ -1,7 +1,8 @@
 import hmac
 import os
-import re
+import secrets
 import uuid
+from collections.abc import Collection
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -12,7 +13,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from .common import Base, DemoPrincipal, database_session, get_engine, require_service_token, verify_database_migrated
+from .common import (
+    Base,
+    DemoPrincipal,
+    database_session,
+    require_service_token,
+    verify_database_migrated,
+)
 from .security import (
     SESSION_COOKIE,
     SESSION_TTL_SECONDS,
@@ -27,13 +34,13 @@ from .security import (
     verify_totp,
 )
 
-
 MODULES = {
     "patients", "nursing", "pharmacy", "xray", "social", "nutrition", "hygiene",
     "reception", "therapy", "psychology", "maintenance", "management", "admin",
 }
 ACTIONS = {"consultar", "criar", "alterar", "excluir", "administrar"}
 INITIAL_PASSWORD = "0000"
+SYSTEM_SUPERADMIN_USERNAME = os.getenv("SCPO_SUPERADMIN_USERNAME", "rgarcez").strip().lower()
 LOCKOUT_MINUTES = 1
 
 
@@ -50,6 +57,7 @@ class AppUser(Base):
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     session_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -145,6 +153,7 @@ def _new_user(username: str, name: str, modules: list[str], permissions: dict[st
         must_change_password=True,
         mfa_secret_encrypted=None,
         mfa_enabled=False,
+        is_superuser=False,
         failed_attempts=0,
         session_version=1,
         created_at=datetime.now(UTC),
@@ -173,7 +182,11 @@ def _validate_permissions(modules: list[str], permissions: dict[str, list[str]] 
     return clean
 
 
-def _current_user(request: Request, db: Session, allowed_stages: set[str] = {"active"}) -> tuple[AppUser, dict[str, object]]:
+def _current_user(
+    request: Request,
+    db: Session,
+    allowed_stages: Collection[str] = frozenset({"active"}),
+) -> tuple[AppUser, dict[str, object]]:
     token = request.cookies.get(SESSION_COOKIE)
     claims = read_session(token) if token else None
     if not claims or claims.get("stage") not in allowed_stages:
@@ -191,10 +204,57 @@ def _current_user(request: Request, db: Session, allowed_stages: set[str] = {"ac
 
 def _require_management(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
     user, _ = _current_user(request, db)
-    if "management" not in user.modules or "administrar" not in user.permissions.get("management", []):
+    if not user.is_superuser and (
+        "management" not in user.modules
+        or "administrar" not in user.permissions.get("management", [])
+    ):
         raise HTTPException(status_code=403, detail="Acesso restrito à Gestão Hospitalar")
-    principal = DemoPrincipal(user.id, user.username, user.name, "management", user.modules, user.permissions)
+    principal = DemoPrincipal(
+        user.id,
+        user.username,
+        user.name,
+        "system_admin" if user.is_superuser else "management",
+        user.modules,
+        user.permissions,
+        is_superuser=user.is_superuser,
+    )
     return user, principal
+
+
+def _require_system_admin(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
+    user, _ = _current_user(request, db)
+    if not user.is_superuser:
+        raise HTTPException(status_code=403, detail="Acesso restrito à Administração do Sistema")
+    principal = DemoPrincipal(
+        user.id,
+        user.username,
+        user.name,
+        "system_admin",
+        user.modules,
+        user.permissions,
+        is_superuser=True,
+    )
+    return user, principal
+
+
+def _prevent_superuser_changes(target: AppUser) -> None:
+    if target.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="A conta de superadministrador não pode ser alterada pela Administração comum",
+        )
+
+
+def _reset_credentials(user: AppUser) -> str:
+    temporary_password = secrets.token_urlsafe(18)
+    user.password_hash = hash_password(temporary_password)
+    user.must_change_password = True
+    user.mfa_enabled = False
+    user.mfa_secret_encrypted = None
+    user.session_version += 1
+    user.failed_attempts = 0
+    user.locked_until = None
+    return temporary_password
 
 
 def _set_cookie(response: Response, user: AppUser, stage: str) -> None:
@@ -211,7 +271,7 @@ def _set_cookie(response: Response, user: AppUser, stage: str) -> None:
 
 
 def _user_response(user: AppUser) -> dict[str, object]:
-    is_management = "management" in user.modules
+    is_management = user.is_superuser or "management" in user.modules
     modules = sorted(MODULES) if is_management else user.modules
     permissions = _all_permissions() if is_management else user.permissions
     role = "management" if is_management else (user.modules[0] if user.modules else "")
@@ -223,6 +283,7 @@ def _user_response(user: AppUser) -> dict[str, object]:
         "modules": modules,
         "permissions": permissions,
         "active": user.active,
+        "is_superuser": user.is_superuser,
         "must_change_password": user.must_change_password,
         "mfa_enabled": user.mfa_enabled,
     }
@@ -275,6 +336,7 @@ def bootstrap_admin(
     if db.scalar(select(AppUser.id).limit(1)) is not None:
         raise HTTPException(status_code=409, detail="Bootstrap já concluído")
     user = _new_user(payload.username, payload.name, sorted(MODULES), _all_permissions())
+    user.is_superuser = user.username == SYSTEM_SUPERADMIN_USERNAME
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -348,7 +410,7 @@ def mfa_setup(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, str]:
-    user, claims = _current_user(request, db, {"mfa_setup"})
+    user, _claims = _current_user(request, db, {"mfa_setup"})
     if user.mfa_enabled:
         raise HTTPException(status_code=409, detail="MFA já está configurado")
     if not user.mfa_secret_encrypted:
@@ -445,29 +507,88 @@ def list_users(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    _require_management(request, db)
+    actor, _ = _require_management(request, db)
     users = db.scalars(select(AppUser).order_by(AppUser.name)).all()
+    if not actor.is_superuser:
+        users = [user for user in users if not user.is_superuser]
     return {"users": [_user_response(user) for user in users]}
+
+
+@app.get("/api/v1/system-admin/users")
+def list_system_admin_users(
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, list[dict[str, object]]]:
+    _require_system_admin(request, db)
+    users = db.scalars(
+        select(AppUser).where(AppUser.is_superuser.is_(False)).order_by(AppUser.name)
+    ).all()
+    return {"users": [_user_response(user) for user in users]}
+
+
+@app.post("/api/v1/system-admin/reset-credentials")
+async def reset_all_user_credentials(
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _, principal = _require_system_admin(request, db)
+    users = db.scalars(
+        select(AppUser).where(AppUser.is_superuser.is_(False)).order_by(AppUser.username)
+    ).all()
+    await record_audit_event(principal, "non_superuser_accounts", "all_user_credentials_reset")
+    reset_accounts = []
+    for user in users:
+        reset_accounts.append(
+            {"username": user.username, "temporary_password": _reset_credentials(user)}
+        )
+    db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"accounts": reset_accounts}
+
+
+@app.post("/api/v1/system-admin/users/{user_id}/reset-credentials")
+async def reset_one_user_credentials(
+    user_id: str,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _, principal = _require_system_admin(request, db)
+    user = db.get(AppUser, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    _prevent_superuser_changes(user)
+    await record_audit_event(principal, user.id, "user_credentials_reset")
+    temporary_password = _reset_credentials(user)
+    db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"user": _user_response(user), "initial_password": temporary_password}
 
 
 @app.post("/api/v1/access/users", status_code=201)
 async def create_user(
     payload: UserCreatePayload,
     request: Request,
+    response: Response,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
     _, principal = _require_management(request, db)
     username = payload.username.strip().lower()
     if db.scalar(select(AppUser.id).where(AppUser.username == username)):
         raise HTTPException(status_code=409, detail="Este usuário já existe")
+    if username == SYSTEM_SUPERADMIN_USERNAME:
+        raise HTTPException(status_code=409, detail="Este usuário está reservado à conta de superadministrador")
     modules = sorted(MODULES) if "management" in payload.modules else payload.modules
     permissions = _validate_permissions(modules, payload.permissions)
-    user = _new_user(username, payload.name, modules, permissions)
+    temporary_password = secrets.token_urlsafe(18)
+    user = _new_user(username, payload.name, modules, permissions, temporary_password)
     await record_audit_event(principal, user.id, "user_created")
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {**_user_response(user), "initial_password": INITIAL_PASSWORD}
+    response.headers["Cache-Control"] = "no-store"
+    return {**_user_response(user), "initial_password": temporary_password}
 
 
 @app.patch("/api/v1/access/users/{user_id}")
@@ -481,6 +602,7 @@ async def update_user(
     user = db.get(AppUser, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    _prevent_superuser_changes(user)
     changes = payload.model_dump(exclude_unset=True)
     if user.id == actor.id and changes.get("active") is False:
         raise HTTPException(status_code=409, detail="Não é possível desativar a própria conta")
@@ -492,7 +614,7 @@ async def update_user(
     if "management" in user.modules and (changes.get("active") is False or "management" not in modules):
         other_masters = db.scalars(select(AppUser).where(AppUser.active.is_(True), AppUser.id != user.id)).all()
         if not any("management" in item.modules for item in other_masters):
-            raise HTTPException(status_code=409, detail="Mantenha ao menos uma conta master ativa")
+            raise HTTPException(status_code=409, detail="Mantenha ao menos uma conta de Gestão Hospitalar ativa")
     submitted_permissions = changes.get("permissions")
     if submitted_permissions is None:
         submitted_permissions = {module: user.permissions.get(module, ["consultar", "criar", "alterar"]) for module in modules}
@@ -507,27 +629,3 @@ async def update_user(
     user.session_version += 1
     db.commit()
     return _user_response(user)
-
-
-@app.post("/api/v1/access/users/{user_id}/reset-credentials")
-async def reset_user_credentials(
-    user_id: str,
-    request: Request,
-    db: Annotated[Session, Depends(get_access_db)],
-) -> dict[str, object]:
-    actor, principal = _require_management(request, db)
-    user = db.get(AppUser, user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    if user.id == actor.id:
-        raise HTTPException(status_code=409, detail="Use a troca de senha da própria conta")
-    await record_audit_event(principal, user.id, "user_credentials_reset")
-    user.password_hash = hash_password(INITIAL_PASSWORD)
-    user.must_change_password = True
-    user.mfa_enabled = False
-    user.mfa_secret_encrypted = None
-    user.session_version += 1
-    user.failed_attempts = 0
-    user.locked_until = None
-    db.commit()
-    return {"user": _user_response(user), "initial_password": INITIAL_PASSWORD}

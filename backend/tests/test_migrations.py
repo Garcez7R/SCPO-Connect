@@ -39,7 +39,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0025_patient_flow_risk"
+    assert revision == "0026_system_admin"
     if service == "nursing":
         assert len(tables) == 11
         patient_columns = {
@@ -57,6 +57,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         }
     elif service == "access":
         assert len(tables) == 3
+        assert "is_superuser" in {
+            column["name"] for column in inspect(get_engine(service)).get_columns("app_users")
+        }
     elif service == "maintenance":
         assert len(tables) == 4
         assert "hygiene_requests" in tables
@@ -92,6 +95,40 @@ def test_revision_identifiers_fit_alembic_version_column() -> None:
     revisions = ScriptDirectory.from_config(Config("alembic.ini")).walk_revisions()
 
     assert all(len(revision.revision) <= 32 for revision in revisions)
+
+
+def test_access_migration_marks_only_configured_username_as_superuser(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = "access"
+    monkeypatch.setenv("SCPO_SERVICE", service)
+    monkeypatch.setenv("SCPO_SUPERADMIN_USERNAME", "rgarcez")
+    monkeypatch.setenv("SCPO_ACCESS_DATABASE_URL", f"sqlite:///{tmp_path / 'access.sqlite3'}")
+    clear_engine_cache()
+    config = Config("alembic.ini")
+    command.upgrade(config, "0025_patient_flow_risk")
+    with get_engine(service).begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO app_users "
+                "(id, username, name, password_hash, modules, permissions, created_at) "
+                "VALUES ('root-id', 'rgarcez', 'Mantenedor', 'hash', '[]', '{}', "
+                "'2026-10-18 00:00:00'), "
+                "('manager-id', 'manager', 'Gestor', 'hash', '[]', '{}', "
+                "'2026-10-18 00:00:00')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with get_engine(service).connect() as connection:
+        users = dict(
+            connection.execute(
+                text("SELECT username, is_superuser FROM app_users")
+            ).all()
+        )
+    assert users == {"rgarcez": 1, "manager": 0}
+    verify_database_migrated(service)
+    clear_engine_cache()
 
 
 @pytest.mark.parametrize(
