@@ -416,7 +416,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
           {activeModule === 'admin' && <AdminPage />}
-          {activeModule === 'management' && <ManagementPage onNavigate={navigate} />}
+          {activeModule === 'management' && <ManagementPage onNavigate={navigate} allowedModules={profile.modules} />}
           {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage />}
@@ -969,7 +969,7 @@ function Dashboard({ profile, user, onNavigate }: { profile: Profile; user: Auth
       <div className="section-heading"><div><p className="eyebrow">ACESSO POR PERFIL</p><h2>Seus espaços de trabalho</h2></div><span className="module-total">{allowedModules.length} disponível{allowedModules.length === 1 ? '' : 'is'}</span></div>
       <div className="module-grid">
         {modules.map(({ id, label, icon: Icon, description }) => {
-          const available = profile.modules.includes(id)
+          const available = profile.modules.includes(id) || (id === 'therapy' && profile.modules.includes('management'))
           return (
             <button key={id} type="button" className={`module-card ${available ? 'module-card-available' : 'module-card-locked'}`} onClick={() => available && onNavigate(id)} disabled={!available}>
               <span className={`module-icon module-icon-${id}`}><Icon size={29} strokeWidth={1.8} /></span>
@@ -1155,7 +1155,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   const [medicationReason, setMedicationReason] = useState('')
   const [selectedDispensation, setSelectedDispensation] = useState('')
   const [medicationSaving, setMedicationSaving] = useState(false)
-  const [nursingTab, setNursingTab] = useState<'vitals' | 'care' | 'notes' | 'medications' | 'safety'>('vitals')
+  const [nursingTab, setNursingTab] = useState<'overview' | 'vitals' | 'medications' | 'safety'>('overview')
 
   useEffect(() => {
     let current = true
@@ -1286,16 +1286,18 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
 
   const stateLabels: Record<EntryState, string> = { draft: 'Rascunho', review: 'Revisão antes de salvar', saving: 'Salvando', saved: 'Salvo', error: 'Erro ao salvar' }
   const statusIcon = entryState === 'saved' ? <BadgeCheck size={15} /> : entryState === 'error' ? <X size={15} /> : entryState === 'saving' ? <span className="spinner" /> : <Pencil size={14} />
+  const activePatientCount = patients.filter((patient) => patient.active !== false).length
+  const allergyReviewCount = patients.filter((patient) => patient.active !== false && (!patient.allergies_status || patient.allergies_status === 'unknown')).length
+  const recordedDispensationIds = new Set(administrations.map((administration) => administration.dispensation_id))
+  const pendingMedicationCount = dispensations.filter((dispensation) => dispensation.status === 'dispensed' && !recordedDispensationIds.has(dispensation.id)).length
 
   return (
     <section className="nursing-page page-enter">
-      <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Acesse sinais vitais, cuidados, observações e tratamentos do paciente pelas seções abaixo.</p></div><div className="nursing-title-actions"><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
+      <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       <div className="patient-strip"><span className="patient-avatar"><Stethoscope size={19} /></span><label className="patient-copy"><span>Paciente</span><select value={patientRef} onChange={(event) => { setPatientRef(event.target.value); setNutritionPlan(null) }}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
       <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
       <div className="psychology-tabs nursing-tabs" role="tablist" aria-label="Seções de Enfermagem">
-        <button className={`psychology-tab ${nursingTab === 'vitals' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'vitals'} onClick={() => setNursingTab('vitals')}>Sinais vitais</button>
-        <button className={`psychology-tab ${nursingTab === 'care' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'care'} onClick={() => setNursingTab('care')}>Cuidados</button>
-        <button className={`psychology-tab ${nursingTab === 'notes' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'notes'} onClick={() => setNursingTab('notes')}>Observações e tratamentos</button>
+        <button className={`psychology-tab ${nursingTab === 'overview' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'overview'} onClick={() => setNursingTab('overview')}>Visão geral</button>
         <button className={`psychology-tab ${nursingTab === 'medications' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'medications'} onClick={() => setNursingTab('medications')}>Medicações</button>
         <button className={`psychology-tab ${nursingTab === 'safety' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'safety'} onClick={() => setNursingTab('safety')}>Fila e segurança</button>
       </div>
@@ -1317,13 +1319,28 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
       {showPatientForm && <form className="patient-create-form" onSubmit={addPatient}><label className="field"><span className="field-label">Nome do paciente</span><input required value={newPatient.name} onChange={(event) => setNewPatient({ ...newPatient, name: event.target.value })} /></label><label className="field"><span className="field-label">Quarto</span><input required value={newPatient.room} onChange={(event) => setNewPatient({ ...newPatient, room: event.target.value })} /></label><label className="field"><span className="field-label">Leito</span><input required value={newPatient.bed} onChange={(event) => setNewPatient({ ...newPatient, bed: event.target.value })} /></label><button className="button button-primary" type="submit">Salvar paciente</button></form>}
       {historyError && <div className="form-message form-message-error" role="alert">{historyError}</div>}
 
-      {nursingTab !== 'safety' && nursingTab !== 'medications' && patients.length === 0 ? (
+      {nursingTab === 'overview' && patients.length > 0 ? (
+        <section className="patient-list-panel nursing-overview">
+          <div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO DO TURNO</p><h2>Resumo de Enfermagem</h2><p className="welcome-copy">Indicadores cadastrais e pendências de registro para orientar a navegação; não representam avaliação clínica.</p></div></div>
+          <div className="nursing-overview-summary">
+            <article><strong>{activePatientCount}</strong><span>Pacientes ativos no cadastro</span></article>
+            <article className={allergyReviewCount ? 'nursing-overview-warning' : ''}><strong>{allergyReviewCount}</strong><span>Cadastros com alergias ainda não revisadas</span></article>
+            <article><strong>{pendingMedicationCount}</strong><span>Dispensações sem registro de ação da Enfermagem</span></article>
+          </div>
+          <div className="nursing-overview-patient"><div><p className="eyebrow">PACIENTE SELECIONADO</p><strong>{patients.find((patient) => patient.reference === patientRef)?.name ?? 'Selecione um paciente'}</strong><span>{patients.find((patient) => patient.reference === patientRef) ? patientLocationLabel(patients.find((patient) => patient.reference === patientRef)!) : 'Cadastro necessário para iniciar registros.'}</span></div><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')} disabled={!patientRef}><Activity size={16} /> Iniciar coleta de sinais vitais</button></div>
+          <div className="nursing-overview-actions">
+            <button className="button button-secondary" type="button" onClick={() => setNursingTab('medications')}>Conferir medicações <ArrowRight size={15} /></button>
+            <button className="button button-secondary" type="button" onClick={() => setNursingTab('safety')}>Abrir fila e segurança <ArrowRight size={15} /></button>
+            <button className="button button-secondary" type="button" onClick={onShowHistory}>Consultar coletas registradas <ArrowRight size={15} /></button>
+          </div>
+        </section>
+      ) : nursingTab !== 'safety' && nursingTab !== 'medications' && patients.length === 0 ? (
         <section className="placeholder-state patient-empty-state"><span className="placeholder-state-icon"><UsersRound size={20} /></span><div><strong>Cadastre o primeiro paciente</strong><p>Informe nome, quarto e leito para iniciar a coleta e manter o histórico vinculado ao paciente.</p></div><button className="button button-primary" type="button" onClick={() => setShowPatientForm(true)}>Cadastrar paciente</button></section>
       ) : nursingTab === 'vitals' && (entryState === 'review' || entryState === 'saving') ? (
         <ReviewPanel record={record} notApplicable={notApplicable} patient={patients.find((item) => item.reference === patientRef)} onBack={() => setEntryState('draft')} onConfirm={saveRecord} isSaving={entryState === 'saving'} />
       ) : nursingTab === 'vitals' && entryState === 'saved' ? (
         <SavedConfirmation savedAt={savedAt} actorName={profile.name} patient={patients.find((item) => item.reference === patientRef)} onReset={resetRecord} />
-      ) : nursingTab !== 'safety' && nursingTab !== 'medications' ? (
+      ) : nursingTab === 'vitals' ? (
         <form className="nursing-form" onSubmit={(event) => { event.preventDefault(); setNursingTab('vitals'); setEntryState('review'); setMessage('') }}>
           {nursingTab === 'vitals' && <>
           <FormSection number="01" title="Sinais vitais" detail="Unidades indicadas em cada campo. Campos sem preenchimento permanecem em branco.">
@@ -1343,7 +1360,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
           </FormSection>
           </>}
 
-          {nursingTab === 'care' && <>
+          {nursingTab === 'vitals' && <>
           <FormSection number="03" title="Acesso venoso" detail="Informe o tipo de acesso e, se necessário, o local e uma observação.">
             <div className="field-grid field-grid-three">
               <TextField label="Local" value={record.venousSite} onChange={(value) => updateField('venousSite', value)} placeholder="Não informado" />
@@ -1366,7 +1383,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
           </FormSection>
           </>}
 
-          {nursingTab === 'notes' && <>
+          {nursingTab === 'vitals' && <>
           <FormSection number="06" title="Observações" detail="Até 1.000 caracteres.">
             <label className="field"><span className="field-label">Texto livre</span><textarea value={record.notes} onChange={(event) => updateField('notes', event.target.value)} maxLength={1000} rows={3} placeholder="Observações complementares" /><span className="field-hint">{record.notes.length}/1.000 caracteres</span></label>
           </FormSection>
@@ -2159,7 +2176,7 @@ function HospitalBedManagement() {
   </section>
 }
 
-function ManagementPage({ onNavigate }: { onNavigate: (id: ModuleId) => void }) {
+function ManagementPage({ onNavigate, allowedModules }: { onNavigate: (id: ModuleId) => void; allowedModules: ModuleId[] }) {
   const shortcuts: { id: ModuleId; label: string }[] = [
     { id: 'patients', label: 'Cadastro de pacientes' },
     { id: 'reception', label: 'Recepção e chegadas' },
@@ -2168,7 +2185,8 @@ function ManagementPage({ onNavigate }: { onNavigate: (id: ModuleId) => void }) 
     { id: 'maintenance', label: 'Manutenção' },
     { id: 'admin', label: 'Administração e auditoria' },
   ]
-  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><HospitalBedManagement /><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{shortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
+  const visibleShortcuts = shortcuts.filter(({ id }) => allowedModules.includes(id))
+  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><HospitalBedManagement /><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
 }
 
 function BackupExportPanel() {

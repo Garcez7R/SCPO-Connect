@@ -526,6 +526,21 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .admin-tabs { display: flex; flex-wrap: wrap; gap: 9px; }
 .nursing-tabs { margin-bottom: 0; }
 .nursing-tabs .psychology-tab { flex: 1 1 150px; justify-content: center; }
+.nursing-overview { gap: 18px; }
+.nursing-overview-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.nursing-overview-summary article { display: grid; gap: 7px; min-height: 98px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.nursing-overview-summary article strong { color: var(--ink); font-size: 25px; line-height: 1; }
+.nursing-overview-summary article span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.nursing-overview-summary .nursing-overview-warning { border-color: #e6c98f; background: #fff8e9; }
+.nursing-overview-summary .nursing-overview-warning strong { color: #76500f; }
+.nursing-overview-patient { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.nursing-overview-patient > div { display: grid; gap: 5px; min-width: 0; }
+.nursing-overview-patient > div > strong { color: var(--ink); font-size: 14px; }
+.nursing-overview-patient > div > span { color: var(--muted); font-size: 12px; }
+.nursing-overview-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.pharmacy-tabs .button { min-height: 44px; }
+html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning { border-color: #705b31; background: #332d20; }
+html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning strong { color: #f1ce86; }
 .reception-admission-heading { padding: 2px 0; }
 .reception-admission-heading .button { flex: 0 0 auto; min-height: 44px; }
 .reception-admission-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1190,6 +1205,13 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 html[data-theme="dark"] .executive-risk-strip { border-color: #705b31; background: #332d20; color: #f1ce86; }
 html[data-theme="dark"] .status-urgent { background: #48292d; color: #f08c91; }
 html[data-theme="dark"] .status-priority { background: #44371f; color: #efc16e; }
+@media (max-width: 700px) {
+  .nursing-overview-summary { grid-template-columns: 1fr; }
+  .nursing-overview-patient { align-items: stretch; flex-direction: column; }
+  .nursing-overview-actions .button { flex: 1 1 100%; justify-content: center; min-height: 44px; }
+  .pharmacy-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+  .pharmacy-tabs .button { justify-content: center; padding-inline: 8px; }
+}
 html[data-theme="dark"] .status-routine { background: #21372d; color: #a2dfbb; }
 html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf; }
 @media (max-width: 520px) {
