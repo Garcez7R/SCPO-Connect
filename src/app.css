@@ -613,7 +613,14 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .pharmacy-catalog-suggestions { grid-column: 1 / -1; display: grid; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .pharmacy-catalog-suggestions article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .pharmacy-catalog-suggestions article .button { flex: 0 0 auto; min-height: 38px; }
-.pharmacy-scanner-video { width: min(100%, 420px); max-height: 280px; border-radius: 8px; background: #17232d; object-fit: cover; }
+.pharmacy-scanner-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(15 28 38 / 72%); }
+.pharmacy-scanner-dialog { display: grid; width: min(920px, 96vw); max-height: 94dvh; gap: 16px; padding: clamp(16px, 3vw, 28px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 36%); }
+.pharmacy-scanner-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pharmacy-scanner-dialog > header h2 { margin: 3px 0 0; color: var(--ink); font-size: clamp(18px, 2.4vw, 23px); }
+.pharmacy-scanner-close { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.pharmacy-scanner-close:hover { background: var(--page); }
+.pharmacy-scanner-video { display: block; width: 100%; height: min(66dvh, 620px); min-height: 260px; border-radius: 10px; background: #101820; object-fit: contain; }
+.pharmacy-scanner-dialog > .field-hint { margin: 0; font-size: 13px; }
 .pharmacy-item-description { margin: -7px 0 0; color: var(--muted); font-size: 12px; }
 .search-input-wrap { position: relative; display: block; }
 .search-input-wrap > svg { position: absolute; top: 50%; left: 12px; color: var(--subtle); transform: translateY(-50%); }
@@ -1211,6 +1218,9 @@ html[data-theme="dark"] .status-priority { background: #44371f; color: #efc16e; 
   .nursing-overview-actions .button { flex: 1 1 100%; justify-content: center; min-height: 44px; }
   .pharmacy-tabs { display: grid; grid-template-columns: 1fr 1fr; }
   .pharmacy-tabs .button { justify-content: center; padding-inline: 8px; }
+  .pharmacy-scanner-backdrop { padding: 10px; }
+  .pharmacy-scanner-dialog { width: 100%; max-height: 96dvh; gap: 12px; padding: 14px; border-radius: 11px; }
+  .pharmacy-scanner-video { height: 60dvh; min-height: 220px; }
 }
 html[data-theme="dark"] .status-routine { background: #21372d; color: #a2dfbb; }
 html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf; }

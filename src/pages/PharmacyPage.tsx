@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Search } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Search, X } from 'lucide-react'
 import { readApiResponse } from '../api'
 import PrintSelectionPanel, { type PrintRow } from '../components/PrintSelectionPanel'
 
@@ -289,6 +289,15 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     }
   }, [cameraScannerOpen, lookupBarcode])
 
+  useEffect(() => {
+    if (!cameraScannerOpen) return
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setCameraScannerOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [cameraScannerOpen])
+
   useEffect(() => () => {
     void audioContextRef.current?.close()
   }, [])
@@ -520,7 +529,6 @@ function PharmacyPage({ user }: { user: AuthUser }) {
           <span className="field-label">Leitura e consulta do código</span>
           <button className="button button-secondary" type="button" onClick={() => { prepareBarcodeAudio(); setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>
           <button className="button button-secondary" type="button" disabled={!form.barcode.trim()} onClick={() => { prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) }}><Search size={16} /> Consultar código</button>
-          {cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span></>}
         </div>
         {!!catalogSuggestions.length && <section className="pharmacy-catalog-suggestions" aria-label="Sugestões do catálogo Anvisa">
           <div><strong>Sugestões para conferência</strong><span>Escolha uma opção para preencher o rascunho; isso não cadastra o produto nem movimenta o estoque.</span></div>
@@ -550,6 +558,13 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     </section>
     <PrintSelectionPanel title="Relatório de estoque por lote" rows={pharmacyPrintRows} />
     </>}
+    {cameraScannerOpen && <div className="pharmacy-scanner-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setCameraScannerOpen(false) }}>
+      <section className="pharmacy-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="pharmacy-scanner-title">
+        <header><div><p className="eyebrow">LEITURA DE CÓDIGO DE BARRAS</p><h2 id="pharmacy-scanner-title">Enquadre o código na câmera</h2></div><button className="pharmacy-scanner-close" type="button" autoFocus aria-label="Fechar câmera" onClick={() => setCameraScannerOpen(false)}><X size={20} /></button></header>
+        <video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Visualização da câmera para leitura do código de barras" />
+        <span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span>
+      </section>
+    </div>}
   </section>
 }
 
