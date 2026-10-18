@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, ClipboardList, RefreshCw } from 'lucide-react'
 import { readApiResponse } from '../api'
 
-type ModuleId = 'reception' | 'nursing' | 'pharmacy' | 'maintenance'
+type ModuleId = 'reception' | 'nursing' | 'pharmacy' | 'maintenance' | 'hygiene'
 type TaskFilter = 'all' | 'urgent'
 type Task = { id: string; title: string; detail: string; priority: 'urgent' | 'high' | 'normal' }
 type TaskCard = { module: ModuleId; label: string; count: number; tasks: Task[] }
@@ -13,6 +13,7 @@ const moduleLabels: Record<ModuleId, string> = {
   nursing: 'Enfermagem',
   pharmacy: 'Farmácia',
   maintenance: 'Manutenção',
+  hygiene: 'Higienização',
 }
 
 function canRead(user: AuthUser, module: ModuleId) {
@@ -59,6 +60,7 @@ export default function OperationalTaskCenter({
     type Administration = { dispensation_id: string }
     type StockAlert = { item_id: number; item_name: string; balance: string; unit: string; expiry_date: string; days_to_expiry: number; alert_types: string[] }
     type WorkOrder = { id: string; title: string; location: string; priority: 'normal' | 'high' | 'urgent'; status: 'open' | 'in_progress' | 'completed' | 'cancelled' }
+    type HygieneRequest = { id: string; request_type: string; custom_type: string; unit: string; area: string; location: string; priority: 'normal' | 'high' | 'urgent'; status: 'open' | 'in_progress' | 'completed' | 'cancelled'; created_at: string }
 
     const loaders: { module: ModuleId; load: () => Promise<TaskCard> }[] = []
 
@@ -157,6 +159,28 @@ export default function OperationalTaskCenter({
               title: order.title,
               detail: `${order.status === 'open' ? 'Aberta' : 'Em execução'} · ${order.location}`,
               priority: order.priority,
+            })),
+          }
+        },
+      })
+    }
+
+    if (user.modules.includes('hygiene') && canRead(user, 'hygiene')) {
+      loaders.push({
+        module: 'hygiene',
+        load: async () => {
+          const response = await fetch('/api/v1/hygiene/requests')
+          const data = await readApiResponse<{ requests?: HygieneRequest[] }>(response)
+          const openRequests = (data.requests ?? []).filter((request) => request.status === 'open' || request.status === 'in_progress')
+          return {
+            module: 'hygiene',
+            label: moduleLabels.hygiene,
+            count: openRequests.length,
+            tasks: openRequests.map((request) => ({
+              id: request.id,
+              title: request.custom_type || request.request_type,
+              detail: `${request.status === 'open' ? 'Aberta' : 'Em execução'} · ${[request.unit, request.area, request.location].filter(Boolean).join(' · ')} · ${localDateTime(request.created_at)}`,
+              priority: request.priority,
             })),
           }
         },

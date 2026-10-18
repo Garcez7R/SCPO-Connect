@@ -25,25 +25,26 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
 - Enfermagem: registro de transferências e altas com histórico; central de alergias e contraindicações com autoria, justificativa e resolução rastreável.
 - Recepção: classificação manual da prioridade de chegadas à emergência; não substitui protocolo institucional de triagem.
-- Gestão Hospitalar: indicadores agregados de ocupação, chegadas, coletas, fluxo de leitos, riscos cadastrais e alertas de estoque.
+- Gestão Hospitalar: mapa de leitos e indicadores agregados de ocupação, chegadas, coletas, fluxo, riscos cadastrais e alertas de estoque. A ocupação percentual depende da reconciliação dos pacientes legados com o mapa.
 - Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
 - Raio X: solicitação vinculada ao cadastro do paciente e fila com situação de solicitado, agendado, em execução, concluído ou cancelado.
 - Serviço Social: encaminhamentos ligados ao paciente, com busca, filtros e atualização de situação até o encerramento.
-- Farmácia: inventário normalizado por produto, lote e local; movimentações com autoria e saldo resultante; leitura GS1 e sugestões de identificação pelo catálogo público Anvisa/CMED, sempre sujeitas à conferência humana.
+- Farmácia: inventário normalizado por produto, lote e local; movimentações com autoria e saldo resultante; leitura GS1, sugestões de identificação pelo catálogo público Anvisa/CMED e indicação informativa do lote válido com vencimento mais próximo (FEFO), sem seleção automática.
 - Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado com busca no servidor e filtro por paciente.
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
 - Cadastro do paciente: status explícito de alergia (não verificado, sem alergia conhecida ou alergia conhecida), alerta visual nos fluxos clínicos e opção de responsável não aplicável ou autorreferência do paciente.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
+- Caixa de tarefas: filas acionáveis de Recepção, Enfermagem, Farmácia, Manutenção e Higienização, filtradas pelas permissões da conta.
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
-
-Na Farmácia, a atualização do catálogo Anvisa/CMED é manual e consulta a lista pública de preços de medicamentos apenas para sugerir GTIN, nome, princípio ativo, apresentação, fabricante e referência de registro. A sugestão só preenche o rascunho após ação do usuário; não cria produto/lote nem movimenta saldo. A base não confirma autenticidade, registro ativo ou adequação clínica e não substitui a conferência da equipe.
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.
 - Oficina terapêutica com agenda mensal, filtros por situação/paciente/local e alertas de alergia nos atendimentos individuais.
 - Saudação de bom dia, boa tarde ou boa noite conforme o horário de Brasília.
+
+Na Farmácia, a atualização do catálogo Anvisa/CMED é manual e consulta a lista pública de preços de medicamentos apenas para sugerir GTIN, nome, princípio ativo, apresentação, fabricante e referência de registro. A sugestão só preenche o rascunho após ação do usuário; não cria produto/lote nem movimenta saldo. A base não confirma autenticidade, registro ativo ou adequação clínica e não substitui a conferência da equipe.
 
 ### Áreas de trabalho
 
@@ -120,6 +121,8 @@ docker compose up -d --build
 
 O Caddy publica HTTP na porta `8080` para redirecionamento e HTTPS na porta `8443`. Exporte a raiz pública da CA com `bash scripts/export-caddy-ca.sh`, confira sua impressão digital e distribua-a por um canal controlado pela instituição. Preserve os volumes `postgres_data` e `caddy_data`; eles contêm, respectivamente, os bancos do sistema e a autoridade certificadora usada pelos dispositivos.
 
+Após iniciar ou atualizar a implantação, confira `docker compose ps`: os serviços de API devem aparecer como `healthy`. Cada API possui um healthcheck HTTP em `/health`; o proxy aguarda as APIs ficarem saudáveis antes de iniciar. Essa verificação confirma disponibilidade básica, não valida fluxos do usuário nem substitui testes de restauração. Para investigar falhas, consulte `docker compose logs --tail=100 <serviço>` e confirme nos logs que as migrações terminaram.
+
 ## Verificações de desenvolvimento
 
 ```bash
@@ -131,17 +134,27 @@ uv run ruff check backend
 
 ## Segurança e dados
 
-As contas são individuais, usam senha com derivação scrypt e MFA TOTP. As sessões são assinadas e protegidas por cookie HttpOnly; a autorização é aplicada no servidor por módulo e ação. O HTTPS interno protege o tráfego somente nos aparelhos que confiam na CA do Caddy. O certificado TLS identifica o servidor e não substitui a autenticação do funcionário.
+As contas locais são individuais, usam senha com derivação scrypt e MFA TOTP. Não há integração com provedor institucional de identidade. As sessões são assinadas e protegidas por cookie HttpOnly; a autorização é aplicada no servidor por módulo e ação. O HTTPS interno protege o tráfego somente nos aparelhos que confiam na CA do Caddy. O certificado TLS identifica o servidor e não substitui a autenticação do funcionário.
 
 Antes de habilitar o uso com dados pessoais ou clínicos, a Santa Casa deve validar a matriz de acesso, os fluxos assistenciais, a auditoria de consultas e alterações, a retenção, os backups, a resposta a incidentes e os requisitos de privacidade e segurança. Consulte [preparação para piloto](docs/pilot-security-readiness.md) e [autenticação e permissões](docs/permissions.md). O sistema não interpreta sinais, diagnostica nem recomenda condutas clínicas.
 
 Segredos, bancos locais, certificados e logs não devem ser enviados ao Git. O `.gitignore` exclui esses arquivos; mantenha `.env` apenas no servidor e use `.env.example` como modelo sem valores secretos.
+
+## Preparação para operação
+
+Antes de qualquer piloto com dados reais:
+
+1. Revise e aprove a matriz de acessos e os fluxos de admissão, transferência, alta, leitos e estoque com TI, segurança, privacidade e equipes responsáveis. As contas atuais são locais; a implantação não está ligada a um diretório institucional.
+2. Gere um backup e execute [restauração isolada](docs/backups.md) em bancos descartáveis. A existência de um arquivo de backup ou a passagem do healthcheck não comprova que a recuperação funciona.
+3. Defina institucionalmente responsável, frequência e retenção dos backups, além das metas de perda de dados (RPO) e tempo de recuperação (RTO). Esses parâmetros ainda não são definidos pelo repositório.
+4. Observe tarefas reais em ambiente de teste e registre tempo, erros, retrabalho e dificuldades, inclusive em celular/tablet. A [preparação para piloto](docs/pilot-security-readiness.md) detalha os limites e controles pendentes.
+
+Não use dados pessoais ou clínicos reais até que esses controles e a validação institucional estejam concluídos. Os healthchecks de Compose e os testes automatizados não equivalem à verificação do servidor hospitalar nem à aprovação para produção.
 
 ## Documentação
 
 - [Arquitetura](docs/architecture.md)
 - [Autenticação e permissões](docs/permissions.md)
 - [Modelo de acesso ao cadastro de pacientes](docs/patient-access-model.md)
-- [Integração futura com Zentyal](docs/zentyal-integration.md)
 - [Preparação para piloto e segurança](docs/pilot-security-readiness.md)
 - [Backup e restauração](docs/backups.md)

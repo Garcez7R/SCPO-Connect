@@ -6,7 +6,7 @@ import PrintSelectionPanel, { type PrintRow } from '../components/PrintSelection
 
 type Patient = { reference: string; name: string; room: string; bed: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known' }
 type AuthUser = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]> }
-type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
+type PharmacyItem = { id: number; product_id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
 type AnvisaCatalogSuggestion = { gtin: string; product_name: string; active_ingredient: string; presentation: string; manufacturer: string; registration: string }
 type AnvisaCatalogStatus = { source: string; source_url: string; entry_count: number; imported_at: string | null; source_updated_at: string | null }
 type PharmacyBarcodeLookup = { gtin: string; lot: string | null; expiry_date: string | null; serial: string | null; matches: PharmacyItem[]; catalog_suggestions: AnvisaCatalogSuggestion[]; catalog_imported_at: string | null }
@@ -441,6 +441,16 @@ function PharmacyPage({ user }: { user: AuthUser }) {
   const attentionCount = stockLevels.filter((level) => level === 'attention').length
   const healthyCount = stockLevels.filter((level) => level === 'healthy').length
   const unconfiguredCount = stockLevels.filter((level) => level === 'unconfigured').length
+  const eligibleMedicationLots = items
+    .filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento' && item.expiry_date >= today && Number(item.balance.replace(',', '.')) > 0)
+    .sort((a, b) => a.product_id - b.product_id || a.expiry_date.localeCompare(b.expiry_date) || a.id - b.id)
+  const suggestedFefoLotIds = new Set<number>()
+  const suggestedProducts = new Set<number>()
+  eligibleMedicationLots.forEach((item) => {
+    if (suggestedProducts.has(item.product_id)) return
+    suggestedProducts.add(item.product_id)
+    suggestedFefoLotIds.add(item.id)
+  })
   const filteredItems = items.filter((item) => {
     const matchesSearch = `${item.item_name} ${item.lot} ${item.barcode} ${item.category} ${item.active_ingredient} ${item.presentation} ${item.storage_location}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'))
     const level = stockLevel(item)
@@ -471,7 +481,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       <div className="section-heading"><div><p className="eyebrow">SAÍDA ASSISTENCIAL</p><h2>Dispensar para paciente</h2><p className="welcome-copy">Registre a prescrição, confirme as alergias e selecione o lote dispensado. A Enfermagem receberá o vínculo para registrar a administração.</p></div></div>
       <form className="field-grid field-grid-two" onSubmit={(event) => void submitDispensation(event)}>
         <label className="field"><span className="field-label">Paciente</span><select required value={dispenseForm.patient_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, patient_reference: event.target.value, allergy_reviewed: false })}><option value="">Selecione</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>
-        <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => setDispenseForm({ ...dispenseForm, item_id: event.target.value })}><option value="">Selecione lote válido</option>{items.filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento' && item.expiry_date >= today && Number(item.balance.replace(',', '.')) > 0).map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot} · saldo {item.balance} {item.unit}</option>)}</select></label>
+        <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => setDispenseForm({ ...dispenseForm, item_id: event.target.value })}><option value="">Selecione lote válido</option>{eligibleMedicationLots.map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot}{suggestedFefoLotIds.has(item.id) ? ' · sugestão FEFO' : ''} · saldo {item.balance} {item.unit}</option>)}</select><span className="field-hint">A sugestão FEFO indica o lote válido com vencimento mais próximo por produto; a seleção permanece manual e deve seguir a política da instituição.</span></label>
         <label className="field"><span className="field-label">Quantidade</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: event.target.value })} /></label>
         <label className="field"><span className="field-label">Referência da prescrição</span><input required minLength={2} maxLength={80} value={dispenseForm.prescription_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, prescription_reference: event.target.value })} /></label>
         <label className="field"><span className="field-label">Profissional prescritor</span><input required minLength={2} maxLength={120} value={dispenseForm.prescriber_name} onChange={(event) => setDispenseForm({ ...dispenseForm, prescriber_name: event.target.value })} /></label>

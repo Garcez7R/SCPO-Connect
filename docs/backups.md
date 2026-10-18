@@ -66,4 +66,4 @@ export SCPO_RESTORE_DEMO_ONLY=yes
 bash scripts/restore-demo.sh
 ```
 
-Faça backups antes de migrações relevantes e execute testes periódicos de restauração em ambiente isolado. Retenção, destino externo e aprovação da rotina são decisões da Santa Casa; os scripts não apagam backups antigos.
+Faça backups antes de migrações relevantes e execute testes periódicos de restauração em ambiente isolado. A instituição deve designar um responsável, aprovar frequência e retenção, definir metas de perda de dados (RPO) e tempo de recuperação (RTO), e registrar o resultado de cada exercício de restauração. Esses parâmetros ainda não são definidos pelo repositório. Retenção, destino externo e aprovação da rotina são decisões da Santa Casa; os scripts não apagam backups antigos.

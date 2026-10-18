@@ -29,6 +29,10 @@ Gestão Hospitalar apresenta os indicadores operacionais agregados já disponibi
 
 A caixa de tarefas reúne filas operacionais disponíveis ao perfil autenticado e exibe a prioridade já registrada pela equipe; não calcula risco clínico nem substitui a abertura do módulo de origem. Pendências de medicação significam apenas uma dispensação sem registro de administração correspondente. Não inferem horário, dose devida ou atraso.
 
+Na Farmácia, a indicação FEFO é apenas uma ordenação informativa pelo vencimento mais próximo entre lotes válidos com saldo do mesmo produto; não seleciona lote nem substitui a conferência ou a política institucional.
+
+No Docker Compose, cada API possui um healthcheck básico em `/health`, e o proxy aguarda as APIs ficarem saudáveis. Isso verifica que os processos respondem após a inicialização e as migrações, mas não é monitoramento externo, alerta de indisponibilidade, teste ponta a ponta nem evidência de que uma restauração foi validada. O ambiente hospitalar ainda precisa de verificação operacional e de monitoramento apropriado.
+
 Não habilitar agenda de doses, reconciliação medicamentosa ou alertas de administração até que responsáveis assistenciais e farmacêuticos definam e aprovem formalmente protocolo, fonte da prescrição, horários, exceções, tratamento de recusas/suspensões, autoria, auditoria e responsabilidade pelas decisões. A interface atual não realiza essas funções.
 
 Antes de ampliar o uso, conduzir sessões observadas com profissionais de cada perfil, usando ambiente e dados de teste. Percorrer admissão de paciente, registro de chegada, aferição de sinais vitais, dispensação e registro de administração, transferência e solicitação/execução de manutenção. Para cada fluxo, registrar tempo de conclusão, erros, campos omitidos, duplicidades, correções e pontos de hesitação; incluir uso em celular/tablet, teclado e leitor de tela quando aplicável. Revisar os resultados com as equipes, corrigir os bloqueios e repetir os testes antes de qualquer piloto com dados reais.
