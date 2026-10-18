@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Generator
+from contextlib import nullcontext
 
 import pytest
 from alembic import command
@@ -266,6 +267,83 @@ def test_pharmacy_gs1_parser_validates_gtin_lot_expiry_and_serial() -> None:
 def test_pharmacy_gs1_parser_rejects_invalid_codes(barcode: str) -> None:
     with pytest.raises(ValueError):
         pharmacy.parse_gs1_barcode(barcode)
+
+
+def test_anvisa_cmed_parser_accepts_cp1252_and_deduplicates_eans() -> None:
+    content = (
+        "EAN 1;EAN 2;EAN 3;PRODUTO;APRESENTAÇÃO;SUBSTÂNCIA;LABORATÓRIO;REGISTRO\n"
+        "4006381333931;4006381333931;4006381333932;Medicamento não controlado;Comprimido 500 mg;Substância;Laboratório;123\n"
+    ).encode("cp1252")
+
+    records = pharmacy.parse_anvisa_cmed_csv(content, pharmacy.datetime.now(pharmacy.UTC), None)
+
+    assert len(records) == 1
+    assert records[0]["gtin"] == "04006381333931"
+    assert records[0]["product_name"] == "Medicamento não controlado"
+    assert records[0]["registration"] == "123"
+
+
+def test_anvisa_refresh_suggests_catalog_data_without_creating_stock(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_database: dict[str, Session],
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    content = (
+        "EAN 1;EAN 2;EAN 3;PRODUTO;APRESENTAÇÃO;SUBSTÂNCIA;LABORATÓRIO;REGISTRO\n"
+        "4006381333931;;;Medicamento de teste;Comprimido 500 mg;Substância;Fabricante;12345\n"
+    ).encode()
+    response = pharmacy.httpx.Response(200, content=content, headers={"Last-Modified": "Wed, 21 Oct 2015 07:28:00 GMT"})
+    monkeypatch.setattr(pharmacy.httpx, "stream", lambda *args, **kwargs: nullcontext(response))
+    pharmacist = DemoPrincipal("pharm-catalog", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
+    db = domain_database["pharmacy"]
+
+    refreshed = pharmacy.refresh_anvisa_catalog(pharmacist, db)
+    lookup = pharmacy.lookup_item_by_barcode(pharmacist, db, "4006381333931")
+
+    assert refreshed["entry_count"] == 1
+    assert refreshed["source_url"] == pharmacy.ANVISA_CMED_CATALOG_URL
+    assert lookup["matches"] == []
+    assert lookup["catalog_suggestions"] == [{
+        "gtin": "04006381333931",
+        "product_name": "Medicamento de teste",
+        "active_ingredient": "Substância",
+        "presentation": "Comprimido 500 mg",
+        "manufacturer": "Fabricante",
+        "registration": "12345",
+    }]
+    assert pharmacy.list_items(pharmacist, db)["items"] == []
+
+
+def test_anvisa_refresh_rejects_oversized_stream_without_replacing_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_database: dict[str, Session],
+) -> None:
+    class OversizedResponse:
+        def __init__(self) -> None:
+            self.status_code = 200
+            self.headers: dict[str, str] = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def iter_bytes(self):
+            yield b"ab"
+            yield b"cd"
+
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pharmacy, "MAX_ANVISA_CATALOG_BYTES", 3)
+    monkeypatch.setattr(pharmacy.httpx, "stream", lambda *args, **kwargs: OversizedResponse())
+    pharmacist = DemoPrincipal("pharm-catalog-limit", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
+    db = domain_database["pharmacy"]
+
+    with pytest.raises(HTTPException) as error:
+        pharmacy.refresh_anvisa_catalog(pharmacist, db)
+
+    assert error.value.status_code == 502
+    assert db.query(pharmacy.AnvisaCatalogEntry).count() == 0
 
 
 def test_pharmacy_gtin_lookup_returns_lots_without_changing_stock(

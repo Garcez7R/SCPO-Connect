@@ -31,13 +31,15 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
 - Raio X: solicitação vinculada ao cadastro do paciente e fila com situação de solicitado, agendado, em execução, concluído ou cancelado.
 - Serviço Social: encaminhamentos ligados ao paciente, com busca, filtros e atualização de situação até o encerramento.
-- Farmácia: inventário por lote com filtros rápidos de estoque crítico e validade, movimentações com autoria e saldo resultante e consulta paginada do livro de estoque.
+- Farmácia: inventário normalizado por produto, lote e local; movimentações com autoria e saldo resultante; leitura GS1 e sugestões de identificação pelo catálogo público Anvisa/CMED, sempre sujeitas à conferência humana.
 - Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado com busca no servidor e filtro por paciente.
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
 - Cadastro do paciente: status explícito de alergia (não verificado, sem alergia conhecida ou alergia conhecida), alerta visual nos fluxos clínicos e opção de responsável não aplicável ou autorreferência do paciente.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
+
+Na Farmácia, a atualização do catálogo Anvisa/CMED é manual e consulta a lista pública de preços de medicamentos apenas para sugerir GTIN, nome, princípio ativo, apresentação, fabricante e referência de registro. A sugestão só preenche o rascunho após ação do usuário; não cria produto/lote nem movimenta saldo. A base não confirma autenticidade, registro ativo ou adequação clínica e não substitui a conferência da equipe.
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.
 - Oficina terapêutica com agenda mensal, filtros por situação/paciente/local e alertas de alergia nos atendimentos individuais.

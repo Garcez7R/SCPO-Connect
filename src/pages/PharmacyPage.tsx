@@ -7,7 +7,9 @@ import PrintSelectionPanel, { type PrintRow } from '../components/PrintSelection
 type Patient = { reference: string; name: string; room: string; bed: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known' }
 type AuthUser = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]> }
 type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
-type PharmacyBarcodeLookup = { gtin: string; lot: string | null; expiry_date: string | null; serial: string | null; matches: PharmacyItem[] }
+type AnvisaCatalogSuggestion = { gtin: string; product_name: string; active_ingredient: string; presentation: string; manufacturer: string; registration: string }
+type AnvisaCatalogStatus = { source: string; source_url: string; entry_count: number; imported_at: string | null; source_updated_at: string | null }
+type PharmacyBarcodeLookup = { gtin: string; lot: string | null; expiry_date: string | null; serial: string | null; matches: PharmacyItem[]; catalog_suggestions: AnvisaCatalogSuggestion[]; catalog_imported_at: string | null }
 type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_balance' | 'entry' | 'issue' | 'adjustment'; quantity: string; balance_after: string; reason: string; actor_name: string; created_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
@@ -52,7 +54,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
   const [movementItemId, setMovementItemId] = useState<number | null>(null)
   const [movementForm, setMovementForm] = useState({ movement_type: 'entry' as 'entry' | 'issue' | 'adjustment', quantity: '', reason: '' })
   const [movementSaving, setMovementSaving] = useState(false)
-  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [query, setQuery] = useState('')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
@@ -62,9 +64,14 @@ function PharmacyPage({ user }: { user: AuthUser }) {
   const [notice, setNotice] = useState('')
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false)
   const [cameraScannerMessage, setCameraScannerMessage] = useState('')
+  const [catalogSuggestions, setCatalogSuggestions] = useState<AnvisaCatalogSuggestion[]>([])
+  const [catalogStatus, setCatalogStatus] = useState<AnvisaCatalogStatus | null>(null)
+  const [catalogRefreshing, setCatalogRefreshing] = useState(false)
+  const [catalogStatusError, setCatalogStatusError] = useState('')
   const barcodeVideoRef = useRef<HTMLVideoElement>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const lastBarcodeLookupRef = useRef('')
+  const barcodeProductAutofillRef = useRef(false)
   const barcodeLookupVersionRef = useRef(0)
 
   const lookupBarcode = useCallback(async (code: string) => {
@@ -72,18 +79,38 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     lastBarcodeLookupRef.current = code
     setError('')
     setNotice('Consultando GTIN no cadastro local…')
+    setCatalogSuggestions([])
     try {
       const result = await readApiResponse<PharmacyBarcodeLookup>(
         await fetch(`/api/v1/pharmacy/items/lookup?code=${encodeURIComponent(code)}`),
       )
       if (requestVersion !== barcodeLookupVersionRef.current) return
       lastBarcodeLookupRef.current = result.gtin
+      setCatalogSuggestions(result.catalog_suggestions)
+      const clearOldAutofill = !result.matches[0] && barcodeProductAutofillRef.current
       setForm((current) => ({
         ...current,
         barcode: result.gtin,
+        catalog_registration: '',
+        ...(clearOldAutofill && current.barcode.trim() !== result.gtin ? {
+          item_name: '',
+          category: 'Medicamento',
+          active_ingredient: '',
+          presentation: '',
+          unit: '',
+        } : {}),
+        ...(result.matches[0] ? {
+          item_name: result.matches[0].item_name,
+          category: result.matches[0].category,
+          active_ingredient: result.matches[0].active_ingredient,
+          presentation: result.matches[0].presentation,
+          unit: result.matches[0].unit,
+          catalog_registration: '',
+        } : {}),
         ...(result.lot ? { lot: result.lot } : {}),
         ...(result.expiry_date ? { expiry_date: result.expiry_date } : {}),
       }))
+      barcodeProductAutofillRef.current = Boolean(result.matches[0])
       const parsedDetails = [
         result.lot ? `lote lido ${result.lot}` : '',
         result.expiry_date ? `validade ${result.expiry_date}` : '',
@@ -95,15 +122,79 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       const moreMatches = result.matches.length > productMatches.length
         ? `; e mais ${result.matches.length - productMatches.length} lote(s)`
         : ''
+      const catalogNote = result.catalog_suggestions.length
+        ? ` Há ${result.catalog_suggestions.length} sugestão(ões) Anvisa disponível(is) para conferência.`
+        : ''
       setNotice(result.matches.length
-        ? `GTIN ${result.gtin} encontrado: ${productMatches.join('; ')}${moreMatches}${parsedDetails ? ` · ${parsedDetails}` : ''}. A leitura não alterou o estoque.`
-        : `GTIN ${result.gtin} não encontrado no cadastro local${parsedDetails ? ` · ${parsedDetails}` : ''}. Confira e complete os dados manualmente; nenhuma movimentação foi registrada.`)
+        ? `GTIN ${result.gtin} encontrado: ${productMatches.join('; ')}${moreMatches}${parsedDetails ? ` · ${parsedDetails}` : ''}. A leitura não alterou o estoque.${catalogNote}`
+        : `GTIN ${result.gtin} não encontrado no cadastro local${parsedDetails ? ` · ${parsedDetails}` : ''}. Confira uma sugestão Anvisa ou complete os dados manualmente; nenhuma movimentação foi registrada.${catalogNote}`)
     } catch (lookupError) {
       if (requestVersion === barcodeLookupVersionRef.current) {
         setError(lookupError instanceof Error ? lookupError.message : 'Não foi possível consultar o GTIN.')
       }
     }
   }, [])
+
+  useEffect(() => {
+    let current = true
+    fetch('/api/v1/pharmacy/catalog/anvisa/status')
+      .then(readApiResponse<AnvisaCatalogStatus>)
+      .then((status) => { if (current) { setCatalogStatus(status); setCatalogStatusError('') } })
+      .catch((statusError: unknown) => {
+        if (current) setCatalogStatusError(statusError instanceof Error ? statusError.message : 'Não foi possível consultar o catálogo Anvisa.')
+      })
+    return () => { current = false }
+  }, [user.id])
+
+  async function refreshAnvisaCatalog() {
+    setCatalogRefreshing(true)
+    setCatalogStatusError('')
+    try {
+      const response = await fetch('/api/v1/pharmacy/catalog/anvisa/refresh', { method: 'POST' })
+      const status = await readApiResponse<AnvisaCatalogStatus>(response)
+      setCatalogStatus(status)
+      setNotice(`Catálogo público Anvisa/CMED atualizado: ${status.entry_count} registros GTIN disponíveis. As sugestões precisam ser conferidas antes do cadastro.`)
+      if (form.barcode.trim()) void lookupBarcode(form.barcode.trim())
+    } catch (refreshError) {
+      setCatalogStatusError(refreshError instanceof Error ? refreshError.message : 'Não foi possível atualizar o catálogo Anvisa.')
+    } finally {
+      setCatalogRefreshing(false)
+    }
+  }
+
+  function applyAnvisaSuggestion(suggestion: AnvisaCatalogSuggestion) {
+    barcodeProductAutofillRef.current = true
+    setForm((current) => ({
+      ...current,
+      barcode: suggestion.gtin,
+      item_name: suggestion.product_name,
+      category: 'Medicamento',
+      active_ingredient: suggestion.active_ingredient,
+      presentation: suggestion.presentation,
+      catalog_registration: suggestion.registration,
+    }))
+    setNotice('Sugestão Anvisa aplicada ao rascunho. Confira produto, apresentação, unidade, lote e validade antes de cadastrar.')
+  }
+
+  function changeBarcode(code: string) {
+    const replaceAutofilledProduct = barcodeProductAutofillRef.current
+      && form.barcode.trim() === lastBarcodeLookupRef.current
+      && form.barcode.trim() !== code.trim()
+    if (replaceAutofilledProduct) barcodeProductAutofillRef.current = false
+    setCatalogSuggestions([])
+    setForm((current) => ({
+      ...current,
+      barcode: code,
+      catalog_registration: '',
+      ...(replaceAutofilledProduct ? {
+        item_name: '',
+        category: 'Medicamento',
+        active_ingredient: '',
+        presentation: '',
+        unit: '',
+      } : {}),
+    }))
+  }
 
   useEffect(() => {
     const code = form.barcode.trim()
@@ -289,8 +380,9 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: form.balance.replace(',', '.'), unit: form.unit.trim(), lot: form.lot.trim() }) })
       const data = await readApiResponse<PharmacyItem>(response)
       setItems((current) => [...current, data].sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR')))
-      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
       lastBarcodeLookupRef.current = ''
+      barcodeProductAutofillRef.current = false
       setShowForm(false)
       setNotice('Lote cadastrado no estoque.')
     } catch (saveError) {
@@ -394,10 +486,16 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     </section>
     {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2></div></div>
+      <div className="pharmacy-catalog-panel">
+        <div><strong>Catálogo público de medicamentos · Anvisa/CMED</strong><span>{catalogStatus ? `${catalogStatus.entry_count.toLocaleString('pt-BR')} sugestões disponíveis · última importação: ${catalogStatus.imported_at ? dateTime(catalogStatus.imported_at) : 'ainda não importado'}` : 'Consultando disponibilidade do catálogo…'}</span><a href={catalogStatus?.source_url ?? 'https://dados.anvisa.gov.br/dados/TA_PRECO_MEDICAMENTO.csv'} target="_blank" rel="noreferrer">Ver fonte pública</a></div>
+        <button className="button button-secondary" type="button" onClick={() => void refreshAnvisaCatalog()} disabled={catalogRefreshing}>{catalogRefreshing ? 'Atualizando catálogo…' : 'Atualizar catálogo Anvisa'}</button>
+        {catalogStatusError && <span className="pharmacy-catalog-error" role="alert">{catalogStatusError}</span>}
+        <p className="field-hint">A atualização consulta a lista pública CMED. Os dados são sugestões de identificação, não confirmam registro ativo, autenticidade ou adequação clínica; confira e aprove cada dado antes de cadastrar.</p>
+      </div>
       <div className="field-grid field-grid-two">
         <label className="field">
           <span className="field-label">Código de barras / GTIN</span>
-          <input inputMode="numeric" autoComplete="off" maxLength={200} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value })} onFocus={prepareBarcodeAudio} onKeyDown={(event) => { if (event.key === 'Enter' && form.barcode.trim()) { event.preventDefault(); prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) } }} placeholder="Leia com o leitor USB ou digite" />
+          <input inputMode="numeric" autoComplete="off" maxLength={200} value={form.barcode} onChange={(event) => changeBarcode(event.target.value)} onFocus={prepareBarcodeAudio} onKeyDown={(event) => { if (event.key === 'Enter' && form.barcode.trim()) { event.preventDefault(); prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) } }} placeholder="Leia com o leitor USB ou digite" />
           <span className="field-hint">A leitura USB consulta o cadastro após a leitura; Enter consulta imediatamente. A câmera também funciona em celulares com HTTPS.</span>
         </label>
         <div className="field pharmacy-scan-field">
@@ -406,10 +504,18 @@ function PharmacyPage({ user }: { user: AuthUser }) {
           <button className="button button-secondary" type="button" disabled={!form.barcode.trim()} onClick={() => { prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) }}><Search size={16} /> Consultar código</button>
           {cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span></>}
         </div>
+        {!!catalogSuggestions.length && <section className="pharmacy-catalog-suggestions" aria-label="Sugestões do catálogo Anvisa">
+          <div><strong>Sugestões para conferência</strong><span>Escolha uma opção para preencher o rascunho; isso não cadastra o produto nem movimenta o estoque.</span></div>
+          {catalogSuggestions.map((suggestion, index) => <article key={`${suggestion.gtin}-${suggestion.registration}-${suggestion.presentation}-${index}`}>
+            <div><strong>{suggestion.product_name}</strong><span>{[suggestion.active_ingredient, suggestion.presentation].filter(Boolean).join(' · ') || 'Descrição complementar não disponível'}</span><small>{suggestion.manufacturer ? `Fabricante indicado pela fonte: ${suggestion.manufacturer}` : 'Fabricante não informado'}{suggestion.registration ? ` · Registro informado: ${suggestion.registration}` : ''}</small></div>
+            <button className="button button-secondary" type="button" onClick={() => applyAnvisaSuggestion(suggestion)}>Usar no rascunho</button>
+          </article>)}
+        </section>}
         <label className="field"><span className="field-label">Nome do produto</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item ou medicamento" /></label>
         <label className="field"><span className="field-label">Categoria</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Medicamento</option><option>Material hospitalar</option><option>Material de consumo</option><option>Higiene e limpeza</option><option>Outro</option></select></label>
         <label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label>
         <label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label>
+        <label className="field"><span className="field-label">Registro informado pela fonte</span><input maxLength={32} value={form.catalog_registration} readOnly placeholder="Preenchido ao aplicar sugestão Anvisa" /><span className="field-hint">Referência informativa da sugestão; confirme os dados na fonte oficial.</span></label>
         <label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label>
         <label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label>
         <label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label>

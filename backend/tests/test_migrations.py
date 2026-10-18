@@ -42,7 +42,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0028_durable_audit"
+    assert revision == "0029_pharmacy_products"
     if service == "nursing":
         assert len(tables) == 15
         patient_columns = {
@@ -86,10 +86,13 @@ def test_each_service_migration_creates_only_its_owned_table(
             for column in inspect(get_engine(service)).get_columns("psychology_referrals")
         }
     elif service == "pharmacy":
-        assert len(tables) == 5
+        assert len(tables) == 8
         assert "audit_outbox" in tables
         assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}
         assert "medication_dispensations" in tables
+        assert {"product_id", "location_id"} <= {
+            column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")
+        }
     elif service == "xray":
         assert len(tables) == 3
         assert "audit_outbox" in tables
@@ -318,8 +321,9 @@ def test_pharmacy_migration_records_existing_stock_as_legacy_baseline(
                 "(item_name, balance, unit, lot, expiry_date, barcode, category, "
                 "active_ingredient, presentation, supplier, storage_location, "
                 "minimum_balance, average_balance, created_at) "
-                "VALUES ('Soro', '12,5', 'frasco', 'L-01', '2027-02-01', '', "
-                "'Medicamento', '', '', '', '', '0', '0', '2026-01-01 10:00:00')"
+                "VALUES ('Soro', '12,5', 'frasco', 'L-01', '2027-02-01', "
+                "'7891106000956', 'Medicamento', 'dexametasona', 'creme 1%', "
+                "'Fornecedor', 'Farmácia · prateleira A', '0', '0', '2026-01-01 10:00:00')"
             )
         )
 
@@ -333,4 +337,44 @@ def test_pharmacy_migration_records_existing_stock_as_legacy_baseline(
         ).one()
     assert row == ("opening_balance", "12,5", "12,5", "Saldo legado (migração)")
     verify_database_migrated("pharmacy")
+    with get_engine("pharmacy").connect() as connection:
+        product = connection.execute(
+            text(
+                "SELECT p.gtin, p.name, p.active_ingredient, p.presentation, p.unit, "
+                "l.name FROM inventory_items i "
+                "JOIN pharmacy_products p ON p.id=i.product_id "
+                "JOIN pharmacy_locations l ON l.id=i.location_id WHERE i.id=1"
+            )
+        ).one()
+        foreign_keys = inspect(get_engine("pharmacy")).get_foreign_keys("inventory_items")
+        columns = {column["name"] for column in inspect(get_engine("pharmacy")).get_columns("inventory_items")}
+    assert product == (
+        "07891106000956",
+        "Soro",
+        "dexametasona",
+        "creme 1%",
+        "frasco",
+        "Farmácia · prateleira A",
+    )
+    assert {"product_id", "location_id"} <= columns
+    assert {"item_name", "barcode", "unit", "storage_location"}.isdisjoint(columns)
+    assert {foreign_key["referred_table"] for foreign_key in foreign_keys} >= {
+        "pharmacy_products",
+        "pharmacy_locations",
+    }
+    command.downgrade(config, "0028_durable_audit")
+    with get_engine("pharmacy").connect() as connection:
+        legacy_item = connection.execute(
+            text(
+                "SELECT item_name, barcode, unit, storage_location, balance "
+                "FROM inventory_items WHERE id=1"
+            )
+        ).one()
+    assert legacy_item == (
+        "Soro",
+        "07891106000956",
+        "frasco",
+        "Farmácia · prateleira A",
+        "12,5",
+    )
     clear_engine_cache()

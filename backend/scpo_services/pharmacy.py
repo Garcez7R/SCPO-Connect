@@ -1,11 +1,16 @@
 import calendar
+import csv
+import hashlib
+import io
 import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+from email.utils import parsedate_to_datetime
 from typing import Annotated, Literal
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import (
@@ -15,12 +20,13 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    delete,
     func,
-    or_,
+    insert,
     select,
     update,
 )
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, Session, joinedload, mapped_column, relationship
 
 from .common import (
     Base,
@@ -35,26 +41,66 @@ from .common import (
 )
 
 
-class InventoryItem(Base):
+class PharmacyProduct(Base):
+    __tablename__ = "pharmacy_products"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    gtin: Mapped[str | None] = mapped_column(String(14), nullable=True, index=True)
+    legacy_identifier: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    active_ingredient: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    presentation: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    metadata_source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    source_reference: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PharmacyLocation(Base):
+    __tablename__ = "pharmacy_locations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AnvisaCatalogEntry(Base):
+    __tablename__ = "anvisa_catalog_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    gtin: Mapped[str] = mapped_column(String(14), nullable=False, index=True)
+    product_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    active_ingredient: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    presentation: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    manufacturer: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    registration: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    record_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class InventoryLot(Base):
     __tablename__ = "inventory_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    item_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("pharmacy_products.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pharmacy_locations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     balance: Mapped[str] = mapped_column(String(32), nullable=False)
-    unit: Mapped[str] = mapped_column(String(24), nullable=False)
     lot: Mapped[str] = mapped_column(String(80), nullable=False)
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
-    barcode: Mapped[str] = mapped_column(String(40), nullable=False, default="")
-    category: Mapped[str] = mapped_column(String(40), nullable=False, default="Medicamento")
-    active_ingredient: Mapped[str] = mapped_column(String(120), nullable=False, default="")
-    presentation: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
-    storage_location: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     minimum_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     average_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    product: Mapped[PharmacyProduct] = relationship()
+    location: Mapped[PharmacyLocation | None] = relationship()
 
 
 class PharmacyStockMovement(Base):
@@ -109,6 +155,8 @@ app = FastAPI(
 PHARMACY_ROLE = require_demo_role("pharmacy")
 INVENTORY_READ_ROLE = require_demo_role("pharmacy", "management")
 DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "management")
+ANVISA_CMED_CATALOG_URL = "https://dados.anvisa.gov.br/dados/TA_PRECO_MEDICAMENTO.csv"
+MAX_ANVISA_CATALOG_BYTES = 32 * 1024 * 1024
 
 
 class InventoryPayload(BaseModel):
@@ -118,10 +166,11 @@ class InventoryPayload(BaseModel):
     unit: str = Field(min_length=1, max_length=24)
     lot: str = Field(min_length=1, max_length=80)
     expiry_date: date
-    barcode: str = Field(default="", max_length=40)
+    barcode: str = Field(default="", max_length=200)
     category: str = Field(default="Medicamento", min_length=2, max_length=40)
     active_ingredient: str = Field(default="", max_length=120)
     presentation: str = Field(default="", max_length=120)
+    catalog_registration: str = Field(default="", max_length=32)
     supplier: str = Field(default="", max_length=120)
     storage_location: str = Field(default="", max_length=80)
     minimum_balance: str = Field(default="0", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
@@ -277,6 +326,67 @@ def parse_gs1_barcode(value: str) -> dict[str, object]:
     }
 
 
+def parse_anvisa_cmed_csv(
+    content: bytes,
+    imported_at: datetime,
+    source_updated_at: datetime | None,
+) -> list[dict[str, object]]:
+    try:
+        csv_text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        csv_text = content.decode("cp1252")
+    reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
+    required_columns = {
+        "EAN 1", "EAN 2", "EAN 3", "PRODUTO", "APRESENTAÇÃO",
+        "SUBSTÂNCIA", "LABORATÓRIO", "REGISTRO",
+    }
+    if not reader.fieldnames:
+        raise ValueError("O catálogo Anvisa está vazio ou não contém cabeçalho")
+    reader.fieldnames = [name.strip().lstrip("\ufeff") for name in reader.fieldnames]
+    if not required_columns.issubset(reader.fieldnames):
+        raise ValueError("O arquivo Anvisa não tem as colunas esperadas para identificação de medicamentos")
+
+    records: dict[str, dict[str, object]] = {}
+    for row in reader:
+        product_name = (row.get("PRODUTO") or "").strip()[:120]
+        if not product_name:
+            continue
+        for column in ("EAN 1", "EAN 2", "EAN 3"):
+            raw_gtin = (row.get(column) or "").strip()
+            if not raw_gtin.isdigit():
+                continue
+            try:
+                gtin = normalize_gtin(raw_gtin)
+            except ValueError:
+                continue
+            record = {
+                "gtin": gtin,
+                "product_name": product_name,
+                "active_ingredient": (row.get("SUBSTÂNCIA") or "").strip()[:120],
+                "presentation": (row.get("APRESENTAÇÃO") or "").strip()[:120],
+                "manufacturer": (row.get("LABORATÓRIO") or "").strip()[:120],
+                "registration": (row.get("REGISTRO") or "").strip()[:32],
+                "imported_at": imported_at,
+                "source_updated_at": source_updated_at,
+            }
+            stable_fields = "\x1f".join(
+                str(record[name])
+                for name in (
+                    "gtin",
+                    "product_name",
+                    "active_ingredient",
+                    "presentation",
+                    "manufacturer",
+                    "registration",
+                )
+            )
+            record["record_key"] = hashlib.sha256(stable_fields.encode("utf-8")).hexdigest()
+            records[str(record["record_key"])] = record
+    if not records:
+        raise ValueError("O catálogo Anvisa não contém EANs válidos para importar")
+    return list(records.values())
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"service": "pharmacy", "status": "ok"}
@@ -289,7 +399,11 @@ def list_stock_alerts(
 ) -> dict[str, list[dict[str, object]]]:
     today = date.today()
     alerts: list[dict[str, object]] = []
-    for item in db.scalars(select(InventoryItem).order_by(InventoryItem.expiry_date, InventoryItem.item_name)).all():
+    for item in db.scalars(
+        select(InventoryLot)
+        .options(joinedload(InventoryLot.product), joinedload(InventoryLot.location))
+        .order_by(InventoryLot.expiry_date, InventoryLot.id)
+    ).all():
         balance = parse_stock_quantity(item.balance)
         minimum = parse_stock_quantity(item.minimum_balance)
         average = parse_stock_quantity(item.average_balance)
@@ -306,16 +420,16 @@ def list_stock_alerts(
         alerts.append(
             {
                 "item_id": item.id,
-                "item_name": item.item_name,
-                "category": item.category,
+                "item_name": item.product.name,
+                "category": item.product.category,
                 "balance": item.balance,
-                "unit": item.unit,
+                "unit": item.product.unit,
                 "minimum_balance": item.minimum_balance,
                 "suggested_replenishment": format_stock_quantity(max(average - balance, Decimal(0))),
                 "lot": item.lot,
                 "expiry_date": item.expiry_date.isoformat(),
                 "days_to_expiry": days_to_expiry,
-                "storage_location": item.storage_location,
+                "storage_location": item.location.name if item.location else "",
                 "alert_types": kinds,
             }
         )
@@ -330,13 +444,95 @@ def list_items(
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, list[dict[str, object]]]:
     items = [
-            serialize_item(item)
-            for item in db.scalars(
-                select(InventoryItem).order_by(InventoryItem.item_name)
-            ).all()
-        ]
+        serialize_item(item)
+        for item in db.scalars(
+            select(InventoryLot)
+            .options(joinedload(InventoryLot.product), joinedload(InventoryLot.location))
+            .join(PharmacyProduct)
+            .order_by(PharmacyProduct.name, InventoryLot.expiry_date, InventoryLot.id)
+        ).all()
+    ]
     emit_audit_event(principal, "pharmacy", "inventory_read", "inventory_items")
     return {"items": items}
+
+
+@app.get("/api/v1/pharmacy/catalog/anvisa/status")
+def anvisa_catalog_status(
+    principal: Annotated[DemoPrincipal, Depends(INVENTORY_READ_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    count = db.scalar(select(func.count(AnvisaCatalogEntry.id))) or 0
+    imported_at = db.scalar(select(func.max(AnvisaCatalogEntry.imported_at)))
+    source_updated_at = db.scalar(select(func.max(AnvisaCatalogEntry.source_updated_at)))
+    emit_audit_event(principal, "pharmacy", "anvisa_catalog_status_read", "anvisa_catalog_entries")
+    return {
+        "source": "Anvisa/CMED · lista pública de preços de medicamentos",
+        "source_url": ANVISA_CMED_CATALOG_URL,
+        "entry_count": count,
+        "imported_at": imported_at.isoformat() if imported_at else None,
+        "source_updated_at": source_updated_at.isoformat() if source_updated_at else None,
+    }
+
+
+@app.post("/api/v1/pharmacy/catalog/anvisa/refresh")
+def refresh_anvisa_catalog(
+    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    try:
+        with httpx.stream(
+            "GET",
+            ANVISA_CMED_CATALOG_URL,
+            headers={"User-Agent": "SCPO-Connect/1.0 (medication GTIN lookup)"},
+            timeout=60.0,
+        ) as response:
+            if response.status_code != 200:
+                raise HTTPException(status_code=503, detail="A Anvisa não disponibilizou o catálogo agora")
+            content_length = response.headers.get("Content-Length")
+            if content_length and content_length.isdigit() and int(content_length) > MAX_ANVISA_CATALOG_BYTES:
+                raise HTTPException(status_code=502, detail="O arquivo Anvisa excede o limite de importação configurado")
+            chunks: list[bytes] = []
+            total_bytes = 0
+            for chunk in response.iter_bytes():
+                total_bytes += len(chunk)
+                if total_bytes > MAX_ANVISA_CATALOG_BYTES:
+                    raise HTTPException(status_code=502, detail="O arquivo Anvisa excede o limite de importação configurado")
+                chunks.append(chunk)
+            content = b"".join(chunks)
+            modified_header = response.headers.get("Last-Modified")
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Catálogo público da Anvisa indisponível no momento") from exc
+
+    source_updated_at = None
+    if modified_header:
+        try:
+            source_updated_at = parsedate_to_datetime(modified_header).astimezone(UTC)
+        except (TypeError, ValueError, OverflowError):
+            source_updated_at = None
+    imported_at = datetime.now(UTC)
+    try:
+        records = parse_anvisa_cmed_csv(content, imported_at, source_updated_at)
+    except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=f"Não foi possível interpretar o arquivo público da Anvisa: {exc}") from exc
+
+    db.execute(delete(AnvisaCatalogEntry))
+    for start in range(0, len(records), 1000):
+        db.execute(insert(AnvisaCatalogEntry), records[start:start + 1000])
+    emit_audit_event(
+        principal,
+        "pharmacy",
+        "anvisa_catalog_refreshed",
+        str(len(records)),
+        db=db,
+    )
+    db.commit()
+    return {
+        "source": "Anvisa/CMED · lista pública de preços de medicamentos",
+        "source_url": ANVISA_CMED_CATALOG_URL,
+        "entry_count": len(records),
+        "imported_at": imported_at.isoformat(),
+        "source_updated_at": source_updated_at.isoformat() if source_updated_at else None,
+    }
 
 
 @app.get("/api/v1/pharmacy/items/lookup")
@@ -351,37 +547,34 @@ def lookup_item_by_barcode(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     gtin = str(parsed["gtin"])
-    stored_codes = {gtin}
-    for length in (13, 12, 8):
-        if gtin.startswith("0" * (14 - length)):
-            stored_codes.add(gtin[-length:])
-    candidates = db.scalars(
-        select(InventoryItem)
-        .where(
-            or_(
-                InventoryItem.barcode.in_(stored_codes),
-                InventoryItem.barcode.like("]d2%"),
-                InventoryItem.barcode.like("]C1%"),
-                InventoryItem.barcode.like("]Q3%"),
-                InventoryItem.barcode.like("01%"),
-                InventoryItem.barcode.like("(01)%"),
-            )
-        )
-        .order_by(InventoryItem.expiry_date, InventoryItem.item_name, InventoryItem.id)
-    ).all()
-    matches: list[dict[str, object]] = []
-    for item in candidates:
-        if item.barcode in stored_codes:
-            matches.append(serialize_item(item))
-            continue
-        try:
-            stored_gtin = parse_gs1_barcode(item.barcode)["gtin"]
-        except ValueError:
-            continue
-        if stored_gtin == gtin:
-            matches.append(serialize_item(item))
+    matches = [
+        serialize_item(item)
+        for item in db.scalars(
+            select(InventoryLot)
+            .options(joinedload(InventoryLot.product), joinedload(InventoryLot.location))
+            .join(PharmacyProduct)
+            .where(PharmacyProduct.gtin == gtin)
+            .order_by(InventoryLot.expiry_date, InventoryLot.id)
+        ).all()
+    ]
+    catalog_suggestions = [
+        serialize_catalog_entry(entry)
+        for entry in db.scalars(
+            select(AnvisaCatalogEntry)
+            .where(AnvisaCatalogEntry.gtin == gtin)
+            .order_by(AnvisaCatalogEntry.product_name, AnvisaCatalogEntry.presentation)
+            .limit(20)
+        ).all()
+    ]
+    catalog_imported_at = db.scalar(select(func.max(AnvisaCatalogEntry.imported_at)))
     emit_audit_event(principal, "pharmacy", "inventory_gtin_lookup", gtin)
-    return {"gtin": gtin, **parsed, "matches": matches}
+    return {
+        "gtin": gtin,
+        **parsed,
+        "matches": matches,
+        "catalog_suggestions": catalog_suggestions,
+        "catalog_imported_at": catalog_imported_at.isoformat() if catalog_imported_at else None,
+    }
 
 
 @app.post("/api/v1/pharmacy/items", status_code=201)
@@ -391,7 +584,92 @@ def create_item(
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
-    item = InventoryItem(**payload.model_dump(), created_at=now)
+    try:
+        parsed = parse_gs1_barcode(payload.barcode) if payload.barcode else None
+    except ValueError:
+        parsed = None
+    gtin = str(parsed["gtin"]) if parsed else None
+    candidates = (
+        db.scalars(select(PharmacyProduct).where(PharmacyProduct.gtin == gtin)).all()
+        if gtin
+        else []
+    )
+    product = None
+    if candidates:
+        exact = [
+            candidate for candidate in candidates
+            if (
+                candidate.name.casefold(),
+                candidate.category.casefold(),
+                candidate.active_ingredient.casefold(),
+                candidate.presentation.casefold(),
+                candidate.unit.casefold(),
+            ) == (
+                payload.item_name.strip().casefold(),
+                payload.category.casefold(),
+                payload.active_ingredient.strip().casefold(),
+                payload.presentation.strip().casefold(),
+                payload.unit.strip().casefold(),
+            )
+        ]
+        if len(exact) == 1:
+            product = exact[0]
+        elif len(candidates) == 1:
+            product = candidates[0]
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail="Há cadastros divergentes para este GTIN. Revise e consolide o produto antes de incluir outro lote.",
+            )
+
+    if product is None:
+        product = PharmacyProduct(
+            gtin=gtin,
+            legacy_identifier=payload.barcode[:40] if not gtin else "",
+            name=payload.item_name.strip(),
+            category=payload.category.strip(),
+            active_ingredient=payload.active_ingredient.strip(),
+            presentation=payload.presentation.strip(),
+            unit=payload.unit.strip(),
+            metadata_source="manual",
+            source_reference="",
+            created_at=now,
+        )
+        if gtin and payload.catalog_registration:
+            catalog_entry = db.scalar(
+                select(AnvisaCatalogEntry)
+                .where(
+                    AnvisaCatalogEntry.gtin == gtin,
+                    AnvisaCatalogEntry.registration == payload.catalog_registration,
+                )
+                .limit(1)
+            )
+            if catalog_entry:
+                product.metadata_source = "anvisa"
+                product.source_reference = catalog_entry.registration
+        db.add(product)
+        db.flush()
+
+    location = None
+    location_name = payload.storage_location.strip()
+    if location_name:
+        location = db.scalar(select(PharmacyLocation).where(PharmacyLocation.name == location_name))
+        if location is None:
+            location = PharmacyLocation(name=location_name, created_at=now)
+            db.add(location)
+            db.flush()
+
+    item = InventoryLot(
+        product_id=product.id,
+        location_id=location.id if location else None,
+        balance=payload.balance,
+        lot=payload.lot.strip(),
+        expiry_date=payload.expiry_date,
+        supplier=payload.supplier.strip(),
+        minimum_balance=payload.minimum_balance,
+        average_balance=payload.average_balance,
+        created_at=now,
+    )
     db.add(item)
     db.flush()
     db.add(
@@ -454,7 +732,7 @@ def create_stock_movement(
     if payload.movement_type not in {"entry", "issue", "adjustment"}:
         raise HTTPException(status_code=422, detail="Tipo de movimentação inválido")
     item = db.scalar(
-        select(InventoryItem).where(InventoryItem.id == item_id).with_for_update()
+        select(InventoryLot).where(InventoryLot.id == item_id).with_for_update()
     )
     if item is None:
         raise HTTPException(status_code=404, detail="Item de estoque não encontrado")
@@ -475,8 +753,8 @@ def create_stock_movement(
     previous_balance = item.balance
     updated_balance = format_stock_quantity(new_balance)
     changed = db.execute(
-        update(InventoryItem)
-        .where(InventoryItem.id == item.id, InventoryItem.balance == previous_balance)
+        update(InventoryLot)
+        .where(InventoryLot.id == item.id, InventoryLot.balance == previous_balance)
         .values(balance=updated_balance)
         .execution_options(synchronize_session=False)
     )
@@ -531,11 +809,11 @@ def create_dispensation(
     if not payload.allergy_reviewed:
         raise HTTPException(status_code=422, detail="Confirme a revisão das alergias do paciente antes de dispensar")
     item = db.scalar(
-        select(InventoryItem).where(InventoryItem.id == payload.item_id).with_for_update()
+        select(InventoryLot).where(InventoryLot.id == payload.item_id).with_for_update()
     )
     if item is None:
         raise HTTPException(status_code=404, detail="Lote não encontrado")
-    if item.category.casefold() != "medicamento":
+    if item.product.category.casefold() != "medicamento":
         raise HTTPException(status_code=422, detail="Somente itens da categoria medicamento podem ser dispensados")
     if item.expiry_date < date.today():
         raise HTTPException(status_code=409, detail="Lote vencido não pode ser dispensado")
@@ -550,8 +828,8 @@ def create_dispensation(
     previous_balance = item.balance
     updated_balance = format_stock_quantity(balance - amount)
     changed = db.execute(
-        update(InventoryItem)
-        .where(InventoryItem.id == item.id, InventoryItem.balance == previous_balance)
+        update(InventoryLot)
+        .where(InventoryLot.id == item.id, InventoryLot.balance == previous_balance)
         .values(balance=updated_balance)
         .execution_options(synchronize_session=False)
     )
@@ -561,9 +839,9 @@ def create_dispensation(
         id=str(uuid.uuid4()),
         patient_reference=patient["reference"],
         item_id=item.id,
-        medication_name=item.item_name,
+        medication_name=item.product.name,
         quantity=format_stock_quantity(amount),
-        unit=item.unit,
+        unit=item.product.unit,
         instructions=payload.instructions,
         prescription_reference=payload.prescription_reference.strip(),
         prescriber_name=payload.prescriber_name.strip(),
@@ -616,7 +894,7 @@ def update_stock_thresholds(
     principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, object]:
-    item = db.get(InventoryItem, item_id)
+    item = db.get(InventoryLot, item_id)
     if item is None:
         from fastapi import HTTPException
 
@@ -631,23 +909,37 @@ def update_stock_thresholds(
     return serialize_item(item)
 
 
-def serialize_item(item: InventoryItem) -> dict[str, object]:
+def serialize_item(item: InventoryLot) -> dict[str, object]:
     return {
         "id": item.id,
-        "item_name": item.item_name,
+        "product_id": item.product_id,
+        "item_name": item.product.name,
         "balance": item.balance,
-        "unit": item.unit,
+        "unit": item.product.unit,
         "lot": item.lot,
         "expiry_date": item.expiry_date.isoformat(),
         "created_at": item.created_at.isoformat(),
-        "barcode": item.barcode,
-        "category": item.category,
-        "active_ingredient": item.active_ingredient,
-        "presentation": item.presentation,
+        "barcode": item.product.gtin or item.product.legacy_identifier,
+        "category": item.product.category,
+        "active_ingredient": item.product.active_ingredient,
+        "presentation": item.product.presentation,
+        "metadata_source": item.product.metadata_source,
+        "source_reference": item.product.source_reference,
         "supplier": item.supplier,
-        "storage_location": item.storage_location,
+        "storage_location": item.location.name if item.location else "",
         "minimum_balance": item.minimum_balance,
         "average_balance": item.average_balance,
+    }
+
+
+def serialize_catalog_entry(entry: AnvisaCatalogEntry) -> dict[str, str]:
+    return {
+        "gtin": entry.gtin,
+        "product_name": entry.product_name,
+        "active_ingredient": entry.active_ingredient,
+        "presentation": entry.presentation,
+        "manufacturer": entry.manufacturer,
+        "registration": entry.registration,
     }
 
 
