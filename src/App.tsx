@@ -2120,6 +2120,8 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientRef, setPatientRef] = useState('')
   const [historyError, setHistoryError] = useState('')
+  const [medicationError, setMedicationError] = useState('')
+  const [medicationLoading, setMedicationLoading] = useState(true)
   const [showPatientForm, setShowPatientForm] = useState(false)
   const [newPatient, setNewPatient] = useState({ name: '', room: '', bed: '' })
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null)
@@ -2132,26 +2134,38 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
 
   useEffect(() => {
     let current = true
+    fetch('/api/v1/nursing/patients').then(readApiResponse<{ patients?: Patient[] }>).then((patientData) => {
+      if (!current) return
+      const patientRows = patientData.patients ?? []
+      setPatients(patientRows)
+      setHistoryError('')
+      setPatientRef((selected) => patientRows.some((item) => item.reference === selected) ? selected : patientRows[0]?.reference ?? '')
+    }).catch((loadError) => { if (current) setHistoryError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os pacientes. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
+    return () => { current = false }
+  }, [profile.id])
+
+  useEffect(() => {
+    let current = true
     Promise.all([
-      fetch('/api/v1/nursing/patients'),
       fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
       fetch('/api/v1/nursing/medication-administrations'),
-    ]).then(async ([patientResponse, dispenseResponse, administrationResponse]) => {
-      const [patientData, dispenseData, administrationData] = await Promise.all([
-        readApiResponse<{ patients?: Patient[] }>(patientResponse),
+    ]).then(async ([dispenseResponse, administrationResponse]) => {
+      const [dispenseData, administrationData] = await Promise.all([
         readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
         readApiResponse<{ administrations?: MedicationAdministration[] }>(administrationResponse),
       ])
       if (!current) return
-      const patientRows = patientData.patients ?? []
-      setPatients(patientRows)
       setDispensations(dispenseData.dispensations ?? [])
       setAdministrations(administrationData.administrations ?? [])
-      setHistoryError('')
-      if (!patientRows.some((item) => item.reference === patientRef) && patientRows[0]) setPatientRef(patientRows[0].reference)
-    }).catch((loadError) => { if (current) setHistoryError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os dados. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
+      setMedicationError('')
+      setMedicationLoading(false)
+    }).catch((loadError) => {
+      if (!current) return
+      setMedicationError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar dispensações e administrações.')
+      setMedicationLoading(false)
+    })
     return () => { current = false }
-  }, [profile.id, patientRef])
+  }, [profile.id])
 
   useEffect(() => {
     if (!patientRef) return
@@ -2255,8 +2269,8 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
       <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
       <section className="nursing-medication-panel">
         <div className="section-heading"><div><p className="eyebrow">FARMÁCIA → ENFERMAGEM</p><h2>Dispensações deste paciente</h2><p className="welcome-copy">A Farmácia registra lote, prescrição e baixa de estoque; a Enfermagem registra administração, recusa ou suspensão.</p></div></div>
-        {historyError && <div className="form-message form-message-error" role="alert">{historyError}</div>}
-        {dispensations.filter((item) => item.patient_reference === patientRef && !administrations.some((record) => record.dispensation_id === item.id)).length > 0 ? <form className="field-grid field-grid-two" onSubmit={(event) => void saveMedicationAdministration(event)}>
+        {medicationError && <div className="form-message form-message-error" role="alert">{medicationError}</div>}
+        {medicationLoading ? <p className="history-empty">Carregando dispensações…</p> : medicationError ? null : dispensations.filter((item) => item.patient_reference === patientRef && !administrations.some((record) => record.dispensation_id === item.id)).length > 0 ? <form className="field-grid field-grid-two" onSubmit={(event) => void saveMedicationAdministration(event)}>
           <label className="field"><span className="field-label">Dispensação pendente</span><select required value={selectedDispensation} onChange={(event) => setSelectedDispensation(event.target.value)}><option value="">Selecione</option>{dispensations.filter((item) => item.patient_reference === patientRef && !administrations.some((record) => record.dispensation_id === item.id)).map((item) => <option key={item.id} value={item.id}>{item.medication_name} · {item.quantity} {item.unit} · {dateTime(item.created_at)}</option>)}</select></label>
           <label className="field"><span className="field-label">Resultado</span><select value={medicationStatus} onChange={(event) => setMedicationStatus(event.target.value as MedicationAdministration['status'])}><option value="administered">Administrado</option><option value="refused">Recusado pelo paciente</option><option value="held">Suspenso / não administrado</option></select></label>
           {medicationStatus !== 'administered' && <label className="field"><span className="field-label">Motivo</span><input required minLength={3} maxLength={500} value={medicationReason} onChange={(event) => setMedicationReason(event.target.value)} /></label>}
