@@ -234,6 +234,92 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     assert negative_balance.value.status_code == 409
 
 
+def test_pharmacy_gs1_parser_validates_gtin_lot_expiry_and_serial() -> None:
+    parsed = pharmacy.parse_gs1_barcode(
+        "]d201095060001343521725033110LOT-42\x1d21SERIAL-9"
+    )
+    assert parsed == {
+        "gtin": "09506000134352",
+        "lot": "LOT-42",
+        "expiry_date": "2025-03-31",
+        "serial": "SERIAL-9",
+    }
+    assert pharmacy.parse_gs1_barcode("(01)04006381333931(17)270200(10)LOTE-1") == {
+        "gtin": "04006381333931",
+        "lot": "LOTE-1",
+        "expiry_date": "2027-02-28",
+        "serial": None,
+    }
+    assert pharmacy.parse_gs1_barcode("4006381333931")["gtin"] == "04006381333931"
+    assert pharmacy.parse_gs1_barcode("036000291452")["gtin"] == "00036000291452"
+
+
+@pytest.mark.parametrize(
+    "barcode",
+    [
+        "4006381333932",
+        "(01)04006381333931(17)271332(10)LOTE",
+        "]d20104006381333932",
+        "(01)04006381333931(10)",
+    ],
+)
+def test_pharmacy_gs1_parser_rejects_invalid_codes(barcode: str) -> None:
+    with pytest.raises(ValueError):
+        pharmacy.parse_gs1_barcode(barcode)
+
+
+def test_pharmacy_gtin_lookup_returns_lots_without_changing_stock(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_database: dict[str, Session],
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    db = domain_database["pharmacy"]
+    pharmacist = DemoPrincipal("pharm-lookup", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
+    for lot, expiry, balance, barcode, item_name in (
+        ("LOTE-2", "2027-03-01", "8", "4006381333931", "Medicamento A"),
+        ("LOTE-1", "2026-03-01", "4", "04006381333931", "Medicamento A"),
+        ("LOTE-LEGADO", "2025-03-01", "2", "]d2010400638133393110LOTE-LEGADO", "Medicamento antigo"),
+    ):
+        pharmacy.create_item(
+            pharmacy.InventoryPayload(
+                item_name=item_name,
+                barcode=barcode,
+                balance=balance,
+                unit="caixa",
+                lot=lot,
+                expiry_date=expiry,
+            ),
+            pharmacist,
+            db,
+        )
+
+    result = pharmacy.lookup_item_by_barcode(
+        pharmacist, db, "(01)04006381333931(17)270200(10)LOTE-NOVO"
+    )
+    assert result["gtin"] == "04006381333931"
+    assert result["lot"] == "LOTE-NOVO"
+    assert [item["lot"] for item in result["matches"]] == ["LOTE-LEGADO", "LOTE-1", "LOTE-2"]
+    assert [item["balance"] for item in result["matches"]] == ["2", "4", "8"]
+    pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Produto UPC",
+            barcode="036000291452",
+            balance="1",
+            unit="unidade",
+            lot="UPC-LOTE",
+            expiry_date="2027-01-01",
+        ),
+        pharmacist,
+        db,
+    )
+    upc_result = pharmacy.lookup_item_by_barcode(pharmacist, db, "00036000291452")
+    assert [item["lot"] for item in upc_result["matches"]] == ["UPC-LOTE"]
+    assert len(pharmacy.list_stock_movements(pharmacist, db)["movements"]) == 4
+
+    unknown = pharmacy.lookup_item_by_barcode(pharmacist, db, "09506000134352")
+    assert unknown["matches"] == []
+
+
 def test_pharmacy_stock_alerts_include_reorder_and_expiry_actions(
     monkeypatch: pytest.MonkeyPatch,
     domain_database: dict[str, Session],

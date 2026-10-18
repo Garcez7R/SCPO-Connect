@@ -1,3 +1,5 @@
+import calendar
+import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
@@ -14,6 +16,7 @@ from sqlalchemy import (
     Integer,
     String,
     func,
+    or_,
     select,
     update,
 )
@@ -177,6 +180,103 @@ def format_stock_quantity(value: Decimal) -> str:
     return format(normalized, "f")
 
 
+def normalize_gtin(value: str) -> str:
+    code = value.strip()
+    if len(code) not in {8, 12, 13, 14} or not code.isdigit():
+        raise ValueError("O código não tem um formato GTIN reconhecido")
+    body = code[:-1]
+    weighted_sum = sum(
+        int(digit) * (3 if position % 2 == 0 else 1)
+        for position, digit in enumerate(reversed(body))
+    )
+    if (10 - weighted_sum % 10) % 10 != int(code[-1]):
+        raise ValueError("O dígito verificador do GTIN é inválido")
+    return code.zfill(14)
+
+
+def _parse_gs1_expiry(value: str) -> date:
+    if len(value) != 6 or not value.isdigit():
+        raise ValueError("A validade GS1 deve conter seis dígitos (AAMMDD)")
+    year, month, day = 2000 + int(value[:2]), int(value[2:4]), int(value[4:])
+    if not 1 <= month <= 12 or day > calendar.monthrange(year, month)[1]:
+        raise ValueError("A validade GS1 informada não existe")
+    return date(year, month, calendar.monthrange(year, month)[1] if day == 0 else day)
+
+
+def parse_gs1_barcode(value: str) -> dict[str, object]:
+    code = value.strip()
+    for prefix in ("]d2", "]C1", "]Q3"):
+        if code.startswith(prefix):
+            code = code[len(prefix):]
+            break
+    if not code:
+        raise ValueError("Leia ou informe um código de barras")
+
+    fields: dict[str, str] = {}
+    if code.startswith("("):
+        tokens = list(re.finditer(r"\((\d{2})\)", code))
+        if not tokens or tokens[0].start() != 0:
+            raise ValueError("O formato GS1 entre parênteses é inválido")
+        supported = {"01", "10", "17", "21"}
+        for index, token in enumerate(tokens):
+            ai = token.group(1)
+            if ai not in supported:
+                raise ValueError(f"Identificador GS1 não suportado: {ai}")
+            if ai in fields:
+                raise ValueError(f"Identificador GS1 duplicado: {ai}")
+            end = tokens[index + 1].start() if index + 1 < len(tokens) else len(code)
+            field_value = code[token.end():end]
+            if ai in {"01", "17"}:
+                expected = 14 if ai == "01" else 6
+                if len(field_value) != expected:
+                    raise ValueError(f"O identificador GS1 {ai} exige {expected} caracteres")
+            elif not field_value or len(field_value) > 20:
+                raise ValueError(f"O identificador GS1 {ai} deve conter de 1 a 20 caracteres")
+            fields[ai] = field_value
+    elif code.isdigit() and len(code) in {8, 12, 13, 14}:
+        fields["01"] = normalize_gtin(code)
+    else:
+        index = 0
+        supported = {"01", "10", "17", "21"}
+        while index < len(code):
+            if code[index] == "\x1d":
+                index += 1
+                continue
+            ai = code[index:index + 2]
+            if ai not in supported:
+                raise ValueError(f"Identificador GS1 não suportado ou separador ausente: {ai}")
+            if ai in fields:
+                raise ValueError(f"Identificador GS1 duplicado: {ai}")
+            index += 2
+            if ai in {"01", "17"}:
+                length = 14 if ai == "01" else 6
+                field_value = code[index:index + length]
+                if len(field_value) != length or not field_value.isdigit():
+                    raise ValueError(f"O identificador GS1 {ai} está incompleto ou inválido")
+                index += length
+            else:
+                end = code.find("\x1d", index)
+                if end == -1:
+                    end = len(code)
+                field_value = code[index:end]
+                if not field_value or len(field_value) > 20:
+                    raise ValueError(f"O identificador GS1 {ai} deve conter de 1 a 20 caracteres")
+                index = end
+            fields[ai] = field_value
+
+    raw_gtin = fields.get("01")
+    if raw_gtin is None:
+        raise ValueError("O código GS1 não contém o GTIN (AI 01)")
+    gtin = normalize_gtin(raw_gtin)
+    expiry = _parse_gs1_expiry(fields["17"]) if "17" in fields else None
+    return {
+        "gtin": gtin,
+        "lot": fields.get("10"),
+        "expiry_date": expiry.isoformat() if expiry else None,
+        "serial": fields.get("21"),
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"service": "pharmacy", "status": "ok"}
@@ -237,6 +337,51 @@ def list_items(
         ]
     emit_audit_event(principal, "pharmacy", "inventory_read", "inventory_items")
     return {"items": items}
+
+
+@app.get("/api/v1/pharmacy/items/lookup")
+def lookup_item_by_barcode(
+    principal: Annotated[DemoPrincipal, Depends(INVENTORY_READ_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+    code: str = Query(min_length=1, max_length=200),
+) -> dict[str, object]:
+    try:
+        parsed = parse_gs1_barcode(code)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    gtin = str(parsed["gtin"])
+    stored_codes = {gtin}
+    for length in (13, 12, 8):
+        if gtin.startswith("0" * (14 - length)):
+            stored_codes.add(gtin[-length:])
+    candidates = db.scalars(
+        select(InventoryItem)
+        .where(
+            or_(
+                InventoryItem.barcode.in_(stored_codes),
+                InventoryItem.barcode.like("]d2%"),
+                InventoryItem.barcode.like("]C1%"),
+                InventoryItem.barcode.like("]Q3%"),
+                InventoryItem.barcode.like("01%"),
+                InventoryItem.barcode.like("(01)%"),
+            )
+        )
+        .order_by(InventoryItem.expiry_date, InventoryItem.item_name, InventoryItem.id)
+    ).all()
+    matches: list[dict[str, object]] = []
+    for item in candidates:
+        if item.barcode in stored_codes:
+            matches.append(serialize_item(item))
+            continue
+        try:
+            stored_gtin = parse_gs1_barcode(item.barcode)["gtin"]
+        except ValueError:
+            continue
+        if stored_gtin == gtin:
+            matches.append(serialize_item(item))
+    emit_audit_event(principal, "pharmacy", "inventory_gtin_lookup", gtin)
+    return {"gtin": gtin, **parsed, "matches": matches}
 
 
 @app.post("/api/v1/pharmacy/items", status_code=201)
