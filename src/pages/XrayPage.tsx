@@ -231,12 +231,12 @@ export default function XrayPage({ user }: { user: AuthUser }) {
     </form>
     <section className="patient-list-panel xray-queue-panel">
       <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações <span className="module-total">{visibleRequests.length}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadData()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
-      <div className="service-tabs" role="tablist" aria-label="Filtrar exames por situação">
+      <div className="service-tabs module-tabs" role="tablist" aria-label="Filtrar exames por situação">
         {([
           ['active', 'Ativos'],
           ['all', 'Todos'],
           ...Object.entries(xrayStatuses),
-        ] as [typeof filter, string][]).map(([value, label]) => <button className={`psychology-tab ${filter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={filter === value} key={value} onClick={() => setFilter(value)}>{label}{value === 'active' && <span>{activeCount}</span>}</button>)}
+        ] as [typeof filter, string][]).map(([value, label]) => <button className={`button ${filter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={filter === value} key={value} onClick={() => setFilter(value)}>{label}{value === 'active' && <span>{activeCount}</span>}</button>)}
       </div>
       <label className="field xray-search"><span className="field-label">Buscar por paciente, quarto, leito ou exame</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar um exame" /></span></label>
       {loading ? <div className="history-empty">Carregando fila de exames…</div> : visibleRequests.length ? <div className="xray-request-list">{visibleRequests.map((request) => <article className="xray-request-card" key={request.id}>

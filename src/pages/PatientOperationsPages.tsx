@@ -306,9 +306,9 @@ export function PsychologyPage() {
     <div className="psychology-privacy" role="note"><LockKeyhole size={18} /><span>Informações clínicas confidenciais: acesso restrito a contas autorizadas neste módulo. Registre apenas dados necessários ao atendimento.</span></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <div className="psychology-tabs" aria-label="Áreas do módulo de Psicologia e Psiquiatria">
-      <button type="button" aria-pressed={tab === 'triage'} className={tab === 'triage' ? 'psychology-tab is-active' : 'psychology-tab'} onClick={() => setTab('triage')}>Fila e triagem <span>{referrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
-      <button type="button" aria-pressed={tab === 'encounters'} className={tab === 'encounters' ? 'psychology-tab is-active' : 'psychology-tab'} onClick={() => { setEncountersPatient(''); setEncounterLoadError(''); setTab('encounters') }}>Atendimentos e registros</button>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do módulo de Psicologia e Psiquiatria">
+      <button type="button" role="tab" aria-selected={tab === 'triage'} className={`button ${tab === 'triage' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('triage')}>Fila e triagem <span>{referrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
+      <button type="button" role="tab" aria-selected={tab === 'encounters'} className={`button ${tab === 'encounters' ? 'button-primary' : 'button-secondary'}`} onClick={() => { setEncountersPatient(''); setEncounterLoadError(''); setTab('encounters') }}>Atendimentos e registros</button>
     </div>
     {tab === 'triage' && <>
       <form className="psychology-panel" onSubmit={(event) => void createReferral(event)}>

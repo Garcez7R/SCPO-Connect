@@ -523,9 +523,13 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .pharmacy-dispensation-submit { justify-self: start; min-height: 44px; }
 .management-page, .system-admin-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
 .management-shortcuts > div:last-child { display: flex; flex-wrap: wrap; gap: 9px; }
-.admin-tabs { display: flex; flex-wrap: wrap; gap: 9px; }
+.admin-tabs, .psychology-tabs, .service-tabs { display: flex; flex-wrap: wrap; gap: 9px; }
+.module-tabs { align-items: center; }
+.module-tabs .button { min-height: 44px; }
+.module-tabs .button > span { display: grid; min-width: 21px; height: 21px; padding-inline: 5px; place-items: center; border-radius: 11px; background: var(--blue-pale); color: var(--blue-dark); font-size: 10px; }
+.module-tabs .button-primary > span { background: rgb(255 255 255 / 20%); color: #fff; }
 .nursing-tabs { margin-bottom: 0; }
-.nursing-tabs .psychology-tab { flex: 1 1 150px; justify-content: center; }
+.nursing-tabs .button { flex: 1 1 150px; }
 .nursing-overview { gap: 18px; }
 .nursing-overview-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .nursing-overview-summary article { display: grid; gap: 7px; min-height: 98px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
@@ -651,11 +655,6 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .psychology-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
 .psychology-privacy { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #cbdfe8; border-radius: 8px; background: #f0f7fa; color: #255c76; font-size: 12px; line-height: 1.55; }
 .psychology-privacy svg { flex: 0 0 auto; margin-top: 1px; }
-.psychology-tabs { display: flex; flex-wrap: wrap; gap: 7px; padding-bottom: 2px; border-bottom: 1px solid var(--line); }
-.service-tabs { display: flex; flex-wrap: wrap; gap: 7px; overflow-x: auto; border-bottom: 1px solid var(--line); }
-.psychology-tab { display: inline-flex; min-height: 42px; align-items: center; gap: 8px; padding: 8px 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.psychology-tab.is-active { border-bottom-color: var(--blue); color: var(--blue-dark); }
-.psychology-tab span { display: grid; min-width: 21px; height: 21px; place-items: center; border-radius: 11px; background: var(--blue-pale); color: var(--blue-dark); font-size: 10px; }
 .psychology-panel { display: grid; gap: 15px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .psychology-panel .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .psychology-panel .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
@@ -991,7 +990,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
   .hygiene-request-heading { flex-direction: column; }
   .hygiene-panel > .button, .hygiene-request-controls .button { width: 100%; justify-content: center; }
   .service-tabs { flex-wrap: nowrap; }
-  .service-tabs .psychology-tab { flex: 0 0 auto; }
+  .service-tabs .button { flex: 0 0 auto; }
   .pharmacy-quick-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pharmacy-quick-filters .button { justify-content: space-between; padding-inline: 9px; font-size: 11px; }
   .xray-field-wide { grid-column: auto; }
@@ -1170,7 +1169,6 @@ html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .act
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
 html[data-theme="dark"] .psychology-privacy { border-color: #355d70; background: #203743; color: #b5e3f5; }
-html[data-theme="dark"] .psychology-tab.is-active { color: var(--blue-dark); }
 html[data-theme="dark"] .clinical-alert-clear { border-color: #315744; background: #21372d; color: #a2dfbb; }
 html[data-theme="dark"] .clinical-alert-unknown { border-color: #705b31; background: #332d20; color: #f1ce86; }
 html[data-theme="dark"] .psychology-priority.is-priority { background: #44371f; color: #efc16e; }

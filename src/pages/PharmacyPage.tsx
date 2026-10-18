@@ -475,7 +475,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
 
   return <section className="pharmacy-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Cadastre itens por lote e acompanhe saldo e prazo de validade.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{pharmacyTab === 'stock' && <button className="button button-primary" type="button" onClick={() => { setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
-    <div className="admin-tabs pharmacy-tabs" role="tablist" aria-label="Seções da Farmácia">
+    <div className="admin-tabs module-tabs pharmacy-tabs" role="tablist" aria-label="Seções da Farmácia">
       <button className={`button ${pharmacyTab === 'stock' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'stock'} onClick={() => setPharmacyTab('stock')}><Package size={16} /> Estoque e lotes</button>
       <button className={`button ${pharmacyTab === 'dispensation' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'dispensation'} onClick={() => setPharmacyTab('dispensation')}><ArrowRight size={16} /> Dispensação</button>
     </div>

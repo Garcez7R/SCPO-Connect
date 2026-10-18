@@ -124,9 +124,9 @@ export function WorkOrdersPage({ user }: { user: AuthUser }) {
 
   return <section className="work-orders-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">SERVIÇOS INTERNOS</p><h1>Ordens de serviço</h1><p className="welcome-copy">Escolha o serviço para encaminhar o pedido à equipe responsável.</p></div><span className="module-icon module-icon-maintenance"><ClipboardPlus size={23} /></span></div>
-    <div className="service-tabs" role="tablist" aria-label="Tipo de ordem de serviço">
-      <button className={`psychology-tab ${serviceTab === 'maintenance' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={serviceTab === 'maintenance'} onClick={() => { setServiceTab('maintenance'); setError(''); setNotice('') }}><Wrench size={16} /> Manutenção</button>
-      <button className={`psychology-tab ${serviceTab === 'hygiene' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={serviceTab === 'hygiene'} onClick={() => { setServiceTab('hygiene'); setError(''); setNotice('') }}><ShieldCheck size={16} /> Higienização</button>
+    <div className="service-tabs module-tabs" role="tablist" aria-label="Tipo de ordem de serviço">
+      <button className={`button ${serviceTab === 'maintenance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={serviceTab === 'maintenance'} onClick={() => { setServiceTab('maintenance'); setError(''); setNotice('') }}><Wrench size={16} /> Manutenção</button>
+      <button className={`button ${serviceTab === 'hygiene' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={serviceTab === 'hygiene'} onClick={() => { setServiceTab('hygiene'); setError(''); setNotice('') }}><ShieldCheck size={16} /> Higienização</button>
     </div>
     {serviceTab === 'maintenance' ? <>
     <form className="work-order-form" onSubmit={(event) => void submit(event)}>

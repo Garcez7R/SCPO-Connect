@@ -212,9 +212,9 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
 
   return <section className="reception-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">Registre internações e chegadas de emergência em fluxos independentes.</p></div><span className="module-icon"><Building2 size={23} /></span></div>
-    <div className="psychology-tabs" role="tablist" aria-label="Fluxos da Recepção">
-      <button className={`psychology-tab ${tab === 'emergency' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
-      <button className={`psychology-tab ${tab === 'admissions' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e internações</button>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Fluxos da Recepção">
+      <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
+      <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e internações</button>
     </div>
     {tab === 'admissions' ? <PatientRegistryPage receptionMode /> : <>
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
@@ -245,8 +245,8 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       </form>
       <section className="patient-list-panel reception-queue-panel">
         <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila de emergência <span className="module-total">{total}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadArrivals(statusFilter, query, offset)} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
-        <div className="service-tabs" role="tablist" aria-label="Filtrar chegadas por situação">
-          {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`psychology-tab ${statusFilter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
+        <div className="service-tabs module-tabs" role="tablist" aria-label="Filtrar chegadas por situação">
+          {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`button ${statusFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
         </div>
         <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
         {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}>
