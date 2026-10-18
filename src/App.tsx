@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { readApiResponse, readableApiError } from './api'
 import {
   Activity,
   AlertTriangle,
@@ -16,6 +17,7 @@ import {
   ClipboardPlus,
   Clock3,
   Eye,
+  EyeOff,
   HeartPulse,
   Home,
   Info,
@@ -36,6 +38,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import PrintSelectionPanel, { type PrintRow } from './components/PrintSelectionPanel'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
@@ -77,8 +80,6 @@ type PatientObservation = { id: number; attention_level: 'green' | 'yellow' | 'r
 type WorkOrderStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
 type WorkOrderPriority = 'normal' | 'high' | 'urgent'
 type WorkOrder = { id: string; title: string; description: string; service_type: string; department: string; location: string; patient_reference?: string | null; priority: WorkOrderPriority; status: WorkOrderStatus; requester_id: string; requester_name: string; updated_by: string; created_at: string; updated_at: string }
-type PharmacyItem = { id: number; item_name: string; balance: string; unit: string; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
-type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_balance' | 'entry' | 'issue' | 'adjustment'; quantity: string; balance_after: string; reason: string; actor_name: string; created_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type MedicationAdministration = { id: number; dispensation_id: string; patient_reference: string; medication_name: string; dose: string; unit: string; status: 'administered' | 'refused' | 'held'; reason: string; actor_name: string; administered_at: string }
 type PatientFlowEvent = { id: number; patient_reference: string; event_type: 'transfer' | 'discharge'; previous_room: string; previous_bed: string; next_room: string; next_bed: string; reason: string; summary: string; actor_name: string; occurred_at: string }
@@ -91,32 +92,9 @@ type TherapyActivity = { id: string; title: string; activity_type: string; descr
 type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; fasting_at?: string | null; fasting_reason?: string; actor_name: string; created_at: string }
 type NutritionPlan = { allergies: string; assessment_date: string | null; diet_type: string; restrictions: string; fasting_at: string | null; fasting_reason: string }
 
-type PrintRow = { id: string; date: string; title: string; fields: [string, string][] }
-
-function PrintSelectionPanel({ title, rows }: { title: string; rows: PrintRow[] }) {
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState<string[]>([])
-  const visible = rows.filter((row) => {
-    const day = row.date.slice(0, 10)
-    const text = `${row.title} ${row.fields.map(([label, value]) => `${label} ${value}`).join(' ')}`.toLocaleLowerCase('pt-BR')
-    return (!from || day >= from) && (!to || day <= to) && text.includes(query.trim().toLocaleLowerCase('pt-BR'))
-  })
-  const selectedRows = visible.filter((row) => selected.includes(row.id))
-  function print(rowsToPrint: PrintRow[]) {
-    if (!rowsToPrint.length) return
-    const escape = (value: string) => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char)
-    const date = (value: string) => value ? new Intl.DateTimeFormat('pt-BR').format(new Date(`${value.slice(0, 10)}T00:00:00`)) : 'Não informado'
-    const popup = window.open('', '_blank', 'width=900,height=700')
-    if (!popup) { window.alert('Permita a janela de impressão para este site e tente novamente.'); return }
-    const cards = rowsToPrint.map((row) => `<article><h2>${escape(row.title)}</h2><p class="date">${escape(date(row.date))}</p><dl>${row.fields.map(([label, value]) => `<div><dt>${escape(label)}</dt><dd>${escape(value || 'Não informado')}</dd></div>`).join('')}</dl></article>`).join('')
-    popup.document.write(`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>${escape(title)}</title><style>body{font:14px Arial,sans-serif;color:#172b3b;margin:28px}h1{font-size:22px;margin:0 0 5px}.meta{color:#526579;margin:0 0 20px}article{border:1px solid #ccd7df;border-radius:8px;padding:14px;margin:0 0 12px;break-inside:avoid}article h2{font-size:16px;margin:0 0 4px}.date{color:#526579;margin:0 0 8px}dl{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}dl div{display:grid;grid-template-columns:130px 1fr;gap:8px}dt{font-weight:bold;color:#526579}dd{margin:0;overflow-wrap:anywhere}@media print{body{margin:12mm}}</style><h1>${escape(title)}</h1><p class="meta">${rowsToPrint.length} registro(s) · Emitido em ${escape(new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short'}).format(new Date()))}${from || to ? ` · Período: ${escape(from || 'início')} a ${escape(to || 'hoje')}` : ''}</p>${cards}<script>window.onload=()=>window.print()</script></html>`)
-    popup.document.close()
-  }
-  if (!rows.length) return null
-  return <section className="print-selection-panel"><div className="print-selection-heading"><div><p className="eyebrow">RELATÓRIO IMPRESSO</p><h3>{title}</h3><small>{visible.length} registro(s) no resultado</small></div><button className="button button-secondary" type="button" onClick={() => print(visible)} disabled={!visible.length}><Printer size={15} /> Imprimir resultado</button></div><div className="print-selection-filters"><label className="field"><span className="field-label">De</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label><label className="field"><span className="field-label">Buscar nos dados</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, status ou assunto" /></label><button className="button button-secondary" type="button" onClick={() => setSelected(visible.map((row) => row.id))} disabled={!visible.length}>Selecionar resultado</button><button className="button button-secondary" type="button" onClick={() => setSelected([])} disabled={!selected.length}>Limpar seleção</button></div><div className="print-selection-list">{visible.map((row) => <label key={row.id}><input type="checkbox" checked={selected.includes(row.id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, row.id] : current.filter((id) => id !== row.id))} /><span>{row.title}</span><time>{row.date ? new Intl.DateTimeFormat('pt-BR').format(new Date(`${row.date.slice(0, 10)}T00:00:00`)) : ''}</time><button className="button button-secondary" type="button" onClick={(event) => { event.preventDefault(); print([row]) }}><Printer size={14} /> Imprimir item</button></label>)}</div><button className="button button-primary" type="button" onClick={() => print(selectedRows)} disabled={!selectedRows.length}><Printer size={15} /> Imprimir selecionados ({selectedRows.length})</button></section>
-}
+const ReceptionPage = lazy(() => import('./pages/ReceptionPage'))
+const PharmacyPage = lazy(() => import('./pages/PharmacyPage'))
+const OperationalTaskCenter = lazy(() => import('./components/OperationalTaskCenter'))
 
 type Profile = {
   id: ProfileId
@@ -268,46 +246,6 @@ function StartupScreen() {
   return <main className="startup-screen" role="status" aria-live="polite" aria-busy="true"><div className="startup-brand"><span className="startup-orbit startup-orbit-one" /><span className="startup-orbit startup-orbit-two" /><span className="startup-mark"><img className="startup-mark-base" src="/scpo-connect-icon.png" alt="" /><img className="startup-mark-fill" src="/scpo-connect-icon.png" alt="" /></span><span className="startup-glow" /></div><strong>SCPO Connect</strong><span>Preparando seu espaço de trabalho</span><div className="startup-progress"><i /></div></main>
 }
 
-function readableApiError(detail: unknown): string {
-  if (typeof detail === 'string') return detail
-  if (Array.isArray(detail)) {
-    const issues = detail.flatMap((issue) => {
-      if (!issue || typeof issue !== 'object') return []
-      const item = issue as { loc?: unknown[]; msg?: unknown }
-      const field = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').at(-1) : undefined
-      const label = field === 'username' ? 'Usuário' : field === 'name' ? 'Nome' : field === 'x_bootstrap_token' ? 'Token' : 'Campo'
-      const message = typeof item.msg === 'string' ? item.msg : 'valor inválido'
-      return [`${label}: ${message}`]
-    })
-    if (issues.length) return issues.join(' ')
-  }
-  if (detail && typeof detail === 'object' && 'message' in detail) {
-    const message = (detail as { message?: unknown }).message
-    if (typeof message === 'string') return message
-  }
-  return 'Não foi possível concluir esta etapa. Confira os campos e tente novamente.'
-}
-
-async function readApiResponse<T>(response: Response): Promise<T> {
-  const body = await response.text()
-  let data: unknown
-  try {
-    data = body ? JSON.parse(body) as unknown : {}
-  } catch {
-    const plainText = body.trim()
-    const usefulText = plainText && !plainText.startsWith('<') ? plainText.slice(0, 180) : ''
-    const detail = usefulText || `O servidor não retornou JSON válido (HTTP ${response.status}).`
-    throw new Error(response.ok ? detail : `HTTP ${response.status}: ${detail}`)
-  }
-  if (!response.ok) {
-    const detail = data && typeof data === 'object' && 'detail' in data
-      ? (data as { detail: unknown }).detail
-      : `Erro HTTP ${response.status}.`
-    throw new Error(readableApiError(detail))
-  }
-  return data as T
-}
-
 function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const [activeModule, setActiveModule] = useState<ModuleId>('home')
   const [menuOpen, setMenuOpen] = useState(false)
@@ -445,16 +383,16 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
         </header>
 
         <div className="page-content">
-          {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
+          {activeModule === 'home' && <Dashboard profile={profile} user={user} onNavigate={navigate} />}
           {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
-          {activeModule === 'pharmacy' && <PharmacyPage user={user} />}
+          {activeModule === 'pharmacy' && <Suspense fallback={<div className="history-empty" role="status">Carregando Farmácia…</div>}><PharmacyPage user={user} /></Suspense>}
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
           {activeModule === 'maintenance' && <MaintenanceQueuePage />}
           {activeModule === 'hygiene' && <HygienePage user={user} />}
           {activeModule === 'psychology' && <PsychologyPage />}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
-          {activeModule === 'reception' && <ReceptionPage user={user} />}
+          {activeModule === 'reception' && <Suspense fallback={<div className="history-empty" role="status">Carregando Recepção…</div>}><ReceptionPage user={user} PatientRegistryPage={PatientRegistryPage} /></Suspense>}
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
           {activeModule === 'admin' && <AdminPage />}
@@ -503,6 +441,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
   const [totpCode, setTotpCode] = useState('')
   const [bootstrapToken, setBootstrapToken] = useState('')
   const [mfaSecret, setMfaSecret] = useState('')
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -550,6 +489,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
         setStage('password')
       } else if (stage === 'login') {
         setPassword('')
+        setPasswordVisible(false)
         if (data.must_change_password) setStage('password')
         else if (data.mfa_setup_required) setStage('mfa')
         else if (data.user) onAuthenticated(data.user)
@@ -571,7 +511,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
     {stage === 'mfa' && <div className="auth-mfa-instructions"><strong>Aplicativo autenticador</strong><p>Cadastre esta chave em um aplicativo autenticador e informe o código de seis dígitos para confirmar:</p><code>{mfaSecret || 'Carregando chave segura…'}</code></div>}
     <form className="auth-form" onSubmit={submit}>
       {stage === 'bootstrap' && <><label className="field"><span className="field-label">Nome do administrador</span><input required minLength={2} maxLength={120} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" title="Use pelo menos 3 caracteres: letras sem acento, números, ponto, hífen, sublinhado ou @." autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Token de bootstrap</span><input required type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label><p className="auth-help">O usuário deve ter ao menos 3 caracteres e usar letras sem acento, números, ponto, hífen, sublinhado ou @.</p><p className="auth-help">O token fica no servidor em <code>data/local/bootstrap-admin.token</code>. Guarde-o como segredo.</p></>}
-      {stage === 'login' && <><label className="field"><span className="field-label">Usuário</span><input required autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Senha</span><input required type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label><label className="field"><span className="field-label">Código MFA (6 dígitos)</span><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label></>}
+      {stage === 'login' && <><label className="field"><span className="field-label">Usuário</span><input required autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Senha</span><span className="auth-password-control"><input required type={passwordVisible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label><label className="field"><span className="field-label">Código MFA (6 dígitos)</span><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label></>}
       {stage === 'password' && <><p className="auth-help">A senha inicial é temporária. Escolha uma nova senha com pelo menos 12 caracteres.</p><label className="field"><span className="field-label">Nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label></>}
       {stage === 'mfa' && <label className="field"><span className="field-label">Código do aplicativo</span><input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label>}
       {message && <div className="form-message form-message-error" role="alert">{message}</div>}
@@ -619,195 +559,6 @@ function AddressFields({ form, patients, prefix, onChange }: { form: PatientForm
     <label className="field"><span className="field-label">CEP</span><input inputMode="numeric" maxLength={9} autoComplete="postal-code" value={value('postal_code')} onChange={(event) => onChange(key('postal_code'), event.target.value)} onBlur={() => { if (value('postal_code').replace(/\D/g, '').length === 8) void lookupCep() }} /></label>
     <button className="button button-secondary cep-search-button" type="button" onClick={() => void lookupCep()}><Search size={15} /> Pesquisar CEP</button>
   </div>{lookupMessage && <p className="cep-lookup-message" role="status">{lookupMessage}</p>}</>
-}
-
-type ReceptionTab = 'emergency' | 'admissions'
-type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
-
-const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
-  waiting: 'Aguardando',
-  in_service: 'Em atendimento',
-  completed: 'Concluído',
-  cancelled: 'Cancelado',
-  admitted: 'Internado',
-}
-
-function ReceptionPage({ user }: { user: AuthUser }) {
-  const [tab, setTab] = useState<ReceptionTab>('emergency')
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
-  const [counts, setCounts] = useState<EmergencyArrivalCounts>({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0 })
-  const [patientReference, setPatientReference] = useState('')
-  const [patientName, setPatientName] = useState('')
-  const [createCentralPatient, setCreateCentralPatient] = useState(false)
-  const [emergencyPatient, setEmergencyPatient] = useState({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' as NonNullable<Patient['allergies_status']> })
-  const [patientSearch, setPatientSearch] = useState('')
-  const [arrivalMode, setArrivalMode] = useState<EmergencyArrival['arrival_mode']>('walk_in')
-  const [reason, setReason] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | EmergencyArrivalStatus>('all')
-  const [query, setQuery] = useState('')
-  const [offset, setOffset] = useState(0)
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [updating, setUpdating] = useState('')
-  const [admissionDraft, setAdmissionDraft] = useState<Record<string, { room: string; bed: string }>>({})
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const canCreate = user.permissions.reception?.includes('criar') ?? false
-  const canUpdate = user.permissions.reception?.includes('alterar') ?? false
-
-  async function loadArrivals(filter = statusFilter, search = query, pageOffset = 0) {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ limit: '25', offset: String(pageOffset) })
-      if (filter !== 'all') params.set('status', filter)
-      if (search.trim()) params.set('q', search.trim())
-      const response = await fetch(`/api/v1/reception/arrivals?${params}`)
-      const data = await readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(response)
-      setArrivals(data.arrivals ?? [])
-      setTotal(data.total ?? 0)
-      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...data.status_counts })
-      setOffset(pageOffset)
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila de emergência.')
-    } finally { setLoading(false) }
-  }
-
-  useEffect(() => {
-    let current = true
-    Promise.all([
-      fetch('/api/v1/nursing/patients'),
-      fetch('/api/v1/reception/arrivals?limit=25&offset=0'),
-    ]).then(async ([patientResponse, arrivalsResponse]) => {
-      const [patientData, arrivalsData] = await Promise.all([
-        readApiResponse<{ patients?: Patient[] }>(patientResponse),
-        readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(arrivalsResponse),
-      ])
-      if (!current) return
-      setPatients(patientData.patients ?? [])
-      setArrivals(arrivalsData.arrivals ?? [])
-      setTotal(arrivalsData.total ?? 0)
-      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...arrivalsData.status_counts })
-      setError('')
-    }).catch((loadError) => {
-      if (current) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a Recepção.')
-    }).finally(() => { if (current) setLoading(false) })
-    return () => { current = false }
-  }, [user.id])
-
-  async function createArrival(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true); setError(''); setNotice('')
-    try {
-      const response = await fetch('/api/v1/reception/arrivals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patient_reference: patientReference || null,
-          patient_name: patientName.trim(),
-          new_patient: createCentralPatient ? { name: patientName.trim(), ...emergencyPatient, birth_date: emergencyPatient.birth_date || null } : null,
-          arrival_mode: arrivalMode,
-          reason: reason.trim(),
-        }),
-      })
-      await readApiResponse<EmergencyArrival>(response)
-      setPatientReference(''); setPatientName(''); setPatientSearch('')
-      setCreateCentralPatient(false)
-      setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' })
-      setArrivalMode('walk_in'); setReason('')
-      setNotice('Chegada registrada na fila de emergência.')
-      await loadArrivals(statusFilter, query, 0)
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao registrar a chegada.')
-    } finally { setSaving(false) }
-  }
-
-  async function updateArrival(arrival: EmergencyArrival, status: Exclude<EmergencyArrivalStatus, 'admitted'>) {
-    setUpdating(arrival.id); setError(''); setNotice('')
-    try {
-      const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      })
-      await readApiResponse<EmergencyArrival>(response)
-      setNotice(`Situação atualizada: ${emergencyArrivalStatuses[status]}.`)
-      await loadArrivals(statusFilter, query, offset)
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar o atendimento.')
-    } finally { setUpdating('') }
-  }
-
-  async function admitArrival(arrival: EmergencyArrival) {
-    const location = admissionDraft[arrival.id]
-    if (!location?.room.trim() || !location.bed.trim()) return
-    setUpdating(arrival.id); setError(''); setNotice('')
-    try {
-      const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}/admission`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room: location.room.trim(), bed: location.bed.trim() }),
-      })
-      await readApiResponse(response)
-      setNotice(`${arrival.patient_name} foi vinculado à internação no quarto ${location.room}, leito ${location.bed}.`)
-      setAdmissionDraft((current) => { const next = { ...current }; delete next[arrival.id]; return next })
-      await loadArrivals(statusFilter, query, offset)
-      const patientResponse = await fetch('/api/v1/nursing/patients')
-      const patientData = await readApiResponse<{ patients?: Patient[] }>(patientResponse)
-      setPatients(patientData.patients ?? [])
-    } catch (admissionError) {
-      setError(admissionError instanceof Error ? admissionError.message : 'Não foi possível concluir a internação.')
-    } finally { setUpdating('') }
-  }
-
-  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR').includes(patientSearch.trim().toLocaleLowerCase('pt-BR')))
-  const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
-
-  return <section className="reception-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">Registre internações e chegadas de emergência em fluxos independentes.</p></div><span className="module-icon"><Building2 size={23} /></span></div>
-    <div className="psychology-tabs" role="tablist" aria-label="Fluxos da Recepção">
-      <button className={`psychology-tab ${tab === 'emergency' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
-      <button className={`psychology-tab ${tab === 'admissions' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e internações</button>
-    </div>
-    {tab === 'admissions' ? <PatientRegistryPage receptionMode /> : <>
-      {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-      {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-      <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
-      <form className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
-        <div className="section-heading"><div><p className="eyebrow">CHEGADA À EMERGÊNCIA</p><h2>Registrar atendimento</h2></div></div>
-        <div className="field-grid field-grid-two">
-          {!createCentralPatient && <><label className="field"><span className="field-label">Buscar paciente cadastrado (opcional)</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, quarto ou leito" /></label>
-          <label className="field"><span className="field-label">Vincular ao cadastro existente</span><select value={patientReference} onChange={(event) => { const reference = event.target.value; const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? ''); if (patient) setPatientSearch(`${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}`) }}><option value="">Sem vínculo cadastral</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}</option>)}</select></label></>}
-          <label className="field"><span className="field-label">{createCentralPatient ? 'Nome completo para novo cadastro' : 'Nome da pessoa atendida'}</span><input required minLength={2} maxLength={120} value={patientName} onChange={(event) => { setPatientName(event.target.value); if (patientReference) setPatientReference('') }} placeholder="Nome informado na recepção" /></label>
-          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setPatientSearch(''); setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' }) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
-          {createCentralPatient && <>
-            <label className="field"><span className="field-label">CPF (opcional)</span><input inputMode="numeric" maxLength={14} value={emergencyPatient.cpf} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, cpf: event.target.value.replace(/[^\d.-]/g, '').slice(0, 14) })} placeholder="000.000.000-00" /></label>
-            <label className="field"><span className="field-label">Cartão Nacional de Saúde (opcional)</span><input inputMode="numeric" maxLength={20} value={emergencyPatient.sus_card} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
-            <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={emergencyPatient.birth_date} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, birth_date: event.target.value })} /></label>
-            <label className="field"><span className="field-label">Sexo (opcional)</span><select value={emergencyPatient.sex} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sex: event.target.value })}><option value="">Não informado</option><option>Feminino</option><option>Masculino</option><option>Outro</option><option>Não informado</option></select></label>
-            <label className="field"><span className="field-label">Telefone (opcional)</span><input maxLength={40} value={emergencyPatient.phone} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, phone: event.target.value })} /></label>
-            <label className="field"><span className="field-label">Status das alergias</span><select value={emergencyPatient.allergies_status} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies_status: event.target.value as NonNullable<Patient['allergies_status']>, allergies: event.target.value === 'known' ? emergencyPatient.allergies : '' })}><option value="unknown">Não verificado / desconhecido</option><option value="none_known">Sem alergias conhecidas · confirmado</option><option value="known">Alergia conhecida</option></select></label>
-            {emergencyPatient.allergies_status === 'known' && <label className="field"><span className="field-label">Alergias conhecidas</span><textarea required maxLength={1000} value={emergencyPatient.allergies} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies: event.target.value })} /></label>}
-            <PatientAllergyAlert patient={emergencyPatient} />
-          </>}
-          <label className="field"><span className="field-label">Meio de chegada</span><select value={arrivalMode} onChange={(event) => setArrivalMode(event.target.value as EmergencyArrival['arrival_mode'])}><option value="walk_in">Chegada espontânea</option><option value="ambulance">Ambulância</option><option value="other">Outro meio</option></select></label>
-          <label className="field reception-reason-field"><span className="field-label">Motivo informado para a procura</span><textarea required minLength={3} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Registre a informação necessária para identificar a chegada" /></label>
-        </div>
-        <p className="work-order-privacy">A recepção registra a chegada e a situação operacional. Esta tela não atribui prioridade clínica nem substitui o protocolo institucional de classificação de risco.</p>
-        <button className="button button-primary" type="submit" disabled={!canCreate || saving}>{saving ? 'Registrando…' : 'Registrar chegada'} <ArrowRight size={16} /></button>
-      </form>
-      <section className="patient-list-panel reception-queue-panel">
-        <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila de emergência <span className="module-total">{total}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadArrivals(statusFilter, query, offset)} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
-        <div className="service-tabs" role="tablist" aria-label="Filtrar chegadas por situação">
-          {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`psychology-tab ${statusFilter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
-        </div>
-        <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
-        {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}><div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div><ReceptionAllergyAlert status={arrival.allergies_status} /><div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>{canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span>        <select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}{canUpdate && arrival.patient_reference && ['waiting', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}><label className="field"><span className="field-label">Quarto para internação</span><input required maxLength={20} value={admissionDraft[arrival.id]?.room ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: event.target.value, bed: current[arrival.id]?.bed ?? '' } }))} /></label><label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={admissionDraft[arrival.id]?.bed ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: current[arrival.id]?.room ?? '', bed: event.target.value } }))} /></label><button className="button button-secondary" type="submit" disabled={updating === arrival.id}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button></form>}</article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}        <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
-      </section>
-    </>}
-  </section>
 }
 
 function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean }) {
@@ -1609,315 +1360,6 @@ function WorkOrderCard({ order, editable = false, status, note, onStatusChange, 
   </article>
 }
 
-function PharmacyPage({ user }: { user: AuthUser }) {
-  const [items, setItems] = useState<PharmacyItem[]>([])
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
-  const [dispenseForm, setDispenseForm] = useState({ patient_reference: '', item_id: '', quantity: '', instructions: '', prescription_reference: '', prescriber_name: '', allergy_reviewed: false })
-  const [dispensing, setDispensing] = useState(false)
-  const [movements, setMovements] = useState<PharmacyMovement[]>([])
-  const [movementTotal, setMovementTotal] = useState(0)
-  const [movementOffset, setMovementOffset] = useState(0)
-  const [movementItemId, setMovementItemId] = useState<number | null>(null)
-  const [movementForm, setMovementForm] = useState({ movement_type: 'entry' as 'entry' | 'issue' | 'adjustment', quantity: '', reason: '' })
-  const [movementSaving, setMovementSaving] = useState(false)
-  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
-  const [query, setQuery] = useState('')
-  const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
-  const [showForm, setShowForm] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [cameraScannerOpen, setCameraScannerOpen] = useState(false)
-  const [cameraScannerMessage, setCameraScannerMessage] = useState('')
-  const barcodeVideoRef = useRef<HTMLVideoElement>(null)
-
-  useEffect(() => {
-    if (!cameraScannerOpen) return
-    let cancelled = false
-    let stream: MediaStream | undefined
-    let timer = 0
-    let scanning = false
-    const Detector = (window as Window & { BarcodeDetector?: { new (options?: { formats: string[] }): { detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]> }; getSupportedFormats?: () => Promise<string[]> } }).BarcodeDetector
-    if (!Detector) {
-      return () => { cancelled = true }
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      return () => { cancelled = true }
-    }
-    const videoElement = barcodeVideoRef.current
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(async (mediaStream) => {
-      stream = mediaStream
-      if (cancelled) { mediaStream.getTracks().forEach((track) => track.stop()); return }
-      const video = videoElement
-      if (!video) return
-      video.srcObject = mediaStream
-      await video.play()
-      const requestedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'data_matrix']
-      const supportedFormats = Detector.getSupportedFormats ? await Detector.getSupportedFormats() : requestedFormats
-      const formats = requestedFormats.filter((format) => supportedFormats.includes(format))
-      if (!formats.length) { setCameraScannerMessage('Este aparelho não oferece formatos de código compatíveis pela câmera. Use o leitor USB ou digite o código.'); return }
-      const detector = new Detector({ formats })
-      timer = window.setInterval(async () => {
-        if (scanning || cancelled || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
-        scanning = true
-        try {
-          const results = await detector.detect(video)
-          const code = results[0]?.rawValue?.trim()
-          if (code) {
-            setForm((current) => ({ ...current, barcode: code.slice(0, 40) }))
-            setCameraScannerMessage(`Código lido: ${code}`)
-            setCameraScannerOpen(false)
-          }
-        } catch { setCameraScannerMessage('Não foi possível ler esse código. Ajuste a distância ou digite o número.') }
-        finally { scanning = false }
-      }, 300)
-    }).catch(() => setCameraScannerMessage('Não foi possível acessar a câmera. Verifique a permissão ou use o leitor USB.'))
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-      stream?.getTracks().forEach((track) => track.stop())
-      if (videoElement) videoElement.srcObject = null
-    }
-  }, [cameraScannerOpen])
-  const barcodeCameraUnavailable = !(window as Window & { BarcodeDetector?: unknown }).BarcodeDetector
-    ? 'A leitura pela câmera não está disponível neste navegador. Use o leitor USB ou digite o código.'
-    : !navigator.mediaDevices?.getUserMedia
-      ? 'A câmera exige HTTPS e permissão do navegador. Use o leitor USB ou digite o código.'
-      : ''
-
-  const loadItems = useCallback(async (offset = movementOffset) => {
-    try {
-      const [itemResponse, movementResponse] = await Promise.all([
-        fetch('/api/v1/pharmacy/items'),
-        fetch(`/api/v1/pharmacy/movements?limit=25&offset=${offset}`),
-      ])
-      const [itemData, movementData] = await Promise.all([
-        readApiResponse<{ items?: PharmacyItem[] }>(itemResponse),
-        readApiResponse<{ movements?: PharmacyMovement[]; total?: number }>(movementResponse),
-      ])
-      setItems(itemData.items ?? [])
-      setMovements(movementData.movements ?? [])
-      setMovementTotal(movementData.total ?? 0)
-      setMovementOffset(offset)
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o estoque.')
-    } finally { setLoading(false) }
-  }, [movementOffset])
-
-  useEffect(() => {
-    let active = true
-    const loadInventory = async () => {
-      try {
-        const [itemResponse, movementResponse] = await Promise.all([
-          fetch('/api/v1/pharmacy/items'),
-          fetch(`/api/v1/pharmacy/movements?limit=25&offset=${movementOffset}`),
-        ])
-        const [itemData, movementData] = await Promise.all([
-          readApiResponse<{ items?: PharmacyItem[] }>(itemResponse),
-          readApiResponse<{ movements?: PharmacyMovement[]; total?: number }>(movementResponse),
-        ])
-        if (!active) return
-        setItems(itemData.items ?? [])
-        setMovements(movementData.movements ?? [])
-        setMovementTotal(movementData.total ?? 0)
-        setError('')
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o estoque.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    void loadInventory()
-    return () => { active = false }
-  }, [movementOffset])
-
-  useEffect(() => {
-    let current = true
-    const loadRelatedData = async () => {
-      try {
-        const [patientResponse, dispenseResponse] = await Promise.all([
-          fetch('/api/v1/nursing/patients'),
-          fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
-        ])
-        const [patientData, dispenseData] = await Promise.all([
-          readApiResponse<{ patients?: Patient[] }>(patientResponse),
-          readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
-        ])
-        if (!current) return
-        setPatients(patientData.patients ?? [])
-        setDispensations(dispenseData.dispensations ?? [])
-      } catch (loadError) {
-        if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes e dispensações.')
-      }
-    }
-
-    void loadRelatedData()
-    return () => { current = false }
-  }, [user.id])
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true); setError(''); setNotice('')
-    try {
-      const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: form.balance.replace(',', '.'), unit: form.unit.trim(), lot: form.lot.trim() }) })
-      const data = await readApiResponse<PharmacyItem>(response)
-      setItems((current) => [...current, data].sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR')))
-      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
-      setShowForm(false)
-      setNotice('Lote cadastrado no estoque.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao cadastrar o lote.')
-    } finally { setSaving(false) }
-  }
-
-  async function submitMovement(event: FormEvent<HTMLFormElement>, item: PharmacyItem) {
-    event.preventDefault()
-    setMovementSaving(true); setError(''); setNotice('')
-    try {
-      const response = await fetch(`/api/v1/pharmacy/items/${item.id}/movements`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...movementForm, quantity: movementForm.quantity.replace(',', '.'), reason: movementForm.reason.trim() }),
-      })
-      await readApiResponse<PharmacyMovement>(response)
-      setMovementItemId(null)
-      setMovementForm({ movement_type: 'entry', quantity: '', reason: '' })
-      setNotice('Movimentação registrada com saldo atualizado.')
-      await loadItems(0)
-    } catch (movementError) {
-      setError(movementError instanceof Error ? movementError.message : 'Falha ao registrar movimentação.')
-    } finally { setMovementSaving(false) }
-  }
-
-  async function submitDispensation(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setDispensing(true); setError(''); setNotice('')
-    try {
-      const response = await fetch('/api/v1/pharmacy/dispensations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...dispenseForm, item_id: Number(dispenseForm.item_id), quantity: dispenseForm.quantity.replace(',', '.') }),
-      })
-      const data = await readApiResponse<MedicationDispensation>(response)
-      setDispensations((current) => [data, ...current])
-      setDispenseForm({ patient_reference: '', item_id: '', quantity: '', instructions: '', prescription_reference: '', prescriber_name: '', allergy_reviewed: false })
-      setNotice('Dispensação registrada, vinculada ao paciente e debitada do lote.')
-      await loadItems(0)
-    } catch (dispenseError) {
-      setError(dispenseError instanceof Error ? dispenseError.message : 'Não foi possível registrar a dispensação.')
-    } finally { setDispensing(false) }
-  }
-
-  const dispensePatient = patients.find((patient) => patient.reference === dispenseForm.patient_reference)
-
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
-  const soonDate = new Date(`${today}T12:00:00`)
-  soonDate.setDate(soonDate.getDate() + 30)
-  const soon = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(soonDate)
-  const expiredCount = items.filter((item) => item.expiry_date < today).length
-  const expiringCount = items.filter((item) => item.expiry_date >= today && item.expiry_date <= soon).length
-  const stockLevels = items.map(stockLevel)
-  const criticalCount = stockLevels.filter((level) => level === 'critical').length
-  const attentionCount = stockLevels.filter((level) => level === 'attention').length
-  const healthyCount = stockLevels.filter((level) => level === 'healthy').length
-  const unconfiguredCount = stockLevels.filter((level) => level === 'unconfigured').length
-  const filteredItems = items.filter((item) => {
-    const matchesSearch = `${item.item_name} ${item.lot} ${item.barcode} ${item.category} ${item.active_ingredient} ${item.presentation} ${item.storage_location}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'))
-    const level = stockLevel(item)
-    const matchesFilter = stockFilter === 'all'
-      || (stockFilter === 'expired' && item.expiry_date < today)
-      || (stockFilter === 'expiring' && item.expiry_date >= today && item.expiry_date <= soon)
-      || (stockFilter === 'critical' && level === 'critical')
-      || (stockFilter === 'attention' && level === 'attention')
-    return matchesSearch && matchesFilter
-  }).sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.item_name.localeCompare(b.item_name, 'pt-BR'))
-  const pharmacyPrintRows: PrintRow[] = filteredItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
-
-  return <section className="pharmacy-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>Estoque e validade</h1><p className="welcome-copy">Cadastre itens por lote e acompanhe saldo e prazo de validade.</p></div><button className="button button-primary" type="button" onClick={() => { setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button></div>
-    <div className="pharmacy-summary"><article><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article><article className={expiringCount ? 'pharmacy-summary-warning' : ''}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article><article className={expiredCount ? 'pharmacy-summary-danger' : ''}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article><article className={criticalCount ? 'pharmacy-summary-danger' : ''}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No limite mínimo ou abaixo</small></article></div>
-    <div className="pharmacy-quick-filters" role="group" aria-label="Filtrar estoque">
-      {([
-        ['all', 'Todos', items.length],
-        ['critical', 'Estoque crítico', criticalCount],
-        ['attention', 'Atenção', attentionCount],
-        ['expired', 'Vencidos', expiredCount],
-        ['expiring', 'Vencem em 30 dias', expiringCount],
-      ] as const).map(([value, label, count]) => <button className={`button ${stockFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" key={value} aria-pressed={stockFilter === value} onClick={() => setStockFilter(value)}>{label}<span>{count}</span></button>)}
-    </div>
-    <PharmacyStockOverview items={items} onSaved={(updated) => setItems((current) => current.map((item) => item.id === updated.id ? updated : item))} counts={{ critical: criticalCount, attention: attentionCount, healthy: healthyCount, unconfigured: unconfiguredCount }} />
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    <section className="pharmacy-dispensation-panel">
-      <div className="section-heading"><div><p className="eyebrow">SAÍDA ASSISTENCIAL</p><h2>Dispensar para paciente</h2><p className="welcome-copy">Registre a prescrição, confirme as alergias e selecione o lote dispensado. A Enfermagem receberá o vínculo para registrar a administração.</p></div></div>
-      <form className="field-grid field-grid-two" onSubmit={(event) => void submitDispensation(event)}>
-        <label className="field"><span className="field-label">Paciente</span><select required value={dispenseForm.patient_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, patient_reference: event.target.value, allergy_reviewed: false })}><option value="">Selecione</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>
-        <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => setDispenseForm({ ...dispenseForm, item_id: event.target.value })}><option value="">Selecione lote válido</option>{items.filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento' && item.expiry_date >= today && Number(item.balance.replace(',', '.')) > 0).map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot} · saldo {item.balance} {item.unit}</option>)}</select></label>
-        <label className="field"><span className="field-label">Quantidade</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Referência da prescrição</span><input required minLength={2} maxLength={80} value={dispenseForm.prescription_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, prescription_reference: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Profissional prescritor</span><input required minLength={2} maxLength={120} value={dispenseForm.prescriber_name} onChange={(event) => setDispenseForm({ ...dispenseForm, prescriber_name: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Instruções para administração (conforme prescrição)</span><input maxLength={500} value={dispenseForm.instructions} onChange={(event) => setDispenseForm({ ...dispenseForm, instructions: event.target.value })} /></label>
-        {dispensePatient && <PatientAllergyAlert patient={dispensePatient} />}
-        <label className="field pharmacy-allergy-confirm"><span><input type="checkbox" required checked={dispenseForm.allergy_reviewed} onChange={(event) => setDispenseForm({ ...dispenseForm, allergy_reviewed: event.target.checked })} /> Revisei o status e os detalhes de alergia do paciente.</span></label>
-        <button className="button button-primary" type="submit" disabled={dispensing || !patients.length}>{dispensing ? 'Registrando…' : 'Registrar dispensação'} <ArrowRight size={16} /></button>
-      </form>
-      <p className="work-order-privacy">O registro não substitui validação farmacêutica, prescrição institucional ou protocolo de dispensação. Confirme dose, unidade, paciente, alergias e lote antes de concluir.</p>
-      {!!dispensations.length && <div className="pharmacy-dispensation-list"><h3>Dispensações aguardando registro da Enfermagem</h3>{dispensations.map((item) => <article key={item.id}><strong>{patients.find((patient) => patient.reference === item.patient_reference)?.name ?? 'Paciente vinculado'} · {item.medication_name}</strong><span>{item.quantity} {item.unit} · prescrição {item.prescription_reference} · {dateTime(item.created_at)}</span></article>)}</div>}
-    </section>
-    {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2></div></div>    <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Código de barras / GTIN</span><input inputMode="numeric" autoComplete="off" maxLength={40} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value.slice(0, 40) })} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault() }} placeholder="Leia com o leitor USB ou digite" /><span className="field-hint">O leitor USB funciona como teclado: clique aqui e leia o código.</span></label><div className="field pharmacy-scan-field"><span className="field-label">Leitura pela câmera</span><button className="button button-secondary" type="button" onClick={() => { setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>{cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span></>}</div><label className="field"><span className="field-label">Nome do produto</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item ou medicamento" /></label><label className="field"><span className="field-label">Categoria</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Medicamento</option><option>Material hospitalar</option><option>Material de consumo</option><option>Higiene e limpeza</option><option>Outro</option></select></label><label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label><label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label><label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label><label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label><label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label><label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label><label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label><label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label><label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label></div><div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div></form>}
-    <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
-      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => { const expired = item.expiry_date < today; const expiring = !expired && item.expiry_date <= soon; const low = Number(item.minimum_balance.replace(',', '.')) > 0 && Number(item.balance.replace(',', '.')) <= Number(item.minimum_balance.replace(',', '.')); return <article className="pharmacy-item-card" key={item.id}><div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired ? <AlertTriangle size={14} /> : expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Abaixo do mínimo' : 'Dentro da validade'}</span></div><h3>{item.item_name}</h3><p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p><div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low ? ` · mínimo ${item.minimum_balance}` : ''}</span></div><div className="pharmacy-item-meta"><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div><button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>{movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada</option><option value="issue">Saída / dispensação</option><option value="adjustment">Ajuste de inventário</option></select></label><label className="field"><span className="field-label">Quantidade {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: dispensação, recebimento da nota fiscal" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : 'Registrar movimentação'}</button></form>}</article> })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
-      <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade, saldo após a operação, responsável e motivo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item?.unit ?? ''}</span><small>Saldo: {movement.balance_after} {item?.unit ?? ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 25)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>
-    </section>
-    <PrintSelectionPanel title="Relatório de estoque por lote" rows={pharmacyPrintRows} />
-  </section>
-}
-
-type StockLevel = 'critical' | 'attention' | 'healthy' | 'unconfigured'
-
-function stockLevel(item: PharmacyItem): StockLevel {
-  const balance = Number(item.balance.replace(',', '.'))
-  const minimum = Number(item.minimum_balance.replace(',', '.'))
-  const average = Number((item.average_balance || '0').replace(',', '.'))
-  if (Number.isFinite(minimum) && balance <= minimum) return 'critical'
-  if (!Number.isFinite(average) || average <= 0) return 'unconfigured'
-  if (balance <= average) return 'attention'
-  return 'healthy'
-}
-
-function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem[]; counts: Record<StockLevel, number>; onSaved: (item: PharmacyItem) => void }) {
-  const [editing, setEditing] = useState<number | null>(null)
-  const [minimum, setMinimum] = useState('0')
-  const [average, setAverage] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
-  const label: Record<StockLevel, string> = { critical: 'Crítico', attention: 'Atenção', healthy: 'Adequado', unconfigured: 'Defina a meta' }
-  const rows = [...items].sort((a, b) => {
-    const order: Record<StockLevel, number> = { critical: 0, attention: 1, unconfigured: 2, healthy: 3 }
-    return order[stockLevel(a)] - order[stockLevel(b)] || a.item_name.localeCompare(b.item_name, 'pt-BR')
-  })
-  async function save(item: PharmacyItem) {
-    setSaving(true); setMessage('')
-    try {
-      const response = await fetch(`/api/v1/pharmacy/items/${item.id}/stock-thresholds`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minimum_balance: minimum.replace(',', '.'), average_balance: average.replace(',', '.') }) })
-      const data = await readApiResponse<PharmacyItem>(response)
-      onSaved(data); setEditing(null); setMessage(`Metas atualizadas para ${item.item_name}.`)
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao salvar metas.') }
-    finally { setSaving(false) }
-  }
-  return <section className="pharmacy-stock-overview" aria-label="Níveis do estoque">
-    <div className="pharmacy-stock-levels" aria-label="Resumo dos níveis de estoque">
-      {(['critical', 'attention', 'healthy', 'unconfigured'] as StockLevel[]).map((level) => <div className={`pharmacy-level-count level-${level}`} key={level}><span className="pharmacy-level-dot" /><strong>{counts[level]}</strong><span>lotes</span><small>{label[level]}</small></div>)}
-    </div>
-    <details className="pharmacy-stock-details"><summary>Ver níveis e configurar metas por lote</summary>
-      <p>Crítico: saldo no mínimo ou abaixo. Atenção: saldo entre o mínimo e a meta média. Adequado: acima da meta média. Defina a meta média para ativar o acompanhamento do lote.</p>
-      {message && <div className="form-message form-message-success" role="status">{message}</div>}
-      <div className="pharmacy-stock-level-list">{rows.map((item) => { const level = stockLevel(item); const isEditing = editing === item.id; return <article className="pharmacy-stock-level-row" key={item.id}><div className="pharmacy-stock-level-name"><span className={`pharmacy-level-dot level-${level}`} /><div><strong>{item.item_name}</strong><small>Lote {item.lot} · Saldo {item.balance} {item.unit}</small></div></div><span className={`pharmacy-stock-badge level-${level}`}>{label[level]}</span>{isEditing ? <div className="pharmacy-threshold-editor"><label className="field"><span className="field-label">Mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label className="field"><span className="field-label">Meta média</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={average} onChange={(event) => setAverage(event.target.value)} /></label><button className="button button-primary" type="button" disabled={saving || !average} onClick={() => void save(item)}>{saving ? 'Salvando…' : 'Salvar metas'}</button><button className="button button-secondary" type="button" disabled={saving} onClick={() => setEditing(null)}>Cancelar</button></div> : <button className="button button-secondary pharmacy-threshold-button" type="button" onClick={() => { setEditing(item.id); setMinimum(item.minimum_balance || '0'); setAverage(item.average_balance && Number(item.average_balance) > 0 ? item.average_balance : '') }}>Configurar</button>}</article> })}</div>
-    </details>
-  </section>
-}
 
 function AboutPage() {
   const legalReferences = [
@@ -1935,7 +1377,7 @@ function AboutPage() {
   </section>
 }
 
-function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id: ModuleId) => void }) {
+function Dashboard({ profile, user, onNavigate }: { profile: Profile; user: AuthUser; onNavigate: (id: ModuleId) => void }) {
   const allowedModules = modules.filter((item) => profile.modules.includes(item.id))
   const firstName = profile.name.split(' ')[0]
 
@@ -1961,6 +1403,10 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
           )
         })}
       </div>
+
+      <Suspense fallback={<div className="history-empty" role="status">Carregando suas pendências…</div>}>
+        <OperationalTaskCenter user={user} onNavigate={onNavigate} />
+      </Suspense>
 
       <div className="dashboard-lower">
         <section className="activity-panel">

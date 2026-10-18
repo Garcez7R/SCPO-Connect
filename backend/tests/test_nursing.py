@@ -121,6 +121,11 @@ def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
     assert admitted["arrival"]["status"] == "admitted"
     assert admitted["patient"]["room"] == "10"
     assert admitted["patient"]["bed"] == "A"
+    admitted_queue = nursing.list_emergency_arrivals(
+        receptionist, nursing_db, 25, 0, "admitted", ""
+    )
+    assert admitted_queue["total"] == 1
+    assert admitted_queue["arrivals"][0]["status"] == "admitted"
 
     with pytest.raises(HTTPException) as already_admitted:
         nursing.admit_emergency_arrival(

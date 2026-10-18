@@ -6,8 +6,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect
 
-revision = "0025_patient_flow_risk_and_dashboard"
-down_revision = "0024_patient_linked_medications_and_results"
+revision = "0025_patient_flow_risk"
+down_revision = "0024_patient_med_results"
 branch_labels = None
 depends_on = None
 

@@ -763,7 +763,7 @@ def list_emergency_arrivals(
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
-    status: Literal["waiting", "in_service", "completed", "cancelled"] | None = None,
+    status: Literal["waiting", "in_service", "completed", "cancelled", "admitted"] | None = None,
     q: Annotated[str, Query(max_length=120)] = "",
 ) -> dict[str, object]:
     filters = []

@@ -1,0 +1,249 @@
+import { useEffect, useState } from 'react'
+import type { ComponentType, FormEvent } from 'react'
+import { ArrowRight, Building2, Search, AlertTriangle, BadgeCheck, Info } from 'lucide-react'
+import { readApiResponse } from '../api'
+
+type Patient = {
+  reference: string
+  name: string
+  room: string
+  bed: string
+  cpf?: string
+  sus_card?: string
+  birth_date?: string | null
+  phone?: string
+  allergies?: string
+  allergies_status?: 'unknown' | 'none_known' | 'known'
+  active?: boolean
+}
+type AuthUser = { id: string; permissions: Record<string, string[]> }
+type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
+type EmergencyArrival = {
+  id: string
+  patient_reference: string | null
+  patient_name: string
+  allergies_status?: Patient['allergies_status']
+  arrival_mode: 'walk_in' | 'ambulance' | 'other'
+  reason: string
+  status: EmergencyArrivalStatus
+  created_by: string
+  updated_by: string
+  created_at: string
+  updated_at: string
+}
+type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
+type ReceptionTab = 'emergency' | 'admissions'
+
+const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
+  waiting: 'Aguardando',
+  in_service: 'Em atendimento',
+  completed: 'Concluído',
+  cancelled: 'Cancelado',
+  admitted: 'Internado',
+}
+
+function dateTime(value: string) {
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+}
+
+function PatientAllergyAlert({ patient }: { patient: Pick<Patient, 'allergies' | 'allergies_status'> }) {
+  if (patient.allergies_status === 'known' && patient.allergies) {
+    return <div className="clinical-alert" role="alert"><AlertTriangle size={19} /><div><strong>Alerta cadastral · alergia conhecida</strong><span>{patient.allergies}</span></div></div>
+  }
+  if (patient.allergies_status === 'none_known') {
+    return <div className="clinical-alert clinical-alert-clear" role="status"><BadgeCheck size={19} /><div><strong>Sem alergias conhecidas</strong><span>Informação confirmada no cadastro.</span></div></div>
+  }
+  return <div className="clinical-alert clinical-alert-unknown" role="status"><Info size={19} /><div><strong>Alergias não verificadas</strong><span>Confirme com a equipe clínica antes de iniciar condutas.</span></div></div>
+}
+
+function ReceptionAllergyAlert({ status }: { status?: Patient['allergies_status'] }) {
+  if (status === 'known') {
+    return <div className="clinical-alert" role="alert"><AlertTriangle size={19} /><div><strong>Alerta de alergia</strong><span>Confirme os detalhes com a equipe clínica antes do atendimento.</span></div></div>
+  }
+  if (status === 'none_known') {
+    return <div className="clinical-alert clinical-alert-clear" role="status"><BadgeCheck size={19} /><div><strong>Sem alergias conhecidas</strong><span>Status confirmado no cadastro.</span></div></div>
+  }
+  return <div className="clinical-alert clinical-alert-unknown" role="status"><Info size={19} /><div><strong>Alergias não verificadas</strong><span>Encaminhe para confirmação pela equipe clínica.</span></div></div>
+}
+
+function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean }> }) {
+  const [tab, setTab] = useState<ReceptionTab>('emergency')
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
+  const [counts, setCounts] = useState<EmergencyArrivalCounts>({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0 })
+  const [patientReference, setPatientReference] = useState('')
+  const [patientName, setPatientName] = useState('')
+  const [createCentralPatient, setCreateCentralPatient] = useState(false)
+  const [emergencyPatient, setEmergencyPatient] = useState({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' as NonNullable<Patient['allergies_status']> })
+  const [patientSearch, setPatientSearch] = useState('')
+  const [arrivalMode, setArrivalMode] = useState<EmergencyArrival['arrival_mode']>('walk_in')
+  const [reason, setReason] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | EmergencyArrivalStatus>('all')
+  const [query, setQuery] = useState('')
+  const [offset, setOffset] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [updating, setUpdating] = useState('')
+  const [admissionDraft, setAdmissionDraft] = useState<Record<string, { room: string; bed: string }>>({})
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const canCreate = user.permissions.reception?.includes('criar') ?? false
+  const canUpdate = user.permissions.reception?.includes('alterar') ?? false
+
+  async function loadArrivals(filter = statusFilter, search = query, pageOffset = 0) {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ limit: '25', offset: String(pageOffset) })
+      if (filter !== 'all') params.set('status', filter)
+      if (search.trim()) params.set('q', search.trim())
+      const response = await fetch(`/api/v1/reception/arrivals?${params}`)
+      const data = await readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(response)
+      setArrivals(data.arrivals ?? [])
+      setTotal(data.total ?? 0)
+      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...data.status_counts })
+      setOffset(pageOffset)
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila de emergência.')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    let current = true
+    Promise.all([
+      fetch('/api/v1/nursing/patients'),
+      fetch('/api/v1/reception/arrivals?limit=25&offset=0'),
+    ]).then(async ([patientResponse, arrivalsResponse]) => {
+      const [patientData, arrivalsData] = await Promise.all([
+        readApiResponse<{ patients?: Patient[] }>(patientResponse),
+        readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(arrivalsResponse),
+      ])
+      if (!current) return
+      setPatients(patientData.patients ?? [])
+      setArrivals(arrivalsData.arrivals ?? [])
+      setTotal(arrivalsData.total ?? 0)
+      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...arrivalsData.status_counts })
+      setError('')
+    }).catch((loadError) => {
+      if (current) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a Recepção.')
+    }).finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [user.id])
+
+  async function createArrival(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const response = await fetch('/api/v1/reception/arrivals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_reference: patientReference || null,
+          patient_name: patientName.trim(),
+          new_patient: createCentralPatient ? { name: patientName.trim(), ...emergencyPatient, birth_date: emergencyPatient.birth_date || null } : null,
+          arrival_mode: arrivalMode,
+          reason: reason.trim(),
+        }),
+      })
+      await readApiResponse<EmergencyArrival>(response)
+      setPatientReference(''); setPatientName(''); setPatientSearch('')
+      setCreateCentralPatient(false)
+      setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' })
+      setArrivalMode('walk_in'); setReason('')
+      setNotice('Chegada registrada na fila de emergência.')
+      await loadArrivals(statusFilter, query, 0)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao registrar a chegada.')
+    } finally { setSaving(false) }
+  }
+
+  async function updateArrival(arrival: EmergencyArrival, status: Exclude<EmergencyArrivalStatus, 'admitted'>) {
+    setUpdating(arrival.id); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      await readApiResponse<EmergencyArrival>(response)
+      setNotice(`Situação atualizada: ${emergencyArrivalStatuses[status]}.`)
+      await loadArrivals(statusFilter, query, offset)
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar o atendimento.')
+    } finally { setUpdating('') }
+  }
+
+  async function admitArrival(arrival: EmergencyArrival) {
+    const location = admissionDraft[arrival.id]
+    if (!location?.room.trim() || !location.bed.trim()) return
+    setUpdating(arrival.id); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}/admission`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room: location.room.trim(), bed: location.bed.trim() }),
+      })
+      await readApiResponse(response)
+      setNotice(`${arrival.patient_name} foi vinculado à internação no quarto ${location.room}, leito ${location.bed}.`)
+      setAdmissionDraft((current) => { const next = { ...current }; delete next[arrival.id]; return next })
+      await loadArrivals(statusFilter, query, offset)
+      const patientResponse = await fetch('/api/v1/nursing/patients')
+      const patientData = await readApiResponse<{ patients?: Patient[] }>(patientResponse)
+      setPatients(patientData.patients ?? [])
+    } catch (admissionError) {
+      setError(admissionError instanceof Error ? admissionError.message : 'Não foi possível concluir a internação.')
+    } finally { setUpdating('') }
+  }
+
+  const selectedPatient = patients.find((patient) => patient.reference === patientReference)
+  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed} ${patient.cpf ?? ''} ${patient.sus_card ?? ''} ${patient.phone ?? ''}`.toLocaleLowerCase('pt-BR').includes(patientSearch.trim().toLocaleLowerCase('pt-BR')))
+  const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
+
+  return <section className="reception-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">Registre internações e chegadas de emergência em fluxos independentes.</p></div><span className="module-icon"><Building2 size={23} /></span></div>
+    <div className="psychology-tabs" role="tablist" aria-label="Fluxos da Recepção">
+      <button className={`psychology-tab ${tab === 'emergency' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
+      <button className={`psychology-tab ${tab === 'admissions' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e internações</button>
+    </div>
+    {tab === 'admissions' ? <PatientRegistryPage receptionMode /> : <>
+      {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+      {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+      <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
+      <form className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
+        <div className="section-heading"><div><p className="eyebrow">CHEGADA À EMERGÊNCIA</p><h2>Registrar atendimento</h2></div></div>
+        <div className="field-grid field-grid-two">
+          {!createCentralPatient && <><label className="field"><span className="field-label">Buscar paciente cadastrado (opcional)</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, quarto, leito ou identificador" /></label>
+          <label className="field"><span className="field-label">Vincular ao cadastro existente</span><select value={patientReference} onChange={(event) => { const reference = event.target.value; const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? ''); if (patient) setPatientSearch(`${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}`) }}><option value="">Sem vínculo cadastral</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}{patient.cpf ? ` · CPF ${patient.cpf}` : ''}</option>)}</select></label>{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}{patientSearch.trim() && !filteredPatients.length && <p className="form-message" role="status">Nenhum cadastro correspondente. Você pode registrar a chegada sem vínculo ou criar um cadastro central.</p>}</>}
+          <label className="field"><span className="field-label">{createCentralPatient ? 'Nome completo para novo cadastro' : 'Nome da pessoa atendida'}</span><input required minLength={2} maxLength={120} value={patientName} onChange={(event) => { setPatientName(event.target.value); if (patientReference) setPatientReference('') }} placeholder="Nome informado na recepção" /></label>
+          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setPatientSearch(''); setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' }) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
+          {createCentralPatient && <>
+            <label className="field"><span className="field-label">CPF (opcional)</span><input inputMode="numeric" maxLength={14} value={emergencyPatient.cpf} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, cpf: event.target.value.replace(/[^\d.-]/g, '').slice(0, 14) })} placeholder="000.000.000-00" /></label>
+            <label className="field"><span className="field-label">Cartão Nacional de Saúde (opcional)</span><input inputMode="numeric" maxLength={20} value={emergencyPatient.sus_card} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
+            <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={emergencyPatient.birth_date} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, birth_date: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Sexo (opcional)</span><select value={emergencyPatient.sex} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sex: event.target.value })}><option value="">Não informado</option><option>Feminino</option><option>Masculino</option><option>Outro</option><option>Não informado</option></select></label>
+            <label className="field"><span className="field-label">Telefone (opcional)</span><input maxLength={40} value={emergencyPatient.phone} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, phone: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Status das alergias</span><select value={emergencyPatient.allergies_status} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies_status: event.target.value as NonNullable<Patient['allergies_status']>, allergies: event.target.value === 'known' ? emergencyPatient.allergies : '' })}><option value="unknown">Não verificado / desconhecido</option><option value="none_known">Sem alergias conhecidas · confirmado</option><option value="known">Alergia conhecida</option></select></label>
+            {emergencyPatient.allergies_status === 'known' && <label className="field"><span className="field-label">Alergias conhecidas</span><textarea required maxLength={1000} value={emergencyPatient.allergies} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies: event.target.value })} /></label>}
+            <PatientAllergyAlert patient={emergencyPatient} />
+          </>}
+          <label className="field"><span className="field-label">Meio de chegada</span><select value={arrivalMode} onChange={(event) => setArrivalMode(event.target.value as EmergencyArrival['arrival_mode'])}><option value="walk_in">Chegada espontânea</option><option value="ambulance">Ambulância</option><option value="other">Outro meio</option></select></label>
+          <label className="field reception-reason-field"><span className="field-label">Motivo informado para a procura</span><textarea required minLength={3} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Registre a informação necessária para identificar a chegada" /></label>
+        </div>
+        <p className="work-order-privacy">A recepção registra a chegada e a situação operacional. Esta tela não atribui prioridade clínica nem substitui o protocolo institucional de classificação de risco.</p>
+        <button className="button button-primary" type="submit" disabled={!canCreate || saving}>{saving ? 'Registrando…' : 'Registrar chegada'} <ArrowRight size={16} /></button>
+      </form>
+      <section className="patient-list-panel reception-queue-panel">
+        <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila de emergência <span className="module-total">{total}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadArrivals(statusFilter, query, offset)} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
+        <div className="service-tabs" role="tablist" aria-label="Filtrar chegadas por situação">
+          {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`psychology-tab ${statusFilter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
+        </div>
+        <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
+        {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}><div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div><ReceptionAllergyAlert status={arrival.allergies_status} /><div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>{canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span>        <select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}{canUpdate && arrival.patient_reference && ['waiting', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}><label className="field"><span className="field-label">Quarto para internação</span><input required maxLength={20} value={admissionDraft[arrival.id]?.room ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: event.target.value, bed: current[arrival.id]?.bed ?? '' } }))} /></label><label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={admissionDraft[arrival.id]?.bed ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: current[arrival.id]?.room ?? '', bed: event.target.value } }))} /></label><button className="button button-secondary" type="submit" disabled={updating === arrival.id}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button></form>}</article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}        <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
+      </section>
+    </>}
+  </section>
+}
+
+
+export default ReceptionPage

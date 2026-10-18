@@ -21,6 +21,14 @@ A prioridade das chegadas à emergência é atribuída manualmente e não implem
 
 As áreas atualmente disponíveis na interface incluem cadastro de pacientes, Enfermagem, Farmácia (cadastro e consulta de estoque), Raio X, Serviço Social, Nutrição, Recepção, Oficina Terapêutica, Manutenção, Higienização, Psicologia/Psiquiatria e Gestão Hospitalar. Os fluxos da aplicação são demonstrativos e não substituem protocolos assistenciais; a disponibilidade da tela não equivale à aprovação institucional. Gestão Hospitalar tem acesso clínico amplo no protótipo; a liberação desse perfil depende de auditoria confiável e validação institucional. A proposta de campos e acesso por área está em [cadastro central e acesso aos dados](patient-access-model.md).
 
+## Validação operacional antes do piloto
+
+A caixa de tarefas reúne filas operacionais disponíveis ao perfil autenticado e exibe a prioridade já registrada pela equipe; não calcula risco clínico nem substitui a abertura do módulo de origem. Pendências de medicação significam apenas uma dispensação sem registro de administração correspondente. Não inferem horário, dose devida ou atraso.
+
+Não habilitar agenda de doses, reconciliação medicamentosa ou alertas de administração até que responsáveis assistenciais e farmacêuticos definam e aprovem formalmente protocolo, fonte da prescrição, horários, exceções, tratamento de recusas/suspensões, autoria, auditoria e responsabilidade pelas decisões. A interface atual não realiza essas funções.
+
+Antes de ampliar o uso, conduzir sessões observadas com profissionais de cada perfil, usando ambiente e dados de teste. Percorrer admissão de paciente, registro de chegada, aferição de sinais vitais, dispensação e registro de administração, transferência e solicitação/execução de manutenção. Para cada fluxo, registrar tempo de conclusão, erros, campos omitidos, duplicidades, correções e pontos de hesitação; incluir uso em celular/tablet, teclado e leitor de tela quando aplicável. Revisar os resultados com as equipes, corrigir os bloqueios e repetir os testes antes de qualquer piloto com dados reais.
+
 ## Referências
 
 - [Lei nº 13.709/2018 (LGPD), texto oficial compilado](https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm): arts. 5º, II; 6º, VII e VIII; 11; 46 a 50.

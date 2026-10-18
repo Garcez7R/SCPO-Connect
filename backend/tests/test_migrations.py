@@ -1,6 +1,7 @@
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from scpo_services.common import (
     clear_engine_cache,
     get_engine,
@@ -38,7 +39,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0025_patient_flow_risk_and_dashboard"
+    assert revision == "0025_patient_flow_risk"
     if service == "nursing":
         assert len(tables) == 11
         patient_columns = {
@@ -84,6 +85,46 @@ def test_each_service_migration_creates_only_its_owned_table(
         assert any(index["name"].endswith("patient_reference") for index in inspect(get_engine(service)).get_indexes(table))
     if service == "maintenance":
         assert "patient_reference" in {column["name"] for column in inspect(get_engine(service)).get_columns(table)}
+    clear_engine_cache()
+
+
+def test_revision_identifiers_fit_alembic_version_column() -> None:
+    revisions = ScriptDirectory.from_config(Config("alembic.ini")).walk_revisions()
+
+    assert all(len(revision.revision) <= 32 for revision in revisions)
+
+
+@pytest.mark.parametrize(
+    ("current_revision", "legacy_revision"),
+    [
+        ("0022_stock_emergency", "0022_stock_movements_emergency_arrivals"),
+        ("0024_patient_med_results", "0024_patient_linked_medications_and_results"),
+        ("0025_patient_flow_risk", "0025_patient_flow_risk_and_dashboard"),
+    ],
+)
+def test_legacy_long_revision_is_normalized_before_upgrade(
+    current_revision: str,
+    legacy_revision: str,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = "nursing"
+    monkeypatch.setenv("SCPO_SERVICE", service)
+    monkeypatch.setenv(
+        "SCPO_NURSING_DATABASE_URL", f"sqlite:///{tmp_path / 'nursing.sqlite3'}"
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+
+    command.upgrade(config, current_revision)
+    with get_engine(service).begin() as connection:
+        connection.execute(
+            text("UPDATE alembic_version SET version_num = :legacy"),
+            {"legacy": legacy_revision},
+        )
+
+    command.upgrade(config, "head")
+    verify_database_migrated(service)
     clear_engine_cache()
 
 
