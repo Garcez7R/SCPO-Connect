@@ -332,8 +332,8 @@ def list_my_orders(
 def maintenance_queue(
     principal: Annotated[DemoPrincipal, AUTHENTICATED],
     db: Annotated[Session, Depends(get_maintenance_db)],
-    from_date: date | None = Query(default=None),
-    to_date: date | None = Query(default=None),
+    from_date: Annotated[date | None, Query()] = None,
+    to_date: Annotated[date | None, Query()] = None,
     service_type: str | None = Query(default=None, max_length=80),
     department: str | None = Query(default=None, max_length=100),
     status: Literal["open", "in_progress", "completed", "cancelled"] | None = None,

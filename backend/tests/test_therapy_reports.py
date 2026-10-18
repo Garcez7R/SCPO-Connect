@@ -3,10 +3,9 @@ from collections.abc import Generator
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.orm import Session
-
 from scpo_services import therapy
 from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
+from sqlalchemy.orm import Session
 
 
 @pytest.fixture

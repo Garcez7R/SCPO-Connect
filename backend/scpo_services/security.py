@@ -11,7 +11,6 @@ from urllib.parse import quote
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-
 SESSION_COOKIE = "scpo_session"
 # Long enough to cover an uninterrupted hospital shift while still expiring
 # abandoned sessions at the end of the day. Active sessions are renewed by
