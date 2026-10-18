@@ -129,19 +129,21 @@ def test_management_cannot_recover_credentials_or_change_superadmin(
 
 def test_audit_accepts_minimum_clinical_access_event_without_payload() -> None:
     event = audit.AuditEventPayload(
+        source_event_id="source-event",
         actor_name="Enfermeira", actor_role="nursing", action="vitals_recorded",
         module="nursing", target_id="patient-uuid",
     )
     assert event.action == "vitals_recorded"
     with pytest.raises(ValidationError):
         audit.AuditEventPayload(
+            source_event_id="invalid-event",
             actor_name="Enfermeira", actor_role="nursing", action="vitals_recorded",
             module="nursing", target_id="patient-uuid", clinical_payload="not allowed",
         )
 
 
 def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
-    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(pharmacy, "verify_patient_reference", lambda reference: {"reference": reference, "name": "Paciente"})
     pharmacist = DemoPrincipal("pharm-1", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
     item = pharmacy.create_item(
@@ -236,7 +238,7 @@ def test_pharmacy_stock_alerts_include_reorder_and_expiry_actions(
     monkeypatch: pytest.MonkeyPatch,
     domain_database: dict[str, Session],
 ) -> None:
-    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
     pharmacist = DemoPrincipal("pharm-2", "pharm", "Farmacêutico", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
     item = pharmacy.create_item(
         pharmacy.InventoryPayload(
@@ -260,7 +262,7 @@ def test_pharmacy_stock_alerts_include_reorder_and_expiry_actions(
 
 
 def test_nursing_records_patient_linked_dispensation_once(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         nursing,
         "resolve_medication_dispensation",
@@ -301,7 +303,7 @@ def test_reception_records_emergency_arrival_without_inpatient_bed(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:
     events = []
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: events.append(args))
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: events.append(args))
     receptionist = DemoPrincipal(
         "reception-1",
         "reception",
@@ -378,7 +380,7 @@ def test_reception_records_emergency_arrival_without_inpatient_bed(
 def test_nutrition_history_search_and_pagination_run_in_the_api(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     db = domain_database["nursing"]
     db.add(
         nursing.Patient(
@@ -428,8 +430,8 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     reference = "123e4567-e89b-12d3-a456-426614174000"
     monkeypatch.setattr(social, "verify_patient_reference", lambda value: {"reference": value})
     monkeypatch.setattr(xray, "verify_patient_reference", lambda value: {"reference": value})
-    monkeypatch.setattr(social, "emit_audit_event", lambda *args: None)
-    monkeypatch.setattr(xray, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(social, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(xray, "emit_audit_event", lambda *args, **kwargs: None)
     social_user = DemoPrincipal("social-1", "social", "Assistente social", "social", ["social"], {"social": ["consultar", "criar"]})
     xray_user = DemoPrincipal("xray-1", "xray", "Técnica de radiologia", "xray", ["xray"], {"xray": ["consultar", "criar", "alterar"]})
     referral = social.create_referral(social.ReferralPayload(patient_reference=reference, referral_type="Acompanhamento"), social_user, domain_database["social"])
@@ -483,7 +485,7 @@ def test_psychology_queue_is_persisted_separately_from_social_referrals(
     reference = "123e4567-e89b-12d3-a456-426614174000"
     audit_events = []
     monkeypatch.setattr(social, "verify_patient_reference", lambda value: {"reference": value})
-    monkeypatch.setattr(social, "emit_audit_event", lambda *args: audit_events.append(args))
+    monkeypatch.setattr(social, "emit_audit_event", lambda *args, **kwargs: audit_events.append(args))
     psychologist = DemoPrincipal("psych-1", "psych", "Psicóloga", "psychology", ["psychology"], {"psychology": ["consultar", "criar"]})
     social_worker = DemoPrincipal("social-1", "social", "Assistente social", "social", ["social"], {"social": ["consultar", "criar"]})
     social.create_referral(
@@ -584,7 +586,7 @@ def test_psychology_routes_require_module_permission(monkeypatch: pytest.MonkeyP
 def test_hygiene_requests_have_a_dedicated_assignable_queue(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:
-    monkeypatch.setattr(maintenance, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(maintenance, "emit_audit_event", lambda *args, **kwargs: None)
     hygiene_worker = DemoPrincipal(
         "hygiene-1",
         "hygiene",

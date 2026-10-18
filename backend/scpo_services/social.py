@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from .common import (
     Base,
     DemoPrincipal,
+    audit_outbox_lifespan,
     database_session,
     emit_audit_event,
     require_demo_role,
@@ -62,7 +63,8 @@ def get_social_db():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     verify_database_migrated("social")
-    yield
+    async with audit_outbox_lifespan("social"):
+        yield
 
 
 app = FastAPI(title="SCPO Connect · Serviço Social", version="1.0.0", lifespan=lifespan)
@@ -149,9 +151,11 @@ def create_referral(
         **payload.model_dump(), status="open", created_at=datetime.now(UTC)
     )
     db.add(referral)
+    emit_audit_event(
+        principal, "social", "social_referral_created", referral.patient_reference, db=db
+    )
     db.commit()
     db.refresh(referral)
-    emit_audit_event(principal, "social", "social_referral_created", referral.patient_reference)
     return serialize_referral(referral)
 
 
@@ -168,9 +172,11 @@ def update_referral(
     if referral.status in {"completed", "cancelled"}:
         raise HTTPException(status_code=409, detail="O encaminhamento já foi encerrado")
     referral.status = payload.status
+    emit_audit_event(
+        principal, "social", "social_referral_status_updated", str(referral.id), db=db
+    )
     db.commit()
     db.refresh(referral)
-    emit_audit_event(principal, "social", "social_referral_status_updated", str(referral.id))
     return serialize_referral(referral)
 
 
@@ -201,9 +207,11 @@ def update_psychology_referral(
         raise HTTPException(status_code=404, detail="Encaminhamento não encontrado")
     for field, value in changes.items():
         setattr(referral, field, value)
+    emit_audit_event(
+        principal, "psychology", "psychology_referral_updated", str(referral.id), db=db
+    )
     db.commit()
     db.refresh(referral)
-    emit_audit_event(principal, "psychology", "psychology_referral_updated", str(referral.id))
     return serialize_psychology_referral(referral)
 
 
@@ -218,9 +226,11 @@ def create_psychology_referral(
         **payload.model_dump(), status="open", created_at=datetime.now(UTC)
     )
     db.add(referral)
+    emit_audit_event(
+        principal, "psychology", "psychology_referral_created", str(referral.id), db=db
+    )
     db.commit()
     db.refresh(referral)
-    emit_audit_event(principal, "psychology", "psychology_referral_created", str(referral.id))
     return serialize_psychology_referral(referral)
 
 
@@ -258,9 +268,11 @@ def create_psychology_encounter(
         created_at=datetime.now(UTC),
     )
     db.add(encounter)
+    emit_audit_event(
+        principal, "psychology", "psychology_encounter_created", str(encounter.id), db=db
+    )
     db.commit()
     db.refresh(encounter)
-    emit_audit_event(principal, "psychology", "psychology_encounter_created", str(encounter.id))
     return serialize_psychology_encounter(encounter)
 
 

@@ -1,10 +1,10 @@
 # Backup e restauração
 
-O formato de transporte `.rgs` reúne os sete bancos da aplicação, incluindo contas locais, permissões e dados dos módulos, em um único arquivo cifrado com GPG. O pacote só pode ser aberto por quem possui a chave privada correspondente. O conteúdo inclui dados pessoais e clínicos: guarde o arquivo e a chave em locais institucionais controlados.
+O formato de transporte `.rgs` reúne os sete bancos da aplicação, incluindo contas locais, permissões e dados dos módulos, em um único arquivo cifrado. Os pacotes criados pelo script usam GPG; a exportação pela interface do superadministrador usa AES-GCM com senha. A restauração isolada aceita ambos os formatos. O conteúdo inclui dados pessoais e clínicos: guarde o arquivo e a chave/senha em locais institucionais controlados.
 
 ## Pacote completo `.rgs`
 
-Instale/configure GPG e importe a chave pública autorizada no host. O destino deve ser um volume seguro fora do repositório:
+Instale/configure GPG e importe a chave pública autorizada no host para gerar um pacote pelo script. O destino deve ser um volume seguro fora do repositório:
 
 ```sh
 cd "/home/rgarcez/SCPO Connect"
@@ -23,7 +23,7 @@ export SCPO_RGS_RESTORE_PREFIX=scpo_restore_validacao
 bash scripts/restore-rgs-isolated.sh
 ```
 
-O script recusa sobrescrever bancos existentes e cria cópias `scpo_restore_*`. A instância em execução continua usando os bancos originais; para validar uma importação, aponte uma instância isolada para as cópias restauradas. Preserve a chave privada GPG em custódia institucional separada do arquivo `.rgs`.
+O script recusa sobrescrever bancos existentes e cria cópias `scpo_restore_*`. A instância em execução continua usando os bancos originais; para validar uma importação, aponte uma instância isolada para as cópias restauradas. Para pacotes GPG, preserve a chave privada em custódia institucional separada do arquivo `.rgs`. Para pacotes exportados pela interface, o script solicitará a senha; não a coloque na linha de comando.
 
 ## Backup individual demonstrativo
 

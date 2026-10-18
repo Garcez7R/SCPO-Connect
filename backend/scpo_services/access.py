@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String, select
@@ -17,6 +16,7 @@ from .common import (
     Base,
     DemoPrincipal,
     database_session,
+    emit_audit_event,
     require_service_token,
     verify_database_migrated,
 )
@@ -71,7 +71,10 @@ def get_access_db():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     verify_database_migrated("access")
-    yield
+    from .common import audit_outbox_lifespan
+
+    async with audit_outbox_lifespan("access"):
+        yield
 
 
 app = FastAPI(
@@ -289,27 +292,13 @@ def _user_response(user: AppUser) -> dict[str, object]:
     }
 
 
-async def record_audit_event(principal: DemoPrincipal, target_id: str, action: str) -> None:
-    audit_url = os.getenv("SCPO_AUDIT_API_URL")
-    service_token = os.getenv("SCPO_SERVICE_TOKEN")
-    if not audit_url or not service_token:
-        raise HTTPException(status_code=503, detail="Serviço de auditoria não configurado")
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            response = await client.post(
-                f"{audit_url.rstrip('/')}/internal/v1/events",
-                headers={"X-Service-Token": service_token},
-                json={
-                    "actor_name": principal.actor_name,
-                    "actor_role": principal.role,
-                    "action": action,
-                    "module": "management",
-                    "target_id": target_id,
-                },
-            )
-            response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail="Não foi possível registrar a auditoria") from exc
+async def record_audit_event(
+    principal: DemoPrincipal,
+    target_id: str,
+    action: str,
+    db: Session,
+) -> None:
+    emit_audit_event(principal, "management", action, target_id, db=db, service="access")
 
 
 @app.get("/health")
@@ -536,7 +525,7 @@ async def reset_all_user_credentials(
     users = db.scalars(
         select(AppUser).where(AppUser.is_superuser.is_(False)).order_by(AppUser.username)
     ).all()
-    await record_audit_event(principal, "non_superuser_accounts", "all_user_credentials_reset")
+    await record_audit_event(principal, "non_superuser_accounts", "all_user_credentials_reset", db)
     reset_accounts = []
     for user in users:
         reset_accounts.append(
@@ -559,7 +548,7 @@ async def reset_one_user_credentials(
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     _prevent_superuser_changes(user)
-    await record_audit_event(principal, user.id, "user_credentials_reset")
+    await record_audit_event(principal, user.id, "user_credentials_reset", db)
     temporary_password = _reset_credentials(user)
     db.commit()
     response.headers["Cache-Control"] = "no-store"
@@ -583,7 +572,7 @@ async def create_user(
     permissions = _validate_permissions(modules, payload.permissions)
     temporary_password = secrets.token_urlsafe(18)
     user = _new_user(username, payload.name, modules, permissions, temporary_password)
-    await record_audit_event(principal, user.id, "user_created")
+    await record_audit_event(principal, user.id, "user_created", db)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -619,7 +608,7 @@ async def update_user(
     if submitted_permissions is None:
         submitted_permissions = {module: user.permissions.get(module, ["consultar", "criar", "alterar"]) for module in modules}
     permissions = _validate_permissions(modules, submitted_permissions)
-    await record_audit_event(principal, user.id, "user_access_changed")
+    await record_audit_event(principal, user.id, "user_access_changed", db)
     if "name" in changes:
         user.name = changes["name"]
     user.modules = modules

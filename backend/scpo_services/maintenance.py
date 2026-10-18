@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from .common import (
     Base,
     DemoPrincipal,
+    audit_outbox_lifespan,
     authenticated_principal,
     database_session,
     emit_audit_event,
@@ -82,7 +83,8 @@ def get_maintenance_db():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     verify_database_migrated("maintenance")
-    yield
+    async with audit_outbox_lifespan("maintenance"):
+        yield
 
 
 app = FastAPI(title="SCPO Connect · Ordens de Serviço", version="1.0.0", lifespan=lifespan)
@@ -188,9 +190,9 @@ def create_hygiene_request(
         updated_at=now,
     )
     db.add(request)
+    emit_audit_event(principal, "hygiene", "hygiene_request_created", request.id, db=db)
     db.commit()
     db.refresh(request)
-    emit_audit_event(principal, "hygiene", "hygiene_request_created", request.id)
     return _serialize_hygiene_request(request)
 
 
@@ -213,9 +215,9 @@ def update_hygiene_request(
         setattr(request, field, value)
     request.updated_by = principal.actor_name
     request.updated_at = datetime.now(UTC)
+    emit_audit_event(principal, "hygiene", "hygiene_request_updated", request.id, db=db)
     db.commit()
     db.refresh(request)
-    emit_audit_event(principal, "hygiene", "hygiene_request_updated", request.id)
     return _serialize_hygiene_request(request)
 
 
@@ -303,9 +305,12 @@ def create_order(
         note="",
         happened_at=now,
     ))
+    emit_audit_event(
+        principal, "maintenance", "work_order_created",
+        order.patient_reference or order.id, db=db,
+    )
     db.commit()
     db.refresh(order)
-    emit_audit_event(principal, "maintenance", "work_order_created", order.patient_reference or order.id)
     return _serialize_order(order)
 
 
@@ -412,7 +417,10 @@ def update_order(
     order.status = payload.status
     order.updated_by = principal.actor_name
     order.updated_at = now
+    emit_audit_event(
+        principal, "maintenance", "work_order_status_changed",
+        order.patient_reference or order.id, db=db,
+    )
     db.commit()
     db.refresh(order)
-    emit_audit_event(principal, "maintenance", "work_order_status_changed", order.patient_reference or order.id)
     return _serialize_order(order)

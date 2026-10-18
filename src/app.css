@@ -524,6 +524,12 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .management-page, .system-admin-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
 .management-shortcuts > div:last-child { display: flex; flex-wrap: wrap; gap: 9px; }
 .admin-tabs { display: flex; flex-wrap: wrap; gap: 9px; }
+.nursing-tabs { margin-bottom: 0; }
+.nursing-tabs .psychology-tab { flex: 1 1 150px; justify-content: center; }
+.reception-admission-heading { padding: 2px 0; }
+.reception-admission-heading .button { flex: 0 0 auto; min-height: 44px; }
+.reception-admission-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.reception-admissions-page { width: 100%; }
 .system-recovery-summary { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
 .system-recovery-summary > strong { color: var(--ink); font-size: 24px; }
 .system-recovery-summary > span { color: var(--muted); font-size: 12px; }

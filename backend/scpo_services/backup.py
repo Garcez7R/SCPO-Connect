@@ -18,9 +18,9 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .common import DemoPrincipal, authenticated_principal, emit_audit_event
+from .rgs_format import MAGIC
 
 DATABASES = ("access", "audit", "nursing", "pharmacy", "social", "xray", "maintenance")
-MAGIC = b"SCPO-RGS\x01"
 app = FastAPI(title="SCPO Connect · Backup", version="1.0.0")
 AUTHENTICATED = Depends(authenticated_principal)
 
@@ -82,6 +82,12 @@ def export_backup(payload: ExportRequest, principal: Annotated[DemoPrincipal, AU
         raise HTTPException(status_code=503, detail="Falha ao gerar o backup de um dos bancos") from exc
     except subprocess.TimeoutExpired as exc:
         raise HTTPException(status_code=504, detail="Tempo excedido ao gerar o backup") from exc
-    emit_audit_event(principal, "management", "system_backup_exported", "all_databases")
+    emit_audit_event(
+        principal,
+        "management",
+        "system_backup_exported",
+        "all_databases",
+        service="access",
+    )
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return Response(content=content, media_type="application/vnd.scpo.rgs", headers={"Content-Disposition": f'attachment; filename="scpo-connect-{stamp}.rgs"', "Cache-Control": "no-store"})

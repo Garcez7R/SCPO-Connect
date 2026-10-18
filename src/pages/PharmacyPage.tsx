@@ -24,6 +24,21 @@ function PatientAllergyAlert({ patient }: { patient?: Pick<Patient, 'allergies' 
   return <div className="clinical-alert clinical-alert-unknown" role="status"><strong>Alergias não verificadas</strong></div>
 }
 
+function playBarcodeTone(audioContext: AudioContext | null) {
+  if (!audioContext) return
+  void audioContext.resume()
+  const oscillator = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  oscillator.frequency.value = 880
+  gain.gain.setValueAtTime(0.0001, audioContext.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.16, audioContext.currentTime + 0.01)
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.12)
+  oscillator.connect(gain)
+  gain.connect(audioContext.destination)
+  oscillator.start()
+  oscillator.stop(audioContext.currentTime + 0.13)
+}
+
 function PharmacyPage({ user }: { user: AuthUser }) {
   const [items, setItems] = useState<PharmacyItem[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
@@ -47,48 +62,80 @@ function PharmacyPage({ user }: { user: AuthUser }) {
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false)
   const [cameraScannerMessage, setCameraScannerMessage] = useState('')
   const barcodeVideoRef = useRef<HTMLVideoElement>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   useEffect(() => {
     if (!cameraScannerOpen) return
     let cancelled = false
     let stream: MediaStream | undefined
+    let controls: { stop: () => void } | undefined
     let timer = 0
     let scanning = false
+    let detectedCode = ''
     const Detector = (window as Window & { BarcodeDetector?: { new (options?: { formats: string[] }): { detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]> }; getSupportedFormats?: () => Promise<string[]> } }).BarcodeDetector
-    if (!Detector) {
-      return () => { cancelled = true }
-    }
     if (!navigator.mediaDevices?.getUserMedia) {
       return () => { cancelled = true }
     }
     const videoElement = barcodeVideoRef.current
+    if (!videoElement) return
+
+    function acceptBarcode(code: string) {
+      if (cancelled || code === detectedCode) return
+      detectedCode = code
+      setForm((current) => ({ ...current, barcode: code.slice(0, 40) }))
+      setCameraScannerMessage(`Código lido: ${code}`)
+      playBarcodeTone(audioContextRef.current)
+      setCameraScannerOpen(false)
+    }
+
+    if (!Detector) {
+      let activeControls: { stop: () => void } | undefined
+      void import('@zxing/browser').then(({ BrowserMultiFormatReader }) => {
+        if (cancelled) return
+        const reader = new BrowserMultiFormatReader()
+        return reader.decodeFromVideoDevice(undefined, videoElement, (result) => {
+          const code = result?.getText().trim()
+          if (code) acceptBarcode(code)
+        })
+      }).then((scannerControls) => {
+        if (!scannerControls) return
+        activeControls = scannerControls
+        controls = scannerControls
+        if (cancelled) scannerControls.stop()
+      }).catch(() => {
+        if (!cancelled) setCameraScannerMessage('Não foi possível iniciar a câmera. Verifique a permissão ou use o leitor USB.')
+      })
+      return () => {
+        cancelled = true
+        activeControls?.stop()
+        controls?.stop()
+        videoElement.srcObject = null
+      }
+    }
+
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(async (mediaStream) => {
       stream = mediaStream
       if (cancelled) { mediaStream.getTracks().forEach((track) => track.stop()); return }
-      const video = videoElement
-      if (!video) return
-      video.srcObject = mediaStream
-      await video.play()
+      videoElement.srcObject = mediaStream
+      await videoElement.play()
       const requestedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'data_matrix']
       const supportedFormats = Detector.getSupportedFormats ? await Detector.getSupportedFormats() : requestedFormats
       const formats = requestedFormats.filter((format) => supportedFormats.includes(format))
       if (!formats.length) { setCameraScannerMessage('Este aparelho não oferece formatos de código compatíveis pela câmera. Use o leitor USB ou digite o código.'); return }
       const detector = new Detector({ formats })
       timer = window.setInterval(async () => {
-        if (scanning || cancelled || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+        if (scanning || cancelled || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
         scanning = true
         try {
-          const results = await detector.detect(video)
+          const results = await detector.detect(videoElement)
           const code = results[0]?.rawValue?.trim()
-          if (code) {
-            setForm((current) => ({ ...current, barcode: code.slice(0, 40) }))
-            setCameraScannerMessage(`Código lido: ${code}`)
-            setCameraScannerOpen(false)
-          }
+          if (code) acceptBarcode(code)
         } catch { setCameraScannerMessage('Não foi possível ler esse código. Ajuste a distância ou digite o número.') }
         finally { scanning = false }
       }, 300)
-    }).catch(() => setCameraScannerMessage('Não foi possível acessar a câmera. Verifique a permissão ou use o leitor USB.'))
+    }).catch(() => {
+      if (!cancelled) setCameraScannerMessage('Não foi possível acessar a câmera. Verifique a permissão ou use o leitor USB.')
+    })
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -96,11 +143,20 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       if (videoElement) videoElement.srcObject = null
     }
   }, [cameraScannerOpen])
-  const barcodeCameraUnavailable = !(window as Window & { BarcodeDetector?: unknown }).BarcodeDetector
-    ? 'A leitura pela câmera não está disponível neste navegador. Use o leitor USB ou digite o código.'
-    : !navigator.mediaDevices?.getUserMedia
-      ? 'A câmera exige HTTPS e permissão do navegador. Use o leitor USB ou digite o código.'
-      : ''
+
+  useEffect(() => () => {
+    void audioContextRef.current?.close()
+  }, [])
+
+  const barcodeCameraUnavailable = !navigator.mediaDevices?.getUserMedia
+    ? 'A câmera requer HTTPS e permissão do navegador. Use o leitor USB ou digite o código.'
+    : ''
+
+  function prepareBarcodeAudio() {
+    if (typeof window.AudioContext === 'undefined') return
+    audioContextRef.current ??= new window.AudioContext()
+    void audioContextRef.current.resume()
+  }
 
   const loadItems = useCallback(async (offset = movementOffset) => {
     try {
@@ -282,7 +338,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       <p className="field-hint">O registro salvo preserva a referência da prescrição, o lote e quem realizou a dispensação.</p>
       {!!dispensations.length && <div className="pharmacy-dispensation-list"><h3>Dispensações aguardando registro da Enfermagem</h3>{dispensations.map((item) => <article key={item.id}><strong>{patients.find((patient) => patient.reference === item.patient_reference)?.name ?? 'Paciente vinculado'} · {item.medication_name}</strong><span>{item.quantity} {item.unit} · prescrição {item.prescription_reference} · {dateTime(item.created_at)}</span></article>)}</div>}
     </section>
-    {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2></div></div>    <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Código de barras / GTIN</span><input inputMode="numeric" autoComplete="off" maxLength={40} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value.slice(0, 40) })} onKeyDown={(event) => { if (event.key === 'Enter') event.preventDefault() }} placeholder="Leia com o leitor USB ou digite" /><span className="field-hint">O leitor USB funciona como teclado: clique aqui e leia o código.</span></label><div className="field pharmacy-scan-field"><span className="field-label">Leitura pela câmera</span><button className="button button-secondary" type="button" onClick={() => { setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>{cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span></>}</div><label className="field"><span className="field-label">Nome do produto</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item ou medicamento" /></label><label className="field"><span className="field-label">Categoria</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Medicamento</option><option>Material hospitalar</option><option>Material de consumo</option><option>Higiene e limpeza</option><option>Outro</option></select></label><label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label><label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label><label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label><label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label><label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label><label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label><label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label><label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label><label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label></div><div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div></form>}
+    {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2></div></div>    <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Código de barras / GTIN</span><input inputMode="numeric" autoComplete="off" maxLength={40} value={form.barcode} onChange={(event) => setForm({ ...form, barcode: event.target.value.slice(0, 40) })} onFocus={prepareBarcodeAudio} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); if (form.barcode.trim()) { prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); setNotice(`Código recebido: ${form.barcode.trim()}`) } } }} placeholder="Leia com o leitor USB ou digite" /><span className="field-hint">Leitores USB enviam o código como teclado; ao concluir, o sistema confirma com um som. A câmera também funciona em celulares com HTTPS.</span></label>    <div className="field pharmacy-scan-field"><span className="field-label">Leitura pela câmera</span><button className="button button-secondary" type="button" onClick={() => { prepareBarcodeAudio(); setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>{cameraScannerOpen && <><video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Câmera para leitura do código de barras" /><span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span></>}</div><label className="field"><span className="field-label">Nome do produto</span><input required minLength={1} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} placeholder="Nome do item ou medicamento" /></label><label className="field"><span className="field-label">Categoria</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Medicamento</option><option>Material hospitalar</option><option>Material de consumo</option><option>Higiene e limpeza</option><option>Outro</option></select></label><label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label><label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label><label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label><label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label><label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label><label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label><label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label><label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label><label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label></div><div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div></form>}
     <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
       {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => { const expired = item.expiry_date < today; const expiring = !expired && item.expiry_date <= soon; const low = Number(item.minimum_balance.replace(',', '.')) > 0 && Number(item.balance.replace(',', '.')) <= Number(item.minimum_balance.replace(',', '.')); return <article className="pharmacy-item-card" key={item.id}><div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired ? <AlertTriangle size={14} /> : expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Abaixo do mínimo' : 'Dentro da validade'}</span></div><h3>{item.item_name}</h3><p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p><div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low ? ` · mínimo ${item.minimum_balance}` : ''}</span></div><div className="pharmacy-item-meta"><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div><button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>{movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada</option><option value="issue">Saída / dispensação</option><option value="adjustment">Ajuste de inventário</option></select></label><label className="field"><span className="field-label">Quantidade {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: dispensação, recebimento da nota fiscal" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : 'Registrar movimentação'}</button></form>}</article> })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
       <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade, saldo após a operação, responsável e motivo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item?.unit ?? ''}</span><small>Saldo: {movement.balance_after} {item?.unit ?? ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 25)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>

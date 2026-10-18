@@ -10,7 +10,6 @@ import {
   Building2,
   CalendarDays,
   Camera,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -75,14 +74,19 @@ function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
     ? `Quarto ${patient.room} · leito ${patient.bed}`
     : 'Sem quarto/leito atribuído'
 }
+function dateTime(value: string) {
+  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+}
+function getGreeting() {
+  const hour = Number(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
+  return hour >= 5 && hour < 12 ? 'Bom dia' : hour >= 12 && hour < 18 ? 'Boa tarde' : 'Boa noite'
+}
 type VitalRecordData = { id: number; patient_reference: string; actor_name: string; values: Record<string, string>; glucose_unit: string; recorded_at: string }
 type PatientObservation = { id: number; attention_level: 'green' | 'yellow' | 'red'; observation: string; treatment_status: 'in_progress' | 'completed' | 'discharged'; actor_name: string; created_at: string }
-type WorkOrderStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
-type WorkOrderPriority = 'normal' | 'high' | 'urgent'
-type WorkOrder = { id: string; title: string; description: string; service_type: string; department: string; location: string; patient_reference?: string | null; priority: WorkOrderPriority; status: WorkOrderStatus; requester_id: string; requester_name: string; updated_by: string; created_at: string; updated_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type MedicationAdministration = { id: number; dispensation_id: string; patient_reference: string; medication_name: string; dose: string; unit: string; status: 'administered' | 'refused' | 'held'; reason: string; actor_name: string; administered_at: string }
-type PatientFlowEvent = { id: number; patient_reference: string; event_type: 'transfer' | 'discharge'; previous_room: string; previous_bed: string; next_room: string; next_bed: string; reason: string; summary: string; actor_name: string; occurred_at: string }
+type PatientFlowEvent = { id: number; patient_reference: string; event_type: 'admission' | 'transfer' | 'discharge'; previous_room: string; previous_bed: string; next_room: string; next_bed: string; reason: string; summary: string; actor_name: string; occurred_at: string }
+type HospitalBed = { id: string; unit_id: string; unit_name: string; room: string; label: string; status: 'available' | 'cleaning' | 'maintenance' | 'blocked'; isolation_capable: boolean; notes: string; active: boolean; occupied: boolean; patient_reference: string | null }
 type ClinicalRisk = { id: number | string; patient_reference: string; patient_name: string; room: string; bed: string; risk_type: 'allergy' | 'contraindication'; description: string; severity: 'unspecified' | 'low' | 'moderate' | 'high'; status: 'active' | 'resolved'; reason: string; actor_name: string; created_at: string; resolved_at?: string | null; resolved_by?: string; resolution_reason?: string }
 type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
 type EmergencyClinicalPriority = 'unassigned' | 'routine' | 'priority' | 'urgent'
@@ -94,6 +98,20 @@ type NutritionPlan = { allergies: string; assessment_date: string | null; diet_t
 
 const ReceptionPage = lazy(() => import('./pages/ReceptionPage'))
 const PharmacyPage = lazy(() => import('./pages/PharmacyPage'))
+const XrayModulePage = lazy(() => import('./pages/XrayPage'))
+const PatientOperationsPage = lazy(() =>
+  import('./pages/PatientOperationsPages').then((module) => ({
+    default: module.PatientOperationsPage,
+  })),
+)
+const PsychologyPage = lazy(() =>
+  import('./pages/PatientOperationsPages').then((module) => ({
+    default: module.PsychologyPage,
+  })),
+)
+const WorkOrdersPage = lazy(() => import('./pages/OperationsPage').then((module) => ({ default: module.WorkOrdersPage })))
+const MaintenanceQueuePage = lazy(() => import('./pages/OperationsPage').then((module) => ({ default: module.MaintenanceQueuePage })))
+const HygienePage = lazy(() => import('./pages/OperationsPage').then((module) => ({ default: module.HygienePage })))
 const OperationalTaskCenter = lazy(() => import('./components/OperationalTaskCenter'))
 
 type Profile = {
@@ -389,10 +407,10 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
           {activeModule === 'pharmacy' && <Suspense fallback={<div className="history-empty" role="status">Carregando Farmácia…</div>}><PharmacyPage user={user} /></Suspense>}
-          {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
-          {activeModule === 'maintenance' && <MaintenanceQueuePage />}
-          {activeModule === 'hygiene' && <HygienePage user={user} />}
-          {activeModule === 'psychology' && <PsychologyPage />}
+          {activeModule === 'work-orders' && <Suspense fallback={<div className="history-empty" role="status">Carregando ordens de serviço…</div>}><WorkOrdersPage user={user} /></Suspense>}
+          {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage /></Suspense>}
+          {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
+          {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage /></Suspense>}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
           {activeModule === 'reception' && <Suspense fallback={<div className="history-empty" role="status">Carregando Recepção…</div>}><ReceptionPage user={user} PatientRegistryPage={PatientRegistryPage} /></Suspense>}
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
@@ -402,8 +420,8 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage />}
-          {activeModule === 'xray' && <XrayPage user={user} />}
-          {activeModule === 'social' && <PatientOperationsPage moduleId="social" user={user} />}
+          {activeModule === 'xray' && <Suspense fallback={<div className="history-empty" role="status">Carregando Raio X…</div>}><XrayModulePage user={user} /></Suspense>}
+          {activeModule === 'social' && <Suspense fallback={<div className="history-empty" role="status">Carregando Serviço Social…</div>}><PatientOperationsPage moduleId="social" user={user} /></Suspense>}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
@@ -765,9 +783,10 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   }
 
   return <section className="patient-registry-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">{receptionMode ? 'MÓDULO · RECEPÇÃO' : 'CADASTRO COMPARTILHADO'}</p><h1>{receptionMode ? 'Recepção' : 'Pacientes'}</h1><p className="welcome-copy">{receptionMode ? 'Cadastre admissões, confirme quarto e leito e mantenha os dados de identificação atualizados.' : 'Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.'}</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : receptionMode ? 'Nova admissão' : 'Cadastrar paciente'}</button></div>
+    {receptionMode ? <div className="section-heading reception-admission-heading"><div><p className="eyebrow">INTERNAÇÕES</p><h2>Admissões e internações</h2><p className="welcome-copy">Confirme a identificação do paciente e registre sua acomodação hospitalar.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Nova admissão'}</button></div> : <div className="page-title-row"><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar paciente'}</button></div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {showForm && <form className="patient-registry-form" onSubmit={(event) => void submit(event)}>
+    {receptionMode && <div className="hygiene-summary reception-admission-summary" aria-label="Resumo de internações"><article><strong>{patients.filter((patient) => patient.active !== false && Boolean(patient.room && patient.bed)).length}</strong><span>Pacientes acomodados</span></article><article><strong>{patients.filter((patient) => patient.active !== false && !(patient.room && patient.bed)).length}</strong><span>Sem acomodação</span></article><article><strong>{patients.filter((patient) => patient.active === false).length}</strong><span>Cadastros inativos</span></article></div>}
+    {showForm && <form className={`patient-registry-form${receptionMode ? ' hygiene-panel' : ''}`} onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : receptionMode ? 'Identificação e internação' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
       <div className="patient-form-grid">
         <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
@@ -919,450 +938,6 @@ function TherapyPage({ profile }: { profile: Profile }) {
     <section className="therapy-report-panel"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO</p><h2>Relatório de atividades · {monthLabel}</h2><p className="welcome-copy">{profile.modules.includes('therapy') ? 'Registre os resultados realizados e apresente o relatório à Gestão Hospitalar.' : 'Consulte os resultados registrados pela Oficina Terapêutica e imprima o relatório mensal.'}</p></div><button className="button button-secondary therapy-report-print-button" type="button" onClick={printActivityReport} disabled={!activities.length}><ClipboardList size={16} /> Imprimir relatório</button></div>{loading ? <div className="history-empty">Carregando relatórios…</div> : visibleActivities.length ? <div className="therapy-report-list">{visibleActivities.map((activity) => { const patient = patients.find((item) => item.reference === activity.patient_reference); const reportStatus = reportStatuses[activity.id] ?? activity.status; return <article className="therapy-report-card" key={`report-${activity.id}`}><div className="therapy-report-heading"><div><p className="eyebrow">{dateTime(activity.starts_at)} · {activity.activity_type}</p><h3>{activity.title}</h3><p>{activity.location}{patient ? ` · ${patient.name}${patient.room && patient.bed ? ` · Quarto ${patient.room}, leito ${patient.bed}` : ''}` : ' · Grupo'}</p>{patient && <PatientAllergyAlert patient={patient} />}</div><span className={`therapy-report-status therapy-report-status-${reportStatus}`}>{therapyActivityStatusLabels[reportStatus]}</span></div>{profile.modules.includes('therapy') ? <><label className="field"><span className="field-label">Relato da atividade</span><textarea rows={4} maxLength={4000} value={reportDrafts[activity.id] ?? ''} onChange={(event) => setReportDrafts((items) => ({ ...items, [activity.id]: event.target.value }))} placeholder="Descreva a participação, os resultados observados e os encaminhamentos necessários." /></label><div className="therapy-report-actions"><label className="field"><span className="field-label">Situação</span><select value={reportStatus} onChange={(event) => setReportStatuses((items) => ({ ...items, [activity.id]: event.target.value as TherapyActivityStatus }))}><option value="scheduled">Agendada</option><option value="in_progress">Em andamento</option><option value="completed">Realizada</option><option value="cancelled">Cancelada</option></select></label><button className="button button-primary" type="button" onClick={() => void saveActivityReport(activity)} disabled={savingReportId === activity.id}>{savingReportId === activity.id ? 'Salvando…' : 'Salvar relatório'}</button></div></> : <p className="therapy-report-content">{activity.activity_report || 'Relatório ainda não registrado.'}</p>}{activity.report_updated_by && <small className="therapy-report-author">Última atualização por {activity.report_updated_by}{activity.report_updated_at ? ` · ${dateTime(activity.report_updated_at)}` : ''}</small>}</article> })}</div> : <div className="history-empty">{activities.length ? 'Nenhuma atividade corresponde aos filtros selecionados.' : 'Agende uma atividade para iniciar o relatório do mês.'}</div>}</section>
   </section>
 }
-
-const workOrderStatuses: Record<WorkOrderStatus, string> = {
-  open: 'Aberta', in_progress: 'Em curso', completed: 'Finalizada', cancelled: 'Cancelada',
-}
-
-const workOrderPriorities: Record<WorkOrderPriority, string> = {
-  normal: 'Normal', high: 'Alta', urgent: 'Urgente',
-}
-
-function dateTime(value: string) {
-  return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
-}
-
-function getGreeting() {
-  const hour = Number(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
-  return hour >= 5 && hour < 12 ? 'Bom dia' : hour >= 12 && hour < 18 ? 'Boa tarde' : 'Boa noite'
-}
-
-function WorkOrdersPage({ user }: { user: AuthUser }) {
-  const [orders, setOrders] = useState<WorkOrder[]>([])
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [serviceTab, setServiceTab] = useState<'maintenance' | 'hygiene'>('maintenance')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState('')
-  const [error, setError] = useState('')
-  const [reviewing, setReviewing] = useState(false)
-  const [form, setForm] = useState({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' as WorkOrderPriority })
-  const canLookupPatients = user.modules.some((module) =>
-    ['patients', 'nursing', 'reception', 'therapy', 'nutrition', 'social', 'xray', 'maintenance', 'psychology', 'management'].includes(module)
-      && user.permissions[module]?.includes('consultar'),
-  )
-
-  async function loadOrders() {
-    try {
-      const response = await fetch('/api/v1/maintenance/orders')
-      const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
-      setOrders(data.orders ?? [])
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as solicitações.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    let active = true
-    const loadOrdersForUser = async () => {
-      try {
-        const response = await fetch('/api/v1/maintenance/orders')
-        const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
-        if (active) {
-          setOrders(data.orders ?? [])
-          setError('')
-        }
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as solicitações.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    void loadOrdersForUser()
-    return () => { active = false }
-  }, [user.id])
-  useEffect(() => {
-    if (!canLookupPatients) return
-    let active = true
-    const loadPatients = async () => {
-      try {
-        const response = await fetch('/api/v1/nursing/patients')
-        const data = await readApiResponse<{ patients?: Patient[] }>(response)
-        if (active) setPatients(data.patients ?? [])
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes.')
-      }
-    }
-    void loadPatients()
-    return () => { active = false }
-  }, [canLookupPatients, user.id])
-  const orderPrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: order.title, fields: [['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!reviewing) { setReviewing(true); return }
-    setSaving(true)
-    setNotice('')
-    setError('')
-    try {
-      const response = await fetch('/api/v1/maintenance/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: form.title.trim(),
-          description: form.description.trim(),
-          service_type: form.category,
-          department: (form.department === 'Outro' ? form.customDepartment : form.department).trim(),
-          location: [form.unit && `Unidade: ${form.unit}`, form.location && `Local: ${form.location.trim()}`, form.assetCode && `Patrimônio: ${form.assetCode.trim()}`].filter(Boolean).join(' · '),
-          patient_reference: form.patientReference || null,
-          priority: form.priority,
-        }),
-      })
-      const data = await readApiResponse<WorkOrder>(response)
-      setOrders((current) => [data, ...current])
-      setForm({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' })
-      setReviewing(false)
-      setNotice('Ordem de serviço aberta. A equipe de manutenção poderá acompanhar a solicitação.')
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Falha ao abrir a ordem de serviço.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return <section className="work-orders-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">SERVIÇOS INTERNOS</p><h1>Ordens de serviço</h1><p className="welcome-copy">Escolha o serviço para encaminhar o pedido à equipe responsável.</p></div><span className="module-icon module-icon-maintenance"><ClipboardPlus size={23} /></span></div>
-    <div className="service-tabs" role="tablist" aria-label="Tipo de ordem de serviço">
-      <button className={`psychology-tab ${serviceTab === 'maintenance' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={serviceTab === 'maintenance'} onClick={() => { setServiceTab('maintenance'); setError(''); setNotice('') }}><Wrench size={16} /> Manutenção</button>
-      <button className={`psychology-tab ${serviceTab === 'hygiene' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={serviceTab === 'hygiene'} onClick={() => { setServiceTab('hygiene'); setError(''); setNotice('') }}><ShieldCheck size={16} /> Higienização</button>
-    </div>
-    {serviceTab === 'maintenance' ? <>
-    <form className="work-order-form" onSubmit={(event) => void submit(event)}>
-      <div className="section-heading"><div><p className="eyebrow">NOVA SOLICITAÇÃO</p><h2>{reviewing ? 'Revise antes de enviar' : 'Descreva o que precisa'}</h2><p className="welcome-copy">{reviewing ? 'Confira os dados do chamado e confirme a abertura.' : 'Informe o tipo de serviço, o local e o que precisa ser feito.'}</p></div></div>
-      {!reviewing ? <>
-        <div className="field-grid field-grid-two">
-          <label className="field"><span className="field-label">Tipo de serviço</span><select required value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option value="">Selecione uma categoria</option><option>Elétrica</option><option>Hidráulica</option><option>Climatização</option><option>Equipamento</option><option>Estrutura e mobiliário</option><option>Rede e telefonia</option><option>Outro serviço</option></select></label>
-          <label className="field"><span className="field-label">Assunto</span><input required minLength={5} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: torneira com vazamento" /></label>
-          <label className="field"><span className="field-label">Setor solicitante</span><select required value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value, customDepartment: '' })}><option value="">Selecione seu setor</option><option>Enfermagem</option><option>Farmácia</option><option>Raio X</option><option>Serviço Social</option><option>Nutrição</option><option>Higienização</option><option>Psicologia / Psiquiatria</option><option>Recepção</option><option>Administração</option><option>Outro</option></select></label>
-          {form.department === 'Outro' && <label className="field"><span className="field-label">Informe o setor</span><input required minLength={2} maxLength={100} value={form.customDepartment} onChange={(event) => setForm({ ...form, customDepartment: event.target.value })} /></label>}
-          <label className="field"><span className="field-label">Unidade</span><select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione a unidade</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outro</option></select></label>
-          <label className="field"><span className="field-label">Quarto, sala ou local</span><input maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
-          {canLookupPatients && <label className="field"><span className="field-label">Paciente relacionado (opcional)</span><select value={form.patientReference} onChange={(event) => setForm({ ...form, patientReference: event.target.value })}><option value="">Sem vínculo com paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>}
-          <label className="field"><span className="field-label">Número do patrimônio (opcional)</span><input maxLength={60} value={form.assetCode} onChange={(event) => setForm({ ...form, assetCode: event.target.value })} placeholder="Etiqueta do equipamento" /></label>
-          <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as WorkOrderPriority })}><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente quando houver impacto imediato no funcionamento ou na segurança.</span></label>
-        </div>
-        <label className="field"><span className="field-label">Descrição do serviço</span><textarea required minLength={5} maxLength={1450} rows={5} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descreva o problema observado, quando começou e o resultado esperado." /><span className="field-hint">{form.description.length}/1.450 caracteres</span></label>
-        <p className="work-order-privacy">Não inclua nome, diagnóstico ou outros dados de pacientes na descrição da ordem.</p>
-      </> : <div className="work-order-review"><div><small>Categoria</small><strong>{form.category}</strong></div><div><small>Assunto</small><strong>{form.title}</strong></div><div><small>Setor solicitante</small><strong>{form.department === 'Outro' ? form.customDepartment : form.department}</strong></div><div><small>Localização</small><strong>{[form.unit && `Unidade: ${form.unit}`, form.location && `Local: ${form.location}`, form.assetCode && `Patrimônio: ${form.assetCode}`].filter(Boolean).join(' · ') || 'Não informado'}</strong></div>{form.patientReference && <div><small>Paciente</small><strong>{patients.find((patient) => patient.reference === form.patientReference)?.name ?? 'Paciente selecionado'}</strong></div>}<div><small>Prioridade</small><strong>{workOrderPriorities[form.priority]}</strong></div><div className="work-order-review-description"><small>Descrição</small><p>{form.description}</p></div></div>}
-      {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-      {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-      <div className="work-order-form-actions">{reviewing && <button className="button button-secondary" type="button" onClick={() => setReviewing(false)} disabled={saving}><ArrowLeft size={16} /> Editar solicitação</button>}<button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : reviewing ? 'Confirmar abertura' : 'Revisar solicitação'} {reviewing ? <BadgeCheck size={16} /> : <ArrowRight size={16} />}</button></div>
-    </form>
-    <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO</p><h2>Minhas solicitações</h2></div><button className="button button-secondary" type="button" onClick={() => void loadOrders()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div>
-      {loading ? <div className="history-empty">Carregando solicitações…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} />)}</div> : <div className="history-empty"><ClipboardList size={20} /><span>Você ainda não abriu ordens de serviço.</span></div>}
-    </section>
-    <PrintSelectionPanel title="Minhas ordens de serviço" rows={orderPrintRows} />
-    </> : <HygieneRequestForm />}
-  </section>
-}
-
-type HygieneStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
-type HygienePriority = 'normal' | 'high' | 'urgent'
-type HygieneRequestType = 'routine' | 'spot' | 'after_procedure' | 'restock' | 'other'
-type HygieneArea = 'room' | 'bathroom' | 'shared' | 'clinical' | 'circulation' | 'other'
-type HygieneRequest = {
-  id: string
-  request_type: HygieneRequestType
-  custom_type: string | null
-  unit: string
-  area: HygieneArea
-  location: string
-  description: string
-  priority: HygienePriority
-  status: HygieneStatus
-  assignee: string
-  requester_name: string
-  updated_by: string
-  created_at: string
-  updated_at: string
-}
-
-const hygieneRequestTypes: Record<HygieneRequestType, string> = {
-  routine: 'Higienização programada',
-  spot: 'Limpeza pontual',
-  after_procedure: 'Limpeza após procedimento',
-  restock: 'Reposição de material',
-  other: 'Outra solicitação',
-}
-
-const hygieneAreas: Record<HygieneArea, string> = {
-  room: 'Quarto / leito',
-  bathroom: 'Banheiro',
-  shared: 'Área comum',
-  clinical: 'Consultório / sala',
-  circulation: 'Área de circulação',
-  other: 'Outro local',
-}
-
-const hygieneStatuses: Record<HygieneStatus, string> = {
-  open: 'Aguardando atendimento',
-  in_progress: 'Em andamento',
-  completed: 'Concluída',
-  cancelled: 'Cancelada',
-}
-
-function HygieneRequestForm() {
-  const [form, setForm] = useState({
-    request_type: 'routine' as HygieneRequestType,
-    custom_type: '',
-    unit: '',
-    area: '' as HygieneArea | '',
-    location: '',
-    description: '',
-    priority: 'normal' as HygienePriority,
-  })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch('/api/v1/hygiene/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, custom_type: form.custom_type.trim() || null }),
-      })
-      await readApiResponse<HygieneRequest>(response)
-      setForm({ request_type: 'routine', custom_type: '', unit: '', area: '', location: '', description: '', priority: 'normal' })
-      setNotice('Solicitação enviada à equipe de Higienização.')
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Falha ao registrar a solicitação.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return <section className="hygiene-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">ORDEM DE SERVIÇO · HIGIENIZAÇÃO</p><h1>Solicitar higienização</h1><p className="welcome-copy">Informe o serviço e o local para direcionar o pedido à equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <form className="hygiene-panel" onSubmit={(event) => void submit(event)}>
-      <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Tipo de solicitação</span><select required value={form.request_type} onChange={(event) => setForm({ ...form, request_type: event.target.value as HygieneRequestType, custom_type: '' })}>{Object.entries(hygieneRequestTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">Unidade</span><select required value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outra unidade</option></select></label>
-        <label className="field"><span className="field-label">Área</span><select required value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value as HygieneArea })}><option value="">Selecione</option>{Object.entries(hygieneAreas).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">Quarto, sala ou referência do local</span><input required minLength={2} maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
-        <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as HygienePriority })}><option value="normal">Rotina</option><option value="high">Prioritária</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente conforme os critérios e canais definidos pela instituição.</span></label>
-        {form.request_type === 'other' && <label className="field"><span className="field-label">Tipo de solicitação</span><input required minLength={3} maxLength={80} value={form.custom_type} onChange={(event) => setForm({ ...form, custom_type: event.target.value })} placeholder="Descreva o serviço necessário" /></label>}
-        <label className="field hygiene-field-wide"><span className="field-label">{form.request_type === 'restock' ? 'Material e quantidade' : 'Detalhes operacionais (opcional)'}</span><textarea maxLength={1000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder={form.request_type === 'restock' ? 'Informe o material e a quantidade necessária' : 'Descreva o serviço e condições relevantes do local'} /></label>
-      </div>
-      <p className="work-order-privacy">Não inclua nomes, diagnósticos ou outros dados de pacientes na descrição.</p>
-      <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : 'Enviar solicitação'} <ArrowRight size={16} /></button>
-    </form>
-  </section>
-}
-
-function HygienePage({ user }: { user: AuthUser }) {
-  const [requests, setRequests] = useState<HygieneRequest[]>([])
-  const [drafts, setDrafts] = useState<Record<string, { status: HygieneStatus; assignee: string }>>({})
-  const [filter, setFilter] = useState<'active' | 'all' | HygieneStatus>('active')
-  const [query, setQuery] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [updating, setUpdating] = useState('')
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-
-  async function loadRequests() {
-    try {
-      const response = await fetch('/api/v1/hygiene/requests')
-      const data = await readApiResponse<{ requests?: HygieneRequest[] }>(response)
-      setRequests(data.requests ?? [])
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as solicitações de higienização.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    let active = true
-    const loadRequestsForUser = async () => {
-      try {
-        const response = await fetch('/api/v1/hygiene/requests')
-        const data = await readApiResponse<{ requests?: HygieneRequest[] }>(response)
-        if (active) {
-          setRequests(data.requests ?? [])
-          setError('')
-        }
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as solicitações de higienização.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    void loadRequestsForUser()
-    return () => { active = false }
-  }, [user.id])
-
-  const visibleRequests = requests.filter((request) => {
-    const matchesStatus = filter === 'all' || (filter === 'active'
-      ? request.status === 'open' || request.status === 'in_progress'
-      : request.status === filter)
-    const searchable = `${request.unit} ${request.location} ${request.description} ${request.custom_type ?? ''} ${request.requester_name} ${request.assignee} ${hygieneAreas[request.area]} ${hygieneRequestTypes[request.request_type]}`.toLocaleLowerCase('pt-BR')
-    return matchesStatus && searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
-  })
-  const activeCount = requests.filter((request) => request.status === 'open' || request.status === 'in_progress').length
-
-  async function saveRequest(request: HygieneRequest) {
-    const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
-    setUpdating(request.id)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch(`/api/v1/hygiene/requests/${request.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: draft.status, assignee: draft.assignee }),
-      })
-      const data = await readApiResponse<HygieneRequest>(response)
-      setRequests((current) => current.map((item) => item.id === data.id ? data : item))
-      setDrafts((current) => { const next = { ...current }; delete next[request.id]; return next })
-      setNotice('Solicitação atualizada.')
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar a solicitação.')
-    } finally {
-      setUpdating('')
-    }
-  }
-
-  return <section className="hygiene-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
-    <div className="hygiene-summary" aria-label="Resumo da fila"><article><strong>{activeCount}</strong><span>Solicitações ativas</span></article><article><strong>{requests.filter((request) => request.status === 'open').length}</strong><span>Aguardando atendimento</span></article><article><strong>{requests.filter((request) => request.status === 'in_progress').length}</strong><span>Em andamento</span></article></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <section className="hygiene-panel">
-      <div className="section-heading"><div><p className="eyebrow">PAINEL DA EQUIPE</p><h2>Fila de solicitações</h2></div><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
-      <div className="hygiene-filters"><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Buscar por local ou serviço</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label></div>
-      {loading ? <div className="history-empty">Carregando fila…</div> : visibleRequests.length ? <div className="hygiene-request-list">{visibleRequests.map((request) => {
-        const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
-        return <article className="hygiene-request-card" key={request.id}>
-          <div className="hygiene-request-heading"><div><span className={`work-order-priority priority-${request.priority}`}>{workOrderPriorities[request.priority]}</span><h3>{request.request_type === 'other' ? request.custom_type : hygieneRequestTypes[request.request_type]}</h3><p>{request.unit} · {hygieneAreas[request.area]} · {request.location}</p></div><span className={`work-order-status status-${request.status}`}>{hygieneStatuses[request.status]}</span></div>
-          {request.description && <p className="hygiene-request-description">{request.description}</p>}
-          <div className="hygiene-request-meta"><span>Solicitado por <strong>{request.requester_name}</strong></span><time>{dateTime(request.created_at)}</time></div>
-          <div className="hygiene-request-controls"><label className="field"><span className="field-label">Responsável</span><input maxLength={120} value={draft.assignee} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, assignee: event.target.value } }))} placeholder="Atribuir membro da equipe" /></label><label className="field"><span className="field-label">Situação</span><select value={draft.status} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, status: event.target.value as HygieneStatus } }))}><option value="open">Aguardando atendimento</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select></label><button className="button button-secondary" type="button" onClick={() => void saveRequest(request)} disabled={updating === request.id || (draft.status === request.status && draft.assignee === request.assignee)}>{updating === request.id ? 'Salvando…' : 'Salvar atualização'}</button></div>
-          <small className="hygiene-updated">Última atualização por {request.updated_by} · {dateTime(request.updated_at)}</small>
-        </article>
-      })}</div> : <div className="history-empty">Nenhuma solicitação corresponde a este filtro.</div>}
-    </section>
-  </section>
-}
-
-function MaintenanceQueuePage() {
-  const [orders, setOrders] = useState<WorkOrder[]>([])
-  const [filters, setFilters] = useState({ from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [changes, setChanges] = useState<Record<string, { status: WorkOrderStatus; note: string }>>({})
-
-  async function loadQueue(nextFilters = filters) {
-    try {
-      const params = new URLSearchParams(Object.entries(nextFilters).filter(([, value]) => value))
-      const response = await fetch(`/api/v1/maintenance/queue${params.size ? `?${params}` : ''}`)
-      const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
-      setOrders(data.orders ?? [])
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    let active = true
-    const loadFilteredQueue = async () => {
-      try {
-        const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value))
-        const response = await fetch(`/api/v1/maintenance/queue${params.size ? `?${params}` : ''}`)
-        const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
-        if (active) {
-          setOrders(data.orders ?? [])
-          setError('')
-        }
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    void loadFilteredQueue()
-    return () => { active = false }
-  }, [filters])
-
-  function printResults() {
-    document.body.classList.add('print-maintenance-queue')
-    window.print()
-    window.setTimeout(() => document.body.classList.remove('print-maintenance-queue'), 500)
-  }
-
-  const maintenancePrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: order.title, fields: [['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor solicitante', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
-  const statusSummary = orders.reduce<Record<string, number>>((summary, order) => ({ ...summary, [order.status]: (summary[order.status] ?? 0) + 1 }), {})
-
-  async function saveStatus(order: WorkOrder) {
-    const change = changes[order.id] ?? { status: order.status, note: '' }
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch(`/api/v1/maintenance/orders/${order.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: change.status, note: change.note }),
-      })
-      const data = await readApiResponse<WorkOrder>(response)
-      setOrders((current) => current.map((item) => item.id === data.id ? data : item))
-      setChanges((current) => { const next = { ...current }; delete next[order.id]; return next })
-      setNotice(`Ordem atualizada para “${workOrderStatuses[data.status]}”.`)
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao atualizar a ordem.')
-    }
-  }
-
-  return <section className="work-orders-page page-enter maintenance-queue-page">
-    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · MANUTENÇÃO</p><h1>Manutenção</h1><p className="welcome-copy">Consulte solicitações de todos os setores e atualize o andamento dos serviços.</p></div><span className="module-icon module-icon-maintenance"><Wrench size={23} /></span></div>
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions"><button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
-      <form className="maintenance-filters" onSubmit={(event) => { event.preventDefault(); void loadQueue(filters) }}><label className="field"><span className="field-label">De</span><input type="date" value={filters.from_date} onChange={(event) => setFilters({ ...filters, from_date: event.target.value })} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={filters.to_date} onChange={(event) => setFilters({ ...filters, to_date: event.target.value })} /></label><label className="field"><span className="field-label">Tipo de serviço</span><select value={filters.service_type} onChange={(event) => setFilters({ ...filters, service_type: event.target.value })}><option value="">Todos</option>{['Elétrica', 'Hidráulica', 'Climatização', 'Higienização', 'Equipamento', 'Estrutura e mobiliário', 'Rede e telefonia', 'Outro serviço'].map((type) => <option key={type}>{type}</option>)}</select></label><label className="field"><span className="field-label">Setor solicitante</span><input value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })} placeholder="Todos os setores" /></label><label className="field"><span className="field-label">Status</span><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos</option>{Object.entries(workOrderStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select value={filters.priority} onChange={(event) => setFilters({ ...filters, priority: event.target.value })}><option value="">Todas</option>{Object.entries(workOrderPriorities).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Assunto, local ou solicitante" /></label><div className="maintenance-filter-actions"><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Filtrar</button><button className="button button-secondary" type="button" onClick={() => { const empty = { from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' }; setFilters(empty); void loadQueue(empty) }}>Limpar</button></div></form>
-      <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{orders.length} ordens</strong>{Object.entries(workOrderStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status] ?? 0}</b></span>)}</div>
-      {loading ? <div className="history-empty">Carregando fila…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} editable onStatusChange={(status) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status, note: '' }), status } }))} status={changes[order.id]?.status ?? order.status} note={changes[order.id]?.note ?? ''} onNoteChange={(note) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status }), note } }))} onSave={() => void saveStatus(order)} saving={false} />)}</div> : <div className="history-empty"><CheckCircle2 size={20} /><span>Nenhuma ordem de serviço corresponde aos filtros.</span></div>}
-    </section>
-    <PrintSelectionPanel title="Relatório de Manutenção" rows={maintenancePrintRows} />
-  </section>
-}
-
-function WorkOrderCard({ order, editable = false, status, note, onStatusChange, onNoteChange, onSave, saving = false }: { order: WorkOrder; editable?: boolean; status?: WorkOrderStatus; note?: string; onStatusChange?: (status: WorkOrderStatus) => void; onNoteChange?: (note: string) => void; onSave?: () => void; saving?: boolean }) {
-  function printOrder() {
-    const cards = [...document.querySelectorAll('.work-order-card')]
-    const target = cards.find((card) => card.querySelector(`[data-print-order="${order.id}"]`))
-    cards.forEach((card) => card.classList.toggle('print-away', card !== target))
-    document.body.classList.add('print-maintenance-order')
-    window.print()
-    window.setTimeout(() => { document.body.classList.remove('print-maintenance-order'); cards.forEach((card) => card.classList.remove('print-away')) }, 500)
-  }
-  return <article className="work-order-card" data-order-id={order.id}><div className="work-order-card-heading"><div><span className={`work-order-priority priority-${order.priority}`}>{workOrderPriorities[order.priority]}</span><h3>{order.title}</h3></div><span className={`work-order-status status-${order.status}`}>{workOrderStatuses[order.status]}</span></div>
-    <div className="work-order-meta"><span><strong>Tipo de serviço</strong>{order.service_type || 'Outro serviço'}</span><span><strong>Setor</strong>{order.department}</span>{order.location && <span><strong>Local</strong>{order.location}</span>}<span><strong>Solicitante</strong>{order.requester_name}</span><span><strong>Aberta em</strong>{dateTime(order.created_at)}</span><span><strong>Atualizada por</strong>{order.updated_by} · {dateTime(order.updated_at)}</span></div><p className="work-order-description">{order.description}</p>
-    <div className="work-order-print-action"><button data-print-order={order.id} className="button button-secondary" type="button" onClick={printOrder}><Printer size={15} /> Imprimir OS</button></div>
-    {editable && <div className="work-order-actions"><label className="field"><span className="field-label">Status</span><select value={status ?? order.status} onChange={(event) => onStatusChange?.(event.target.value as WorkOrderStatus)}><option value="open">Aberta</option><option value="in_progress">Em curso</option><option value="completed">Finalizada</option><option value="cancelled">Cancelada</option></select></label><label className="field"><span className="field-label">Nota da atualização (opcional)</span><input maxLength={500} value={note ?? ''} onChange={(event) => onNoteChange?.(event.target.value)} placeholder="Ex.: peça solicitada" /></label><button className="button button-primary" type="button" disabled={saving} onClick={onSave}>{saving ? 'Salvando…' : 'Salvar andamento'}</button></div>}
-  </article>
-}
-
 
 function AboutPage() {
   const legalReferences = [
@@ -1580,6 +1155,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   const [medicationReason, setMedicationReason] = useState('')
   const [selectedDispensation, setSelectedDispensation] = useState('')
   const [medicationSaving, setMedicationSaving] = useState(false)
+  const [nursingTab, setNursingTab] = useState<'vitals' | 'care' | 'notes' | 'medications' | 'safety'>('vitals')
 
   useEffect(() => {
     let current = true
@@ -1716,6 +1292,14 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
       <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Sinais vitais</h1><p className="welcome-copy">Registre uma nova coleta ou abra o histórico para consultar registros por período e localização.</p></div><div className="nursing-title-actions"><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       <div className="patient-strip"><span className="patient-avatar"><Stethoscope size={19} /></span><label className="patient-copy"><span>Paciente</span><select value={patientRef} onChange={(event) => { setPatientRef(event.target.value); setNutritionPlan(null) }}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
       <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
+      <div className="psychology-tabs nursing-tabs" role="tablist" aria-label="Seções de Enfermagem">
+        <button className={`psychology-tab ${nursingTab === 'vitals' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'vitals'} onClick={() => setNursingTab('vitals')}>Sinais vitais</button>
+        <button className={`psychology-tab ${nursingTab === 'care' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'care'} onClick={() => setNursingTab('care')}>Cuidados</button>
+        <button className={`psychology-tab ${nursingTab === 'notes' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'notes'} onClick={() => setNursingTab('notes')}>Observações e tratamentos</button>
+        <button className={`psychology-tab ${nursingTab === 'medications' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'medications'} onClick={() => setNursingTab('medications')}>Medicações</button>
+        <button className={`psychology-tab ${nursingTab === 'safety' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={nursingTab === 'safety'} onClick={() => setNursingTab('safety')}>Fila e segurança</button>
+      </div>
+      {nursingTab === 'medications' && <>
       <section className="nursing-medication-panel">
         <div className="section-heading"><div><p className="eyebrow">FARMÁCIA → ENFERMAGEM</p><h2>Dispensações deste paciente</h2><p className="welcome-copy">A Farmácia registra lote, prescrição e baixa de estoque; a Enfermagem registra administração, recusa ou suspensão.</p></div></div>
         {medicationError && <div className="form-message form-message-error" role="alert">{medicationError}</div>}
@@ -1729,17 +1313,19 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
         <p className="work-order-privacy">Confirme paciente, alergias, prescrição, dose e momento correto segundo o protocolo institucional. Este registro não é prescrição nem orientação clínica automatizada.</p>
       </section>
       {nutritionPlan && (nutritionPlan.assessment_date || nutritionPlan.fasting_at) && <div className="care-plan-strip"><strong>Plano alimentar compartilhado</strong>{nutritionPlan.assessment_date && <span>Avaliação de {new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${nutritionPlan.assessment_date}T00:00:00Z`))} · {nutritionPlan.diet_type || 'Tipo de dieta não informado'}{nutritionPlan.restrictions ? ` · Restrições: ${nutritionPlan.restrictions}` : ''}</span>}{nutritionPlan.fasting_at && <span className="fasting-alert">Jejum programado: {dateTime(nutritionPlan.fasting_at)}{nutritionPlan.fasting_reason ? ` · ${nutritionPlan.fasting_reason}` : ''}</span>}</div>}
+      </>}
       {showPatientForm && <form className="patient-create-form" onSubmit={addPatient}><label className="field"><span className="field-label">Nome do paciente</span><input required value={newPatient.name} onChange={(event) => setNewPatient({ ...newPatient, name: event.target.value })} /></label><label className="field"><span className="field-label">Quarto</span><input required value={newPatient.room} onChange={(event) => setNewPatient({ ...newPatient, room: event.target.value })} /></label><label className="field"><span className="field-label">Leito</span><input required value={newPatient.bed} onChange={(event) => setNewPatient({ ...newPatient, bed: event.target.value })} /></label><button className="button button-primary" type="submit">Salvar paciente</button></form>}
       {historyError && <div className="form-message form-message-error" role="alert">{historyError}</div>}
 
-      {patients.length === 0 ? (
+      {nursingTab !== 'safety' && nursingTab !== 'medications' && patients.length === 0 ? (
         <section className="placeholder-state patient-empty-state"><span className="placeholder-state-icon"><UsersRound size={20} /></span><div><strong>Cadastre o primeiro paciente</strong><p>Informe nome, quarto e leito para iniciar a coleta e manter o histórico vinculado ao paciente.</p></div><button className="button button-primary" type="button" onClick={() => setShowPatientForm(true)}>Cadastrar paciente</button></section>
-      ) : entryState === 'review' || entryState === 'saving' ? (
+      ) : nursingTab === 'vitals' && (entryState === 'review' || entryState === 'saving') ? (
         <ReviewPanel record={record} notApplicable={notApplicable} patient={patients.find((item) => item.reference === patientRef)} onBack={() => setEntryState('draft')} onConfirm={saveRecord} isSaving={entryState === 'saving'} />
-      ) : entryState === 'saved' ? (
+      ) : nursingTab === 'vitals' && entryState === 'saved' ? (
         <SavedConfirmation savedAt={savedAt} actorName={profile.name} patient={patients.find((item) => item.reference === patientRef)} onReset={resetRecord} />
-      ) : (
-        <form className="nursing-form" onSubmit={(event) => { event.preventDefault(); setEntryState('review'); setMessage('') }}>
+      ) : nursingTab !== 'safety' && nursingTab !== 'medications' ? (
+        <form className="nursing-form" onSubmit={(event) => { event.preventDefault(); setNursingTab('vitals'); setEntryState('review'); setMessage('') }}>
+          {nursingTab === 'vitals' && <>
           <FormSection number="01" title="Sinais vitais" detail="Unidades indicadas em cada campo. Campos sem preenchimento permanecem em branco.">
             <div className="field-grid field-grid-four">
               <ValueField label="Saturação" unit="%" value={record.saturation} disabled={notApplicable.includes('saturation')} onChange={(value) => updateField('saturation', value)} onNA={() => toggleNotApplicable('saturation')} isNA={notApplicable.includes('saturation')} inputMode="decimal" />
@@ -1755,7 +1341,9 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
               <label className="field glucose-unit-field"><span className="field-label">Unidade</span><select value={record.glucoseUnit} onChange={(event) => updateField('glucoseUnit', event.target.value)} disabled={notApplicable.includes('glucose')}><option>mg/dL</option><option>mmol/L</option></select></label>
             </div>
           </FormSection>
+          </>}
 
+          {nursingTab === 'care' && <>
           <FormSection number="03" title="Acesso venoso" detail="Informe o tipo de acesso e, se necessário, o local e uma observação.">
             <div className="field-grid field-grid-three">
               <TextField label="Local" value={record.venousSite} onChange={(value) => updateField('venousSite', value)} placeholder="Não informado" />
@@ -1776,7 +1364,9 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
               <TextField label="Valor informado" value={record.pain} onChange={(value) => updateField('pain', value)} placeholder="Não preenchido" inputMode="decimal" />
             </div>
           </FormSection>
+          </>}
 
+          {nursingTab === 'notes' && <>
           <FormSection number="06" title="Observações" detail="Até 1.000 caracteres.">
             <label className="field"><span className="field-label">Texto livre</span><textarea value={record.notes} onChange={(event) => updateField('notes', event.target.value)} maxLength={1000} rows={3} placeholder="Observações complementares" /><span className="field-hint">{record.notes.length}/1.000 caracteres</span></label>
           </FormSection>
@@ -1791,19 +1381,19 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
             <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Exame</span><input maxLength={500} value={record.examName} onChange={(event) => updateField('examName', event.target.value)} placeholder="Nome do exame" /></label><label className="field"><span className="field-label">Agendamento</span><input type="datetime-local" value={record.examScheduledAt} onChange={(event) => updateField('examScheduledAt', event.target.value)} /></label></div>
             <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Acompanhamento</span><textarea maxLength={1000} value={record.examFollowUp} onChange={(event) => updateField('examFollowUp', event.target.value)} placeholder="Etapa/status informado" /></label><label className="field"><span className="field-label">Resultado / informação disponível</span><textarea maxLength={2000} value={record.examResult} onChange={(event) => updateField('examResult', event.target.value)} placeholder="Resultado recebido ou observação" /></label></div>
           </FormSection>
+          </>}
 
           {message && <div className={`form-message ${entryState === 'error' ? 'form-message-error' : ''}`} role="status">{message}</div>}
-          <div className="form-actions"><span className="draft-hint"><Pencil size={14} /> Rascunho temporário nesta sessão</span><button className="button button-primary" type="submit">Revisar coleta <ArrowRight size={17} /></button></div>
-        </form>
-      )}
+          <div className="form-actions"><span className="draft-hint"><Pencil size={14} /> Rascunho temporário nesta sessão</span><button className="button button-primary" type="submit">Revisar {nursingTab === 'vitals' ? 'coleta' : 'registro'} <ArrowRight size={17} /></button></div>
+        </form>) : null}
 
-      <div className="clinical-note"><ShieldCheck size={17} /><span>Os gráficos apresentam os valores registrados, sem interpretação clínica automática.</span></div>
-      <ClinicalQueuePanel canUpdate={user.permissions.nursing?.includes('alterar') ?? false} />
-      <PatientFlowRiskPanel
+      {nursingTab === 'vitals' && <div className="clinical-note"><ShieldCheck size={17} /><span>Os gráficos apresentam os valores registrados, sem interpretação clínica automática.</span></div>}
+      {nursingTab === 'safety' && <ClinicalQueuePanel canUpdate={user.permissions.nursing?.includes('alterar') ?? false} />}
+      {nursingTab === 'safety' && <PatientFlowRiskPanel
         patients={patients}
         canUpdate={user.permissions.nursing?.includes('alterar') ?? false}
         onPatientUpdated={(updated) => setPatients((current) => current.map((patient) => patient.reference === updated.reference ? updated : patient))}
-      />
+      />}
     </section>
   )
 }
@@ -1899,7 +1489,8 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
 function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patients: Patient[]; canUpdate: boolean; onPatientUpdated: (patient: Patient) => void }) {
   const [selectedReference, setSelectedReference] = useState('')
   const [flowType, setFlowType] = useState<'transfer' | 'discharge'>('transfer')
-  const [destination, setDestination] = useState({ room: '', bed: '' })
+  const [destinationBedId, setDestinationBedId] = useState('')
+  const [beds, setBeds] = useState<HospitalBed[]>([])
   const [reason, setReason] = useState('')
   const [summary, setSummary] = useState('')
   const [riskDescription, setRiskDescription] = useState('')
@@ -1918,19 +1509,22 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
   async function loadPatientFlow(reference = patientReferenceForFlow) {
     if (!reference) return
     try {
-      const [flowResponse, allergyResponse, riskResponse] = await Promise.all([
+      const [flowResponse, allergyResponse, riskResponse, bedResponse] = await Promise.all([
         fetch(`/api/v1/nursing/patients/flow-events?patient_reference=${encodeURIComponent(reference)}&limit=20`),
         fetch(`/api/v1/nursing/patients/${encodeURIComponent(reference)}/allergy-history`),
         fetch('/api/v1/nursing/clinical-risks'),
+        fetch('/api/v1/nursing/beds'),
       ])
-      const [flowData, allergyData, riskData] = await Promise.all([
+      const [flowData, allergyData, riskData, bedData] = await Promise.all([
         readApiResponse<{ events?: PatientFlowEvent[] }>(flowResponse),
         readApiResponse<{ events?: typeof allergyEvents }>(allergyResponse),
         readApiResponse<{ risks?: ClinicalRisk[] }>(riskResponse),
+        readApiResponse<{ beds?: HospitalBed[] }>(bedResponse),
       ])
       setFlowEvents(flowData.events ?? [])
       setAllergyEvents(allergyData.events ?? [])
       setRisks((riskData.risks ?? []).filter((risk) => risk.risk_type === 'contraindication' && risk.patient_reference === reference))
+      setBeds(bedData.beds ?? [])
       setError('')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar o fluxo e o histórico de riscos.')
@@ -1942,20 +1536,23 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
     let active = true
     const loadFlow = async () => {
       try {
-        const [flowResponse, allergyResponse, riskResponse] = await Promise.all([
+        const [flowResponse, allergyResponse, riskResponse, bedResponse] = await Promise.all([
           fetch(`/api/v1/nursing/patients/flow-events?patient_reference=${encodeURIComponent(patientReferenceForFlow)}&limit=20`),
           fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReferenceForFlow)}/allergy-history`),
           fetch('/api/v1/nursing/clinical-risks'),
+          fetch('/api/v1/nursing/beds'),
         ])
-        const [flowData, allergyData, riskData] = await Promise.all([
+        const [flowData, allergyData, riskData, bedData] = await Promise.all([
           readApiResponse<{ events?: PatientFlowEvent[] }>(flowResponse),
           readApiResponse<{ events?: typeof allergyEvents }>(allergyResponse),
           readApiResponse<{ risks?: ClinicalRisk[] }>(riskResponse),
+          readApiResponse<{ beds?: HospitalBed[] }>(bedResponse),
         ])
         if (!active) return
         setFlowEvents(flowData.events ?? [])
         setAllergyEvents(allergyData.events ?? [])
         setRisks((riskData.risks ?? []).filter((risk) => risk.risk_type === 'contraindication' && risk.patient_reference === patientReferenceForFlow))
+        setBeds(bedData.beds ?? [])
         setError('')
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar o fluxo e o histórico de riscos.')
@@ -1974,13 +1571,14 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
       const response = await fetch(`/api/v1/nursing/patients/${encodeURIComponent(patient.reference)}/${flowType}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isTransfer ? { ...destination, reason } : { reason, summary }),
+        body: JSON.stringify(isTransfer ? { bed_id: destinationBedId, reason } : { reason, summary }),
       })
       const data = await readApiResponse<{ patient: Patient; event: PatientFlowEvent }>(response)
       onPatientUpdated(data.patient)
       setFlowEvents((current) => [data.event, ...current])
-      setDestination({ room: '', bed: '' }); setReason(''); setSummary('')
+      setDestinationBedId(''); setReason(''); setSummary('')
       setNotice(isTransfer ? 'Transferência registrada e leito de destino validado.' : 'Alta registrada; o leito foi liberado e o histórico mantido.')
+      await loadPatientFlow(patient.reference)
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar o fluxo do paciente.')
     } finally { setBusy(false) }
@@ -2036,16 +1634,15 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
         <button className={`psychology-tab ${flowType === 'discharge' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={flowType === 'discharge'} onClick={() => setFlowType('discharge')}>Alta</button>
       </div>
       {canUpdate && <form className="account-create-panel" onSubmit={(event) => void savePatientFlow(event)}>
-        {flowType === 'transfer' ? <div className="field-grid field-grid-three">
-          <label className="field"><span className="field-label">Novo quarto</span><input required maxLength={20} value={destination.room} onChange={(event) => setDestination((current) => ({ ...current, room: event.target.value }))} /></label>
-          <label className="field"><span className="field-label">Novo leito</span><input required maxLength={20} value={destination.bed} onChange={(event) => setDestination((current) => ({ ...current, bed: event.target.value }))} /></label>
+        {flowType === 'transfer' ? <div className="field-grid field-grid-two">
+          <label className="field"><span className="field-label">Leito físico de destino</span><select required value={destinationBedId} onChange={(event) => setDestinationBedId(event.target.value)}><option value="">Selecione unidade, quarto e leito disponível</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Solicite cadastro ou liberação em Gestão Hospitalar.</span>}</label>
           <label className="field"><span className="field-label">Motivo da transferência</span><input required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         </div> : <>
           <label className="field"><span className="field-label">Motivo da alta</span><input required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
           <label className="field"><span className="field-label">Resumo / orientações de continuidade (opcional)</span><textarea maxLength={2000} value={summary} onChange={(event) => setSummary(event.target.value)} /></label>
           <p className="work-order-privacy">Este registro não substitui sumário clínico, prescrição de alta nem orientações assinadas conforme protocolo institucional.</p>
         </>}
-        <button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Registrando…' : flowType === 'transfer' ? 'Registrar transferência' : 'Registrar alta e liberar leito'}</button>
+        <button className="button button-primary" type="submit" disabled={busy || (flowType === 'transfer' && !destinationBedId)}>{busy ? 'Registrando…' : flowType === 'transfer' ? 'Registrar transferência' : 'Registrar alta e liberar leito'}</button>
       </form>}
       <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">ALERGIAS E CONTRAINDICAÇÕES</p><h3>Riscos ativos e auditoria</h3></div><span className="module-total">{risks.length + (patient?.allergies_status !== 'none_known' ? 1 : 0)} alertas</span></div>
         {risks.map((risk) => <article className="collection-row" key={risk.id}><div className="collection-row-heading"><strong>Contraindicação · {risk.severity === 'unspecified' ? 'gravidade não especificada' : risk.severity}</strong><span>{risk.description}</span></div><small>Registrada por {risk.actor_name} · {dateTime(risk.created_at)} · Motivo: {risk.reason}</small>{canUpdate && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void resolveRisk(risk.id)}>Registrar resolução</button>}</article>)}
@@ -2053,7 +1650,7 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
         {canUpdate && <form className="account-create-panel" onSubmit={(event) => void createRisk(event)}><div className="field-grid field-grid-three"><label className="field"><span className="field-label">Nova contraindicação</span><input required minLength={3} maxLength={1000} value={riskDescription} onChange={(event) => setRiskDescription(event.target.value)} placeholder="Substância, procedimento ou risco identificado" /></label><label className="field"><span className="field-label">Gravidade registrada</span><select value={riskSeverity} onChange={(event) => setRiskSeverity(event.target.value as ClinicalRisk['severity'])}><option value="unspecified">Não especificada</option><option value="low">Baixa</option><option value="moderate">Moderada</option><option value="high">Alta</option></select></label><label className="field"><span className="field-label">Justificativa / fonte</span><input required minLength={3} maxLength={300} value={riskReason} onChange={(event) => setRiskReason(event.target.value)} /></label></div><button className="button button-primary" type="submit" disabled={busy}>Registrar contraindicação</button></form>}
         {allergyEvents.length > 0 && <details className="patient-risk-audit"><summary>Histórico de alterações de alergia ({allergyEvents.length})</summary><div className="collection-list">{allergyEvents.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.previous_status} → {event.new_status}</strong><time>{dateTime(event.recorded_at)}</time></div><p>{event.previous_details || 'Sem detalhe anterior'} → {event.new_details || 'Sem detalhe registrado'}</p><small>{event.actor_name} · {event.reason}</small></article>)}</div></details>}
       </section>
-      {flowEvents.length > 0 && <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">MOVIMENTAÇÃO ASSISTENCIAL</p><h3>Histórico de transferências e altas</h3></div><span className="module-total">{flowEvents.length} eventos</span></div><div className="collection-list">{flowEvents.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.event_type === 'transfer' ? `Transferência · Qto ${event.previous_room}, leito ${event.previous_bed} → Qto ${event.next_room}, leito ${event.next_bed}` : `Alta · Qto ${event.previous_room}, leito ${event.previous_bed}`}</strong><time>{dateTime(event.occurred_at)}</time></div><p>{event.reason}</p>{event.summary && <p>{event.summary}</p>}<small>Registrado por {event.actor_name}</small></article>)}</div></section>}
+      {flowEvents.length > 0 && <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">MOVIMENTAÇÃO ASSISTENCIAL</p><h3>Histórico de admissões, transferências e altas</h3></div><span className="module-total">{flowEvents.length} eventos</span></div><div className="collection-list">{flowEvents.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.event_type === 'admission' ? `Internação · Qto ${event.next_room}, leito ${event.next_bed}` : event.event_type === 'transfer' ? `Transferência · Qto ${event.previous_room}, leito ${event.previous_bed} → Qto ${event.next_room}, leito ${event.next_bed}` : `Alta · Qto ${event.previous_room}, leito ${event.previous_bed}`}</strong><time>{dateTime(event.occurred_at)}</time></div><p>{event.reason}</p>{event.summary && <p>{event.summary}</p>}<small>Registrado por {event.actor_name}</small></article>)}</div></section>}
     </>}
   </section>
 }
@@ -2357,520 +1954,6 @@ function NutritionPage() {
   </section>
 }
 
-type XrayStatus = 'requested' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
-type XrayRequest = { id: number; patient_reference: string; exam_label: string; status: XrayStatus; result: string; result_recorded_by: string; result_recorded_at: string | null; created_at: string }
-
-const xrayStatuses: Record<XrayStatus, string> = {
-  requested: 'Solicitado',
-  scheduled: 'Agendado',
-  in_progress: 'Em execução',
-  completed: 'Concluído',
-  cancelled: 'Cancelado',
-}
-
-function XrayPage({ user }: { user: AuthUser }) {
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [requests, setRequests] = useState<XrayRequest[]>([])
-  const [patientSearch, setPatientSearch] = useState('')
-  const [patientReference, setPatientReference] = useState('')
-  const [examLabel, setExamLabel] = useState('')
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'active' | 'all' | XrayStatus>('active')
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [updating, setUpdating] = useState<number | null>(null)
-  const [resultDrafts, setResultDrafts] = useState<Record<number, string>>({})
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const canUpdate = user.permissions.xray?.includes('alterar') ?? false
-
-  async function loadData() {
-    setLoading(true)
-    try {
-      const [patientResponse, requestResponse] = await Promise.all([
-        fetch('/api/v1/nursing/patients'),
-        fetch('/api/v1/xray/requests'),
-      ])
-      const [patientData, requestData] = await Promise.all([
-        readApiResponse<{ patients?: Patient[] }>(patientResponse),
-        readApiResponse<{ requests?: XrayRequest[] }>(requestResponse),
-      ])
-      setPatients(patientData.patients ?? [])
-      setRequests(requestData.requests ?? [])
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os dados de Raio X.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    let active = true
-    const loadXrayData = async () => {
-      setLoading(true)
-      try {
-        const [patientResponse, requestResponse] = await Promise.all([
-          fetch('/api/v1/nursing/patients'),
-          fetch('/api/v1/xray/requests'),
-        ])
-        const [patientData, requestData] = await Promise.all([
-          readApiResponse<{ patients?: Patient[] }>(patientResponse),
-          readApiResponse<{ requests?: XrayRequest[] }>(requestResponse),
-        ])
-        if (!active) return
-        setPatients(patientData.patients ?? [])
-        setRequests(requestData.requests ?? [])
-        setError('')
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os dados de Raio X.')
-      } finally {
-        if (active) setLoading(false)
-      }
-    }
-    void loadXrayData()
-    return () => { active = false }
-  }, [user.id])
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch('/api/v1/xray/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patient_reference: patientReference, exam_label: examLabel.trim() }),
-      })
-      const data = await readApiResponse<XrayRequest>(response)
-      setRequests((current) => [data, ...current])
-      setPatientReference('')
-      setPatientSearch('')
-      setExamLabel('')
-      setNotice('Exame incluído na fila de Raio X.')
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Falha ao solicitar o exame.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function updateStatus(request: XrayRequest, status: XrayStatus) {
-    setUpdating(request.id)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch(`/api/v1/xray/requests/${request.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-      })
-      const updated = await readApiResponse<XrayRequest>(response)
-      setRequests((current) => current.map((item) => item.id === updated.id ? updated : item))
-      setNotice(`Exame atualizado: ${xrayStatuses[updated.status]}.`)
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar o exame.')
-    } finally {
-      setUpdating(null)
-    }
-  }
-
-  async function saveResult(request: XrayRequest) {
-    const result = (resultDrafts[request.id] ?? '').trim()
-    if (result.length < 3) return
-    setUpdating(request.id); setError(''); setNotice('')
-    try {
-      const response = await fetch(`/api/v1/xray/requests/${request.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ result }),
-      })
-      const updated = await readApiResponse<XrayRequest>(response)
-      setRequests((current) => current.map((item) => item.id === updated.id ? updated : item))
-      setResultDrafts((current) => { const next = { ...current }; delete next[request.id]; return next })
-      setNotice('Resultado registrado na solicitação do exame.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar o resultado.')
-    } finally { setUpdating(null) }
-  }
-
-  const activeCount = requests.filter((request) => request.status === 'requested' || request.status === 'scheduled' || request.status === 'in_progress').length
-  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR').includes(patientSearch.trim().toLocaleLowerCase('pt-BR')))
-  const visibleRequests = requests.filter((request) => {
-    const matchesStatus = filter === 'all' || (filter === 'active'
-      ? request.status === 'requested' || request.status === 'scheduled' || request.status === 'in_progress'
-      : request.status === filter)
-    const patient = patients.find((item) => item.reference === request.patient_reference)
-    const searchable = `${patient?.name ?? ''} ${patient?.room ?? ''} ${patient?.bed ?? ''} ${request.exam_label}`.toLocaleLowerCase('pt-BR')
-    return matchesStatus && searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
-  })
-  const patientName = (reference: string) => {
-    const patient = patients.find((item) => item.reference === reference)
-    return patient ? `${patient.name} · ${patientLocationLabel(patient)}` : 'Paciente não localizado'
-  }
-
-  return <section className="xray-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">ROTINA OPERACIONAL · RAIO X</p><h1>Fila de exames</h1><p className="welcome-copy">Registre solicitações e acompanhe cada exame até sua conclusão.</p></div><span className="module-icon module-icon-xray"><Activity size={23} /></span></div>
-    <div className="hygiene-summary" aria-label="Resumo da fila de Raio X"><article><strong>{requests.length}</strong><span>Total de solicitações</span></article><article><strong>{activeCount}</strong><span>Exames ativos</span></article><article><strong>{requests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <form className="hygiene-panel" onSubmit={(event) => void submit(event)}>
-      <div className="section-heading"><div><p className="eyebrow">NOVO EXAME</p><h2>Adicionar à fila</h2></div></div>
-      <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Buscar paciente por nome, quarto ou leito</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Digite para filtrar pacientes" /></label>
-        <label className="field"><span className="field-label">Paciente</span><select required value={patientReference} onChange={(event) => { setPatientReference(event.target.value); const selected = patients.find((patient) => patient.reference === event.target.value); if (selected) setPatientSearch(`${selected.name} · ${patientLocationLabel(selected)}`) }}><option value="">Selecione um paciente</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>
-        <label className="field xray-field-wide"><span className="field-label">Exame solicitado</span><input required minLength={2} maxLength={80} value={examLabel} onChange={(event) => setExamLabel(event.target.value)} placeholder="Ex.: radiografia de tórax" /></label>
-      </div>
-      <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientReference)} />
-      <p className="work-order-privacy">Registre somente o nome do exame neste campo. Não inclua diagnóstico ou dados clínicos adicionais.</p>
-      <button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Registrando…' : 'Solicitar exame'} <ArrowRight size={16} /></button>
-    </form>
-    <section className="patient-list-panel xray-queue-panel">
-      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações <span className="module-total">{visibleRequests.length}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadData()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
-      <div className="service-tabs" role="tablist" aria-label="Filtrar exames por situação">
-        {([
-          ['active', 'Ativos'],
-          ['all', 'Todos'],
-          ...Object.entries(xrayStatuses),
-        ] as [typeof filter, string][]).map(([value, label]) => <button className={`psychology-tab ${filter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={filter === value} key={value} onClick={() => setFilter(value)}>{label}{value === 'active' && <span>{activeCount}</span>}</button>)}
-      </div>
-      <label className="field xray-search"><span className="field-label">Buscar por paciente, quarto, leito ou exame</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar um exame" /></span></label>
-      {loading ? <div className="history-empty">Carregando fila de exames…</div> : visibleRequests.length ? <div className="xray-request-list">{visibleRequests.map((request) => <article className="xray-request-card" key={request.id}>
-        <div className="xray-request-main"><div><h3>{patientName(request.patient_reference)}</h3><p>{request.exam_label}</p><time>{dateTime(request.created_at)}</time></div><span className={`work-order-status status-${request.status === 'requested' ? 'open' : request.status === 'scheduled' ? 'in_progress' : request.status === 'in_progress' ? 'in_progress' : request.status === 'completed' ? 'completed' : 'cancelled'}`}>{xrayStatuses[request.status]}</span></div>
-        {request.result && <div className="xray-result"><strong>Resultado registrado</strong><p>{request.result}</p><small>{request.result_recorded_by}{request.result_recorded_at ? ` · ${dateTime(request.result_recorded_at)}` : ''}</small></div>}
-        {canUpdate && <form className="xray-result-form" onSubmit={(event) => { event.preventDefault(); void saveResult(request) }}><label className="field"><span className="field-label">{request.result ? 'Atualizar resultado' : 'Resultado do exame'}</span><textarea required minLength={3} maxLength={4000} rows={3} value={resultDrafts[request.id] ?? ''} onChange={(event) => setResultDrafts((current) => ({ ...current, [request.id]: event.target.value }))} placeholder="Registre o laudo/resultado conforme fluxo institucional" /></label><button className="button button-secondary" type="submit" disabled={updating === request.id || (resultDrafts[request.id] ?? '').trim().length < 3}>{updating === request.id ? 'Salvando…' : request.result ? 'Atualizar resultado' : 'Salvar resultado'}</button></form>}
-        {canUpdate && <label className="field xray-status-control"><span className="field-label">Atualizar situação</span><select value={request.status} disabled={updating === request.id || request.status === 'completed' || request.status === 'cancelled'} onChange={(event) => void updateStatus(request, event.target.value as XrayStatus)}><option value="requested">Solicitado</option><option value="scheduled">Agendado</option><option value="in_progress">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
-      </article>)}</div> : <div className="history-empty"><Activity size={20} /><span>{requests.length ? 'Nenhum exame corresponde a este filtro.' : 'Nenhuma solicitação de exame foi registrada.'}</span></div>}
-    </section>
-  </section>
-}
-
-type PatientOperationModule = 'xray' | 'social'
-type PatientOperation = { id: number; patient_reference: string; exam_label?: string; referral_type?: string; status: string; created_at: string }
-
-const socialReferralStatuses: Record<string, string> = {
-  open: 'Aberto',
-  scheduled: 'Agendado',
-  in_progress: 'Em acompanhamento',
-  completed: 'Concluído',
-  cancelled: 'Cancelado',
-}
-
-function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOperationModule; user?: AuthUser }) {
-  const isXray = moduleId === 'xray'
-  const endpoint = isXray ? '/api/v1/xray/requests' : '/api/v1/social/referrals'
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [items, setItems] = useState<PatientOperation[]>([])
-  const [patientReference, setPatientReference] = useState('')
-  const [description, setDescription] = useState('')
-  const [socialQuery, setSocialQuery] = useState('')
-  const [socialStatus, setSocialStatus] = useState<'all' | keyof typeof socialReferralStatuses>('all')
-  const [updatingId, setUpdatingId] = useState<number | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-
-  useEffect(() => {
-    let current = true
-    Promise.all([fetch('/api/v1/nursing/patients'), fetch(endpoint)]).then(async ([patientResponse, itemResponse]) => {
-      const patientData = await patientResponse.json() as { patients?: Patient[]; detail?: string }
-      const itemData = await itemResponse.json() as { requests?: PatientOperation[]; referrals?: PatientOperation[]; detail?: string }
-      if (!patientResponse.ok) throw new Error(patientData.detail ?? 'Não foi possível carregar o cadastro de pacientes.')
-      if (!itemResponse.ok) throw new Error(itemData.detail ?? 'Não foi possível carregar os registros.')
-      return { patients: patientData.patients ?? [], items: isXray ? itemData.requests ?? [] : itemData.referrals ?? [] }
-    }).then((data) => { if (current) { setPatients(data.patients); setItems(data.items); setError('') } })
-      .catch((loadError) => { if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os dados.') })
-      .finally(() => { if (current) setLoading(false) })
-    return () => { current = false }
-  }, [endpoint, isXray])
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSaving(true); setError(''); setNotice('')
-    try {
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patient_reference: patientReference, ...(isXray ? { exam_label: description.trim() } : { referral_type: description.trim() }) }) })
-      const data = await response.json() as PatientOperation & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível registrar.')
-      setItems((current) => [data, ...current]); setDescription(''); setPatientReference(''); setNotice(isXray ? 'Solicitação de exame registrada.' : 'Encaminhamento registrado.')
-    } catch (submitError) { setError(submitError instanceof Error ? submitError.message : 'Falha ao registrar.') }
-    finally { setSaving(false) }
-  }
-  async function updateSocialReferral(item: PatientOperation, status: keyof typeof socialReferralStatuses) {
-    setUpdatingId(item.id); setError(''); setNotice('')
-    try {
-      const response = await fetch(`/api/v1/social/referrals/${item.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) })
-      const data = await readApiResponse<PatientOperation>(response)
-      setItems((current) => current.map((entry) => entry.id === data.id ? data : entry))
-      setNotice('Situação do encaminhamento atualizada.')
-    } catch (updateError) { setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar o encaminhamento.') }
-    finally { setUpdatingId(null) }
-  }
-  const patientName = (reference: string) => { const patient = patients.find((item) => item.reference === reference); return patient ? `${patient.name} · ${patient.room && patient.bed ? `Quarto ${patient.room}, leito ${patient.bed}` : 'sem acomodação'}` : 'Paciente não localizado' }
-  const visibleItems = isXray ? items : items.filter((item) => (socialStatus === 'all' || item.status === socialStatus) && `${patientName(item.patient_reference)} ${item.referral_type}`.toLocaleLowerCase('pt-BR').includes(socialQuery.trim().toLocaleLowerCase('pt-BR')))
-  const canUpdateSocial = user?.permissions.social?.includes('alterar') ?? false
-  return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">Registros vinculados ao cadastro compartilhado de pacientes.</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <Activity size={23} /> : <UsersRound size={23} />}</span></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}{notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <form className="work-order-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVO REGISTRO</p><h2>{isXray ? 'Solicitar exame' : 'Registrar encaminhamento'}</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Paciente · quarto · leito</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione um paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}</option>)}</select></label><label className="field"><span className="field-label">{isXray ? 'Exame solicitado' : 'Tipo de encaminhamento'}</span><input required minLength={2} maxLength={80} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={isXray ? 'Ex.: radiografia de tórax' : 'Ex.: acompanhamento familiar'} /></label></div>{isXray && <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientReference)} />}<button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Salvando…' : 'Registrar'}</button></form>
-    <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">{isXray ? 'HISTÓRICO' : 'ACOMPANHAMENTO'}</p><h2>{isXray ? 'Solicitações recentes' : 'Encaminhamentos sociais'}</h2></div><span className="module-total">{isXray ? items.length : visibleItems.length}</span></div>{!isXray && <div className="psychology-filter-row"><label className="field"><span className="field-label">Buscar paciente ou encaminhamento</span><input value={socialQuery} onChange={(event) => setSocialQuery(event.target.value)} placeholder="Nome ou tipo de acompanhamento" /></label><label className="field"><span className="field-label">Situação</span><select value={socialStatus} onChange={(event) => setSocialStatus(event.target.value as typeof socialStatus)}><option value="all">Todas</option>{Object.entries(socialReferralStatuses).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label></div>}{loading ? <div className="history-empty">Carregando registros…</div> : visibleItems.length ? <div className="work-order-list">{visibleItems.map((item) => <article className="work-order-card" key={item.id}><div><h3>{patientName(item.patient_reference)}</h3><p>{isXray ? item.exam_label : item.referral_type}</p></div>{!isXray && canUpdateSocial ? <label className="field xray-status-control"><span className="field-label">Situação</span><select value={item.status} disabled={updatingId === item.id || item.status === 'completed' || item.status === 'cancelled'} onChange={(event) => void updateSocialReferral(item, event.target.value as keyof typeof socialReferralStatuses)}>{Object.entries(socialReferralStatuses).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label> : <span>{isXray ? (item.status === 'open' ? 'Aberto' : item.status) : socialReferralStatuses[item.status] ?? item.status}</span>}<time>{dateTime(item.created_at)}</time></article>)}</div> : <div className="history-empty">{items.length ? 'Nenhum encaminhamento corresponde aos filtros.' : 'Nenhum registro encontrado.'}</div>}</section>
-  </section>
-}
-
-type PsychologyTab = 'triage' | 'encounters'
-type PsychologyReferral = { id: number; patient_reference: string; referral_type: string; status: string; priority: 'routine' | 'priority'; created_at: string }
-type PsychologyEncounter = { id: number; patient_reference: string; encounter_type: 'intake' | 'follow_up' | 'psychiatry'; objective: string; evolution: string; plan: string; actor_name: string; created_at: string }
-
-const psychologyStatuses: Record<string, string> = {
-  open: 'Aguardando triagem',
-  scheduled: 'Agendado',
-  in_progress: 'Em atendimento',
-  completed: 'Concluído',
-  cancelled: 'Cancelado',
-}
-
-const psychologyEncounterTypes: Record<PsychologyEncounter['encounter_type'], string> = {
-  intake: 'Acolhimento inicial',
-  follow_up: 'Acompanhamento',
-  psychiatry: 'Atendimento psiquiátrico',
-}
-
-function PsychologyPage() {
-  const [tab, setTab] = useState<PsychologyTab>('triage')
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [referrals, setReferrals] = useState<PsychologyReferral[]>([])
-  const [encounters, setEncounters] = useState<PsychologyEncounter[]>([])
-  const [encountersPatient, setEncountersPatient] = useState('')
-  const [triagePatientQuery, setTriagePatientQuery] = useState('')
-  const [recordPatientQuery, setRecordPatientQuery] = useState('')
-  const [triageFilter, setTriageFilter] = useState('')
-  const [triagePatient, setTriagePatient] = useState('')
-  const [triageType, setTriageType] = useState('Acolhimento')
-  const [customTriageType, setCustomTriageType] = useState('')
-  const [triagePriority, setTriagePriority] = useState<'routine' | 'priority'>('routine')
-  const [recordPatient, setRecordPatient] = useState('')
-  const [recordType, setRecordType] = useState<PsychologyEncounter['encounter_type']>('intake')
-  const [objective, setObjective] = useState('')
-  const [evolution, setEvolution] = useState('')
-  const [plan, setPlan] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [encounterLoadError, setEncounterLoadError] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [updatingReferral, setUpdatingReferral] = useState<number | null>(null)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-
-  useEffect(() => {
-    let current = true
-    Promise.all([fetch('/api/v1/nursing/patients'), fetch('/api/v1/psychology/referrals')])
-      .then(async ([patientResponse, referralResponse]) => {
-        const patientData = await patientResponse.json() as { patients?: Patient[]; detail?: unknown }
-        const referralData = await referralResponse.json() as { referrals?: PsychologyReferral[]; detail?: unknown }
-        if (!patientResponse.ok) throw new Error(readableApiError(patientData.detail))
-        if (!referralResponse.ok) throw new Error(readableApiError(referralData.detail))
-        return { patients: patientData.patients ?? [], referrals: referralData.referrals ?? [] }
-      })
-      .then((data) => {
-        if (current) {
-          setPatients(data.patients)
-          setReferrals(data.referrals)
-          setError('')
-        }
-      })
-      .catch((loadError) => {
-        if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila de atendimento.')
-      })
-      .finally(() => { if (current) setLoading(false) })
-    return () => { current = false }
-  }, [])
-
-  useEffect(() => {
-    if (tab !== 'encounters' || !recordPatient) return
-    let current = true
-    fetch(`/api/v1/psychology/encounters?patient_reference=${encodeURIComponent(recordPatient)}`)
-      .then(async (response) => {
-        const data = await response.json() as { encounters?: PsychologyEncounter[]; detail?: unknown }
-        if (!response.ok) throw new Error(readableApiError(data.detail))
-        return data.encounters ?? []
-      })
-      .then((records) => {
-        if (current) {
-          setEncounters(records)
-          setEncountersPatient(recordPatient)
-          setEncounterLoadError('')
-        }
-      })
-      .catch((loadError) => {
-        if (current) {
-          setEncounterLoadError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o histórico clínico.')
-          setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o histórico clínico.')
-        }
-      })
-    return () => { current = false }
-  }, [recordPatient, tab])
-  const encountersLoading = Boolean(recordPatient && encountersPatient !== recordPatient && !encounterLoadError)
-
-  const patientName = (reference: string) => {
-    const patient = patients.find((patient) => patient.reference === reference)
-    return patient ? `${patient.name} · ${patient.room && patient.bed ? `Quarto ${patient.room}, leito ${patient.bed}` : 'sem acomodação'}` : 'Paciente não localizado'
-  }
-  const filterPatients = (query: string) => patients.filter((patient) =>
-    `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR')
-      .includes(query.trim().toLocaleLowerCase('pt-BR')),
-  )
-  const filteredTriagePatients = filterPatients(triagePatientQuery)
-  const filteredRecordPatients = filterPatients(recordPatientQuery)
-  const visibleReferrals = referrals.filter((referral) => {
-    const patient = patientName(referral.patient_reference)
-    const matchesSearch = `${patient} ${referral.referral_type}`.toLocaleLowerCase('pt-BR')
-      .includes(triageFilter.trim().toLocaleLowerCase('pt-BR'))
-    return matchesSearch
-  })
-
-  async function createReferral(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    setNotice('')
-    const referralType = triageType === 'Outro' ? customTriageType.trim() : triageType
-    try {
-      const response = await fetch('/api/v1/psychology/referrals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patient_reference: triagePatient, referral_type: referralType, priority: triagePriority }),
-      })
-      const data = await response.json() as PsychologyReferral & { detail?: unknown }
-      if (!response.ok) throw new Error(readableApiError(data.detail))
-      setReferrals((current) => [data, ...current])
-      setTriagePatient('')
-      setTriageType('Acolhimento')
-      setCustomTriageType('')
-      setTriagePriority('routine')
-      setNotice('Encaminhamento incluído na fila.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao registrar o encaminhamento.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function updateReferral(referralId: number, changes: { status?: string; priority?: string }) {
-    setUpdatingReferral(referralId)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch(`/api/v1/psychology/referrals/${referralId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(changes),
-      })
-      const data = await response.json() as PsychologyReferral & { detail?: unknown }
-      if (!response.ok) throw new Error(readableApiError(data.detail))
-      setReferrals((current) => current.map((referral) => referral.id === referralId ? data : referral))
-      setNotice('Fila atualizada.')
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar o encaminhamento.')
-    } finally {
-      setUpdatingReferral(null)
-    }
-  }
-
-  async function createEncounter(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch('/api/v1/psychology/encounters', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patient_reference: recordPatient,
-          encounter_type: recordType,
-          objective: objective.trim(),
-          evolution: evolution.trim(),
-          plan: plan.trim(),
-        }),
-      })
-      const data = await response.json() as PsychologyEncounter & { detail?: unknown }
-      if (!response.ok) throw new Error(readableApiError(data.detail))
-      setEncounters((current) => [data, ...current])
-      setObjective('')
-      setEvolution('')
-      setPlan('')
-      setNotice('Registro clínico salvo com autoria e data/hora.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar o registro clínico.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return <section className="psychology-page page-enter">
-    <div className="page-title-row">
-      <div><p className="eyebrow">MÓDULO · PSICOLOGIA / PSIQUIATRIA</p><h1>Acompanhamento psicológico e psiquiátrico</h1><p className="welcome-copy">Organize encaminhamentos, atendimentos e registros clínicos em um único fluxo.</p></div>
-      <span className="module-icon module-icon-psychology"><HeartPulse size={23} /></span>
-    </div>
-    <div className="psychology-privacy" role="note"><LockKeyhole size={18} /><span>Informações clínicas confidenciais: acesso restrito a contas autorizadas neste módulo. Registre apenas dados necessários ao atendimento.</span></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <div className="psychology-tabs" aria-label="Áreas do módulo de Psicologia e Psiquiatria">
-      <button type="button" aria-pressed={tab === 'triage'} className={tab === 'triage' ? 'psychology-tab is-active' : 'psychology-tab'} onClick={() => setTab('triage')}>Fila e triagem <span>{referrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
-      <button type="button" aria-pressed={tab === 'encounters'} className={tab === 'encounters' ? 'psychology-tab is-active' : 'psychology-tab'} onClick={() => { setEncountersPatient(''); setEncounterLoadError(''); setTab('encounters') }}>Atendimentos e registros</button>
-    </div>
-    {tab === 'triage' && <>
-      <form className="psychology-panel" onSubmit={(event) => void createReferral(event)}>
-        <div className="section-heading"><div><p className="eyebrow">ENTRADA NA FILA</p><h2>Novo encaminhamento</h2></div></div>
-        <div className="field-grid field-grid-two">
-          <label className="field"><span className="field-label">Localizar paciente</span><span className="search-input-wrap"><Search size={17} /><input value={triagePatientQuery} onChange={(event) => setTriagePatientQuery(event.target.value)} placeholder="Nome, quarto ou leito" /></span></label>
-          <label className="field"><span className="field-label">Paciente</span><select required value={triagePatient} onChange={(event) => { setTriagePatient(event.target.value); setTriagePatientQuery('') }}><option value="">Selecione o paciente</option>{filteredTriagePatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}</option>)}</select></label>
-          <PatientAllergyAlert patient={patients.find((patient) => patient.reference === triagePatient)} />
-          <label className="field"><span className="field-label">Tipo de atendimento</span><select value={triageType} onChange={(event) => setTriageType(event.target.value)}><option>Acolhimento</option><option>Avaliação psicológica</option><option>Acompanhamento</option><option>Avaliação psiquiátrica</option><option>Outro</option></select></label>
-          {triageType === 'Outro' && <label className="field"><span className="field-label">Descreva o tipo</span><input required minLength={2} maxLength={80} value={customTriageType} onChange={(event) => setCustomTriageType(event.target.value)} /></label>}
-          <label className="field"><span className="field-label">Prioridade</span><select value={triagePriority} onChange={(event) => setTriagePriority(event.target.value as 'routine' | 'priority')}><option value="routine">Rotina</option><option value="priority">Prioritária · conforme protocolo institucional</option></select></label>
-        </div>
-        <p className="psychology-help">Use a prioridade institucionalmente definida. Não inclua relato clínico ou detalhes sensíveis no encaminhamento.</p>
-        <button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Registrando…' : 'Adicionar à fila'} <ArrowRight size={16} /></button>
-      </form>
-      <section className="psychology-panel">
-        <div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO</p><h2>Fila de atendimento</h2></div><span className="module-total">{referrals.length}</span></div>
-        <div className="psychology-filter-row">
-          <label className="field"><span className="field-label">Buscar encaminhamento</span><input value={triageFilter} onChange={(event) => setTriageFilter(event.target.value)} placeholder="Paciente ou tipo de atendimento" /></label>
-          <p className="psychology-help">Atualize a situação conforme o fluxo da equipe.</p>
-        </div>
-        {loading ? <div className="history-empty">Carregando fila…</div> : visibleReferrals.length ? <div className="psychology-referral-list">{visibleReferrals.map((referral) => <article className="psychology-referral-card" key={referral.id}>
-          <div className="psychology-referral-main"><div><h3>{patientName(referral.patient_reference)}</h3><p>{referral.referral_type}</p><small>{dateTime(referral.created_at)}</small></div><span className={`psychology-priority ${referral.priority === 'priority' ? 'is-priority' : ''}`}>{referral.priority === 'priority' ? 'Prioritária' : 'Rotina'}</span></div>
-          <div className="psychology-referral-actions"><label className="field"><span className="field-label">Situação</span><select aria-label={`Situação do encaminhamento de ${patientName(referral.patient_reference)}`} disabled={updatingReferral === referral.id} value={referral.status} onChange={(event) => void updateReferral(referral.id, { status: event.target.value })}>{Object.entries(psychologyStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select aria-label={`Prioridade do encaminhamento de ${patientName(referral.patient_reference)}`} disabled={updatingReferral === referral.id} value={referral.priority} onChange={(event) => void updateReferral(referral.id, { priority: event.target.value })}><option value="routine">Rotina</option><option value="priority">Prioritária</option></select></label></div>
-        </article>)}</div> : <div className="history-empty">{referrals.length ? 'Nenhum encaminhamento corresponde à busca.' : 'A fila está vazia. Registre um encaminhamento para iniciar o acompanhamento.'}</div>}
-      </section>
-    </>}
-    {tab === 'encounters' && <>
-      <form className="psychology-panel" onSubmit={(event) => void createEncounter(event)}>
-        <div className="section-heading"><div><p className="eyebrow">PRONTUÁRIO RESTRITO</p><h2>Novo registro de atendimento</h2></div></div>
-        <div className="field-grid field-grid-two">
-          <label className="field"><span className="field-label">Localizar paciente</span><span className="search-input-wrap"><Search size={17} /><input value={recordPatientQuery} onChange={(event) => setRecordPatientQuery(event.target.value)} placeholder="Nome, quarto ou leito" /></span></label>
-          <label className="field"><span className="field-label">Paciente</span><select required value={recordPatient} onChange={(event) => { setRecordPatient(event.target.value); setRecordPatientQuery(''); setEncountersPatient(''); setEncounterLoadError(''); setEncounters([]) }}><option value="">Selecione o paciente</option>{filteredRecordPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}</option>)}</select></label>
-          <PatientAllergyAlert patient={patients.find((patient) => patient.reference === recordPatient)} />
-          <label className="field"><span className="field-label">Tipo de registro</span><select value={recordType} onChange={(event) => setRecordType(event.target.value as PsychologyEncounter['encounter_type'])}>{Object.entries(psychologyEncounterTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label className="field psychology-field-wide"><span className="field-label">Objetivo do atendimento</span><textarea required minLength={3} maxLength={500} value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Finalidade do encontro, em termos objetivos" /></label>
-          <label className="field psychology-field-wide"><span className="field-label">Evolução</span><textarea required minLength={3} maxLength={4000} value={evolution} onChange={(event) => setEvolution(event.target.value)} placeholder="Registre a evolução profissional pertinente ao atendimento" /></label>
-          <label className="field psychology-field-wide"><span className="field-label">Plano e encaminhamentos</span><textarea maxLength={4000} value={plan} onChange={(event) => setPlan(event.target.value)} placeholder="Próximos passos e encaminhamentos acordados" /></label>
-        </div>
-        <p className="psychology-help">Autoria e horário são registrados automaticamente. Os registros são preservados no histórico; correções devem ser feitas como novo adendo, conforme protocolo da instituição.</p>
-        <button className="button button-primary" type="submit" disabled={saving || !recordPatient}>{saving ? 'Salvando…' : 'Salvar registro clínico'} <CheckCircle2 size={16} /></button>
-      </form>
-      <section className="psychology-panel">
-        <div className="section-heading"><div><p className="eyebrow">HISTÓRICO INDIVIDUAL</p><h2>Registros de atendimento</h2></div><span className="module-total">{encounters.length}</span></div>
-        {!recordPatient ? <div className="history-empty">Selecione um paciente acima para consultar apenas o histórico individual autorizado.</div> : encounterLoadError ? <div className="form-message form-message-error" role="alert">{encounterLoadError}</div> : encountersLoading ? <div className="history-empty">Carregando histórico confidencial…</div> : encounters.length ? <div className="psychology-encounter-list">{encounters.map((encounter) => <article className="psychology-encounter-card" key={encounter.id}>
-          <div className="psychology-encounter-heading"><div><h3>{psychologyEncounterTypes[encounter.encounter_type]}</h3><p>{patientName(encounter.patient_reference)}</p></div><div><time>{dateTime(encounter.created_at)}</time><small>{encounter.actor_name}</small></div></div>
-          <div className="psychology-encounter-field"><strong>Objetivo</strong><p>{encounter.objective}</p></div>
-          <div className="psychology-encounter-field"><strong>Evolução</strong><p>{encounter.evolution}</p></div>
-          {encounter.plan && <div className="psychology-encounter-field"><strong>Plano e encaminhamentos</strong><p>{encounter.plan}</p></div>}
-        </article>)}</div> : <div className="history-empty">Nenhum registro clínico para este paciente.</div>}
-      </section>
-    </>}
-  </section>
-}
-
 type AuditEvent = { id: number; actor_name: string; actor_role: string; action: string; module: string; target_id: string; happened_at: string }
 function ExecutiveDashboard() {
   type Summary = {
@@ -2883,7 +1966,14 @@ function ExecutiveDashboard() {
     emergency_arrivals_today: number
     vital_records_today: number
     patient_transfers_today: number
+    patient_admissions_today: number
     patient_discharges_today: number
+    physical_beds: number
+    mapped_occupied_beds: number
+    operational_beds: number
+    available_beds: number
+    unreconciled_legacy_patients: number
+    occupancy_percent: number | null
     updated_at: string
   }
   type StockAlert = { item_id: number; item_name: string; balance: string; unit: string; suggested_replenishment: string; expiry_date: string; days_to_expiry: number; alert_types: string[] }
@@ -2943,7 +2033,9 @@ function ExecutiveDashboard() {
     {errors.map((message) => <div className="form-message form-message-error" role="alert" key={message}>{message}</div>)}
     {loading && !summary ? <div className="history-empty">Carregando indicadores…</div> : <>
       <div className="hygiene-summary executive-kpis">
-        <article><strong>{summary?.occupied_beds ?? '—'}</strong><span>Leitos ocupados</span></article>
+        <article><strong>{summary?.occupied_beds ?? '—'}</strong><span>Pacientes com localização registrada</span></article>
+        <article><strong>{summary?.physical_beds ?? '—'}</strong><span>Leitos físicos cadastrados</span></article>
+        <article><strong>{summary?.occupancy_percent === null || summary?.occupancy_percent === undefined ? '—' : `${summary.occupancy_percent}%`}</strong><span>Ocupação física validada</span></article>
         <article><strong>{summary?.active_patients ?? '—'}</strong><span>Pacientes ativos</span></article>
         <article><strong>{summary?.open_emergency_arrivals ?? '—'}</strong><span>Chegadas em atendimento</span></article>
         <article><strong>{summary?.emergency_arrivals_today ?? '—'}</strong><span>Chegadas hoje</span></article>
@@ -2952,12 +2044,118 @@ function ExecutiveDashboard() {
       </div>
       <div className="executive-risk-strip" role="status"><AlertTriangle size={18} /><span><strong>Alertas assistenciais:</strong> {summary?.patients_with_known_allergies ?? '—'} paciente(s) com alergia conhecida, {summary?.patients_without_allergy_confirmation ?? '—'} sem confirmação e {summary?.active_contraindications ?? '—'} contraindicação(ões) ativa(s).</span></div>
       <div className="executive-summary-grid">
-        <article><strong>Fluxo de leitos hoje</strong><span>{summary?.patient_transfers_today ?? '—'} transferências · {summary?.patient_discharges_today ?? '—'} altas</span></article>
+        <article><strong>Fluxo de leitos hoje</strong><span>{summary?.patient_admissions_today ?? '—'} admissões · {summary?.patient_transfers_today ?? '—'} transferências · {summary?.patient_discharges_today ?? '—'} altas</span></article>
         <article><strong>Validade de estoque</strong><span>{stockAvailable ? `${expiredStock} lote(s) vencido(s) · ${expiringStock} vencendo em até 30 dias` : 'Indicador indisponível'}</span></article>
       </div>
       {stockAlerts.length > 0 && <section className="executive-stock-alerts"><div className="section-heading"><div><p className="eyebrow">LOGÍSTICA · AÇÃO NECESSÁRIA</p><h3>Estoque crítico e validade</h3></div><span className="module-total">{stockAlerts.length} alertas</span></div><div className="collection-list">{stockAlerts.slice(0, 8).map((alert) => <article className="collection-row" key={alert.item_id}><div className="collection-row-heading"><strong>{alert.item_name}</strong><span>{alert.balance} {alert.unit} disponíveis</span></div><small>{alert.alert_types.includes('expired') ? 'Lote vencido' : alert.alert_types.includes('expiring') ? `Vencimento em ${Math.max(0, alert.days_to_expiry)} dias` : 'Abaixo do mínimo'} · Reposição sugerida: {alert.suggested_replenishment} {alert.unit} · Validade {alert.expiry_date}</small></article>)}</div></section>}
-      {summary?.updated_at && <p className="field-hint">Atualizado em {dateTime(summary.updated_at)}. Ocupação exibida como contagem de leitos atribuídos; percentual depende do cadastro da capacidade física do hospital.</p>}
+      {summary?.updated_at && <p className="field-hint">Atualizado em {dateTime(summary.updated_at)}. {summary.unreconciled_legacy_patients > 0 ? `${summary.unreconciled_legacy_patients} localização(ões) legada(s) aguardam reconciliação; o percentual não é calculado.` : summary.occupancy_percent === null ? 'Percentual indisponível até haver leitos físicos operacionais cadastrados.' : `Ocupação calculada sobre ${summary.operational_beds} leito(s) operacional(is), com ${summary.available_beds} disponível(is).`}</p>}
     </>}
+  </section>
+}
+
+function HospitalBedManagement() {
+  type Unit = { id: string; name: string }
+  type Capacity = { total_beds: number; operational_beds: number; occupied_beds: number; available_beds: number; unreconciled_legacy_patients: number; occupancy_percent: number | null }
+  const [units, setUnits] = useState<Unit[]>([])
+  const [beds, setBeds] = useState<HospitalBed[]>([])
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [capacity, setCapacity] = useState<Capacity | null>(null)
+  const [unitName, setUnitName] = useState('')
+  const [unitId, setUnitId] = useState('')
+  const [room, setRoom] = useState('')
+  const [label, setLabel] = useState('')
+  const [isolationCapable, setIsolationCapable] = useState(false)
+  const [patientReference, setPatientReference] = useState('')
+  const [reconciliationBedId, setReconciliationBedId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+      const [bedData, patientData] = await Promise.all([
+        fetch('/api/v1/nursing/beds').then(readApiResponse<{ units?: Unit[]; beds?: HospitalBed[]; capacity?: Capacity }>),
+        fetch('/api/v1/nursing/patients').then(readApiResponse<{ patients?: Patient[] }>),
+      ])
+      setUnits(bedData.units ?? [])
+      setBeds(bedData.beds ?? [])
+      setCapacity(bedData.capacity ?? null)
+      setPatients(patientData.patients ?? [])
+      setUnitId((current) => current || bedData.units?.[0]?.id || '')
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar o mapa de leitos.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
+
+  const assignedPatients = new Set(beds.flatMap((bed) => bed.patient_reference ? [bed.patient_reference] : []))
+  const unreconciledPatients = patients.filter((patient) => patient.active !== false && patient.room && patient.bed && !assignedPatients.has(patient.reference))
+  const reconcileCandidates = beds.filter((bed) => bed.status === 'available' && !bed.occupied && bed.room === (unreconciledPatients.find((patient) => patient.reference === patientReference)?.room ?? '') && bed.label === (unreconciledPatients.find((patient) => patient.reference === patientReference)?.bed ?? ''))
+
+  async function submitMutation(path: string, body: object, success: string) {
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      await readApiResponse(response)
+      setNotice(success)
+      await load()
+      return true
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar a configuração dos leitos.')
+      return false
+    } finally { setSaving(false) }
+  }
+
+  async function updateStatus(bed: HospitalBed, status: HospitalBed['status']) {
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/management/beds/${encodeURIComponent(bed.id)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      await readApiResponse(response)
+      setNotice(`Situação atualizada: ${bed.unit_name}, quarto ${bed.room}, leito ${bed.label}.`)
+      await load()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível atualizar a situação do leito.')
+    } finally { setSaving(false) }
+  }
+
+  return <section className="patient-list-panel">
+    <div className="section-heading"><div><p className="eyebrow">CAPACIDADE FÍSICA</p><h2>Unidades e mapa de leitos</h2><p className="welcome-copy">Cadastre a capacidade física e reconcilie manualmente os cadastros legados antes de usar percentuais de ocupação.</p></div><button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Atualizar</button></div>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {capacity && <div className="hygiene-summary executive-kpis"><article><strong>{capacity.total_beds}</strong><span>Leitos cadastrados</span></article><article><strong>{capacity.occupied_beds}</strong><span>Ocupados no mapa físico</span></article><article><strong>{capacity.available_beds}</strong><span>Liberados</span></article><article><strong>{capacity.occupancy_percent === null ? '—' : `${capacity.occupancy_percent}%`}</strong><span>Ocupação física</span></article></div>}
+    {capacity && capacity.unreconciled_legacy_patients > 0 && <div className="notice-band" role="status"><Info size={18} /><span>{capacity.unreconciled_legacy_patients} paciente(s) com quarto/leito legado aguardam reconciliação manual. O percentual de ocupação permanece indisponível.</span></div>}
+    <form className="account-create-panel" onSubmit={(event) => { event.preventDefault(); void submitMutation('/api/v1/management/units', { name: unitName }, 'Unidade cadastrada.') .then((saved) => { if (saved) setUnitName('') }) }}>
+      <div className="section-heading"><div><p className="eyebrow">NOVA UNIDADE</p><h3>Cadastrar setor ou unidade</h3></div></div>
+      <label className="field"><span className="field-label">Nome da unidade</span><input required minLength={2} maxLength={100} value={unitName} onChange={(event) => setUnitName(event.target.value)} placeholder="Ex.: Clínica médica" /></label>
+      <button className="button button-secondary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar unidade'}</button>
+    </form>
+    <form className="account-create-panel" onSubmit={(event) => { event.preventDefault(); void submitMutation('/api/v1/management/beds', { unit_id: unitId, room, label, isolation_capable: isolationCapable }, 'Leito cadastrado como disponível.').then((saved) => { if (saved) { setRoom(''); setLabel(''); setIsolationCapable(false) } }) }}>
+      <div className="section-heading"><div><p className="eyebrow">CAPACIDADE</p><h3>Cadastrar leito físico</h3></div></div>
+      <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Unidade</span><select required value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Selecione</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={room} onChange={(event) => setRoom(event.target.value)} /></label><label className="field"><span className="field-label">Identificação do leito</span><input required maxLength={20} value={label} onChange={(event) => setLabel(event.target.value)} /></label></div>
+      <label className="field emergency-patient-toggle"><span className="field-label">Característica</span><span><input type="checkbox" checked={isolationCapable} onChange={(event) => setIsolationCapable(event.target.checked)} /> Leito preparado para isolamento (cadastro estrutural; não substitui indicação clínica)</span></label>
+      <button className="button button-secondary" type="submit" disabled={saving || !units.length}>{saving ? 'Salvando…' : 'Cadastrar leito'}</button>
+    </form>
+    {unreconciledPatients.length > 0 && <form className="account-create-panel" onSubmit={(event) => { event.preventDefault(); void submitMutation(`/api/v1/management/patients/${encodeURIComponent(patientReference)}/bed-reconciliation`, { bed_id: reconciliationBedId }, 'Paciente reconciliado com o mapa físico.').then((saved) => { if (saved) { setPatientReference(''); setReconciliationBedId('') } }) }}>
+      <div className="section-heading"><div><p className="eyebrow">RECONCILIAÇÃO MANUAL</p><h3>Vincular cadastro legado ao leito físico</h3></div></div>
+      <p className="field-hint">A reconciliação só é permitida quando unidade/quarto/leito físico coincidem com o texto já registrado. Divergências devem ser revisadas antes de confirmar.</p>
+      <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Paciente com localização pendente</span><select required value={patientReference} onChange={(event) => { setPatientReference(event.target.value); setReconciliationBedId('') }}><option value="">Selecione</option>{unreconciledPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · Quarto {patient.room} · Leito {patient.bed}</option>)}</select></label><label className="field"><span className="field-label">Correspondência física exata</span><select required value={reconciliationBedId} onChange={(event) => setReconciliationBedId(event.target.value)} disabled={!patientReference}><option value="">Selecione</option>{reconcileCandidates.map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select></label></div>
+      <button className="button button-primary" type="submit" disabled={saving || !patientReference || !reconciliationBedId}>{saving ? 'Vinculando…' : 'Confirmar reconciliação'}</button>
+    </form>}
+    <section><div className="section-heading"><div><p className="eyebrow">MAPA ATUAL</p><h3>Leitos cadastrados</h3></div><span className="module-total">{beds.length}</span></div>
+      {loading ? <div className="history-empty">Carregando capacidade física…</div> : beds.length ? <div className="collection-list">{beds.map((bed) => <article className="collection-row" key={bed.id}><div className="collection-row-heading"><strong>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</strong><span className={`work-order-status status-${bed.status === 'available' ? 'open' : bed.status === 'cleaning' ? 'in_progress' : 'cancelled'}`}>{bed.occupied ? 'Ocupado' : bed.status === 'available' ? 'Disponível' : bed.status === 'cleaning' ? 'Em higienização' : bed.status === 'maintenance' ? 'Manutenção' : 'Bloqueado'}</span></div><small>{bed.isolation_capable ? 'Preparado para isolamento' : 'Sem característica de isolamento'}{bed.patient_reference ? ` · Paciente vinculado: ${bed.patient_reference}` : ''}</small><label className="field"><span className="field-label">Situação operacional</span><select value={bed.occupied ? 'available' : bed.status} disabled={saving || bed.occupied} onChange={(event) => void updateStatus(bed, event.target.value as HospitalBed['status'])}><option value="available">Disponível</option><option value="cleaning">Em higienização</option><option value="maintenance">Manutenção</option><option value="blocked">Bloqueado</option></select></label></article>)}</div> : <div className="history-empty">Nenhum leito foi cadastrado.</div>}
+    </section>
   </section>
 }
 
@@ -2970,7 +2168,7 @@ function ManagementPage({ onNavigate }: { onNavigate: (id: ModuleId) => void }) 
     { id: 'maintenance', label: 'Manutenção' },
     { id: 'admin', label: 'Administração e auditoria' },
   ]
-  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{shortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
+  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><HospitalBedManagement /><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{shortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
 }
 
 function BackupExportPanel() {

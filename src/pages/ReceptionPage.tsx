@@ -33,6 +33,7 @@ type EmergencyArrival = {
 }
 type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
 type ReceptionTab = 'emergency' | 'admissions'
+type HospitalBed = { id: string; unit_name: string; room: string; label: string; status: string; occupied: boolean }
 
 const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
   waiting: 'Aguardando',
@@ -69,6 +70,7 @@ function ReceptionAllergyAlert({ status }: { status?: Patient['allergies_status'
 function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean }> }) {
   const [tab, setTab] = useState<ReceptionTab>('emergency')
   const [patients, setPatients] = useState<Patient[]>([])
+  const [beds, setBeds] = useState<HospitalBed[]>([])
   const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
   const [counts, setCounts] = useState<EmergencyArrivalCounts>({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0 })
   const [patientReference, setPatientReference] = useState('')
@@ -85,7 +87,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [updating, setUpdating] = useState('')
-  const [admissionDraft, setAdmissionDraft] = useState<Record<string, { room: string; bed: string }>>({})
+  const [admissionDraft, setAdmissionDraft] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const canCreate = user.permissions.reception?.includes('criar') ?? false
@@ -114,13 +116,16 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
     Promise.all([
       fetch('/api/v1/nursing/patients'),
       fetch('/api/v1/reception/arrivals?limit=25&offset=0'),
-    ]).then(async ([patientResponse, arrivalsResponse]) => {
-      const [patientData, arrivalsData] = await Promise.all([
+      fetch('/api/v1/nursing/beds'),
+    ]).then(async ([patientResponse, arrivalsResponse, bedResponse]) => {
+      const [patientData, arrivalsData, bedData] = await Promise.all([
         readApiResponse<{ patients?: Patient[] }>(patientResponse),
         readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(arrivalsResponse),
+        readApiResponse<{ beds?: HospitalBed[] }>(bedResponse),
       ])
       if (!current) return
       setPatients(patientData.patients ?? [])
+      setBeds(bedData.beds ?? [])
       setArrivals(arrivalsData.arrivals ?? [])
       setTotal(arrivalsData.total ?? 0)
       setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...arrivalsData.status_counts })
@@ -175,22 +180,27 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   }
 
   async function admitArrival(arrival: EmergencyArrival) {
-    const location = admissionDraft[arrival.id]
-    if (!location?.room.trim() || !location.bed.trim()) return
+    const bedId = admissionDraft[arrival.id]
+    const bed = beds.find((item) => item.id === bedId && item.status === 'available' && !item.occupied)
+    if (!bed) return
     setUpdating(arrival.id); setError(''); setNotice('')
     try {
       const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}/admission`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room: location.room.trim(), bed: location.bed.trim() }),
+        body: JSON.stringify({ bed_id: bed.id }),
       })
       await readApiResponse(response)
-      setNotice(`${arrival.patient_name} foi vinculado à internação no quarto ${location.room}, leito ${location.bed}.`)
+      setNotice(`${arrival.patient_name} foi internado em ${bed.unit_name}, quarto ${bed.room}, leito ${bed.label}.`)
       setAdmissionDraft((current) => { const next = { ...current }; delete next[arrival.id]; return next })
       await loadArrivals(statusFilter, query, offset)
       const patientResponse = await fetch('/api/v1/nursing/patients')
-      const patientData = await readApiResponse<{ patients?: Patient[] }>(patientResponse)
+      const [patientData, bedResponse] = await Promise.all([
+        readApiResponse<{ patients?: Patient[] }>(patientResponse),
+        fetch('/api/v1/nursing/beds').then(readApiResponse<{ beds?: HospitalBed[] }>),
+      ])
       setPatients(patientData.patients ?? [])
+      setBeds(bedResponse.beds ?? [])
     } catch (admissionError) {
       setError(admissionError instanceof Error ? admissionError.message : 'Não foi possível concluir a internação.')
     } finally { setUpdating('') }
@@ -239,7 +249,17 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
           {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`psychology-tab ${statusFilter === value ? 'is-active' : ''}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
         </div>
         <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
-        {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}><div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div><ReceptionAllergyAlert status={arrival.allergies_status} /><div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>{canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span>        <select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}{canUpdate && arrival.patient_reference && ['waiting', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}><label className="field"><span className="field-label">Quarto para internação</span><input required maxLength={20} value={admissionDraft[arrival.id]?.room ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: event.target.value, bed: current[arrival.id]?.bed ?? '' } }))} /></label><label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={admissionDraft[arrival.id]?.bed ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { room: current[arrival.id]?.room ?? '', bed: event.target.value } }))} /></label><button className="button button-secondary" type="submit" disabled={updating === arrival.id}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button></form>}</article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}        <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
+        {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}>
+          <div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div>
+          <ReceptionAllergyAlert status={arrival.allergies_status} />
+          <div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>
+          {canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span><select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
+          {canUpdate && arrival.patient_reference && ['waiting', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}>
+            <label className="field"><span className="field-label">Leito físico disponível</span><select required value={admissionDraft[arrival.id] ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: event.target.value }))}><option value="">Selecione unidade, quarto e leito</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Cadastre ou libere um leito em Gestão Hospitalar.</span>}</label>
+            <button className="button button-secondary" type="submit" disabled={updating === arrival.id || !admissionDraft[arrival.id] || !beds.some((bed) => bed.id === admissionDraft[arrival.id] && bed.status === 'available' && !bed.occupied)}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button>
+          </form>}
+        </article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}
+        <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
       </section>
     </>}
   </section>

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from .common import (
     Base,
     DemoPrincipal,
+    audit_outbox_lifespan,
     database_session,
     emit_audit_event,
     require_demo_role,
@@ -40,7 +41,8 @@ def get_xray_db():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     verify_database_migrated("xray")
-    yield
+    async with audit_outbox_lifespan("xray"):
+        yield
 
 
 app = FastAPI(
@@ -103,9 +105,11 @@ def create_request(
         **payload.model_dump(), status="requested", created_at=datetime.now(UTC)
     )
     db.add(request)
+    emit_audit_event(
+        principal, "xray", "xray_request_created", request.patient_reference, db=db
+    )
     db.commit()
     db.refresh(request)
-    emit_audit_event(principal, "xray", "xray_request_created", request.patient_reference)
     return serialize_request(request)
 
 
@@ -130,14 +134,15 @@ def update_request(
         request.result = payload.result
         request.result_recorded_by = principal.actor_name
         request.result_recorded_at = datetime.now(UTC)
-    db.commit()
-    db.refresh(request)
     emit_audit_event(
         principal,
         "xray",
         "xray_result_recorded" if payload.result is not None else "xray_request_status_changed",
         request.patient_reference,
+        db=db,
     )
+    db.commit()
+    db.refresh(request)
     return serialize_request(request)
 
 

@@ -1,20 +1,52 @@
+import asyncio
 import logging
 import os
+import uuid
 from collections.abc import Generator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
 import httpx
 from fastapi import Header, HTTPException, Request
-from sqlalchemy import Engine, create_engine, event, inspect
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy import (
+    DateTime,
+    Engine,
+    Index,
+    Integer,
+    String,
+    create_engine,
+    event,
+    inspect,
+    select,
+)
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from .security import SESSION_COOKIE
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class AuditOutbox(Base):
+    __tablename__ = "audit_outbox"
+    __table_args__ = (Index("ix_audit_outbox_pending", "delivered_at", "next_attempt_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(40), nullable=False)
+    action: Mapped[str] = mapped_column(String(60), nullable=False)
+    module: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
 
 @dataclass(frozen=True)
@@ -72,7 +104,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0026_system_admin"
+    expected_revision = "0028_durable_audit"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."
@@ -88,6 +120,127 @@ def clear_engine_cache() -> None:
     for engine in _engines.values():
         engine.dispose()
     _engines.clear()
+
+
+def _outbox_database_service(service: str | None = None) -> str | None:
+    current = service or os.getenv("SCPO_SERVICE")
+    if current == "therapy":
+        return "nursing"
+    if current in {"access", "nursing", "pharmacy", "social", "xray", "maintenance"}:
+        return current
+    module_services = {
+        "patients": "nursing",
+        "nursing": "nursing",
+        "reception": "nursing",
+        "nutrition": "nursing",
+        "therapy": "nursing",
+        "pharmacy": "pharmacy",
+        "social": "social",
+        "psychology": "social",
+        "xray": "xray",
+        "maintenance": "maintenance",
+        "hygiene": "maintenance",
+    }
+    return module_services.get(current or "")
+
+
+def enqueue_audit_event(
+    db: Session,
+    principal: DemoPrincipal,
+    module: str,
+    action: str,
+    target_id: str,
+) -> AuditOutbox:
+    now = datetime.now(UTC)
+    record = AuditOutbox(
+        id=str(uuid.uuid4()),
+        actor_name=principal.actor_name[:100],
+        actor_role=principal.role[:40],
+        action=action[:60],
+        module=module[:40],
+        target_id=target_id[:40],
+        created_at=now,
+        next_attempt_at=now,
+    )
+    db.add(record)
+    return record
+
+
+def dispatch_pending_audit_events(service: str, limit: int = 25) -> int:
+    if service == "audit":
+        return 0
+    audit_url = os.getenv("SCPO_AUDIT_API_URL")
+    service_token = os.getenv("SCPO_SERVICE_TOKEN")
+    now = datetime.now(UTC)
+    delivered = 0
+    with Session(get_engine(service)) as db:
+        pending = db.scalars(
+            select(AuditOutbox)
+            .where(
+                AuditOutbox.delivered_at.is_(None),
+                AuditOutbox.next_attempt_at <= now,
+            )
+            .order_by(AuditOutbox.created_at)
+            .limit(limit)
+        ).all()
+        for record in pending:
+            try:
+                if not audit_url or not service_token:
+                    raise RuntimeError("Serviço de auditoria não configurado")
+                response = httpx.post(
+                    f"{audit_url.rstrip('/')}/internal/v1/events",
+                    headers={"X-Service-Token": service_token},
+                    json={
+                        "source_event_id": record.id,
+                        "actor_name": record.actor_name,
+                        "actor_role": record.actor_role,
+                        "action": record.action,
+                        "module": record.module,
+                        "target_id": record.target_id,
+                        "happened_at": record.created_at.isoformat(),
+                    },
+                    timeout=2.0,
+                )
+                response.raise_for_status()
+                record.delivered_at = datetime.now(UTC)
+                record.last_error = ""
+                delivered += 1
+            except (httpx.HTTPError, RuntimeError) as exc:
+                record.attempts += 1
+                delay = min(3600, 2 ** min(record.attempts, 11))
+                record.next_attempt_at = datetime.now(UTC) + timedelta(seconds=delay)
+                record.last_error = str(exc)[:500]
+                _logger.error(
+                    "Audit outbox delivery deferred (%s/%s, attempt %s): %s",
+                    record.module,
+                    record.action,
+                    record.attempts,
+                    exc,
+                )
+        db.commit()
+    return delivered
+
+
+async def _run_audit_outbox_dispatcher(service: str) -> None:
+    while True:
+        try:
+            await asyncio.to_thread(dispatch_pending_audit_events, service)
+        except SQLAlchemyError:
+            _logger.exception("Audit outbox dispatcher database error (%s)", service)
+        await asyncio.sleep(5)
+
+
+@asynccontextmanager
+async def audit_outbox_lifespan(service: str):
+    task = asyncio.create_task(_run_audit_outbox_dispatcher(service))
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 def _action_for_method(method: str) -> str:
@@ -208,21 +361,22 @@ def resolve_medication_dispensation(dispensation_id: str) -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Resposta inválida da Farmácia") from exc
 
 
-def emit_audit_event(principal: DemoPrincipal, module: str, action: str, target_id: str) -> None:
-    """Send a minimum-necessary access event; never include clinical payloads."""
-    audit_url = os.getenv("SCPO_AUDIT_API_URL")
-    service_token = os.getenv("SCPO_SERVICE_TOKEN")
-    if not audit_url or not service_token:
-        _logger.error("Clinical audit unavailable: service not configured (%s/%s)", module, action)
+def emit_audit_event(
+    principal: DemoPrincipal,
+    module: str,
+    action: str,
+    target_id: str,
+    *,
+    db: Session | None = None,
+    service: str | None = None,
+) -> None:
+    """Persist a minimum-necessary event locally; delivery is retried asynchronously."""
+    database_service = _outbox_database_service(service)
+    if database_service is None:
+        raise RuntimeError(f"Audit outbox service is unknown for {module}/{action}")
+    if db is not None:
+        enqueue_audit_event(db, principal, module, action, target_id)
         return
-    try:
-        response = httpx.post(
-            f"{audit_url.rstrip('/')}/internal/v1/events",
-            headers={"X-Service-Token": service_token},
-            json={"actor_name": principal.actor_name, "actor_role": principal.role,
-                  "action": action, "module": module, "target_id": target_id[:40]},
-            timeout=2.0,
-        )
-        response.raise_for_status()
-    except httpx.HTTPError:
-        _logger.exception("Clinical audit delivery failed (%s/%s)", module, action)
+    with Session(get_engine(database_service)) as outbox_db:
+        enqueue_audit_event(outbox_db, principal, module, action, target_id)
+        outbox_db.commit()

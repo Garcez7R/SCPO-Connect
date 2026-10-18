@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 from .common import (
     Base,
     DemoPrincipal,
+    audit_outbox_lifespan,
     database_session,
     emit_audit_event,
     require_demo_role,
@@ -95,7 +96,8 @@ def get_pharmacy_db():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     verify_database_migrated("pharmacy")
-    yield
+    async with audit_outbox_lifespan("pharmacy"):
+        yield
 
 
 app = FastAPI(
@@ -259,8 +261,10 @@ def create_item(
             created_at=now,
         )
     )
+    emit_audit_event(
+        principal, "pharmacy", "inventory_item_created", str(item.id), db=db
+    )
     db.commit()
-    emit_audit_event(principal, "pharmacy", "inventory_item_created", str(item.id))
     return serialize_item(item)
 
 
@@ -344,10 +348,12 @@ def create_stock_movement(
         created_at=now,
     )
     db.add(movement)
+    emit_audit_event(
+        principal, "pharmacy", "stock_movement_created", str(item.id), db=db
+    )
     db.commit()
     db.refresh(movement)
     db.refresh(item)
-    emit_audit_event(principal, "pharmacy", "stock_movement_created", str(item.id))
     return serialize_stock_movement(movement)
 
 
@@ -435,8 +441,8 @@ def create_dispensation(
             created_at=now,
         )
     )
+    emit_audit_event(principal, "pharmacy", "medication_dispensed", dispense.id, db=db)
     db.commit()
-    emit_audit_event(principal, "pharmacy", "medication_dispensed", dispense.id)
     return serialize_dispensation(dispense)
 
 
@@ -472,9 +478,11 @@ def update_stock_thresholds(
         raise HTTPException(status_code=404, detail="Item de estoque não encontrado")
     item.minimum_balance = payload.minimum_balance
     item.average_balance = payload.average_balance
+    emit_audit_event(
+        principal, "pharmacy", "inventory_thresholds_updated", str(item.id), db=db
+    )
     db.commit()
     db.refresh(item)
-    emit_audit_event(principal, "pharmacy", "inventory_thresholds_updated", str(item.id))
     return serialize_item(item)
 
 

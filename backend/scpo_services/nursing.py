@@ -12,18 +12,23 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     case,
+    exists,
     func,
     select,
+    text,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
     Base,
     DemoPrincipal,
+    audit_outbox_lifespan,
     database_session,
     emit_audit_event,
     require_demo_role,
@@ -174,6 +179,59 @@ class PatientFlowEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class HospitalUnit(Base):
+    __tablename__ = "hospital_units"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class HospitalBed(Base):
+    __tablename__ = "hospital_beds"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    unit_id: Mapped[str] = mapped_column(ForeignKey("hospital_units.id", ondelete="RESTRICT"), nullable=False)
+    room: Mapped[str] = mapped_column(String(20), nullable=False)
+    label: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="available")
+    isolation_capable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    notes: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class BedAssignment(Base):
+    __tablename__ = "bed_assignments"
+    __table_args__ = (
+        Index(
+            "uq_bed_assignments_active_bed",
+            "bed_id",
+            unique=True,
+            sqlite_where=text("released_at IS NULL"),
+            postgresql_where=text("released_at IS NULL"),
+        ),
+        Index(
+            "uq_bed_assignments_active_patient",
+            "patient_reference",
+            unique=True,
+            sqlite_where=text("released_at IS NULL"),
+            postgresql_where=text("released_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bed_id: Mapped[str] = mapped_column(ForeignKey("hospital_beds.id", ondelete="RESTRICT"), nullable=False)
+    patient_reference: Mapped[str] = mapped_column(ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assigned_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    released_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+
+
 class PatientAllergyHistory(Base):
     __tablename__ = "patient_allergy_history"
 
@@ -301,31 +359,71 @@ class EmergencyArrivalStatusPayload(BaseModel):
 
 class EmergencyAdmissionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    room: str = Field(min_length=1, max_length=20)
-    bed: str = Field(min_length=1, max_length=20)
-
-    @field_validator("room", "bed")
-    @classmethod
-    def trim_bed_location(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Informe quarto e leito")
-        return value
+    bed_id: str = Field(min_length=1, max_length=36)
 
 
 class PatientTransferPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    room: str = Field(min_length=1, max_length=20)
-    bed: str = Field(min_length=1, max_length=20)
+    bed_id: str = Field(min_length=1, max_length=36)
     reason: str = Field(min_length=3, max_length=500)
 
-    @field_validator("room", "bed", "reason")
+    @field_validator("bed_id", "reason")
     @classmethod
     def trim_transfer_fields(cls, value: str) -> str:
         value = value.strip()
         if not value:
-            raise ValueError("Preencha o destino e o motivo da transferência")
+            raise ValueError("Selecione o leito de destino e informe o motivo da transferência")
         return value
+
+
+class HospitalUnitPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def trim_unit_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Informe o nome da unidade")
+        return value
+
+
+class HospitalBedPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unit_id: str = Field(min_length=1, max_length=36)
+    room: str = Field(min_length=1, max_length=20)
+    label: str = Field(min_length=1, max_length=20)
+    isolation_capable: bool = False
+    notes: str = Field(default="", max_length=300)
+
+    @field_validator("unit_id", "room", "label")
+    @classmethod
+    def trim_bed_fields(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Preencha unidade, quarto e identificação do leito")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def trim_bed_notes(cls, value: str) -> str:
+        return value.strip()
+
+
+class HospitalBedStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["available", "cleaning", "maintenance", "blocked"]
+
+
+class PatientBedReconciliationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    bed_id: str = Field(min_length=1, max_length=36)
+
+    @field_validator("bed_id")
+    @classmethod
+    def trim_bed_id(cls, value: str) -> str:
+        return value.strip()
 
 
 class PatientDischargePayload(BaseModel):
@@ -398,10 +496,141 @@ def get_nursing_db():
     yield from database_session("nursing")
 
 
+BED_ACCESS = require_demo_role("management", "nursing", "reception", "hygiene", "maintenance")
+BED_MANAGEMENT = require_demo_role("management")
+
+
+def _active_assignment_for_bed(db: Session, bed_id: str) -> BedAssignment | None:
+    return db.scalar(
+        select(BedAssignment).where(
+            BedAssignment.bed_id == bed_id,
+            BedAssignment.released_at.is_(None),
+        )
+    )
+
+
+def _active_assignment_for_patient(db: Session, patient_reference: str) -> BedAssignment | None:
+    return db.scalar(
+        select(BedAssignment).where(
+            BedAssignment.patient_reference == patient_reference,
+            BedAssignment.released_at.is_(None),
+        )
+    )
+
+
+def _available_hospital_bed(db: Session, bed_id: str) -> tuple[HospitalBed, HospitalUnit]:
+    bed = db.get(HospitalBed, bed_id)
+    if bed is None or not bed.active:
+        raise HTTPException(status_code=404, detail="Leito não encontrado ou inativo")
+    unit = db.get(HospitalUnit, bed.unit_id)
+    if unit is None or not unit.active:
+        raise HTTPException(status_code=409, detail="A unidade deste leito está inativa")
+    if bed.status != "available":
+        raise HTTPException(status_code=409, detail="O leito não está liberado para internação")
+    if _active_assignment_for_bed(db, bed.id):
+        raise HTTPException(status_code=409, detail="O leito já está ocupado")
+    return bed, unit
+
+
+def _assign_patient_to_bed(
+    db: Session,
+    patient: Patient,
+    bed: HospitalBed,
+    principal: DemoPrincipal,
+    occurred_at: datetime,
+) -> None:
+    existing = _active_assignment_for_patient(db, patient.reference)
+    if existing:
+        existing.released_at = occurred_at
+        existing.released_by = principal.actor_name
+    assignment = BedAssignment(
+        bed_id=bed.id,
+        patient_reference=patient.reference,
+        assigned_at=occurred_at,
+        assigned_by=principal.actor_name,
+    )
+    db.add(assignment)
+    patient.room = bed.room
+    patient.bed = bed.label
+    patient.updated_at = occurred_at
+    patient.updated_by = principal.actor_name
+
+
+def _release_patient_bed(
+    db: Session,
+    patient: Patient,
+    principal: DemoPrincipal,
+    occurred_at: datetime,
+) -> None:
+    assignment = _active_assignment_for_patient(db, patient.reference)
+    if assignment:
+        assignment.released_at = occurred_at
+        assignment.released_by = principal.actor_name
+
+
+def _bed_capacity(db: Session) -> dict[str, int | float | None]:
+    beds = db.scalars(
+        select(HospitalBed).where(HospitalBed.active.is_(True))
+    ).all()
+    operational = sum(bed.status == "available" for bed in beds)
+    occupied = db.scalar(
+        select(func.count(BedAssignment.id))
+        .join(Patient, Patient.reference == BedAssignment.patient_reference)
+        .join(HospitalBed, HospitalBed.id == BedAssignment.bed_id)
+        .where(
+            BedAssignment.released_at.is_(None),
+            Patient.active.is_(True),
+            HospitalBed.active.is_(True),
+        )
+    ) or 0
+    legacy_unmapped = db.scalar(
+        select(func.count(Patient.reference)).where(
+            Patient.active.is_(True),
+            Patient.room != "",
+            Patient.bed != "",
+            ~exists().where(
+                BedAssignment.patient_reference == Patient.reference,
+                BedAssignment.released_at.is_(None),
+            ),
+        )
+    ) or 0
+    return {
+        "total_beds": len(beds),
+        "operational_beds": operational,
+        "occupied_beds": occupied,
+        "available_beds": max(operational - occupied, 0),
+        "unreconciled_legacy_patients": legacy_unmapped,
+        "occupancy_percent": round(occupied * 100 / operational, 1)
+        if operational > 0 and legacy_unmapped == 0
+        else None,
+    }
+
+
+def _serialize_hospital_bed(
+    bed: HospitalBed,
+    unit: HospitalUnit,
+    assignment: BedAssignment | None,
+) -> dict[str, object]:
+    return {
+        "id": bed.id,
+        "unit_id": unit.id,
+        "unit_name": unit.name,
+        "room": bed.room,
+        "label": bed.label,
+        "status": bed.status,
+        "isolation_capable": bed.isolation_capable,
+        "notes": bed.notes,
+        "active": bed.active,
+        "occupied": assignment is not None,
+        "patient_reference": assignment.patient_reference if assignment else None,
+    }
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     verify_database_migrated("nursing")
-    yield
+    async with audit_outbox_lifespan("nursing"):
+        yield
 
 
 app = FastAPI(
@@ -411,6 +640,162 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.get("/api/v1/nursing/beds")
+def list_hospital_beds(
+    principal: Annotated[DemoPrincipal, Depends(BED_ACCESS)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    rows = db.execute(
+        select(HospitalBed, HospitalUnit, BedAssignment)
+        .join(HospitalUnit, HospitalUnit.id == HospitalBed.unit_id)
+        .outerjoin(
+            BedAssignment,
+            (BedAssignment.bed_id == HospitalBed.id)
+            & BedAssignment.released_at.is_(None),
+        )
+        .where(HospitalBed.active.is_(True), HospitalUnit.active.is_(True))
+        .order_by(HospitalUnit.name, HospitalBed.room, HospitalBed.label)
+    ).all()
+    units = db.scalars(
+        select(HospitalUnit).where(HospitalUnit.active.is_(True)).order_by(HospitalUnit.name)
+    ).all()
+    emit_audit_event(principal, "management", "hospital_bed_capacity_read", "hospital_beds")
+    return {
+        "units": [{"id": unit.id, "name": unit.name} for unit in units],
+        "beds": [
+            _serialize_hospital_bed(bed, unit, assignment)
+            for bed, unit, assignment in rows
+        ],
+        "capacity": _bed_capacity(db),
+    }
+
+
+@app.post("/api/v1/management/units", status_code=201)
+def create_hospital_unit(
+    payload: HospitalUnitPayload,
+    principal: Annotated[DemoPrincipal, Depends(BED_MANAGEMENT)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    unit = HospitalUnit(
+        id=str(uuid.uuid4()),
+        name=payload.name,
+        active=True,
+        created_at=datetime.now(UTC),
+        created_by=principal.actor_name,
+    )
+    db.add(unit)
+    emit_audit_event(
+        principal, "management", "hospital_unit_created", unit.id, db=db
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe uma unidade com este nome") from exc
+    db.refresh(unit)
+    return {"id": unit.id, "name": unit.name, "active": unit.active}
+
+
+@app.post("/api/v1/management/beds", status_code=201)
+def create_hospital_bed(
+    payload: HospitalBedPayload,
+    principal: Annotated[DemoPrincipal, Depends(BED_MANAGEMENT)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    unit = db.get(HospitalUnit, payload.unit_id)
+    if unit is None or not unit.active:
+        raise HTTPException(status_code=404, detail="Unidade não encontrada ou inativa")
+    bed = HospitalBed(
+        id=str(uuid.uuid4()),
+        unit_id=unit.id,
+        room=payload.room,
+        label=payload.label,
+        status="available",
+        isolation_capable=payload.isolation_capable,
+        notes=payload.notes,
+        active=True,
+        created_at=datetime.now(UTC),
+        created_by=principal.actor_name,
+    )
+    db.add(bed)
+    emit_audit_event(
+        principal, "management", "hospital_bed_created", bed.id, db=db
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Este quarto/leito já está cadastrado nesta unidade") from exc
+    db.refresh(bed)
+    return _serialize_hospital_bed(bed, unit, None)
+
+
+@app.patch("/api/v1/management/beds/{bed_id}/status")
+def update_hospital_bed_status(
+    bed_id: str,
+    payload: HospitalBedStatusPayload,
+    principal: Annotated[DemoPrincipal, Depends(BED_ACCESS)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    bed = db.get(HospitalBed, bed_id)
+    if bed is None or not bed.active:
+        raise HTTPException(status_code=404, detail="Leito não encontrado ou inativo")
+    if _active_assignment_for_bed(db, bed.id):
+        raise HTTPException(status_code=409, detail="Não é possível alterar a situação de um leito ocupado")
+    modules = set(principal.modules)
+    if payload.status == "cleaning" and not (principal.is_superuser or {"management", "hygiene"} & modules):
+        raise HTTPException(status_code=403, detail="Apenas Higienização ou Gestão pode liberar/solicitar limpeza de leito")
+    if payload.status == "maintenance" and not (principal.is_superuser or {"management", "maintenance"} & modules):
+        raise HTTPException(status_code=403, detail="Apenas Manutenção ou Gestão pode bloquear leito para manutenção")
+    if payload.status == "blocked" and not (principal.is_superuser or "management" in modules):
+        raise HTTPException(status_code=403, detail="Apenas Gestão pode bloquear este leito")
+    if payload.status == "available" and not (principal.is_superuser or {"management", "hygiene", "maintenance"} & modules):
+        raise HTTPException(status_code=403, detail="Apenas Higienização, Manutenção ou Gestão pode liberar este leito")
+    bed.status = payload.status
+    unit = db.get(HospitalUnit, bed.unit_id)
+    if unit is None:
+        raise HTTPException(status_code=409, detail="Unidade do leito não encontrada")
+    emit_audit_event(
+        principal, "management", "hospital_bed_status_updated", bed.id, db=db
+    )
+    db.commit()
+    return _serialize_hospital_bed(bed, unit, None)
+
+
+@app.post("/api/v1/management/patients/{patient_reference}/bed-reconciliation")
+def reconcile_legacy_patient_bed(
+    patient_reference: str,
+    payload: PatientBedReconciliationPayload,
+    principal: Annotated[DemoPrincipal, Depends(BED_MANAGEMENT)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente ativo não encontrado")
+    if _active_assignment_for_patient(db, patient.reference):
+        raise HTTPException(status_code=409, detail="Este paciente já está vinculado a um leito físico")
+    bed, unit = _available_hospital_bed(db, payload.bed_id)
+    if patient.room != bed.room or patient.bed != bed.label:
+        raise HTTPException(
+            status_code=409,
+            detail="Quarto/leito do cadastro legado não corresponde ao leito físico; revise o cadastro antes de reconciliar",
+        )
+    now = datetime.now(UTC)
+    _assign_patient_to_bed(db, patient, bed, principal, now)
+    emit_audit_event(
+        principal, "management", "legacy_patient_bed_reconciled",
+        patient.reference, db=db,
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="O leito foi ocupado por outra operação; atualize o mapa") from exc
+    return {
+        "patient": serialize_patient(patient, principal=principal),
+        "bed": _serialize_hospital_bed(bed, unit, _active_assignment_for_bed(db, bed.id)),
+    }
 NURSING_ROLE = require_demo_role("nursing")
 NUTRITION_ROLE = require_demo_role("nutrition")
 VALUE_FIELDS = {
@@ -731,9 +1116,11 @@ def create_vital_record(
         recorded_at=datetime.now(UTC),
     )
     db.add(record)
+    emit_audit_event(
+        principal, "nursing", "vitals_recorded", payload.patient_reference, db=db
+    )
     db.commit()
     db.refresh(record)
-    emit_audit_event(principal, "nursing", "vitals_recorded", payload.patient_reference)
     return serialize_record(record)
 
 
@@ -832,10 +1219,12 @@ def update_emergency_clinical_priority(
     arrival.clinical_priority_updated_by = principal.actor_name
     arrival.clinical_priority_updated_at = datetime.now(UTC)
     arrival.clinical_priority_reason = payload.reason
+    emit_audit_event(
+        principal, "nursing", "emergency_clinical_priority_updated", arrival.id, db=db
+    )
     db.commit()
     db.refresh(arrival)
     patient = db.get(Patient, arrival.patient_reference) if arrival.patient_reference else None
-    emit_audit_event(principal, "nursing", "emergency_clinical_priority_updated", arrival.id)
     return serialize_emergency_arrival(
         arrival,
         patient.allergies_status if patient else "unknown",
@@ -908,11 +1297,15 @@ def create_emergency_arrival(
             previous_status="unknown",
             previous_details="",
         )
+    if payload.new_patient and patient:
+        emit_audit_event(
+            principal, "patients", "emergency_patient_created", patient.reference, db=db
+        )
+    emit_audit_event(
+        principal, "reception", "emergency_arrival_created", arrival.id, db=db
+    )
     db.commit()
     db.refresh(arrival)
-    if payload.new_patient and patient:
-        emit_audit_event(principal, "patients", "emergency_patient_created", patient.reference)
-    emit_audit_event(principal, "reception", "emergency_arrival_created", arrival.id)
     return serialize_emergency_arrival(arrival, patient.allergies_status if patient else "unknown")
 
 
@@ -931,9 +1324,11 @@ def update_emergency_arrival(
     arrival.status = payload.status
     arrival.updated_by = principal.actor_name
     arrival.updated_at = datetime.now(UTC)
+    emit_audit_event(
+        principal, "reception", "emergency_arrival_status_updated", arrival.id, db=db
+    )
     db.commit()
     db.refresh(arrival)
-    emit_audit_event(principal, "reception", "emergency_arrival_status_updated", arrival.id)
     patient = db.get(Patient, arrival.patient_reference) if arrival.patient_reference else None
     return serialize_emergency_arrival(arrival, patient.allergies_status if patient else "unknown")
 
@@ -955,29 +1350,37 @@ def admit_emergency_arrival(
     patient = db.get(Patient, arrival.patient_reference)
     if patient is None or not patient.active:
         raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
-    occupied = db.scalar(
-        select(Patient.reference).where(
-            Patient.active.is_(True),
-            Patient.room == payload.room,
-            Patient.bed == payload.bed,
-            Patient.reference != patient.reference,
-        )
-    )
-    if occupied:
-        raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
+    if _active_assignment_for_patient(db, patient.reference):
+        raise HTTPException(status_code=409, detail="Este paciente já está vinculado a um leito físico")
+    bed, _ = _available_hospital_bed(db, payload.bed_id)
     now = datetime.now(UTC)
-    patient.room = payload.room
-    patient.bed = payload.bed
-    patient.updated_at = now
-    patient.updated_by = principal.actor_name
+    _assign_patient_to_bed(db, patient, bed, principal, now)
     arrival.status = "admitted"
     arrival.updated_by = principal.actor_name
     arrival.updated_at = now
-    db.commit()
-    emit_audit_event(principal, "reception", "emergency_arrival_admitted", arrival.id)
+    flow_event = PatientFlowEvent(
+        patient_reference=patient.reference,
+        event_type="admission",
+        next_room=bed.room,
+        next_bed=bed.label,
+        reason="Internação pela recepção",
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        occurred_at=now,
+    )
+    db.add(flow_event)
+    emit_audit_event(
+        principal, "reception", "emergency_arrival_admitted", arrival.id, db=db
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="O leito foi ocupado por outra operação; atualize o mapa") from exc
     return {
         "arrival": serialize_emergency_arrival(arrival, patient.allergies_status),
         "patient": serialize_patient(patient, principal=principal),
+        "flow_event": serialize_patient_flow_event(flow_event),
     }
 
 
@@ -1030,9 +1433,13 @@ def create_medication_administration(
         administered_at=datetime.now(UTC),
     )
     db.add(record)
+    db.flush()
+    emit_audit_event(
+        principal, "nursing", "medication_administration_recorded",
+        str(record.id), db=db,
+    )
     db.commit()
     db.refresh(record)
-    emit_audit_event(principal, "nursing", "medication_administration_recorded", str(record.id))
     return serialize_medication_administration(record)
 
 
@@ -1183,37 +1590,34 @@ def transfer_patient(
         raise HTTPException(status_code=404, detail="Paciente não encontrado ou não está internado")
     if not patient.room or not patient.bed:
         raise HTTPException(status_code=409, detail="O paciente não possui leito de internação para transferir")
-    occupied = db.scalar(
-        select(Patient.reference).where(
-            Patient.active.is_(True),
-            Patient.room == payload.room,
-            Patient.bed == payload.bed,
-            Patient.reference != patient.reference,
-        )
-    )
-    if occupied:
-        raise HTTPException(status_code=409, detail="O destino informado já está ocupado")
+    bed, _ = _available_hospital_bed(db, payload.bed_id)
+    current_assignment = _active_assignment_for_patient(db, patient.reference)
+    if current_assignment and bed.id == current_assignment.bed_id:
+        raise HTTPException(status_code=409, detail="O paciente já está neste leito")
     now = datetime.now(UTC)
     event = PatientFlowEvent(
         patient_reference=patient.reference,
         event_type="transfer",
         previous_room=patient.room,
         previous_bed=patient.bed,
-        next_room=payload.room,
-        next_bed=payload.bed,
+        next_room=bed.room,
+        next_bed=bed.label,
         reason=payload.reason,
         actor_id=principal.user_id,
         actor_name=principal.actor_name,
         occurred_at=now,
     )
     db.add(event)
-    patient.room = payload.room
-    patient.bed = payload.bed
-    patient.updated_at = now
-    patient.updated_by = principal.actor_name
-    db.commit()
+    _assign_patient_to_bed(db, patient, bed, principal, now)
+    emit_audit_event(
+        principal, "nursing", "patient_transferred", patient.reference, db=db
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="O leito foi ocupado por outra operação; atualize o mapa") from exc
     db.refresh(event)
-    emit_audit_event(principal, "nursing", "patient_transferred", patient.reference)
     return {"patient": serialize_patient(patient, principal=principal), "event": serialize_patient_flow_event(event)}
 
 
@@ -1242,14 +1646,21 @@ def discharge_patient(
         occurred_at=now,
     )
     db.add(event)
+    _release_patient_bed(db, patient, principal, now)
     patient.active = False
     patient.room = ""
     patient.bed = ""
     patient.updated_at = now
     patient.updated_by = principal.actor_name
-    db.commit()
+    emit_audit_event(
+        principal, "nursing", "patient_discharged", patient.reference, db=db
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Não foi possível liberar o leito; atualize o mapa e tente novamente") from exc
     db.refresh(event)
-    emit_audit_event(principal, "nursing", "patient_discharged", patient.reference)
     return {"patient": serialize_patient(patient, principal=principal), "event": serialize_patient_flow_event(event)}
 
 
@@ -1312,6 +1723,7 @@ def get_management_dashboard(
     day_start = datetime.combine(now.date(), time.min, tzinfo=UTC)
     next_day = day_start + timedelta(days=1)
     active_patients = Patient.active.is_(True)
+    bed_capacity = _bed_capacity(db)
     summary = {
         "active_patients": db.scalar(select(func.count(Patient.reference)).where(active_patients)) or 0,
         "occupied_beds": db.scalar(
@@ -1361,6 +1773,13 @@ def get_management_dashboard(
                 PatientFlowEvent.occurred_at < next_day,
             )
         ) or 0,
+        "patient_admissions_today": db.scalar(
+            select(func.count(PatientFlowEvent.id)).where(
+                PatientFlowEvent.event_type == "admission",
+                PatientFlowEvent.occurred_at >= day_start,
+                PatientFlowEvent.occurred_at < next_day,
+            )
+        ) or 0,
         "patient_discharges_today": db.scalar(
             select(func.count(PatientFlowEvent.id)).where(
                 PatientFlowEvent.event_type == "discharge",
@@ -1368,6 +1787,12 @@ def get_management_dashboard(
                 PatientFlowEvent.occurred_at < next_day,
             )
         ) or 0,
+        "physical_beds": bed_capacity["total_beds"],
+        "mapped_occupied_beds": bed_capacity["occupied_beds"],
+        "operational_beds": bed_capacity["operational_beds"],
+        "available_beds": bed_capacity["available_beds"],
+        "unreconciled_legacy_patients": bed_capacity["unreconciled_legacy_patients"],
+        "occupancy_percent": bed_capacity["occupancy_percent"],
         "updated_at": now.isoformat(),
     }
     emit_audit_event(principal, "management", "executive_dashboard_read", "hospital_summary")
@@ -1413,9 +1838,12 @@ def create_clinical_risk(
         created_at=datetime.now(UTC),
     )
     db.add(risk)
+    db.flush()
+    emit_audit_event(
+        principal, "nursing", "clinical_risk_recorded", str(risk.id), db=db
+    )
     db.commit()
     db.refresh(risk)
-    emit_audit_event(principal, "nursing", "clinical_risk_recorded", str(risk.id))
     return serialize_clinical_risk(risk)
 
 
@@ -1435,9 +1863,11 @@ def resolve_clinical_risk(
     risk.resolved_at = datetime.now(UTC)
     risk.resolved_by = principal.actor_name
     risk.resolution_reason = payload.reason
+    emit_audit_event(
+        principal, "nursing", "clinical_risk_resolved", str(risk.id), db=db
+    )
     db.commit()
     db.refresh(risk)
-    emit_audit_event(principal, "nursing", "clinical_risk_resolved", str(risk.id))
     return serialize_clinical_risk(risk)
 
 
@@ -1465,14 +1895,21 @@ def delete_patient(
     patient = db.get(Patient, patient_reference)
     if patient is None:
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    if _active_assignment_for_patient(db, patient.reference):
+        raise HTTPException(
+            status_code=409,
+            detail="Registre a alta antes de arquivar um paciente vinculado a leito",
+        )
     patient.active = False
     patient.deleted_at = datetime.now(UTC)
     patient.deleted_by = principal.actor_name
     patient.deletion_reason = payload.reason.strip()
     patient.updated_at = datetime.now(UTC)
     patient.updated_by = principal.actor_name
+    emit_audit_event(
+        principal, "patients", "patient_archived", patient.reference, db=db
+    )
     db.commit()
-    emit_audit_event(principal, "patients", "patient_archived", patient.reference)
     return {"reference": patient.reference, "active": False}
 
 
@@ -1514,9 +1951,11 @@ def create_patient(
             previous_status="unknown",
             previous_details="",
         )
+    emit_audit_event(
+        principal, "patients", "patient_created", patient.reference, db=db
+    )
     db.commit()
     db.refresh(patient)
-    emit_audit_event(principal, "patients", "patient_created", patient.reference)
     return serialize_patient(patient, principal=principal, full_profile=can_view_full_patient_profile(principal))
 
 
@@ -1536,6 +1975,13 @@ def update_patient(
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
     if patient.active and payload.room.strip() and payload.bed.strip() and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip(), Patient.reference != patient_reference)):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
+    if _active_assignment_for_patient(db, patient.reference) and (
+        patient.room != payload.room.strip() or patient.bed != payload.bed.strip()
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Altere a localização pela rotina de transferência para manter o mapa de leitos consistente",
+        )
     record_patient_allergy_change(
         db,
         principal,
@@ -1548,9 +1994,11 @@ def update_patient(
         setattr(patient, key, value)
     patient.updated_at = datetime.now(UTC)
     patient.updated_by = principal.actor_name
+    emit_audit_event(
+        principal, "patients", "patient_updated", patient.reference, db=db
+    )
     db.commit()
     db.refresh(patient)
-    emit_audit_event(principal, "patients", "patient_updated", patient.reference)
     return serialize_patient(patient, principal=principal, full_profile=can_view_full_patient_profile(principal))
 
 
@@ -1567,6 +2015,8 @@ def update_patient_status(
     active = payload.get("active")
     if not isinstance(active, bool):
         raise HTTPException(status_code=422, detail="Informe a situação ativa do paciente")
+    if not active and _active_assignment_for_patient(db, patient.reference):
+        raise HTTPException(status_code=409, detail="Registre a alta antes de inativar um paciente vinculado a leito")
     if active and not patient.active and patient.room and patient.bed and db.scalar(select(Patient.reference).where(
         Patient.active.is_(True), Patient.room == patient.room, Patient.bed == patient.bed,
     )):
@@ -1574,9 +2024,11 @@ def update_patient_status(
     patient.active = active
     patient.updated_at = datetime.now(UTC)
     patient.updated_by = principal.actor_name
+    emit_audit_event(
+        principal, "patients", "patient_status_changed", patient.reference, db=db
+    )
     db.commit()
     db.refresh(patient)
-    emit_audit_event(principal, "patients", "patient_status_changed", patient.reference)
     return serialize_patient(patient, principal=principal, full_profile=can_view_full_patient_profile(principal))
 
 
@@ -1622,9 +2074,11 @@ def create_patient_observation(
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
     row = PatientObservation(patient_reference=patient_reference, attention_level=payload.attention_level, observation=payload.observation.strip(), treatment_status=payload.treatment_status, actor_id=principal.user_id, actor_name=principal.actor_name, created_at=datetime.now(UTC))
     db.add(row)
+    emit_audit_event(
+        principal, "patients", "patient_observation_created", patient_reference, db=db
+    )
     db.commit()
     db.refresh(row)
-    emit_audit_event(principal, "patients", "patient_observation_created", patient_reference)
     return {"id": row.id, "attention_level": row.attention_level, "observation": row.observation, "treatment_status": row.treatment_status, "actor_name": row.actor_name, "created_at": row.created_at.isoformat()}
 
 
@@ -1641,8 +2095,10 @@ def void_vital_record(
     record.voided_at = datetime.now(UTC)
     record.voided_by = principal.actor_name
     record.void_reason = payload.reason.strip()
+    emit_audit_event(
+        principal, "nursing", "vital_record_voided", str(record.id), db=db
+    )
     db.commit()
-    emit_audit_event(principal, "nursing", "vital_record_voided", str(record.id))
     return {"status": "voided", "id": str(record.id)}
 
 
@@ -1833,7 +2289,9 @@ def create_nutrition_record(
         patient.allergies_status = payload.allergies_status
         patient.updated_at = datetime.now(UTC)
         patient.updated_by = principal.actor_name
-        emit_audit_event(principal, "patients", "patient_allergies_updated", patient.reference)
+        emit_audit_event(
+            principal, "patients", "patient_allergies_updated", patient.reference, db=db
+        )
     elif payload.allergies.strip() and payload.allergies.strip() != patient.allergies:
         record_patient_allergy_change(
             db,
@@ -1847,15 +2305,20 @@ def create_nutrition_record(
         patient.allergies_status = "known"
         patient.updated_at = datetime.now(UTC)
         patient.updated_by = principal.actor_name
-        emit_audit_event(principal, "patients", "patient_allergies_updated", patient.reference)
+        emit_audit_event(
+            principal, "patients", "patient_allergies_updated", patient.reference, db=db
+        )
     record = NutritionRecord(
         **payload.model_dump(exclude={"allergies_status"}), actor_id=principal.user_id, actor_name=principal.actor_name,
         created_at=datetime.now(UTC),
     )
     db.add(record)
+    emit_audit_event(
+        principal, "nutrition", "nutrition_record_created",
+        payload.patient_reference, db=db,
+    )
     db.commit()
     db.refresh(record)
-    emit_audit_event(principal, "nutrition", "nutrition_record_created", payload.patient_reference)
     return serialize_nutrition_record(record)
 
 
@@ -1872,8 +2335,10 @@ def void_nutrition_record(
     record.voided_at = datetime.now(UTC)
     record.voided_by = principal.actor_name
     record.void_reason = payload.reason.strip()
+    emit_audit_event(
+        principal, "nutrition", "nutrition_record_voided", str(record.id), db=db
+    )
     db.commit()
-    emit_audit_event(principal, "nutrition", "nutrition_record_voided", str(record.id))
     return {"status": "voided", "id": str(record.id)}
 
 

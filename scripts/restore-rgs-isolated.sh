@@ -15,13 +15,10 @@ case "$workdir/" in "$workspace/"*) printf 'A restauração temporária deve fic
 mkdir -p "$workdir"
 staging="$(mktemp -d "$workdir/.rgs-restore.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
-gpg --batch --decrypt --output "$staging/bundle.tar.gz" "$SCPO_RGS_FILE"
-tar -tzf "$staging/bundle.tar.gz" | awk 'BEGIN { ok=1 } /^\// || /(^|\/)\.\.($|\/)/ { ok=0 } END { exit !ok }' || { printf 'O pacote contém caminhos inválidos.\n' >&2; exit 1; }
-tar -xzf "$staging/bundle.tar.gz" -C "$staging" --no-same-owner
-[[ -f "$staging/MANIFEST.txt" ]] || { printf 'Manifesto RGS ausente.\n' >&2; exit 1; }
+PYTHONPATH="$workspace/backend" uv run --project "$workspace" python -m scpo_services.rgs_format "$SCPO_RGS_FILE" "$staging/dumps"
 databases=(scpo_access scpo_audit scpo_nursing scpo_pharmacy scpo_social scpo_xray scpo_maintenance)
 for database in "${databases[@]}"; do
-  dump="$staging/dumps/$database.dump"
+  dump="$staging/dumps/${database#scpo_}.dump"
   [[ -f "$dump" ]] || { printf 'Dump ausente: %s\n' "$database" >&2; exit 1; }
   target="${SCPO_RGS_RESTORE_PREFIX}_${database#scpo_}"
   docker compose exec -T db sh -c "createdb -U \"\$POSTGRES_USER\" $target"

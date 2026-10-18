@@ -1,13 +1,20 @@
 from collections.abc import Generator
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
 from pydantic import ValidationError
-from scpo_services import nursing
-from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
+from scpo_services import common, nursing
+from scpo_services.common import (
+    AuditOutbox,
+    DemoPrincipal,
+    clear_engine_cache,
+    get_engine,
+)
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 
@@ -37,6 +44,33 @@ def create_patient(db: Session, nurse: DemoPrincipal, room: str = "3", bed: str 
     )
 
 
+def create_physical_bed(
+    db: Session,
+    room: str,
+    label: str,
+    unit_name: str = "Unidade de teste",
+) -> dict[str, object]:
+    manager = DemoPrincipal(
+        "manager-id", "manager", "Gestor de teste", "management",
+        ["management"], {"management": ["consultar", "criar", "alterar"]},
+    )
+    unit = db.scalar(select(nursing.HospitalUnit).where(nursing.HospitalUnit.name == unit_name))
+    if unit is None:
+        unit = nursing.create_hospital_unit(
+            nursing.HospitalUnitPayload(name=unit_name),
+            manager,
+            db,
+        )
+        unit_id = str(unit["id"])
+    else:
+        unit_id = unit.id
+    return nursing.create_hospital_bed(
+        nursing.HospitalBedPayload(unit_id=unit_id, room=room, label=label),
+        manager,
+        db,
+    )
+
+
 def test_patient_identity_and_active_bed_are_unique(nursing_db: Session, nurse: DemoPrincipal) -> None:
     patient = create_patient(nursing_db, nurse)
     assert patient["name"] == "Paciente de teste"
@@ -45,10 +79,66 @@ def test_patient_identity_and_active_bed_are_unique(nursing_db: Session, nurse: 
     assert conflict.value.status_code == 409
 
 
+def test_patient_creation_persists_audit_outbox_in_the_same_transaction(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+
+    event = nursing_db.scalar(
+        select(AuditOutbox).where(
+            AuditOutbox.action == "patient_created",
+            AuditOutbox.target_id == patient["reference"],
+        )
+    )
+    assert event is not None
+    assert event.delivered_at is None
+
+
+def test_audit_outbox_retries_delivery_and_marks_success(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    event = nursing_db.scalar(
+        select(AuditOutbox).where(
+            AuditOutbox.action == "patient_created",
+            AuditOutbox.target_id == patient["reference"],
+        )
+    )
+    assert event is not None
+    monkeypatch.setenv("SCPO_AUDIT_API_URL", "http://audit.test")
+    monkeypatch.setenv("SCPO_SERVICE_TOKEN", "test-token")
+    request = httpx.Request("POST", "http://audit.test/internal/v1/events")
+    monkeypatch.setattr(
+        common.httpx,
+        "post",
+        lambda *args, **kwargs: httpx.Response(503, request=request),
+    )
+
+    assert common.dispatch_pending_audit_events("nursing") == 0
+    nursing_db.refresh(event)
+    assert event.attempts == 1
+    assert event.delivered_at is None
+
+    event.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+    nursing_db.commit()
+    monkeypatch.setattr(
+        common.httpx,
+        "post",
+        lambda *args, **kwargs: httpx.Response(201, request=request),
+    )
+    assert common.dispatch_pending_audit_events("nursing") == 1
+    nursing_db.refresh(event)
+    assert event.delivered_at is not None
+    assert event.last_error == ""
+
+
 def test_emergency_arrival_can_create_central_patient_without_admission(
     nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     receptionist = DemoPrincipal(
         "reception-id", "reception", "Recepcionista", "reception",
         ["reception"], {"reception": ["consultar", "criar", "alterar"]},
@@ -92,7 +182,7 @@ def test_emergency_arrival_can_create_central_patient_without_admission(
 def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
     nursing_db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     receptionist = DemoPrincipal(
         "reception-id", "reception", "Recepcionista", "reception",
         ["reception"], {"reception": ["consultar", "criar", "alterar"]},
@@ -102,6 +192,7 @@ def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
         receptionist,
         nursing_db,
     )
+    bed = create_physical_bed(nursing_db, "10", "A")
     arrival = nursing.create_emergency_arrival(
         nursing.EmergencyArrivalPayload(
             patient_reference=str(patient["reference"]),
@@ -114,7 +205,7 @@ def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
 
     admitted = nursing.admit_emergency_arrival(
         arrival["id"],
-        nursing.EmergencyAdmissionPayload(room="10", bed="A"),
+        nursing.EmergencyAdmissionPayload(bed_id=str(bed["id"])),
         receptionist,
         nursing_db,
     )
@@ -130,7 +221,7 @@ def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
     with pytest.raises(HTTPException) as already_admitted:
         nursing.admit_emergency_arrival(
             arrival["id"],
-            nursing.EmergencyAdmissionPayload(room="10", bed="A"),
+            nursing.EmergencyAdmissionPayload(bed_id=str(bed["id"])),
             receptionist,
             nursing_db,
         )
@@ -140,7 +231,7 @@ def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
 def test_emergency_admission_rejects_unlinked_patient_and_occupied_bed(
     nursing_db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     receptionist = DemoPrincipal(
         "reception-id", "reception", "Recepcionista", "reception",
         ["reception"], {"reception": ["consultar", "criar", "alterar"]},
@@ -153,15 +244,25 @@ def test_emergency_admission_rejects_unlinked_patient_and_occupied_bed(
     with pytest.raises(HTTPException) as missing_patient:
         nursing.admit_emergency_arrival(
             unlinked["id"],
-            nursing.EmergencyAdmissionPayload(room="1", bed="A"),
+            nursing.EmergencyAdmissionPayload(bed_id="not-used"),
             receptionist,
             nursing_db,
         )
     assert missing_patient.value.status_code == 409
 
-    nursing.create_patient(
+    occupied = nursing.create_patient(
         nursing.PatientPayload(name="Paciente internado", room="1", bed="A"),
         receptionist,
+        nursing_db,
+    )
+    bed = create_physical_bed(nursing_db, "1", "A")
+    nursing.reconcile_legacy_patient_bed(
+        str(occupied["reference"]),
+        nursing.PatientBedReconciliationPayload(bed_id=str(bed["id"])),
+        DemoPrincipal(
+            "manager-id", "manager", "Gestor de teste", "management",
+            ["management"], {"management": ["consultar", "criar", "alterar"]},
+        ),
         nursing_db,
     )
     incoming = nursing.create_patient(
@@ -180,7 +281,7 @@ def test_emergency_admission_rejects_unlinked_patient_and_occupied_bed(
     with pytest.raises(HTTPException) as occupied:
         nursing.admit_emergency_arrival(
             arrival["id"],
-            nursing.EmergencyAdmissionPayload(room="1", bed="A"),
+            nursing.EmergencyAdmissionPayload(bed_id=str(bed["id"])),
             receptionist,
             nursing_db,
         )
@@ -211,7 +312,7 @@ def test_nutrition_can_confirm_no_known_allergies_and_clear_shared_alert(
     nurse: DemoPrincipal,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     patient_data = nursing.create_patient(
         nursing.PatientPayload(
             name="Paciente de teste",
@@ -254,12 +355,24 @@ def test_transfer_and_discharge_release_beds_and_preserve_audit_history(
     nurse: DemoPrincipal,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     patient = create_patient(nursing_db, nurse, room="3", bed="A")
+    source_bed = create_physical_bed(nursing_db, "3", "A")
+    destination_bed = create_physical_bed(nursing_db, "4", "B")
     reference = str(patient["reference"])
+    manager = DemoPrincipal(
+        "manager-id", "manager", "Gestor de teste", "management",
+        ["management"], {"management": ["consultar", "criar", "alterar"]},
+    )
+    nursing.reconcile_legacy_patient_bed(
+        reference,
+        nursing.PatientBedReconciliationPayload(bed_id=str(source_bed["id"])),
+        manager,
+        nursing_db,
+    )
     transfer = nursing.transfer_patient(
         reference,
-        nursing.PatientTransferPayload(room="4", bed="B", reason="Mudança de setor"),
+        nursing.PatientTransferPayload(bed_id=str(destination_bed["id"]), reason="Mudança de setor"),
         nurse,
         nursing_db,
     )
@@ -290,12 +403,57 @@ def test_transfer_and_discharge_release_beds_and_preserve_audit_history(
     assert already_discharged.value.status_code == 404
 
 
+def test_capacity_percent_waits_for_legacy_reconciliation(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    manager = DemoPrincipal(
+        "manager-id", "manager", "Gestor de teste", "management",
+        ["management"], {"management": ["consultar", "criar", "alterar"]},
+    )
+    legacy_patient = create_patient(nursing_db, nurse, room="7", bed="C")
+    bed = create_physical_bed(nursing_db, "7", "C")
+
+    before_reconciliation = nursing.get_management_dashboard(manager, nursing_db)
+    assert before_reconciliation["occupancy_percent"] is None
+    assert before_reconciliation["unreconciled_legacy_patients"] == 1
+
+    nursing.reconcile_legacy_patient_bed(
+        str(legacy_patient["reference"]),
+        nursing.PatientBedReconciliationPayload(bed_id=str(bed["id"])),
+        manager,
+        nursing_db,
+    )
+    after_reconciliation = nursing.get_management_dashboard(manager, nursing_db)
+    assert after_reconciliation["occupancy_percent"] == 100.0
+    assert after_reconciliation["mapped_occupied_beds"] == 1
+    assert after_reconciliation["unreconciled_legacy_patients"] == 0
+
+    nursing.discharge_patient(
+        str(legacy_patient["reference"]),
+        nursing.PatientDischargePayload(reason="Alta para liberar o leito"),
+        manager,
+        nursing_db,
+    )
+    nursing.update_hospital_bed_status(
+        str(bed["id"]),
+        nursing.HospitalBedStatusPayload(status="cleaning"),
+        manager,
+        nursing_db,
+    )
+    after_block = nursing.get_management_dashboard(manager, nursing_db)
+    assert after_block["occupancy_percent"] is None
+    assert after_block["operational_beds"] == 0
+
+
 def test_clinical_risks_are_resolved_with_reason_and_emergency_priority_is_auditable(
     nursing_db: Session,
     nurse: DemoPrincipal,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     patient_data = create_patient(nursing_db, nurse, room="2", bed="A")
     reference = str(patient_data["reference"])
     risk = nursing.create_clinical_risk(
@@ -354,7 +512,7 @@ def test_management_dashboard_returns_aggregate_counts_only(
     nurse: DemoPrincipal,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     create_patient(nursing_db, nurse, room="1", bed="A")
     manager = DemoPrincipal(
         "manager-id",

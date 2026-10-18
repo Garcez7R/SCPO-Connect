@@ -5,10 +5,19 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, select
+from sqlalchemy import DateTime, ForeignKey, String, Text, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from .common import Base, DemoPrincipal, database_session, get_engine, require_demo_role, verify_database_migrated, emit_audit_event
+from .common import (
+    Base,
+    DemoPrincipal,
+    audit_outbox_lifespan,
+    database_session,
+    emit_audit_event,
+    get_engine,
+    require_demo_role,
+    verify_database_migrated,
+)
 from .nursing import Patient
 
 
@@ -38,7 +47,8 @@ def get_therapy_db():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     verify_database_migrated("nursing")
-    yield
+    async with audit_outbox_lifespan("nursing"):
+        yield
 
 
 app = FastAPI(title="SCPO Connect · Oficina Terapêutica", version="1.0.0", lifespan=lifespan)
@@ -100,9 +110,12 @@ def update_activity_report(
     activity.status = payload.status
     activity.report_updated_by = principal.actor_name
     activity.report_updated_at = datetime.now(UTC)
+    emit_audit_event(
+        principal, "therapy", "therapy_report_updated",
+        activity.patient_reference or activity.id, db=db,
+    )
     db.commit()
     db.refresh(activity)
-    emit_audit_event(principal, "therapy", "therapy_report_updated", activity.patient_reference or activity.id)
     return serialize_activity(activity)
 
 
@@ -129,9 +142,12 @@ def create_activity(
         created_at=datetime.now(UTC),
     )
     db.add(activity)
+    emit_audit_event(
+        principal, "therapy", "therapy_activity_created",
+        activity.patient_reference or activity.id, db=db,
+    )
     db.commit()
     db.refresh(activity)
-    emit_audit_event(principal, "therapy", "therapy_activity_created", activity.patient_reference or activity.id)
     return serialize_activity(activity)
 
 
