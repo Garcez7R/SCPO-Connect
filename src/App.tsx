@@ -81,6 +81,11 @@ type PharmacyItem = { id: number; item_name: string; balance: string; unit: stri
 type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_balance' | 'entry' | 'issue' | 'adjustment'; quantity: string; balance_after: string; reason: string; actor_name: string; created_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type MedicationAdministration = { id: number; dispensation_id: string; patient_reference: string; medication_name: string; dose: string; unit: string; status: 'administered' | 'refused' | 'held'; reason: string; actor_name: string; administered_at: string }
+type PatientFlowEvent = { id: number; patient_reference: string; event_type: 'transfer' | 'discharge'; previous_room: string; previous_bed: string; next_room: string; next_bed: string; reason: string; summary: string; actor_name: string; occurred_at: string }
+type ClinicalRisk = { id: number | string; patient_reference: string; patient_name: string; room: string; bed: string; risk_type: 'allergy' | 'contraindication'; description: string; severity: 'unspecified' | 'low' | 'moderate' | 'high'; status: 'active' | 'resolved'; reason: string; actor_name: string; created_at: string; resolved_at?: string | null; resolved_by?: string; resolution_reason?: string }
+type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
+type EmergencyClinicalPriority = 'unassigned' | 'routine' | 'priority' | 'urgent'
+type EmergencyArrival = { id: string; patient_reference: string | null; patient_name: string; allergies_status?: Patient['allergies_status']; arrival_mode: 'walk_in' | 'ambulance' | 'other'; reason: string; status: EmergencyArrivalStatus; clinical_priority: EmergencyClinicalPriority; clinical_priority_updated_by: string; clinical_priority_updated_at: string | null; clinical_priority_reason: string; created_by: string; updated_by: string; created_at: string; updated_at: string }
 type TherapyActivityStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 type TherapyActivity = { id: string; title: string; activity_type: string; description: string; location: string; starts_at: string; ends_at: string | null; patient_reference: string | null; status: TherapyActivityStatus; activity_report: string; report_updated_by: string | null; report_updated_at: string | null; created_by: string; created_at: string }
 type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; fasting_at?: string | null; fasting_reason?: string; actor_name: string; created_at: string }
@@ -441,7 +446,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
         <div className="page-content">
           {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
-          {activeModule === 'nursing' && <NursingPage profile={profile} onShowHistory={() => navigate('nursing-history')} />}
+          {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
           {activeModule === 'pharmacy' && <PharmacyPage user={user} />}
           {activeModule === 'work-orders' && <WorkOrdersPage user={user} />}
@@ -617,8 +622,6 @@ function AddressFields({ form, patients, prefix, onChange }: { form: PatientForm
 }
 
 type ReceptionTab = 'emergency' | 'admissions'
-type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
-type EmergencyArrival = { id: string; patient_reference: string | null; patient_name: string; allergies_status?: Patient['allergies_status']; arrival_mode: 'walk_in' | 'ambulance' | 'other'; reason: string; status: EmergencyArrivalStatus; created_by: string; updated_by: string; created_at: string; updated_at: string }
 type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
 
 const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
@@ -858,20 +861,27 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
     }
   }, [cameraOpen])
 
-  async function loadPatients() {
-    try {
-      const response = await fetch('/api/v1/nursing/patients?full_profile=true&include_inactive=true')
-      const data = await response.json() as { patients?: Patient[]; detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os pacientes.')
-      setPatients(data.patients ?? [])
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os pacientes.')
-    } finally { setLoading(false) }
-  }
+  useEffect(() => {
+    let active = true
+    const loadPatients = async () => {
+      try {
+        const response = await fetch('/api/v1/nursing/patients?full_profile=true&include_inactive=true')
+        const data = await response.json() as { patients?: Patient[]; detail?: string }
+        if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os pacientes.')
+        if (active) {
+          setPatients(data.patients ?? [])
+          setError('')
+        }
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os pacientes.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadPatients() }, [])
+    void loadPatients()
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (!viewingPatient) return
@@ -1201,14 +1211,39 @@ function WorkOrdersPage({ user }: { user: AuthUser }) {
     }
   }
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadOrders() }, [user.id])
+  useEffect(() => {
+    let active = true
+    const loadOrdersForUser = async () => {
+      try {
+        const response = await fetch('/api/v1/maintenance/orders')
+        const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
+        if (active) {
+          setOrders(data.orders ?? [])
+          setError('')
+        }
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as solicitações.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void loadOrdersForUser()
+    return () => { active = false }
+  }, [user.id])
   useEffect(() => {
     if (!canLookupPatients) return
-    fetch('/api/v1/nursing/patients')
-      .then((response) => readApiResponse<{ patients?: Patient[] }>(response))
-      .then((data) => setPatients(data.patients ?? []))
-      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes.'))
+    let active = true
+    const loadPatients = async () => {
+      try {
+        const response = await fetch('/api/v1/nursing/patients')
+        const data = await readApiResponse<{ patients?: Patient[] }>(response)
+        if (active) setPatients(data.patients ?? [])
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes.')
+      }
+    }
+    void loadPatients()
+    return () => { active = false }
   }, [canLookupPatients, user.id])
   const orderPrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: order.title, fields: [['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
 
@@ -1403,8 +1438,25 @@ function HygienePage({ user }: { user: AuthUser }) {
     }
   }
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadRequests() }, [user.id])
+  useEffect(() => {
+    let active = true
+    const loadRequestsForUser = async () => {
+      try {
+        const response = await fetch('/api/v1/hygiene/requests')
+        const data = await readApiResponse<{ requests?: HygieneRequest[] }>(response)
+        if (active) {
+          setRequests(data.requests ?? [])
+          setError('')
+        }
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as solicitações de higienização.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void loadRequestsForUser()
+    return () => { active = false }
+  }, [user.id])
 
   const visibleRequests = requests.filter((request) => {
     const matchesStatus = filter === 'all' || (filter === 'active'
@@ -1481,8 +1533,26 @@ function MaintenanceQueuePage() {
     }
   }
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
-  useEffect(() => { void loadQueue() }, [])
+  useEffect(() => {
+    let active = true
+    const loadFilteredQueue = async () => {
+      try {
+        const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value))
+        const response = await fetch(`/api/v1/maintenance/queue${params.size ? `?${params}` : ''}`)
+        const data = await readApiResponse<{ orders?: WorkOrder[] }>(response)
+        if (active) {
+          setOrders(data.orders ?? [])
+          setError('')
+        }
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void loadFilteredQueue()
+    return () => { active = false }
+  }, [filters])
 
   function printResults() {
     document.body.classList.add('print-maintenance-queue')
@@ -1637,26 +1707,54 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     } finally { setLoading(false) }
   }, [movementOffset])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadItems() }, [loadItems])
+  useEffect(() => {
+    let active = true
+    const loadInventory = async () => {
+      try {
+        const [itemResponse, movementResponse] = await Promise.all([
+          fetch('/api/v1/pharmacy/items'),
+          fetch(`/api/v1/pharmacy/movements?limit=25&offset=${movementOffset}`),
+        ])
+        const [itemData, movementData] = await Promise.all([
+          readApiResponse<{ items?: PharmacyItem[] }>(itemResponse),
+          readApiResponse<{ movements?: PharmacyMovement[]; total?: number }>(movementResponse),
+        ])
+        if (!active) return
+        setItems(itemData.items ?? [])
+        setMovements(movementData.movements ?? [])
+        setMovementTotal(movementData.total ?? 0)
+        setError('')
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o estoque.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void loadInventory()
+    return () => { active = false }
+  }, [movementOffset])
 
   useEffect(() => {
     let current = true
-    Promise.all([
-      fetch('/api/v1/nursing/patients'),
-      fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
-    ]).then(async ([patientResponse, dispenseResponse]) => {
-      const [patientData, dispenseData] = await Promise.all([
-        readApiResponse<{ patients?: Patient[] }>(patientResponse),
-        readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
-      ])
-      if (current) {
+    const loadRelatedData = async () => {
+      try {
+        const [patientResponse, dispenseResponse] = await Promise.all([
+          fetch('/api/v1/nursing/patients'),
+          fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
+        ])
+        const [patientData, dispenseData] = await Promise.all([
+          readApiResponse<{ patients?: Patient[] }>(patientResponse),
+          readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
+        ])
+        if (!current) return
         setPatients(patientData.patients ?? [])
         setDispensations(dispenseData.dispensations ?? [])
+      } catch (loadError) {
+        if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes e dispensações.')
       }
-    }).catch((loadError) => {
-      if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes e dispensações.')
-    })
+    }
+
+    void loadRelatedData()
     return () => { current = false }
   }, [user.id])
 
@@ -1933,29 +2031,39 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (invalidDateRange) return
     const controller = new AbortController()
-    const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) })
-    if (fromDate) params.set('from_date', fromDate)
-    if (toDate) params.set('to_date', toDate)
-    if (room) params.set('room', room)
-    if (bed) params.set('bed', bed)
-    if (patientReference) params.set('patient_reference', patientReference)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoadingRecords(true)
-    fetch(`/api/v1/nursing/vitals?${params.toString()}`, { signal: controller.signal }).then(async (response) => {
-      const data = await response.json() as { records?: VitalRecordData[]; total?: number; detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar as coletas.')
-      return data
-    }).then((data) => {
-      setRecords(data.records ?? [])
-      setTotal(data.total ?? 0)
-      setError('')
-    }).catch((loadError) => {
-      if (loadError instanceof DOMException && loadError.name === 'AbortError') return
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as coletas.')
-      setRecords([])
-      setTotal(0)
-    }).finally(() => { if (!controller.signal.aborted) setLoadingRecords(false) })
-    return () => controller.abort()
+    let active = true
+    const loadRecords = async () => {
+      const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) })
+      if (fromDate) params.set('from_date', fromDate)
+      if (toDate) params.set('to_date', toDate)
+      if (room) params.set('room', room)
+      if (bed) params.set('bed', bed)
+      if (patientReference) params.set('patient_reference', patientReference)
+      if (active) setLoadingRecords(true)
+      try {
+        const response = await fetch(`/api/v1/nursing/vitals?${params.toString()}`, { signal: controller.signal })
+        const data = await response.json() as { records?: VitalRecordData[]; total?: number; detail?: string }
+        if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar as coletas.')
+        if (!active) return
+        setRecords(data.records ?? [])
+        setTotal(data.total ?? 0)
+        setError('')
+      } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === 'AbortError') return
+        if (!active) return
+        setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar as coletas.')
+        setRecords([])
+        setTotal(0)
+      } finally {
+        if (active && !controller.signal.aborted) setLoadingRecords(false)
+      }
+    }
+
+    void loadRecords()
+    return () => {
+      active = false
+      controller.abort()
+    }
   }, [fromDate, toDate, room, bed, patientReference, offset, invalidDateRange])
 
   const visiblePatients = patients.filter((patient) => (!room || patient.room === room) && (!bed || patient.bed === bed))
@@ -2003,7 +2111,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
   </section>
 }
 
-function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHistory: () => void }) {
+function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user: AuthUser; onShowHistory: () => void }) {
   const [record, setRecord] = useState<RecordFields>({ ...emptyRecord })
   const [notApplicable, setNotApplicable] = useState<string[]>([])
   const [entryState, setEntryState] = useState<EntryState>('draft')
@@ -2227,8 +2335,264 @@ function NursingPage({ profile, onShowHistory }: { profile: Profile; onShowHisto
       )}
 
       <div className="clinical-note"><ShieldCheck size={17} /><span>Os gráficos apresentam os valores registrados, sem interpretação clínica automática.</span></div>
+      <ClinicalQueuePanel canUpdate={user.permissions.nursing?.includes('alterar') ?? false} />
+      <PatientFlowRiskPanel
+        patients={patients}
+        canUpdate={user.permissions.nursing?.includes('alterar') ?? false}
+        onPatientUpdated={(updated) => setPatients((current) => current.map((patient) => patient.reference === updated.reference ? updated : patient))}
+      />
     </section>
   )
+}
+
+function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
+  const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
+  const [selectedId, setSelectedId] = useState('')
+  const [priority, setPriority] = useState<EmergencyClinicalPriority>('priority')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch('/api/v1/reception/arrivals?limit=100')
+      const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
+      const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'in_service')
+      setArrivals(openArrivals)
+      if (!openArrivals.some((arrival) => arrival.id === selectedId)) setSelectedId(openArrivals[0]?.id ?? '')
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a fila clínica.')
+    }
+  }, [selectedId])
+
+  useEffect(() => {
+    let active = true
+    const loadArrivals = async () => {
+      try {
+        const response = await fetch('/api/v1/reception/arrivals?limit=100')
+        const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
+        const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'in_service')
+        if (!active) return
+        setArrivals(openArrivals)
+        if (!openArrivals.some((arrival) => arrival.id === selectedId)) setSelectedId(openArrivals[0]?.id ?? '')
+        setError('')
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a fila clínica.')
+      }
+    }
+    void loadArrivals()
+    return () => { active = false }
+  }, [selectedId])
+  const selectedArrival = arrivals.find((arrival) => arrival.id === selectedId)
+
+  async function savePriority(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedArrival) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(selectedArrival.id)}/clinical-priority`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clinical_priority: priority, reason }),
+      })
+      const updated = await readApiResponse<EmergencyArrival>(response)
+      setArrivals((current) => current.map((arrival) => arrival.id === updated.id ? updated : arrival))
+      setReason('')
+      setNotice('Prioridade clínica registrada com identificação do profissional e justificativa.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível atualizar a prioridade clínica.')
+    } finally { setBusy(false) }
+  }
+
+  const priorityLabels: Record<EmergencyClinicalPriority, string> = {
+    unassigned: 'Não classificada',
+    routine: 'Rotina',
+    priority: 'Prioridade',
+    urgent: 'Urgente',
+  }
+  return <section className="patient-list-panel clinical-queue-panel">
+    <div className="section-heading"><div><p className="eyebrow">FILA ASSISTENCIAL · CLASSIFICAÇÃO CLÍNICA</p><h2>Prioridade de atendimento</h2><p className="welcome-copy">A classificação é feita e justificada pela equipe clínica; o sistema não atribui risco automaticamente.</p></div><button className="button button-secondary" type="button" onClick={() => void refresh()}>Atualizar fila</button></div>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {arrivals.length === 0 ? <div className="history-empty">Nenhuma chegada aguardando atendimento ou em atendimento.</div> : <>
+      <div className="collection-list">{arrivals.map((arrival) => <article className="collection-row" key={arrival.id}>
+        <div className="collection-row-heading"><strong>{arrival.patient_name}</strong><span className={`work-order-status status-${arrival.clinical_priority}`}>{priorityLabels[arrival.clinical_priority]}</span></div>
+        <p>{arrival.reason}</p><ReceptionAllergyAlert status={arrival.allergies_status} />
+        <small>{arrival.status === 'waiting' ? 'Aguardando' : 'Em atendimento'} · Chegada {dateTime(arrival.created_at)}{arrival.clinical_priority_updated_by ? ` · Classificada por ${arrival.clinical_priority_updated_by}` : ''}</small>
+      </article>)}</div>
+      {canUpdate && <form className="account-create-panel" onSubmit={(event) => void savePriority(event)}>
+        <div className="field-grid field-grid-three">
+          <label className="field"><span className="field-label">Chegada</span><select value={selectedId} onChange={(event) => { setSelectedId(event.target.value); const arrival = arrivals.find((item) => item.id === event.target.value); setPriority(arrival?.clinical_priority ?? 'priority') }}>{arrivals.map((arrival) => <option key={arrival.id} value={arrival.id}>{arrival.patient_name} · {dateTime(arrival.created_at)}</option>)}</select></label>
+          <label className="field"><span className="field-label">Classificação clínica</span><select value={priority} onChange={(event) => setPriority(event.target.value as EmergencyClinicalPriority)}><option value="unassigned">Não classificada</option><option value="routine">Rotina</option><option value="priority">Prioridade</option><option value="urgent">Urgente</option></select></label>
+          <label className="field"><span className="field-label">Justificativa clínica</span><input required minLength={3} maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+        </div>
+        <button className="button button-primary" type="submit" disabled={!selectedArrival || busy}>{busy ? 'Salvando…' : 'Registrar classificação'}</button>
+      </form>}
+    </>}
+  </section>
+}
+
+function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patients: Patient[]; canUpdate: boolean; onPatientUpdated: (patient: Patient) => void }) {
+  const [selectedReference, setSelectedReference] = useState('')
+  const [flowType, setFlowType] = useState<'transfer' | 'discharge'>('transfer')
+  const [destination, setDestination] = useState({ room: '', bed: '' })
+  const [reason, setReason] = useState('')
+  const [summary, setSummary] = useState('')
+  const [riskDescription, setRiskDescription] = useState('')
+  const [riskReason, setRiskReason] = useState('')
+  const [riskSeverity, setRiskSeverity] = useState<ClinicalRisk['severity']>('unspecified')
+  const [risks, setRisks] = useState<ClinicalRisk[]>([])
+  const [flowEvents, setFlowEvents] = useState<PatientFlowEvent[]>([])
+  const [allergyEvents, setAllergyEvents] = useState<{ id: number; previous_status: string; previous_details: string; new_status: string; new_details: string; reason: string; actor_name: string; recorded_at: string }[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const activePatients = patients.filter((patient) => patient.active !== false)
+  const patient = activePatients.find((item) => item.reference === selectedReference) ?? activePatients[0]
+
+  const patientReferenceForFlow = patient?.reference
+  async function loadPatientFlow(reference = patientReferenceForFlow) {
+    if (!reference) return
+    try {
+      const [flowResponse, allergyResponse, riskResponse] = await Promise.all([
+        fetch(`/api/v1/nursing/patients/flow-events?patient_reference=${encodeURIComponent(reference)}&limit=20`),
+        fetch(`/api/v1/nursing/patients/${encodeURIComponent(reference)}/allergy-history`),
+        fetch('/api/v1/nursing/clinical-risks'),
+      ])
+      const [flowData, allergyData, riskData] = await Promise.all([
+        readApiResponse<{ events?: PatientFlowEvent[] }>(flowResponse),
+        readApiResponse<{ events?: typeof allergyEvents }>(allergyResponse),
+        readApiResponse<{ risks?: ClinicalRisk[] }>(riskResponse),
+      ])
+      setFlowEvents(flowData.events ?? [])
+      setAllergyEvents(allergyData.events ?? [])
+      setRisks((riskData.risks ?? []).filter((risk) => risk.risk_type === 'contraindication' && risk.patient_reference === reference))
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar o fluxo e o histórico de riscos.')
+    }
+  }
+
+  useEffect(() => {
+    if (!patientReferenceForFlow) return
+    let active = true
+    const loadFlow = async () => {
+      try {
+        const [flowResponse, allergyResponse, riskResponse] = await Promise.all([
+          fetch(`/api/v1/nursing/patients/flow-events?patient_reference=${encodeURIComponent(patientReferenceForFlow)}&limit=20`),
+          fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReferenceForFlow)}/allergy-history`),
+          fetch('/api/v1/nursing/clinical-risks'),
+        ])
+        const [flowData, allergyData, riskData] = await Promise.all([
+          readApiResponse<{ events?: PatientFlowEvent[] }>(flowResponse),
+          readApiResponse<{ events?: typeof allergyEvents }>(allergyResponse),
+          readApiResponse<{ risks?: ClinicalRisk[] }>(riskResponse),
+        ])
+        if (!active) return
+        setFlowEvents(flowData.events ?? [])
+        setAllergyEvents(allergyData.events ?? [])
+        setRisks((riskData.risks ?? []).filter((risk) => risk.risk_type === 'contraindication' && risk.patient_reference === patientReferenceForFlow))
+        setError('')
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar o fluxo e o histórico de riscos.')
+      }
+    }
+    void loadFlow()
+    return () => { active = false }
+  }, [patientReferenceForFlow])
+
+  async function savePatientFlow(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!patient) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const isTransfer = flowType === 'transfer'
+      const response = await fetch(`/api/v1/nursing/patients/${encodeURIComponent(patient.reference)}/${flowType}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isTransfer ? { ...destination, reason } : { reason, summary }),
+      })
+      const data = await readApiResponse<{ patient: Patient; event: PatientFlowEvent }>(response)
+      onPatientUpdated(data.patient)
+      setFlowEvents((current) => [data.event, ...current])
+      setDestination({ room: '', bed: '' }); setReason(''); setSummary('')
+      setNotice(isTransfer ? 'Transferência registrada e leito de destino validado.' : 'Alta registrada; o leito foi liberado e o histórico mantido.')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar o fluxo do paciente.')
+    } finally { setBusy(false) }
+  }
+
+  async function createRisk(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!patient) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/nursing/patients/${encodeURIComponent(patient.reference)}/clinical-risks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: riskDescription, severity: riskSeverity, reason: riskReason }),
+      })
+      await readApiResponse<ClinicalRisk>(response)
+      setRiskDescription(''); setRiskReason(''); setRiskSeverity('unspecified')
+      setNotice('Contraindicação registrada com autoria e justificativa.')
+      await loadPatientFlow()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar a contraindicação.')
+    } finally { setBusy(false) }
+  }
+
+  async function resolveRisk(riskId: number | string) {
+    if (typeof riskId !== 'number') return
+    const resolutionReason = window.prompt('Informe o motivo clínico para resolver esta contraindicação:')
+    if (!resolutionReason?.trim()) return
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const response = await fetch(`/api/v1/nursing/clinical-risks/${riskId}/resolve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: resolutionReason }),
+      })
+      await readApiResponse<ClinicalRisk>(response)
+      setNotice('Contraindicação resolvida e ação registrada no histórico.')
+      await loadPatientFlow()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível resolver a contraindicação.')
+    } finally { setBusy(false) }
+  }
+
+  return <section className="patient-list-panel patient-flow-risk-panel">
+    <div className="section-heading"><div><p className="eyebrow">GESTÃO DE LEITOS · SEGURANÇA CLÍNICA</p><h2>Fluxo do paciente e central de riscos</h2><p className="welcome-copy">Altas, transferências, alergias e contraindicações são registradas com autoria e histórico.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {activePatients.length === 0 ? <div className="history-empty">Não há pacientes ativos para transferência, alta ou avaliação de riscos.</div> : <>
+      <label className="field"><span className="field-label">Paciente internado</span><select value={patient?.reference ?? ''} onChange={(event) => setSelectedReference(event.target.value)}>{activePatients.map((item) => <option key={item.reference} value={item.reference}>{item.name} · {patientLocationLabel(item)}</option>)}</select></label>
+      {patient && <PatientAllergyAlert patient={patient} />}
+      <div className="psychology-tabs" role="tablist" aria-label="Ações de fluxo do paciente">
+        <button className={`psychology-tab ${flowType === 'transfer' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={flowType === 'transfer'} onClick={() => setFlowType('transfer')}>Transferência</button>
+        <button className={`psychology-tab ${flowType === 'discharge' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={flowType === 'discharge'} onClick={() => setFlowType('discharge')}>Alta</button>
+      </div>
+      {canUpdate && <form className="account-create-panel" onSubmit={(event) => void savePatientFlow(event)}>
+        {flowType === 'transfer' ? <div className="field-grid field-grid-three">
+          <label className="field"><span className="field-label">Novo quarto</span><input required maxLength={20} value={destination.room} onChange={(event) => setDestination((current) => ({ ...current, room: event.target.value }))} /></label>
+          <label className="field"><span className="field-label">Novo leito</span><input required maxLength={20} value={destination.bed} onChange={(event) => setDestination((current) => ({ ...current, bed: event.target.value }))} /></label>
+          <label className="field"><span className="field-label">Motivo da transferência</span><input required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+        </div> : <>
+          <label className="field"><span className="field-label">Motivo da alta</span><input required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+          <label className="field"><span className="field-label">Resumo / orientações de continuidade (opcional)</span><textarea maxLength={2000} value={summary} onChange={(event) => setSummary(event.target.value)} /></label>
+          <p className="work-order-privacy">Este registro não substitui sumário clínico, prescrição de alta nem orientações assinadas conforme protocolo institucional.</p>
+        </>}
+        <button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Registrando…' : flowType === 'transfer' ? 'Registrar transferência' : 'Registrar alta e liberar leito'}</button>
+      </form>}
+      <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">ALERGIAS E CONTRAINDICAÇÕES</p><h3>Riscos ativos e auditoria</h3></div><span className="module-total">{risks.length + (patient?.allergies_status !== 'none_known' ? 1 : 0)} alertas</span></div>
+        {risks.map((risk) => <article className="collection-row" key={risk.id}><div className="collection-row-heading"><strong>Contraindicação · {risk.severity === 'unspecified' ? 'gravidade não especificada' : risk.severity}</strong><span>{risk.description}</span></div><small>Registrada por {risk.actor_name} · {dateTime(risk.created_at)} · Motivo: {risk.reason}</small>{canUpdate && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void resolveRisk(risk.id)}>Registrar resolução</button>}</article>)}
+        {patient?.allergies_status === 'known' && <article className="clinical-alert" role="alert"><AlertTriangle size={19} /><div><strong>Alergia conhecida</strong><span>{patient.allergies}</span></div></article>}
+        {canUpdate && <form className="account-create-panel" onSubmit={(event) => void createRisk(event)}><div className="field-grid field-grid-three"><label className="field"><span className="field-label">Nova contraindicação</span><input required minLength={3} maxLength={1000} value={riskDescription} onChange={(event) => setRiskDescription(event.target.value)} placeholder="Substância, procedimento ou risco identificado" /></label><label className="field"><span className="field-label">Gravidade registrada</span><select value={riskSeverity} onChange={(event) => setRiskSeverity(event.target.value as ClinicalRisk['severity'])}><option value="unspecified">Não especificada</option><option value="low">Baixa</option><option value="moderate">Moderada</option><option value="high">Alta</option></select></label><label className="field"><span className="field-label">Justificativa / fonte</span><input required minLength={3} maxLength={300} value={riskReason} onChange={(event) => setRiskReason(event.target.value)} /></label></div><button className="button button-primary" type="submit" disabled={busy}>Registrar contraindicação</button></form>}
+        {allergyEvents.length > 0 && <details className="patient-risk-audit"><summary>Histórico de alterações de alergia ({allergyEvents.length})</summary><div className="collection-list">{allergyEvents.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.previous_status} → {event.new_status}</strong><time>{dateTime(event.recorded_at)}</time></div><p>{event.previous_details || 'Sem detalhe anterior'} → {event.new_details || 'Sem detalhe registrado'}</p><small>{event.actor_name} · {event.reason}</small></article>)}</div></details>}
+      </section>
+      {flowEvents.length > 0 && <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">MOVIMENTAÇÃO ASSISTENCIAL</p><h3>Histórico de transferências e altas</h3></div><span className="module-total">{flowEvents.length} eventos</span></div><div className="collection-list">{flowEvents.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.event_type === 'transfer' ? `Transferência · Qto ${event.previous_room}, leito ${event.previous_bed} → Qto ${event.next_room}, leito ${event.next_bed}` : `Alta · Qto ${event.previous_room}, leito ${event.previous_bed}`}</strong><time>{dateTime(event.occurred_at)}</time></div><p>{event.reason}</p>{event.summary && <p>{event.summary}</p>}<small>Registrado por {event.actor_name}</small></article>)}</div></section>}
+    </>}
+  </section>
 }
 
 const vitalMetrics: { key: string; label: string; unit: string; field: string; part?: number; glucoseUnit?: string }[] = [
@@ -2346,8 +2710,25 @@ function AdminPage() {
       setStatus('unavailable')
     }
   }
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadUsers() }, [])
+
+  useEffect(() => {
+    let active = true
+    const loadInitialUsers = async () => {
+      try {
+        const response = await fetch('/api/v1/access/users')
+        if (!response.ok) throw new Error('Não foi possível carregar usuários.')
+        const data = await response.json() as { users: Account[] }
+        if (active) {
+          setUsers(data.users)
+          setStatus('ready')
+        }
+      } catch {
+        if (active) setStatus('unavailable')
+      }
+    }
+    void loadInitialUsers()
+    return () => { active = false }
+  }, [])
 
   function toggleModule(module: string) {
     setSelectedModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])
@@ -2569,8 +2950,32 @@ function XrayPage({ user }: { user: AuthUser }) {
     }
   }
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void loadData() }, [user.id])
+  useEffect(() => {
+    let active = true
+    const loadXrayData = async () => {
+      setLoading(true)
+      try {
+        const [patientResponse, requestResponse] = await Promise.all([
+          fetch('/api/v1/nursing/patients'),
+          fetch('/api/v1/xray/requests'),
+        ])
+        const [patientData, requestData] = await Promise.all([
+          readApiResponse<{ patients?: Patient[] }>(patientResponse),
+          readApiResponse<{ requests?: XrayRequest[] }>(requestResponse),
+        ])
+        if (!active) return
+        setPatients(patientData.patients ?? [])
+        setRequests(requestData.requests ?? [])
+        setError('')
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os dados de Raio X.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    void loadXrayData()
+    return () => { active = false }
+  }, [user.id])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -3012,11 +3417,100 @@ function PsychologyPage() {
 }
 
 type AuditEvent = { id: number; actor_name: string; actor_role: string; action: string; module: string; target_id: string; happened_at: string }
+function ExecutiveDashboard() {
+  type Summary = {
+    active_patients: number
+    occupied_beds: number
+    patients_without_allergy_confirmation: number
+    patients_with_known_allergies: number
+    active_contraindications: number
+    open_emergency_arrivals: number
+    emergency_arrivals_today: number
+    vital_records_today: number
+    patient_transfers_today: number
+    patient_discharges_today: number
+    updated_at: string
+  }
+  type StockAlert = { item_id: number; item_name: string; balance: string; unit: string; suggested_replenishment: string; expiry_date: string; days_to_expiry: number; alert_types: string[] }
+  const [summary, setSummary] = useState<Summary | null>(null)
+  const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([])
+  const [stockAvailable, setStockAvailable] = useState(false)
+  const [errors, setErrors] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const refresh = useCallback(async () => {
+    const [summaryResult, stockResult] = await Promise.allSettled([
+      fetch('/api/v1/nursing/management/dashboard').then(readApiResponse<Summary>),
+      fetch('/api/v1/pharmacy/stock-alerts').then(readApiResponse<{ alerts?: StockAlert[] }>),
+    ])
+    const currentErrors: string[] = []
+    if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value)
+    else currentErrors.push(summaryResult.reason instanceof Error ? summaryResult.reason.message : 'Indicadores assistenciais indisponíveis.')
+    if (stockResult.status === 'fulfilled') {
+      setStockAlerts(stockResult.value.alerts ?? [])
+      setStockAvailable(true)
+    } else {
+      setStockAvailable(false)
+      currentErrors.push(stockResult.reason instanceof Error ? stockResult.reason.message : 'Alertas de estoque indisponíveis.')
+    }
+    setErrors(currentErrors)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const loadDashboard = async () => {
+      const [summaryResult, stockResult] = await Promise.allSettled([
+        fetch('/api/v1/nursing/management/dashboard').then(readApiResponse<Summary>),
+        fetch('/api/v1/pharmacy/stock-alerts').then(readApiResponse<{ alerts?: StockAlert[] }>),
+      ])
+      if (!active) return
+      const currentErrors: string[] = []
+      if (summaryResult.status === 'fulfilled') setSummary(summaryResult.value)
+      else currentErrors.push(summaryResult.reason instanceof Error ? summaryResult.reason.message : 'Indicadores assistenciais indisponíveis.')
+      if (stockResult.status === 'fulfilled') {
+        setStockAlerts(stockResult.value.alerts ?? [])
+        setStockAvailable(true)
+      } else {
+        setStockAvailable(false)
+        currentErrors.push(stockResult.reason instanceof Error ? stockResult.reason.message : 'Alertas de estoque indisponíveis.')
+      }
+      setErrors(currentErrors)
+      setLoading(false)
+    }
+    void loadDashboard()
+    return () => { active = false }
+  }, [])
+  const criticalStock = stockAlerts.filter((alert) => alert.alert_types.includes('critical_stock') || alert.alert_types.includes('below_minimum')).length
+  const expiredStock = stockAlerts.filter((alert) => alert.alert_types.includes('expired')).length
+  const expiringStock = stockAlerts.filter((alert) => alert.alert_types.includes('expiring')).length
+  return <section className="executive-dashboard patient-list-panel">
+    <div className="section-heading"><div><p className="eyebrow">OPERAÇÃO HOSPITALAR</p><h2>Indicadores executivos</h2><p className="welcome-copy">Resumo agregado de ocupação, produção assistencial, riscos e estoque crítico.</p></div><button className="button button-secondary" type="button" onClick={() => { setLoading(true); void refresh() }}>Atualizar</button></div>
+    {errors.map((message) => <div className="form-message form-message-error" role="alert" key={message}>{message}</div>)}
+    {loading && !summary ? <div className="history-empty">Carregando indicadores…</div> : <>
+      <div className="hygiene-summary executive-kpis">
+        <article><strong>{summary?.occupied_beds ?? '—'}</strong><span>Leitos ocupados</span></article>
+        <article><strong>{summary?.active_patients ?? '—'}</strong><span>Pacientes ativos</span></article>
+        <article><strong>{summary?.open_emergency_arrivals ?? '—'}</strong><span>Chegadas em atendimento</span></article>
+        <article><strong>{summary?.emergency_arrivals_today ?? '—'}</strong><span>Chegadas hoje</span></article>
+        <article><strong>{summary?.vital_records_today ?? '—'}</strong><span>Coletas de enfermagem hoje</span></article>
+        <article><strong>{stockAvailable ? criticalStock : '—'}</strong><span>Itens abaixo do mínimo</span></article>
+      </div>
+      <div className="executive-risk-strip" role="status"><AlertTriangle size={18} /><span><strong>Alertas assistenciais:</strong> {summary?.patients_with_known_allergies ?? '—'} paciente(s) com alergia conhecida, {summary?.patients_without_allergy_confirmation ?? '—'} sem confirmação e {summary?.active_contraindications ?? '—'} contraindicação(ões) ativa(s).</span></div>
+      <div className="executive-summary-grid">
+        <article><strong>Fluxo de leitos hoje</strong><span>{summary?.patient_transfers_today ?? '—'} transferências · {summary?.patient_discharges_today ?? '—'} altas</span></article>
+        <article><strong>Validade de estoque</strong><span>{stockAvailable ? `${expiredStock} lote(s) vencido(s) · ${expiringStock} vencendo em até 30 dias` : 'Indicador indisponível'}</span></article>
+      </div>
+      {stockAlerts.length > 0 && <section className="executive-stock-alerts"><div className="section-heading"><div><p className="eyebrow">LOGÍSTICA · AÇÃO NECESSÁRIA</p><h3>Estoque crítico e validade</h3></div><span className="module-total">{stockAlerts.length} alertas</span></div><div className="collection-list">{stockAlerts.slice(0, 8).map((alert) => <article className="collection-row" key={alert.item_id}><div className="collection-row-heading"><strong>{alert.item_name}</strong><span>{alert.balance} {alert.unit} disponíveis</span></div><small>{alert.alert_types.includes('expired') ? 'Lote vencido' : alert.alert_types.includes('expiring') ? `Vencimento em ${Math.max(0, alert.days_to_expiry)} dias` : 'Abaixo do mínimo'} · Reposição sugerida: {alert.suggested_replenishment} {alert.unit} · Validade {alert.expiry_date}</small></article>)}</div></section>}
+      {summary?.updated_at && <p className="field-hint">Atualizado em {dateTime(summary.updated_at)}. Ocupação exibida como contagem de leitos atribuídos; percentual depende do cadastro da capacidade física do hospital.</p>}
+    </>}
+  </section>
+}
+
 function ManagementPage({ onNavigate }: { onNavigate: (id: ModuleId) => void }) {
   const [events, setEvents] = useState<AuditEvent[]>([])
   const [error, setError] = useState('')
   useEffect(() => { fetch('/api/v1/audit/events').then(async (response) => { const data = await response.json() as { events?: AuditEvent[]; detail?: string }; if (!response.ok) throw new Error(data.detail ?? 'Não foi possível consultar a auditoria.'); setEvents(data.events ?? []) }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a auditoria.')) }, [])
-  return <section className="admin-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Gestão Hospitalar</h1><p className="welcome-copy">Contas, permissões e registros de auditoria administrativa.</p></div><button className="button button-primary" type="button" onClick={() => onNavigate('admin')}><ShieldCheck size={16} /> Usuários e permissões</button></div><BackupExportPanel /><section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Eventos recentes</h2><p className="welcome-copy">Ações administrativas registradas pelo sistema.</p></div><span className="module-total">{events.length}</span></div>{error ? <div className="form-message form-message-error" role="alert">{error}</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {event.actor_role}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{event.action}</strong></span><span><small>Módulo</small><strong>{event.module}</strong></span><span><small>Registro</small><strong>{event.target_id}</strong></span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section></section>
+  return <section className="admin-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Gestão Hospitalar</h1><p className="welcome-copy">Indicadores operacionais, contas, permissões e auditoria administrativa.</p></div><button className="button button-primary" type="button" onClick={() => onNavigate('admin')}><ShieldCheck size={16} /> Usuários e permissões</button></div><ExecutiveDashboard /><BackupExportPanel /><section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Eventos recentes</h2><p className="welcome-copy">Ações administrativas registradas pelo sistema.</p></div><span className="module-total">{events.length}</span></div>{error ? <div className="form-message form-message-error" role="alert">{error}</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {event.actor_role}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{event.action}</strong></span><span><small>Módulo</small><strong>{event.module}</strong></span><span><small>Registro</small><strong>{event.target_id}</strong></span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section></section>
 }
 
 function BackupExportPanel() {

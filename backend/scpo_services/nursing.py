@@ -151,6 +151,60 @@ class EmergencyArrival(Base):
     updated_by: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    clinical_priority: Mapped[str] = mapped_column(String(16), nullable=False, default="unassigned")
+    clinical_priority_updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    clinical_priority_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    clinical_priority_reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+
+
+class PatientFlowEvent(Base):
+    __tablename__ = "patient_flow_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_room: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    previous_bed: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    next_room: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    next_bed: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    summary: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PatientAllergyHistory(Base):
+    __tablename__ = "patient_allergy_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    previous_details: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    new_details: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ClinicalRisk(Base):
+    __tablename__ = "clinical_risks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False)
+    risk_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    description: Mapped[str] = mapped_column(String(1000), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    resolution_reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
 
 
 class MedicationAdministration(Base):
@@ -259,6 +313,74 @@ class EmergencyAdmissionPayload(BaseModel):
         return value
 
 
+class PatientTransferPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    room: str = Field(min_length=1, max_length=20)
+    bed: str = Field(min_length=1, max_length=20)
+    reason: str = Field(min_length=3, max_length=500)
+
+    @field_validator("room", "bed", "reason")
+    @classmethod
+    def trim_transfer_fields(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Preencha o destino e o motivo da transferência")
+        return value
+
+
+class PatientDischargePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=3, max_length=500)
+    summary: str = Field(default="", max_length=2000)
+
+    @field_validator("reason", "summary")
+    @classmethod
+    def trim_discharge_fields(cls, value: str) -> str:
+        return value.strip()
+
+
+class ClinicalRiskPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    description: str = Field(min_length=3, max_length=1000)
+    severity: Literal["unspecified", "low", "moderate", "high"] = "unspecified"
+    reason: str = Field(min_length=3, max_length=300)
+
+    @field_validator("description", "reason")
+    @classmethod
+    def trim_risk_fields(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Informe os detalhes do risco e o motivo do registro")
+        return value
+
+
+class ClinicalRiskResolutionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=3, max_length=300)
+
+    @field_validator("reason")
+    @classmethod
+    def trim_resolution_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Informe o motivo da resolução")
+        return value
+
+
+class EmergencyClinicalPriorityPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    clinical_priority: Literal["unassigned", "routine", "priority", "urgent"]
+    reason: str = Field(min_length=3, max_length=300)
+
+    @field_validator("reason")
+    @classmethod
+    def trim_priority_reason(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 3:
+            raise ValueError("Informe o motivo clínico da classificação")
+        return value
+
+
 class MedicationAdministrationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     dispensation_id: str = Field(min_length=1, max_length=36)
@@ -322,8 +444,8 @@ VITAL_FIELDS = {"saturation", "pressure", "heartRate", "respiratoryRate", "gluco
 class PatientPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=2, max_length=120)
-    room: str = Field(min_length=1, max_length=20)
-    bed: str = Field(min_length=1, max_length=20)
+    room: str = Field(default="", max_length=20)
+    bed: str = Field(default="", max_length=20)
     cpf: str = Field(default="", max_length=14)
     sus_card: str = Field(default="", max_length=20)
     allergies: str = Field(default="", max_length=1000)
@@ -352,13 +474,24 @@ class PatientPayload(BaseModel):
     responsible_postal_code: str = Field(default="", max_length=12)
     photo_data: str = Field(default="", max_length=1_500_000)
 
-    @field_validator("name", "room", "bed")
+    @field_validator("name")
     @classmethod
     def trim_required_text(cls, value: str) -> str:
         value = value.strip()
         if not value:
             raise ValueError("Este campo é obrigatório")
         return value
+
+    @field_validator("room", "bed")
+    @classmethod
+    def trim_optional_location(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_location_pair(self) -> "PatientPayload":
+        if bool(self.room.strip()) != bool(self.bed.strip()):
+            raise ValueError("Informe quarto e leito juntos ou deixe ambos sem acomodação")
+        return self
 
     @field_validator("photo_data")
     @classmethod
@@ -479,6 +612,36 @@ async def authorize_patient_module(request: Request) -> DemoPrincipal:
 
 PATIENT_ACCESS = Depends(authorize_patient_module)
 PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "management"))
+CLINICAL_RISK_ACCESS = Depends(require_demo_role("nursing", "nutrition", "pharmacy", "management"))
+
+
+def record_patient_allergy_change(
+    db: Session,
+    principal: DemoPrincipal,
+    patient: Patient,
+    next_status: str,
+    next_details: str,
+    reason: str,
+    previous_status: str | None = None,
+    previous_details: str | None = None,
+) -> None:
+    old_status = patient.allergies_status if previous_status is None else previous_status
+    old_details = patient.allergies if previous_details is None else previous_details
+    if old_status == next_status and old_details == next_details:
+        return
+    db.add(
+        PatientAllergyHistory(
+            patient_reference=patient.reference,
+            previous_status=old_status,
+            previous_details=old_details,
+            new_status=next_status,
+            new_details=next_details,
+            reason=reason,
+            actor_id=principal.user_id,
+            actor_name=principal.actor_name,
+            recorded_at=datetime.now(UTC),
+        )
+    )
 
 
 class VitalPayload(BaseModel):
@@ -596,7 +759,7 @@ def list_patients(
 
 @app.get("/api/v1/reception/arrivals")
 def list_emergency_arrivals(
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -618,6 +781,12 @@ def list_emergency_arrivals(
         .outerjoin(Patient, EmergencyArrival.patient_reference == Patient.reference)
         .where(*filters)
         .order_by(
+            case(
+                (EmergencyArrival.clinical_priority == "urgent", 0),
+                (EmergencyArrival.clinical_priority == "priority", 1),
+                (EmergencyArrival.clinical_priority == "routine", 2),
+                else_=3,
+            ),
             case(
                 (EmergencyArrival.status == "waiting", 0),
                 (EmergencyArrival.status == "in_service", 1),
@@ -645,6 +814,32 @@ def list_emergency_arrivals(
         "offset": offset,
         "status_counts": {key: count for key, count in grouped_counts},
     }
+
+
+@app.patch("/api/v1/reception/arrivals/{arrival_id}/clinical-priority")
+def update_emergency_clinical_priority(
+    arrival_id: str,
+    payload: EmergencyClinicalPriorityPayload,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    arrival = db.get(EmergencyArrival, arrival_id)
+    if arrival is None:
+        raise HTTPException(status_code=404, detail="Atendimento não encontrado")
+    if arrival.status in {"completed", "cancelled", "admitted"}:
+        raise HTTPException(status_code=409, detail="Não é possível reclassificar um atendimento encerrado")
+    arrival.clinical_priority = payload.clinical_priority
+    arrival.clinical_priority_updated_by = principal.actor_name
+    arrival.clinical_priority_updated_at = datetime.now(UTC)
+    arrival.clinical_priority_reason = payload.reason
+    db.commit()
+    db.refresh(arrival)
+    patient = db.get(Patient, arrival.patient_reference) if arrival.patient_reference else None
+    emit_audit_event(principal, "nursing", "emergency_clinical_priority_updated", arrival.id)
+    return serialize_emergency_arrival(
+        arrival,
+        patient.allergies_status if patient else "unknown",
+    )
 
 
 @app.post("/api/v1/reception/arrivals", status_code=201)
@@ -702,6 +897,17 @@ def create_emergency_arrival(
         updated_at=now,
     )
     db.add(arrival)
+    if payload.new_patient and patient and patient.allergies_status != "unknown":
+        record_patient_allergy_change(
+            db,
+            principal,
+            patient,
+            patient.allergies_status,
+            patient.allergies,
+            "Registro inicial no cadastro de emergência",
+            previous_status="unknown",
+            previous_details="",
+        )
     db.commit()
     db.refresh(arrival)
     if payload.new_patient and patient:
@@ -842,10 +1048,60 @@ def serialize_emergency_arrival(
         "arrival_mode": arrival.arrival_mode,
         "reason": arrival.reason,
         "status": arrival.status,
+        "clinical_priority": arrival.clinical_priority,
+        "clinical_priority_updated_by": arrival.clinical_priority_updated_by,
+        "clinical_priority_updated_at": arrival.clinical_priority_updated_at.isoformat() if arrival.clinical_priority_updated_at else None,
+        "clinical_priority_reason": arrival.clinical_priority_reason,
         "created_by": arrival.created_by,
         "updated_by": arrival.updated_by,
         "created_at": arrival.created_at.isoformat(),
         "updated_at": arrival.updated_at.isoformat(),
+    }
+
+
+def serialize_patient_flow_event(event: PatientFlowEvent) -> dict[str, object]:
+    return {
+        "id": event.id,
+        "patient_reference": event.patient_reference,
+        "event_type": event.event_type,
+        "previous_room": event.previous_room,
+        "previous_bed": event.previous_bed,
+        "next_room": event.next_room,
+        "next_bed": event.next_bed,
+        "reason": event.reason,
+        "summary": event.summary,
+        "actor_name": event.actor_name,
+        "occurred_at": event.occurred_at.isoformat(),
+    }
+
+
+def serialize_patient_allergy_history(record: PatientAllergyHistory) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "previous_status": record.previous_status,
+        "previous_details": record.previous_details,
+        "new_status": record.new_status,
+        "new_details": record.new_details,
+        "reason": record.reason,
+        "actor_name": record.actor_name,
+        "recorded_at": record.recorded_at.isoformat(),
+    }
+
+
+def serialize_clinical_risk(risk: ClinicalRisk) -> dict[str, object]:
+    return {
+        "id": risk.id,
+        "patient_reference": risk.patient_reference,
+        "risk_type": risk.risk_type,
+        "description": risk.description,
+        "severity": risk.severity,
+        "status": risk.status,
+        "reason": risk.reason,
+        "actor_name": risk.actor_name,
+        "created_at": risk.created_at.isoformat(),
+        "resolved_at": risk.resolved_at.isoformat() if risk.resolved_at else None,
+        "resolved_by": risk.resolved_by,
+        "resolution_reason": risk.resolution_reason,
     }
 
 
@@ -892,6 +1148,297 @@ def find_patient_duplicates(
             matches.append({"reference": candidate.reference, "name": candidate.name, "room": candidate.room, "bed": candidate.bed, "reasons": ", ".join(reasons)})
     emit_audit_event(principal, "patients", "patient_duplicate_check", "patient_registry")
     return {"matches": matches[:20]}
+
+
+@app.get("/api/v1/nursing/patients/flow-events")
+def list_patient_flow_events(
+    principal: Annotated[DemoPrincipal, PATIENT_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    patient_reference: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    query = select(PatientFlowEvent)
+    count_query = select(func.count(PatientFlowEvent.id))
+    if patient_reference:
+        query = query.where(PatientFlowEvent.patient_reference == patient_reference)
+        count_query = count_query.where(PatientFlowEvent.patient_reference == patient_reference)
+    events = db.scalars(
+        query.order_by(PatientFlowEvent.occurred_at.desc()).offset(offset).limit(limit)
+    ).all()
+    total = db.scalar(count_query) or 0
+    emit_audit_event(principal, "patients", "patient_flow_history_read", patient_reference or "all")
+    return {"events": [serialize_patient_flow_event(event) for event in events], "total": total}
+
+
+@app.post("/api/v1/nursing/patients/{patient_reference}/transfer", status_code=201)
+def transfer_patient(
+    patient_reference: str,
+    payload: PatientTransferPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou não está internado")
+    if not patient.room or not patient.bed:
+        raise HTTPException(status_code=409, detail="O paciente não possui leito de internação para transferir")
+    occupied = db.scalar(
+        select(Patient.reference).where(
+            Patient.active.is_(True),
+            Patient.room == payload.room,
+            Patient.bed == payload.bed,
+            Patient.reference != patient.reference,
+        )
+    )
+    if occupied:
+        raise HTTPException(status_code=409, detail="O destino informado já está ocupado")
+    now = datetime.now(UTC)
+    event = PatientFlowEvent(
+        patient_reference=patient.reference,
+        event_type="transfer",
+        previous_room=patient.room,
+        previous_bed=patient.bed,
+        next_room=payload.room,
+        next_bed=payload.bed,
+        reason=payload.reason,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        occurred_at=now,
+    )
+    db.add(event)
+    patient.room = payload.room
+    patient.bed = payload.bed
+    patient.updated_at = now
+    patient.updated_by = principal.actor_name
+    db.commit()
+    db.refresh(event)
+    emit_audit_event(principal, "nursing", "patient_transferred", patient.reference)
+    return {"patient": serialize_patient(patient, principal=principal), "event": serialize_patient_flow_event(event)}
+
+
+@app.post("/api/v1/nursing/patients/{patient_reference}/discharge", status_code=201)
+def discharge_patient(
+    patient_reference: str,
+    payload: PatientDischargePayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou já recebeu alta")
+    if not patient.room or not patient.bed:
+        raise HTTPException(status_code=409, detail="O paciente não possui leito de internação para receber alta")
+    now = datetime.now(UTC)
+    event = PatientFlowEvent(
+        patient_reference=patient.reference,
+        event_type="discharge",
+        previous_room=patient.room,
+        previous_bed=patient.bed,
+        reason=payload.reason,
+        summary=payload.summary,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        occurred_at=now,
+    )
+    db.add(event)
+    patient.active = False
+    patient.room = ""
+    patient.bed = ""
+    patient.updated_at = now
+    patient.updated_by = principal.actor_name
+    db.commit()
+    db.refresh(event)
+    emit_audit_event(principal, "nursing", "patient_discharged", patient.reference)
+    return {"patient": serialize_patient(patient, principal=principal), "event": serialize_patient_flow_event(event)}
+
+
+@app.get("/api/v1/nursing/clinical-risks")
+def list_clinical_risks(
+    principal: Annotated[DemoPrincipal, CLINICAL_RISK_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    include_inactive: bool = False,
+) -> dict[str, list[dict[str, object]]]:
+    patients_query = select(Patient).where(
+        Patient.allergies_status != "none_known",
+        Patient.deleted_at.is_(None),
+    )
+    if not include_inactive:
+        patients_query = patients_query.where(Patient.active.is_(True))
+    patients = db.scalars(patients_query.order_by(Patient.name)).all()
+    risk_query = select(ClinicalRisk).where(ClinicalRisk.status == "active")
+    if not include_inactive:
+        risk_query = risk_query.join(Patient, ClinicalRisk.patient_reference == Patient.reference).where(Patient.active.is_(True))
+    risks = db.scalars(risk_query.order_by(ClinicalRisk.created_at.desc())).all()
+    allergies = [
+        {
+            "id": f"allergy-{patient.reference}",
+            "patient_reference": patient.reference,
+            "patient_name": patient.name,
+            "room": patient.room,
+            "bed": patient.bed,
+            "risk_type": "allergy",
+            "description": patient.allergies if patient.allergies_status == "known" else "Alergias não verificadas.",
+            "severity": "high" if patient.allergies_status == "known" else "unspecified",
+            "status": "active",
+            "created_at": patient.updated_at.isoformat() if patient.updated_at else None,
+        }
+        for patient in patients
+    ]
+    risk_patient_refs = {risk.patient_reference for risk in risks}
+    patients_by_reference = {
+        patient.reference: patient
+        for patient in db.scalars(select(Patient).where(Patient.reference.in_(risk_patient_refs))).all()
+    } if risk_patient_refs else {}
+    contraindications = [
+        {
+            **serialize_clinical_risk(risk),
+            "patient_name": patients_by_reference.get(risk.patient_reference).name if risk.patient_reference in patients_by_reference else "Paciente",
+            "room": patients_by_reference.get(risk.patient_reference).room if risk.patient_reference in patients_by_reference else "",
+            "bed": patients_by_reference.get(risk.patient_reference).bed if risk.patient_reference in patients_by_reference else "",
+        }
+        for risk in risks
+    ]
+    emit_audit_event(principal, "nursing", "clinical_risk_center_read", "clinical_risks")
+    return {"risks": allergies + contraindications}
+
+
+@app.get("/api/v1/nursing/management/dashboard")
+def get_management_dashboard(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    day_start = datetime.combine(now.date(), time.min, tzinfo=UTC)
+    next_day = day_start + timedelta(days=1)
+    active_patients = Patient.active.is_(True)
+    summary = {
+        "active_patients": db.scalar(select(func.count(Patient.reference)).where(active_patients)) or 0,
+        "occupied_beds": db.scalar(
+            select(func.count(Patient.reference)).where(
+                active_patients,
+                Patient.room != "",
+                Patient.bed != "",
+            )
+        ) or 0,
+        "patients_without_allergy_confirmation": db.scalar(
+            select(func.count(Patient.reference)).where(
+                active_patients,
+                Patient.allergies_status == "unknown",
+            )
+        ) or 0,
+        "patients_with_known_allergies": db.scalar(
+            select(func.count(Patient.reference)).where(
+                active_patients,
+                Patient.allergies_status == "known",
+            )
+        ) or 0,
+        "active_contraindications": db.scalar(
+            select(func.count(ClinicalRisk.id)).where(ClinicalRisk.status == "active")
+        ) or 0,
+        "open_emergency_arrivals": db.scalar(
+            select(func.count(EmergencyArrival.id)).where(
+                EmergencyArrival.status.in_(("waiting", "in_service"))
+            )
+        ) or 0,
+        "emergency_arrivals_today": db.scalar(
+            select(func.count(EmergencyArrival.id)).where(
+                EmergencyArrival.created_at >= day_start,
+                EmergencyArrival.created_at < next_day,
+            )
+        ) or 0,
+        "vital_records_today": db.scalar(
+            select(func.count(VitalRecord.id)).where(
+                VitalRecord.recorded_at >= day_start,
+                VitalRecord.recorded_at < next_day,
+                VitalRecord.voided_at.is_(None),
+            )
+        ) or 0,
+        "patient_transfers_today": db.scalar(
+            select(func.count(PatientFlowEvent.id)).where(
+                PatientFlowEvent.event_type == "transfer",
+                PatientFlowEvent.occurred_at >= day_start,
+                PatientFlowEvent.occurred_at < next_day,
+            )
+        ) or 0,
+        "patient_discharges_today": db.scalar(
+            select(func.count(PatientFlowEvent.id)).where(
+                PatientFlowEvent.event_type == "discharge",
+                PatientFlowEvent.occurred_at >= day_start,
+                PatientFlowEvent.occurred_at < next_day,
+            )
+        ) or 0,
+        "updated_at": now.isoformat(),
+    }
+    emit_audit_event(principal, "management", "executive_dashboard_read", "hospital_summary")
+    return summary
+
+
+@app.get("/api/v1/nursing/patients/{patient_reference}/allergy-history")
+def list_patient_allergy_history(
+    patient_reference: str,
+    principal: Annotated[DemoPrincipal, CLINICAL_RISK_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    if db.get(Patient, patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    records = db.scalars(
+        select(PatientAllergyHistory)
+        .where(PatientAllergyHistory.patient_reference == patient_reference)
+        .order_by(PatientAllergyHistory.recorded_at.desc())
+        .limit(100)
+    ).all()
+    emit_audit_event(principal, "nursing", "patient_allergy_history_read", patient_reference)
+    return {"events": [serialize_patient_allergy_history(record) for record in records]}
+
+
+@app.post("/api/v1/nursing/patients/{patient_reference}/clinical-risks", status_code=201)
+def create_clinical_risk(
+    patient_reference: str,
+    payload: ClinicalRiskPayload,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+    risk = ClinicalRisk(
+        patient_reference=patient.reference,
+        risk_type="contraindication",
+        description=payload.description,
+        severity=payload.severity,
+        reason=payload.reason,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        created_at=datetime.now(UTC),
+    )
+    db.add(risk)
+    db.commit()
+    db.refresh(risk)
+    emit_audit_event(principal, "nursing", "clinical_risk_recorded", str(risk.id))
+    return serialize_clinical_risk(risk)
+
+
+@app.patch("/api/v1/nursing/clinical-risks/{risk_id}/resolve")
+def resolve_clinical_risk(
+    risk_id: int,
+    payload: ClinicalRiskResolutionPayload,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    risk = db.get(ClinicalRisk, risk_id)
+    if risk is None:
+        raise HTTPException(status_code=404, detail="Risco clínico não encontrado")
+    if risk.status != "active":
+        raise HTTPException(status_code=409, detail="Este risco já foi resolvido")
+    risk.status = "resolved"
+    risk.resolved_at = datetime.now(UTC)
+    risk.resolved_by = principal.actor_name
+    risk.resolution_reason = payload.reason
+    db.commit()
+    db.refresh(risk)
+    emit_audit_event(principal, "nursing", "clinical_risk_resolved", str(risk.id))
+    return serialize_clinical_risk(risk)
 
 
 @app.get("/api/v1/nursing/patients/{patient_reference}")
@@ -956,6 +1503,17 @@ def create_patient(
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
     patient = Patient(reference=str(uuid.uuid4()), **payload.model_dump(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC), updated_by=principal.actor_name)
     db.add(patient)
+    if patient.allergies_status != "unknown":
+        record_patient_allergy_change(
+            db,
+            principal,
+            patient,
+            patient.allergies_status,
+            patient.allergies,
+            "Registro inicial no cadastro do paciente",
+            previous_status="unknown",
+            previous_details="",
+        )
     db.commit()
     db.refresh(patient)
     emit_audit_event(principal, "patients", "patient_created", patient.reference)
@@ -978,6 +1536,14 @@ def update_patient(
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
     if patient.active and payload.room.strip() and payload.bed.strip() and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip(), Patient.reference != patient_reference)):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
+    record_patient_allergy_change(
+        db,
+        principal,
+        patient,
+        payload.allergies_status,
+        payload.allergies,
+        "Atualização do cadastro do paciente",
+    )
     for key, value in payload.model_dump().items():
         setattr(patient, key, value)
     patient.updated_at = datetime.now(UTC)
@@ -1255,12 +1821,28 @@ def create_nutrition_record(
         payload.allergies_status != patient.allergies_status
         or payload.allergies != patient.allergies
     ):
+        record_patient_allergy_change(
+            db,
+            principal,
+            patient,
+            payload.allergies_status,
+            payload.allergies,
+            "Confirmação durante avaliação nutricional",
+        )
         patient.allergies = payload.allergies
         patient.allergies_status = payload.allergies_status
         patient.updated_at = datetime.now(UTC)
         patient.updated_by = principal.actor_name
         emit_audit_event(principal, "patients", "patient_allergies_updated", patient.reference)
     elif payload.allergies.strip() and payload.allergies.strip() != patient.allergies:
+        record_patient_allergy_change(
+            db,
+            principal,
+            patient,
+            "known",
+            payload.allergies,
+            "Atualização durante avaliação nutricional",
+        )
         patient.allergies = payload.allergies
         patient.allergies_status = "known"
         patient.updated_at = datetime.now(UTC)

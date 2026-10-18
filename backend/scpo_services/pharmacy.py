@@ -3,11 +3,20 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
-import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, func, select, update
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+    select,
+    update,
+)
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -17,8 +26,8 @@ from .common import (
     emit_audit_event,
     require_demo_role,
     require_service_token,
-    verify_patient_reference,
     verify_database_migrated,
+    verify_patient_reference,
 )
 
 
@@ -93,6 +102,7 @@ app = FastAPI(
     title="SCPO Connect · Serviço de Farmácia", version="1.0.0", lifespan=lifespan
 )
 PHARMACY_ROLE = require_demo_role("pharmacy")
+INVENTORY_READ_ROLE = require_demo_role("pharmacy", "management")
 DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "management")
 
 
@@ -170,9 +180,51 @@ def health() -> dict[str, str]:
     return {"service": "pharmacy", "status": "ok"}
 
 
+@app.get("/api/v1/pharmacy/stock-alerts")
+def list_stock_alerts(
+    principal: Annotated[DemoPrincipal, Depends(INVENTORY_READ_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, list[dict[str, object]]]:
+    today = date.today()
+    alerts: list[dict[str, object]] = []
+    for item in db.scalars(select(InventoryItem).order_by(InventoryItem.expiry_date, InventoryItem.item_name)).all():
+        balance = parse_stock_quantity(item.balance)
+        minimum = parse_stock_quantity(item.minimum_balance)
+        average = parse_stock_quantity(item.average_balance)
+        days_to_expiry = (item.expiry_date - today).days
+        kinds: list[str] = []
+        if balance <= minimum:
+            kinds.append("critical_stock" if balance <= 0 else "below_minimum")
+        if days_to_expiry < 0:
+            kinds.append("expired")
+        elif days_to_expiry <= 30:
+            kinds.append("expiring")
+        if not kinds:
+            continue
+        alerts.append(
+            {
+                "item_id": item.id,
+                "item_name": item.item_name,
+                "category": item.category,
+                "balance": item.balance,
+                "unit": item.unit,
+                "minimum_balance": item.minimum_balance,
+                "suggested_replenishment": format_stock_quantity(max(average - balance, Decimal(0))),
+                "lot": item.lot,
+                "expiry_date": item.expiry_date.isoformat(),
+                "days_to_expiry": days_to_expiry,
+                "storage_location": item.storage_location,
+                "alert_types": kinds,
+            }
+        )
+    alerts.sort(key=lambda item: (0 if "critical_stock" in item["alert_types"] else 1, item["days_to_expiry"], str(item["item_name"]).casefold()))
+    emit_audit_event(principal, "pharmacy", "critical_stock_alerts_read", "inventory_items")
+    return {"alerts": alerts}
+
+
 @app.get("/api/v1/pharmacy/items")
 def list_items(
-    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(INVENTORY_READ_ROLE)],
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, list[dict[str, object]]]:
     items = [

@@ -237,6 +237,132 @@ def test_nutrition_can_confirm_no_known_allergies_and_clear_shared_alert(
     assert patient is not None
     assert patient.allergies == ""
     assert patient.allergies_status == "none_known"
+    history = nursing.list_patient_allergy_history(
+        str(patient_data["reference"]), nutritionist, nursing_db
+    )
+    assert [event["new_status"] for event in history["events"]] == ["none_known", "known"]
+    assert history["events"][0]["reason"] == "Confirmação durante avaliação nutricional"
+
+
+def test_transfer_and_discharge_release_beds_and_preserve_audit_history(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    patient = create_patient(nursing_db, nurse, room="3", bed="A")
+    reference = str(patient["reference"])
+    transfer = nursing.transfer_patient(
+        reference,
+        nursing.PatientTransferPayload(room="4", bed="B", reason="Mudança de setor"),
+        nurse,
+        nursing_db,
+    )
+    assert transfer["patient"]["room"] == "4"
+    assert transfer["event"]["previous_room"] == "3"
+    assert transfer["event"]["next_bed"] == "B"
+
+    discharged = nursing.discharge_patient(
+        reference,
+        nursing.PatientDischargePayload(reason="Alta médica", summary="Orientações registradas"),
+        nurse,
+        nursing_db,
+    )
+    assert discharged["patient"]["active"] is False
+    assert discharged["patient"]["room"] == ""
+    replacement = create_patient(nursing_db, nurse, room="4", bed="B")
+    assert replacement["reference"] != reference
+    events = nursing.list_patient_flow_events(nurse, nursing_db, reference)
+    assert [event["event_type"] for event in events["events"]] == ["discharge", "transfer"]
+
+    with pytest.raises(HTTPException) as already_discharged:
+        nursing.discharge_patient(
+            reference,
+            nursing.PatientDischargePayload(reason="Nova tentativa de alta"),
+            nurse,
+            nursing_db,
+        )
+    assert already_discharged.value.status_code == 404
+
+
+def test_clinical_risks_are_resolved_with_reason_and_emergency_priority_is_auditable(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    patient_data = create_patient(nursing_db, nurse, room="2", bed="A")
+    reference = str(patient_data["reference"])
+    risk = nursing.create_clinical_risk(
+        reference,
+        nursing.ClinicalRiskPayload(
+            description="Contraindicação a contraste iodado",
+            severity="high",
+            reason="Registro em prontuário validado",
+        ),
+        nurse,
+        nursing_db,
+    )
+    assert risk["status"] == "active"
+    resolved = nursing.resolve_clinical_risk(
+        int(risk["id"]),
+        nursing.ClinicalRiskResolutionPayload(reason="Revisão clínica documentada"),
+        nurse,
+        nursing_db,
+    )
+    assert resolved["status"] == "resolved"
+    assert resolved["resolution_reason"] == "Revisão clínica documentada"
+
+    receptionist = DemoPrincipal(
+        "reception-id",
+        "reception",
+        "Recepcionista",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar", "alterar"]},
+    )
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_reference=reference,
+            patient_name="Paciente de teste",
+            reason="Avaliação na emergência",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    prioritized = nursing.update_emergency_clinical_priority(
+        str(arrival["id"]),
+        nursing.EmergencyClinicalPriorityPayload(
+            clinical_priority="urgent",
+            reason="Classificação clínica presencial",
+        ),
+        nurse,
+        nursing_db,
+    )
+    assert prioritized["clinical_priority"] == "urgent"
+    assert prioritized["clinical_priority_updated_by"] == nurse.actor_name
+    assert prioritized["clinical_priority_reason"] == "Classificação clínica presencial"
+
+
+def test_management_dashboard_returns_aggregate_counts_only(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
+    create_patient(nursing_db, nurse, room="1", bed="A")
+    manager = DemoPrincipal(
+        "manager-id",
+        "manager",
+        "Gestora",
+        "management",
+        ["management"],
+        {"management": ["consultar"]},
+    )
+    result = nursing.get_management_dashboard(manager, nursing_db)
+    assert result["active_patients"] == 1
+    assert result["occupied_beds"] == 1
+    assert "patient_reference" not in result
 
 
 def test_vitals_require_a_measurement_and_keep_actor(nursing_db: Session, nurse: DemoPrincipal) -> None:

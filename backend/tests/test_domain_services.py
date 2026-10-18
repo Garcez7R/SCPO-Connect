@@ -144,6 +144,33 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     assert negative_balance.value.status_code == 409
 
 
+def test_pharmacy_stock_alerts_include_reorder_and_expiry_actions(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_database: dict[str, Session],
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args: None)
+    pharmacist = DemoPrincipal("pharm-2", "pharm", "Farmacêutico", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
+    item = pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Material crítico",
+            balance="0",
+            unit="unidade",
+            lot="L-CRIT",
+            expiry_date="2000-01-01",
+            minimum_balance="2",
+            average_balance="10",
+        ),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+    manager = DemoPrincipal("manager-2", "manager", "Gestor", "management", ["management"], {"management": ["consultar"]})
+    alerts = pharmacy.list_stock_alerts(manager, domain_database["pharmacy"])["alerts"]
+    assert len(alerts) == 1
+    assert alerts[0]["item_id"] == item["id"]
+    assert set(alerts[0]["alert_types"]) == {"critical_stock", "expired"}
+    assert alerts[0]["suggested_replenishment"] == "10"
+
+
 def test_nursing_records_patient_linked_dispensation_once(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
     monkeypatch.setattr(nursing, "emit_audit_event", lambda *args: None)
     monkeypatch.setattr(

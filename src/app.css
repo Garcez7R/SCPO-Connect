@@ -1118,6 +1118,32 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
   .install-button { min-height: 36px; padding: 6px 7px; font-size: 10px; }
 }
 
+.executive-kpis { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
+.executive-kpis article { min-height: 78px; }
+.executive-risk-strip { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #e6c98f; border-radius: 7px; background: #fff8e9; color: #76500f; font-size: 12px; line-height: 1.55; }
+.executive-risk-strip svg { flex: 0 0 auto; }
+.executive-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.executive-summary-grid article { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.executive-summary-grid span { color: var(--muted); font-size: 12px; }
+.executive-stock-alerts { display: grid; gap: 10px; }
+.patient-flow-risk-panel > .patient-list-panel { box-shadow: none; }
+.patient-risk-audit summary { cursor: pointer; color: var(--blue-dark); font-weight: 600; }
+.patient-risk-audit .collection-list { margin-top: 12px; }
+.clinical-queue-panel .clinical-alert { margin-top: 8px; }
+.status-urgent { background: #fae8e8; color: #9b2f36; }
+.status-priority { background: #fff2d9; color: #805812; }
+.status-routine { background: #e9f4ec; color: #346b49; }
+.status-unassigned { background: #eff1f3; color: #56616b; }
+html[data-theme="dark"] .executive-risk-strip { border-color: #705b31; background: #332d20; color: #f1ce86; }
+html[data-theme="dark"] .status-urgent { background: #48292d; color: #f08c91; }
+html[data-theme="dark"] .status-priority { background: #44371f; color: #efc16e; }
+html[data-theme="dark"] .status-routine { background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf; }
+@media (max-width: 520px) {
+  .executive-summary-grid { grid-template-columns: 1fr; }
+  .executive-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .reception-page, .nutrition-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
 .pharmacy-movement-ledger { display: grid; gap: 14px; margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .pharmacy-movement-ledger .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
