@@ -23,6 +23,9 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Cadastro central de pacientes com quarto, leito, data de nascimento, foto, contatos e endereços do paciente e do responsável pela internação; pessoas sem cadastro ou leito podem ser registradas na fila própria da emergência.
 - Histórico individual de sinais vitais, com consulta separada e controle de acesso por perfil.
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
+- Enfermagem: registro de transferências e altas com histórico; central de alergias e contraindicações com autoria, justificativa e resolução rastreável.
+- Recepção: classificação manual da prioridade de chegadas à emergência; não substitui protocolo institucional de triagem.
+- Gestão Hospitalar: indicadores agregados de ocupação, chegadas, coletas, fluxo de leitos, riscos cadastrais e alertas de estoque.
 - Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.

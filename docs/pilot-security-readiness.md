@@ -8,6 +8,8 @@ O cadastro compartilhado usa referências UUID reais. Os módulos de Enfermagem,
 
 As validações de sinais vitais cobrem presença, formato, consistência entre valor e “não aferido”, saturação entre 0 e 100 e preenchimento dos componentes de pressão. Limites clínicos para os demais indicadores e alertas não foram definidos: devem ser aprovados pelos responsáveis assistenciais antes da configuração. O app não interpreta os valores nem orienta condutas.
 
+A prioridade das chegadas à emergência é atribuída manualmente e não implementa protocolo validado de triagem. Transferências, altas, contraindicações e indicadores de Gestão Hospitalar são registros operacionais; não fazem classificação ou recomendação clínica automatizada. Validar esses fluxos, terminologia, responsáveis e permissões com as equipes assistenciais antes de qualquer piloto.
+
 ## Decisões atuais e controles pendentes
 
 1. O deploy interno usará `tls internal` do Caddy e sua CA privada. A raiz pública deve ser instalada como confiável nos aparelhos autorizados; valide a impressão digital por canal independente. O volume `caddy_data` deve ser persistente e ter backup protegido. Se o domínio/IP ou a CA mudar, os aparelhos precisam receber a atualização da confiança.

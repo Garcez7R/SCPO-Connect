@@ -25,4 +25,4 @@ Para extrair um domínio, mantenha seu pacote, migrações e banco como unidade,
 
 ## Limites
 
-O cabeçalho `X-Demo-Role` é deliberadamente falsificável: demonstra autorização de rotas, não autentica pessoas. Serviços, critérios, retenção, HTTPS interno, backup, políticas de menor privilégio e requisitos legais necessitam de revisão técnica e institucional antes de uso real. Não há integração clínica, classificação, alerta ou recomendação.
+O cabeçalho `X-Demo-Role` é deliberadamente falsificável: demonstra autorização de rotas, não autentica pessoas. Serviços, critérios, retenção, HTTPS interno, backup, políticas de menor privilégio e requisitos legais necessitam de revisão técnica e institucional antes de uso real. A prioridade da emergência é registrada manualmente e não substitui protocolo institucional de triagem; os indicadores e registros de risco não fazem classificação, alerta ou recomendação clínica automatizada. Não há integração clínica.
