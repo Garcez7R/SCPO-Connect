@@ -42,9 +42,15 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0029_pharmacy_products"
+    assert revision == "0030_vital_measurement_time"
     if service == "nursing":
         assert len(tables) == 15
+        assert "measured_at" in {
+            column["name"] for column in inspect(get_engine(service)).get_columns("vital_records")
+        }
+        assert "ix_vital_records_patient_measured_at" in {
+            index["name"] for index in inspect(get_engine(service)).get_indexes("vital_records")
+        }
         patient_columns = {
             column["name"] for column in inspect(get_engine(service)).get_columns("patients")
         }
