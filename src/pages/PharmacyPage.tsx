@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Search, X } from 'lucide-react'
 import { readApiResponse } from '../api'
 import PrintSelectionPanel, { type PrintRow } from '../components/PrintSelectionPanel'
+import { formatDecimalInput } from '../inputFormatting'
 
 type Patient = { reference: string; name: string; room: string; bed: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known' }
 type AuthUser = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]> }
@@ -53,7 +54,9 @@ function PharmacyPage({ user }: { user: AuthUser }) {
   const [movementTotal, setMovementTotal] = useState(0)
   const [movementOffset, setMovementOffset] = useState(0)
   const [movementItemId, setMovementItemId] = useState<number | null>(null)
-  const [movementForm, setMovementForm] = useState({ movement_type: 'entry' as 'entry' | 'issue' | 'adjustment', quantity: '', reason: '' })
+  const [movementForm, setMovementFormState] = useState({ movement_type: 'entry' as 'entry' | 'issue' | 'adjustment', quantity: '', reason: '' })
+  const setMovementForm = (value: { movement_type: 'entry' | 'issue' | 'adjustment'; quantity: string; reason: string }) =>
+    setMovementFormState({ ...value, quantity: formatDecimalInput(value.quantity) })
   const [movementSaving, setMovementSaving] = useState(false)
   const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', balance: '', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [query, setQuery] = useState('')
@@ -498,7 +501,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       <form className="field-grid field-grid-two" onSubmit={(event) => void submitDispensation(event)}>
         <label className="field"><span className="field-label">Paciente</span><select required value={dispenseForm.patient_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, patient_reference: event.target.value, allergy_reviewed: false })}><option value="">Selecione</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>
         <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => setDispenseForm({ ...dispenseForm, item_id: event.target.value })}><option value="">Selecione lote válido</option>{eligibleMedicationLots.map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot}{suggestedFefoLotIds.has(item.id) ? ' · sugestão FEFO' : ''} · saldo {item.balance} {item.unit}</option>)}</select><span className="field-hint">A sugestão FEFO indica o lote válido com vencimento mais próximo por produto; a seleção permanece manual e deve seguir a política da instituição.</span></label>
-        <label className="field"><span className="field-label">Quantidade</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Quantidade</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: formatDecimalInput(event.target.value) })} /></label>
         <label className="field"><span className="field-label">Referência da prescrição</span><input required minLength={2} maxLength={80} value={dispenseForm.prescription_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, prescription_reference: event.target.value })} /></label>
         <label className="field"><span className="field-label">Profissional prescritor</span><input required minLength={2} maxLength={120} value={dispenseForm.prescriber_name} onChange={(event) => setDispenseForm({ ...dispenseForm, prescriber_name: event.target.value })} /></label>
         <label className="field"><span className="field-label">Instruções para administração (conforme prescrição)</span><input maxLength={500} value={dispenseForm.instructions} onChange={(event) => setDispenseForm({ ...dispenseForm, instructions: event.target.value })} /></label>
@@ -542,9 +545,9 @@ function PharmacyPage({ user }: { user: AuthUser }) {
         <label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label>
         <label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label>
         <label className="field"><span className="field-label">Registro informado pela fonte</span><input maxLength={32} value={form.catalog_registration} readOnly placeholder="Preenchido ao aplicar sugestão Anvisa" /><span className="field-hint">Referência informativa da sugestão; confirme os dados na fonte oficial.</span></label>
-        <label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: event.target.value })} placeholder="Ex.: 24" /></label>
+        <label className="field"><span className="field-label">Quantidade recebida</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.balance} onChange={(event) => setForm({ ...form, balance: formatDecimalInput(event.target.value) })} placeholder="Ex.: 24" /></label>
         <label className="field"><span className="field-label">Unidade de medida</span><input required maxLength={24} list="pharmacy-units" value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: caixa, frasco, unidade" /><datalist id="pharmacy-units"><option value="unidade" /><option value="caixa" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /></datalist></label>
-        <label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: event.target.value })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label>
+        <label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: formatDecimalInput(event.target.value) })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label>
         <label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label>
         <label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label>
         <label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label>
@@ -582,8 +585,10 @@ function stockLevel(item: PharmacyItem): StockLevel {
 
 function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem[]; counts: Record<StockLevel, number>; onSaved: (item: PharmacyItem) => void }) {
   const [editing, setEditing] = useState<number | null>(null)
-  const [minimum, setMinimum] = useState('0')
-  const [average, setAverage] = useState('')
+  const [minimum, setMinimumState] = useState('0')
+  const [average, setAverageState] = useState('')
+  const setMinimum = (value: string) => setMinimumState(formatDecimalInput(value))
+  const setAverage = (value: string) => setAverageState(formatDecimalInput(value))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const label: Record<StockLevel, string> = { critical: 'Crítico', attention: 'Atenção', healthy: 'Adequado', unconfigured: 'Defina a meta' }

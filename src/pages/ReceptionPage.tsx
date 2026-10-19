@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ComponentType, FormEvent } from 'react'
 import { ArrowRight, Building2, Search, AlertTriangle, BadgeCheck, Info } from 'lucide-react'
 import { readApiResponse } from '../api'
+import { formatCpf, formatPhone } from '../inputFormatting'
 
 type Patient = {
   reference: string
@@ -86,6 +87,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [arrivalFormOpen, setArrivalFormOpen] = useState(false)
   const [updating, setUpdating] = useState('')
   const [admissionDraft, setAdmissionDraft] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
@@ -156,6 +158,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       setCreateCentralPatient(false)
       setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' })
       setArrivalMode('walk_in'); setReason('')
+      setArrivalFormOpen(false)
       setNotice('Chegada registrada na fila de emergência.')
       await loadArrivals(statusFilter, query, 0)
     } catch (saveError) {
@@ -211,16 +214,17 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
 
   return <section className="reception-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">Registre internações e chegadas de emergência em fluxos independentes.</p></div><span className="module-icon"><Building2 size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'emergency' ? 'Acompanhe as chegadas de emergência e registre novos atendimentos.' : 'Consulte os pacientes e organize admissões e internações.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Fluxos da Recepção">
       <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e internações</button>
     </div>
-    {tab === 'admissions' ? <PatientRegistryPage receptionMode /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : <>
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
       {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
       <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
-      <form className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
+      <div className="reception-arrival-action"><button className="button button-primary" type="button" aria-expanded={arrivalFormOpen} aria-controls="reception-arrival-form" onClick={() => setArrivalFormOpen((open) => !open)} disabled={!canCreate}>{arrivalFormOpen ? 'Fechar formulário' : 'Registrar chegada'}</button></div>
+      {arrivalFormOpen && <form id="reception-arrival-form" className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
         <div className="section-heading"><div><p className="eyebrow">CHEGADA À EMERGÊNCIA</p><h2>Registrar atendimento</h2></div></div>
         <div className="field-grid field-grid-two">
           {!createCentralPatient && <><label className="field"><span className="field-label">Buscar paciente cadastrado (opcional)</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, quarto, leito ou identificador" /></label>
@@ -228,11 +232,11 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
           <label className="field"><span className="field-label">{createCentralPatient ? 'Nome completo para novo cadastro' : 'Nome da pessoa atendida'}</span><input required minLength={2} maxLength={120} value={patientName} onChange={(event) => { setPatientName(event.target.value); if (patientReference) setPatientReference('') }} placeholder="Nome informado na recepção" /></label>
           <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setPatientSearch(''); setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' }) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
           {createCentralPatient && <>
-            <label className="field"><span className="field-label">CPF (opcional)</span><input inputMode="numeric" maxLength={14} value={emergencyPatient.cpf} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, cpf: event.target.value.replace(/[^\d.-]/g, '').slice(0, 14) })} placeholder="000.000.000-00" /></label>
+            <label className="field"><span className="field-label">CPF (opcional)</span><input inputMode="numeric" maxLength={14} value={formatCpf(emergencyPatient.cpf)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, cpf: formatCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
             <label className="field"><span className="field-label">Cartão Nacional de Saúde (opcional)</span><input inputMode="numeric" maxLength={20} value={emergencyPatient.sus_card} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
             <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={emergencyPatient.birth_date} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, birth_date: event.target.value })} /></label>
             <label className="field"><span className="field-label">Sexo (opcional)</span><select value={emergencyPatient.sex} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sex: event.target.value })}><option value="">Não informado</option><option>Feminino</option><option>Masculino</option><option>Outro</option><option>Não informado</option></select></label>
-            <label className="field"><span className="field-label">Telefone (opcional)</span><input maxLength={40} value={emergencyPatient.phone} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, phone: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Telefone (opcional)</span><input inputMode="tel" maxLength={20} autoComplete="tel" value={formatPhone(emergencyPatient.phone)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, phone: formatPhone(event.target.value) })} /></label>
             <label className="field"><span className="field-label">Status das alergias</span><select value={emergencyPatient.allergies_status} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies_status: event.target.value as NonNullable<Patient['allergies_status']>, allergies: event.target.value === 'known' ? emergencyPatient.allergies : '' })}><option value="unknown">Não verificado / desconhecido</option><option value="none_known">Sem alergias conhecidas · confirmado</option><option value="known">Alergia conhecida</option></select></label>
             {emergencyPatient.allergies_status === 'known' && <label className="field"><span className="field-label">Alergias conhecidas</span><textarea required maxLength={1000} value={emergencyPatient.allergies} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies: event.target.value })} /></label>}
             <PatientAllergyAlert patient={emergencyPatient} />
@@ -242,7 +246,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
         </div>
         <p className="work-order-privacy">A recepção registra a chegada e a situação operacional. Esta tela não atribui prioridade clínica nem substitui o protocolo institucional de classificação de risco.</p>
         <button className="button button-primary" type="submit" disabled={!canCreate || saving}>{saving ? 'Registrando…' : 'Registrar chegada'} <ArrowRight size={16} /></button>
-      </form>
+      </form>}
       <section className="patient-list-panel reception-queue-panel">
         <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila de emergência <span className="module-total">{total}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadArrivals(statusFilter, query, offset)} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
         <div className="service-tabs module-tabs" role="tablist" aria-label="Filtrar chegadas por situação">

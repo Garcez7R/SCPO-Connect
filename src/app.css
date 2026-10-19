@@ -1228,6 +1228,9 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
 }
 
 .reception-page, .nutrition-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
+.reception-page > .hygiene-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.reception-arrival-action { display: flex; justify-content: flex-end; }
+.reception-admissions-page .patient-registry-page { gap: 18px; }
 .pharmacy-movement-ledger { display: grid; gap: 14px; margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .pharmacy-movement-ledger .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .pharmacy-movement-ledger h3 { margin: 2px 0 4px; color: var(--ink); font-size: 17px; }
@@ -1266,6 +1269,8 @@ html[data-theme="dark"] .pharmacy-stock-movement-form { border-color: var(--line
   .pharmacy-movement-author { grid-column: 1 / -1; text-align: left; }
 }
 @media (max-width: 520px) {
+  .reception-page > .hygiene-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reception-arrival-action .button { width: 100%; justify-content: center; }
   .nutrition-history-filters, .reception-search { grid-template-columns: 1fr; }
   .nutrition-history-filters .field:nth-child(2) { grid-column: auto; grid-row: auto; }
   .nutrition-history-filters > .button, .reception-search > .button { width: 100%; justify-content: center; }
