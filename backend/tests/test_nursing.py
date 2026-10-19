@@ -79,6 +79,68 @@ def test_patient_identity_and_active_bed_are_unique(nursing_db: Session, nurse: 
     assert conflict.value.status_code == 409
 
 
+def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
+    nursing_db: Session,
+) -> None:
+    receptionist = DemoPrincipal(
+        "reception-id",
+        "reception-user",
+        "Recepcionista de teste",
+        "reception",
+        ["reception", "patients"],
+        {"reception": ["consultar", "criar"], "patients": ["consultar", "criar"]},
+    )
+    payload = nursing.OutpatientEncounterPayload(
+        new_patient=nursing.PatientPayload(
+            name="Paciente ambulatorial",
+            mother_name="Mãe de teste",
+            health_plan="SUS",
+            birth_date=date(1980, 5, 12),
+            sex="Feminino",
+            address="Rua Central",
+            address_number="15",
+            neighborhood="Centro",
+            city="Pedro Osório",
+            state="RS",
+        ),
+        encounter_type="first_consultation",
+        same_number="SAME-2026-001",
+        physician_name="Dra. Médica",
+        examination="Exame de rotina",
+        activity_rows=[
+            nursing.ActivityProcedureRow(
+                professional_activity="Consulta médica",
+                procedure="Consulta ambulatorial",
+            )
+        ],
+        group_name="Saúde da mulher",
+        programs=["prenatal"],
+        diagnostic_hypothesis="Hipótese de teste",
+        antibiotic_prescription="",
+        referral="return_same_unit",
+    )
+
+    created = nursing.create_outpatient_encounter(payload, receptionist, nursing_db)
+
+    snapshot = created["patient_snapshot"]
+    assert isinstance(snapshot, dict)
+    assert snapshot["name"] == "Paciente ambulatorial"
+    assert snapshot["mother_name"] == "Mãe de teste"
+    assert snapshot["health_plan"] == "SUS"
+    assert snapshot["same_number"] == "SAME-2026-001"
+    assert created["created_by"] == "Recepcionista de teste"
+    assert created["activity_rows"] == [
+        {"professional_activity": "Consulta médica", "procedure": "Consulta ambulatorial"}
+    ]
+    history = nursing.list_outpatient_encounters(
+        receptionist,
+        nursing_db,
+        patient_reference=created["patient_reference"],
+    )
+    assert history["total"] == 1
+    assert history["encounters"][0]["id"] == created["id"]
+
+
 def test_patient_creation_persists_audit_outbox_in_the_same_transaction(
     nursing_db: Session,
     nurse: DemoPrincipal,

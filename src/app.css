@@ -1323,6 +1323,76 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
 .task-center-card ul { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
 .task-center-card li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
 .task-center-card li > div { display: grid; min-width: 0; gap: 3px; }
+.outpatient-encounter-page { display: grid; gap: 18px; }
+.outpatient-encounter-form, .outpatient-history-panel { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.outpatient-encounter-form .section-heading, .outpatient-history-panel .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
+.outpatient-encounter-form .section-heading h2, .outpatient-history-panel .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
+.outpatient-encounter-form .section-heading .welcome-copy { margin: 6px 0 0; }
+.outpatient-patient-choice { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.outpatient-new-patient-toggle { min-height: 43px; white-space: nowrap; }
+.outpatient-new-patient-heading { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 12px; }
+.outpatient-new-patient-heading > div { display: grid; gap: 4px; }
+.outpatient-new-patient-heading strong { color: var(--ink); font-size: 13px; }
+.outpatient-new-patient-heading span { color: var(--muted); font-size: 11px; }
+.outpatient-new-patient-fields { grid-column: 1 / -1; width: 100%; }
+.outpatient-activity-fields { display: grid; gap: 12px; }
+.outpatient-subheading { display: flex; justify-content: space-between; gap: 10px; }
+.outpatient-subheading strong { color: var(--ink); font-size: 12px; }
+.outpatient-subheading span { color: var(--muted); font-size: 11px; }
+.outpatient-programs { display: flex; flex-wrap: wrap; align-content: start; gap: 10px 16px; min-width: 0; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.outpatient-programs legend { padding: 0 4px; color: var(--muted); font-size: 11px; }
+.outpatient-form-actions { display: flex; justify-content: flex-end; padding-top: 4px; border-top: 1px solid var(--line); }
+.outpatient-form-actions .button { min-height: 43px; }
+.outpatient-encounter-list { display: grid; gap: 9px; }
+.outpatient-encounter-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.outpatient-encounter-card h3 { margin: 0 0 4px; color: var(--ink); font-size: 13px; }
+.outpatient-encounter-card p, .outpatient-encounter-card > span { margin: 0; color: var(--muted); font-size: 11px; }
+.outpatient-encounter-card .button { min-height: 38px; }
+.outpatient-print-sheet { display: none; }
+html[data-theme="dark"] :is(.outpatient-encounter-form, .outpatient-history-panel, .outpatient-encounter-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+@media (max-width: 760px) {
+  .outpatient-patient-choice { grid-template-columns: 1fr; }
+  .outpatient-new-patient-toggle { justify-self: start; }
+  .outpatient-encounter-card { grid-template-columns: 1fr auto; }
+  .outpatient-encounter-card > span { grid-column: 1; }
+  .outpatient-encounter-card .button { grid-column: 2; grid-row: 1 / span 2; }
+}
+@media (max-width: 520px) {
+  .outpatient-encounter-form, .outpatient-history-panel { padding: 14px; }
+  .outpatient-subheading { align-items: flex-start; flex-direction: column; }
+  .outpatient-form-actions .button { width: 100%; justify-content: center; }
+  .outpatient-new-patient-heading { align-items: flex-start; flex-direction: column; }
+}
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body.print-outpatient-encounter * { visibility: hidden !important; }
+  body.print-outpatient-encounter .outpatient-print-sheet,
+  body.print-outpatient-encounter .outpatient-print-sheet * { visibility: visible !important; }
+  body.print-outpatient-encounter .outpatient-print-sheet { position: absolute; inset: 0; display: block; width: 100%; margin: 0; padding: 0; color: #111; background: #fff; font-family: Arial, sans-serif; font-size: 9pt; line-height: 1.35; }
+  .outpatient-print-topline { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid #111; font-size: 9pt; }
+  .outpatient-print-sheet > h1 { margin: 10px 0; text-align: center; font-size: 14pt; }
+  .outpatient-print-record { display: grid; grid-template-columns: .9fr .8fr .8fr 1.5fr; gap: 8px; padding: 8px 0; border-block: 1px solid #777; }
+  .outpatient-print-section { display: grid; gap: 5px; margin-top: 9px; }
+  .outpatient-print-section > strong { font-size: 9pt; }
+  .outpatient-print-grid { display: grid; gap: 7px 12px; }
+  .outpatient-print-grid-three { grid-template-columns: 1.5fr 1fr 1fr; }
+  .outpatient-print-grid-four { grid-template-columns: 1fr .7fr 1.5fr .7fr; }
+  .outpatient-print-grid-two { grid-template-columns: 1fr 1fr; }
+  .outpatient-print-grid-address { grid-template-columns: 1.5fr 1fr 1fr 1fr; }
+  .outpatient-print-options { display: flex; flex-wrap: wrap; gap: 5px 14px; }
+  .outpatient-print-activities { width: 100%; margin-top: 10px; border-collapse: collapse; table-layout: fixed; }
+  .outpatient-print-activities th, .outpatient-print-activities td { height: 25px; padding: 4px 6px; border: 1px solid #555; text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
+  .outpatient-print-activities th { font-size: 8pt; }
+  .outpatient-print-activities th:nth-child(1), .outpatient-print-activities th:nth-child(2) { width: 38%; }
+  .outpatient-print-activities th:nth-child(3) { width: 24%; }
+  .outpatient-print-programs { grid-template-columns: .8fr 2fr; }
+  .outpatient-print-writing { display: grid; grid-template-rows: auto 1fr; gap: 5px; min-height: 88px; margin-top: 10px; }
+  .outpatient-print-writing p { min-height: 63px; margin: 0; padding: 5px; border: 1px solid #777; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .outpatient-print-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; margin-top: 32px; }
+  .outpatient-print-signatures > div { display: grid; height: 55px; align-content: end; border-bottom: 1px solid #111; text-align: center; }
+  .outpatient-print-signatures span { position: relative; top: 21px; font-size: 8pt; }
+  .outpatient-print-sheet > footer { margin-top: 35px; padding-top: 7px; border-top: 1px solid #777; text-align: center; font-weight: 700; }
+}
 .task-center-card li strong { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
 .task-center-card li small { color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
 .task-priority { display: inline-flex; align-items: center; gap: 3px; padding: 4px 6px; border-radius: 999px; background: var(--page); color: var(--subtle); font-size: 9px; font-weight: 700; white-space: nowrap; }

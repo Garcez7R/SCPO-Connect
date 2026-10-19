@@ -1064,6 +1064,7 @@ class OutpatientEncounterPayload(BaseModel):
         "emergency_referral",
         "reference_consultation",
     ]
+    same_number: str = Field(default="", max_length=40)
     physician_name: str = Field(default="", max_length=120)
     examination: str = Field(default="", max_length=1000)
     activity_rows: list[ActivityProcedureRow] = Field(default_factory=list, max_length=3)
@@ -1082,7 +1083,7 @@ class OutpatientEncounterPayload(BaseModel):
         "emergency",
     ]
 
-    @field_validator("physician_name", "examination", "group_name", "diagnostic_hypothesis", "antibiotic_prescription")
+    @field_validator("same_number", "physician_name", "examination", "group_name", "diagnostic_hypothesis", "antibiotic_prescription")
     @classmethod
     def trim_optional_fields(cls, value: str) -> str:
         return value.strip()
@@ -1563,9 +1564,11 @@ def create_outpatient_encounter(
             raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
 
     now = datetime.now(UTC)
+    patient_snapshot = snapshot_outpatient_patient(patient)
+    patient_snapshot["same_number"] = payload.same_number
     encounter = OutpatientEncounter(
         patient_reference=patient.reference,
-        patient_snapshot=snapshot_outpatient_patient(patient),
+        patient_snapshot=patient_snapshot,
         encounter_type=payload.encounter_type,
         physician_name=payload.physician_name,
         examination=payload.examination,
