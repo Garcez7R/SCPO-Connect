@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
     Boolean,
     Date,
@@ -96,11 +96,42 @@ class InventoryLot(Base):
     supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     minimum_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     average_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
+    purchase_quantity: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    purchase_unit: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    units_per_purchase_unit: Mapped[str] = mapped_column(String(32), nullable=False, default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
     product: Mapped[PharmacyProduct] = relationship()
     location: Mapped[PharmacyLocation | None] = relationship()
+
+
+class PurchaseRequest(Base):
+    __tablename__ = "purchase_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    product_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pharmacy_products.id", ondelete="SET NULL"), nullable=True
+    )
+    item_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    active_ingredient: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    presentation: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    base_unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    purchase_quantity: Mapped[str] = mapped_column(String(32), nullable=False)
+    purchase_unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    units_per_purchase_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    received_quantity: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
+    supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    quoted_unit_price: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    justification: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    received_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    product: Mapped[PharmacyProduct | None] = relationship()
 
 
 class PharmacyStockMovement(Base):
@@ -162,7 +193,10 @@ MAX_ANVISA_CATALOG_BYTES = 32 * 1024 * 1024
 class InventoryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     item_name: str = Field(min_length=1, max_length=120)
-    balance: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    balance: str | None = Field(default=None, pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    purchase_quantity: str | None = Field(default=None, pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    purchase_unit: str = Field(default="", max_length=24)
+    units_per_purchase_unit: str = Field(default="1", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
     unit: str = Field(min_length=1, max_length=24)
     lot: str = Field(min_length=1, max_length=80)
     expiry_date: date
@@ -176,6 +210,81 @@ class InventoryPayload(BaseModel):
     minimum_balance: str = Field(default="0", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
     average_balance: str = Field(default="0", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
 
+    @model_validator(mode="after")
+    def validate_quantity_conversion(self) -> "InventoryPayload":
+        if self.purchase_quantity:
+            if not self.purchase_unit.strip():
+                raise ValueError("Informe a unidade da embalagem recebida")
+            quantity = parse_stock_quantity(self.purchase_quantity)
+            factor = parse_stock_quantity(self.units_per_purchase_unit)
+            if quantity <= 0 or factor <= 0:
+                raise ValueError("Quantidade e fator de conversão devem ser maiores que zero")
+            validate_base_stock_quantity(quantity * factor)
+        elif self.balance is None:
+            raise ValueError("Informe o saldo em unidade base ou a quantidade de embalagens recebidas")
+        elif self.purchase_unit or self.units_per_purchase_unit != "1":
+            raise ValueError("Informe a quantidade comprada para converter embalagens")
+        return self
+
+
+class PurchaseRequestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    product_id: int | None = Field(default=None, gt=0)
+    item_name: str = Field(min_length=2, max_length=120)
+    category: str = Field(default="Medicamento", min_length=2, max_length=40)
+    active_ingredient: str = Field(default="", max_length=120)
+    presentation: str = Field(default="", max_length=120)
+    base_unit: str = Field(min_length=1, max_length=24)
+    purchase_quantity: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    purchase_unit: str = Field(min_length=1, max_length=24)
+    units_per_purchase_unit: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    justification: str = Field(min_length=5, max_length=500)
+
+    @field_validator("item_name", "category", "active_ingredient", "presentation", "base_unit", "purchase_unit", "justification")
+    @classmethod
+    def trim_purchase_text(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_purchase_amount(self) -> "PurchaseRequestPayload":
+        quantity = parse_stock_quantity(self.purchase_quantity)
+        factor = parse_stock_quantity(self.units_per_purchase_unit)
+        if quantity <= 0 or factor <= 0:
+            raise ValueError("Quantidade e fator de conversão devem ser maiores que zero")
+        validate_base_stock_quantity(quantity * factor)
+        return self
+
+
+class PurchaseRequestUpdatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["quoted", "approved", "ordered", "rejected"]
+    supplier: str = Field(default="", max_length=120)
+    quoted_unit_price: str = Field(default="", pattern=r"^\d{1,9}(?:[.,]\d{1,2})?$", max_length=32)
+
+    @field_validator("supplier")
+    @classmethod
+    def trim_supplier(cls, value: str) -> str:
+        return value.strip()
+
+
+class PurchaseReceiptPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lot: str = Field(min_length=1, max_length=80)
+    expiry_date: date
+    actual_purchase_quantity: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    storage_location: str = Field(default="", max_length=80)
+
+    @field_validator("lot", "storage_location")
+    @classmethod
+    def trim_receipt_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("actual_purchase_quantity")
+    @classmethod
+    def validate_receipt_amount(cls, value: str) -> str:
+        if parse_stock_quantity(value) <= 0:
+            raise ValueError("Informe uma quantidade recebida maior que zero")
+        return value
 
 class StockThresholdPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -222,6 +331,14 @@ def parse_stock_quantity(value: str) -> Decimal:
     if not number.is_finite():
         raise HTTPException(status_code=422, detail="Informe uma quantidade válida")
     return number
+
+
+def validate_base_stock_quantity(value: Decimal) -> None:
+    normalized = value.normalize()
+    if value > Decimal("999999999.999") or normalized.as_tuple().exponent < -3:
+        raise ValueError(
+            "A quantidade convertida deve caber no saldo, com no máximo três casas decimais"
+        )
 
 
 def format_stock_quantity(value: Decimal) -> str:
@@ -584,6 +701,18 @@ def create_item(
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
+    if payload.purchase_quantity:
+        received_quantity = parse_stock_quantity(payload.purchase_quantity)
+        conversion_factor = parse_stock_quantity(payload.units_per_purchase_unit)
+        base_balance = received_quantity * conversion_factor
+        purchase_unit = payload.purchase_unit.strip()
+        factor_text = format_stock_quantity(conversion_factor)
+        purchase_quantity = format_stock_quantity(received_quantity)
+    else:
+        base_balance = parse_stock_quantity(payload.balance or "")
+        purchase_unit = payload.unit.strip()
+        factor_text = "1"
+        purchase_quantity = format_stock_quantity(base_balance)
     try:
         parsed = parse_gs1_barcode(payload.barcode) if payload.barcode else None
     except ValueError:
@@ -662,12 +791,15 @@ def create_item(
     item = InventoryLot(
         product_id=product.id,
         location_id=location.id if location else None,
-        balance=payload.balance,
+        balance=format_stock_quantity(base_balance),
         lot=payload.lot.strip(),
         expiry_date=payload.expiry_date,
         supplier=payload.supplier.strip(),
         minimum_balance=payload.minimum_balance,
         average_balance=payload.average_balance,
+        purchase_quantity=purchase_quantity,
+        purchase_unit=purchase_unit,
+        units_per_purchase_unit=factor_text,
         created_at=now,
     )
     db.add(item)
@@ -676,9 +808,14 @@ def create_item(
         PharmacyStockMovement(
             item_id=item.id,
             movement_type="entry",
-            quantity=format_stock_quantity(parse_stock_quantity(item.balance)),
+            quantity=format_stock_quantity(base_balance),
             balance_after=item.balance,
-            reason="Saldo inicial informado no cadastro do lote.",
+            reason=(
+                f"Entrada de {purchase_quantity} {purchase_unit} x {factor_text} "
+                f"{product.unit} por embalagem."
+                if payload.purchase_quantity
+                else "Saldo inicial informado em unidade de estoque."
+            ),
             actor_id=principal.user_id,
             actor_name=principal.actor_name,
             created_at=now,
@@ -689,6 +826,194 @@ def create_item(
     )
     db.commit()
     return serialize_item(item)
+
+
+@app.get("/api/v1/pharmacy/purchase-requests")
+def list_purchase_requests(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("pharmacy", "management"))],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, list[dict[str, object]]]:
+    requests = db.scalars(
+        select(PurchaseRequest).order_by(
+            PurchaseRequest.created_at.desc(), PurchaseRequest.id
+        )
+    ).all()
+    emit_audit_event(principal, "pharmacy", "purchase_requests_read", "all")
+    return {"requests": [serialize_purchase_request(item) for item in requests]}
+
+
+@app.post("/api/v1/pharmacy/purchase-requests", status_code=201)
+def create_purchase_request(
+    payload: PurchaseRequestPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("pharmacy", "management"))],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    product = db.get(PharmacyProduct, payload.product_id) if payload.product_id else None
+    if payload.product_id and product is None:
+        raise HTTPException(status_code=404, detail="Produto não encontrado no catálogo da Farmácia")
+    if product and payload.base_unit.casefold() != product.unit.casefold():
+        raise HTTPException(status_code=409, detail="A unidade base deve corresponder ao catálogo do produto")
+    now = datetime.now(UTC)
+    request = PurchaseRequest(
+        id=str(uuid.uuid4()),
+        product_id=product.id if product else None,
+        item_name=product.name if product else payload.item_name,
+        category=product.category if product else payload.category,
+        active_ingredient=product.active_ingredient if product else payload.active_ingredient,
+        presentation=product.presentation if product else payload.presentation,
+        base_unit=product.unit if product else payload.base_unit,
+        purchase_quantity=format_stock_quantity(parse_stock_quantity(payload.purchase_quantity)),
+        purchase_unit=payload.purchase_unit,
+        units_per_purchase_unit=format_stock_quantity(
+            parse_stock_quantity(payload.units_per_purchase_unit)
+        ),
+        received_quantity="0",
+        supplier="",
+        quoted_unit_price="",
+        justification=payload.justification,
+        status="requested",
+        requested_by=principal.actor_name,
+        approved_by="",
+        received_by="",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(request)
+    emit_audit_event(principal, "pharmacy", "purchase_request_created", request.id, db=db)
+    db.commit()
+    db.refresh(request)
+    return serialize_purchase_request(request)
+
+
+@app.patch("/api/v1/pharmacy/purchase-requests/{request_id}")
+def update_purchase_request(
+    request_id: str,
+    payload: PurchaseRequestUpdatePayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    request = db.get(PurchaseRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Solicitação de compra não encontrada")
+    allowed_transitions = {
+        "requested": {"quoted", "rejected"},
+        "quoted": {"approved", "rejected"},
+        "approved": {"ordered", "rejected"},
+    }
+    if payload.status not in allowed_transitions.get(request.status, set()):
+        raise HTTPException(status_code=409, detail="Transição de compra inválida para a situação atual")
+    if payload.status == "quoted":
+        if not payload.supplier or not payload.quoted_unit_price:
+            raise HTTPException(status_code=422, detail="Informe fornecedor e preço cotado antes de enviar para aprovação")
+        request.supplier = payload.supplier
+        request.quoted_unit_price = format_stock_quantity(
+            parse_stock_quantity(payload.quoted_unit_price)
+        )
+    if payload.status == "approved":
+        request.approved_by = principal.actor_name
+    request.status = payload.status
+    request.updated_at = datetime.now(UTC)
+    emit_audit_event(principal, "pharmacy", "purchase_request_status_updated", request.id, db=db)
+    db.commit()
+    db.refresh(request)
+    return serialize_purchase_request(request)
+
+
+@app.post("/api/v1/pharmacy/purchase-requests/{request_id}/receipts", status_code=201)
+def receive_purchase_request(
+    request_id: str,
+    payload: PurchaseReceiptPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("pharmacy", "management"))],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    request = db.get(PurchaseRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Solicitação de compra não encontrada")
+    if request.status != "ordered":
+        raise HTTPException(status_code=409, detail="Somente pedidos aprovados e enviados podem ser recebidos")
+    received = parse_stock_quantity(payload.actual_purchase_quantity)
+    received_so_far = parse_stock_quantity(request.received_quantity)
+    requested = parse_stock_quantity(request.purchase_quantity)
+    if received_so_far + received > requested:
+        raise HTTPException(status_code=422, detail="A quantidade recebida excede o saldo do pedido")
+
+    now = datetime.now(UTC)
+    product = db.get(PharmacyProduct, request.product_id) if request.product_id else None
+    if product is None:
+        product = PharmacyProduct(
+            name=request.item_name,
+            category=request.category,
+            active_ingredient=request.active_ingredient,
+            presentation=request.presentation,
+            unit=request.base_unit,
+            metadata_source="manual",
+            source_reference="",
+            created_at=now,
+        )
+        db.add(product)
+        db.flush()
+        request.product_id = product.id
+
+    location = None
+    location_name = payload.storage_location
+    if location_name:
+        location = db.scalar(
+            select(PharmacyLocation).where(PharmacyLocation.name == location_name)
+        )
+        if location is None:
+            location = PharmacyLocation(name=location_name, created_at=now)
+            db.add(location)
+            db.flush()
+
+    factor = parse_stock_quantity(request.units_per_purchase_unit)
+    base_quantity = received * factor
+    try:
+        validate_base_stock_quantity(base_quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    lot = InventoryLot(
+        product_id=product.id,
+        location_id=location.id if location else None,
+        balance=format_stock_quantity(base_quantity),
+        lot=payload.lot,
+        expiry_date=payload.expiry_date,
+        supplier=request.supplier,
+        minimum_balance="0",
+        average_balance="0",
+        purchase_quantity=format_stock_quantity(received),
+        purchase_unit=request.purchase_unit,
+        units_per_purchase_unit=format_stock_quantity(factor),
+        created_at=now,
+    )
+    db.add(lot)
+    db.flush()
+    db.add(
+        PharmacyStockMovement(
+            item_id=lot.id,
+            movement_type="entry",
+            quantity=format_stock_quantity(base_quantity),
+            balance_after=lot.balance,
+            reason=(
+                f"Recebimento da solicitação {request.id}: {format_stock_quantity(received)} "
+                f"{request.purchase_unit} x {format_stock_quantity(factor)} {product.unit}."
+            ),
+            actor_id=principal.user_id,
+            actor_name=principal.actor_name,
+            created_at=now,
+        )
+    )
+    request.received_quantity = format_stock_quantity(received_so_far + received)
+    request.status = "received" if received_so_far + received == requested else "ordered"
+    request.received_by = principal.actor_name
+    request.updated_at = now
+    emit_audit_event(principal, "pharmacy", "purchase_request_received", request.id, db=db)
+    db.commit()
+    db.refresh(lot)
+    db.refresh(request)
+    return {
+        "request": serialize_purchase_request(request),
+        "lot": serialize_item(lot),
+    }
 
 
 @app.get("/api/v1/pharmacy/movements")
@@ -916,6 +1241,9 @@ def serialize_item(item: InventoryLot) -> dict[str, object]:
         "item_name": item.product.name,
         "balance": item.balance,
         "unit": item.product.unit,
+        "purchase_quantity": item.purchase_quantity,
+        "purchase_unit": item.purchase_unit or item.product.unit,
+        "units_per_purchase_unit": item.units_per_purchase_unit,
         "lot": item.lot,
         "expiry_date": item.expiry_date.isoformat(),
         "created_at": item.created_at.isoformat(),
@@ -929,6 +1257,31 @@ def serialize_item(item: InventoryLot) -> dict[str, object]:
         "storage_location": item.location.name if item.location else "",
         "minimum_balance": item.minimum_balance,
         "average_balance": item.average_balance,
+    }
+
+
+def serialize_purchase_request(request: PurchaseRequest) -> dict[str, object]:
+    return {
+        "id": request.id,
+        "product_id": request.product_id,
+        "item_name": request.item_name,
+        "category": request.category,
+        "active_ingredient": request.active_ingredient,
+        "presentation": request.presentation,
+        "base_unit": request.base_unit,
+        "purchase_quantity": request.purchase_quantity,
+        "purchase_unit": request.purchase_unit,
+        "units_per_purchase_unit": request.units_per_purchase_unit,
+        "received_quantity": request.received_quantity,
+        "supplier": request.supplier,
+        "quoted_unit_price": request.quoted_unit_price,
+        "justification": request.justification,
+        "status": request.status,
+        "requested_by": request.requested_by,
+        "approved_by": request.approved_by,
+        "received_by": request.received_by,
+        "created_at": request.created_at.isoformat(),
+        "updated_at": request.updated_at.isoformat(),
     }
 
 

@@ -1011,3 +1011,295 @@ def test_hygiene_is_not_created_as_a_maintenance_order(service_type: str) -> Non
             service_type=service_type,
             department="Enfermagem",
         )
+
+
+def test_work_order_links_registered_asset_by_tag(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(maintenance, "emit_audit_event", lambda *args, **kwargs: None)
+    db = domain_database["maintenance"]
+    technician = DemoPrincipal(
+        "maintenance-1",
+        "maintenance",
+        "Técnica",
+        "maintenance",
+        ["maintenance"],
+        {"maintenance": ["consultar", "criar", "alterar"]},
+    )
+    asset = maintenance.create_asset(
+        maintenance.EquipmentAssetPayload(
+            asset_tag="EQ-001",
+            name="Monitor",
+            category="Equipamento clínico",
+            unit="UTI",
+        ),
+        technician,
+        db,
+    )
+    order = maintenance.create_order(
+        maintenance.WorkOrderCreate(
+            title="Monitor sem leitura",
+            description="O monitor não está lendo a saturação.",
+            department="UTI",
+            asset_tag=" eq-001 ",
+        ),
+        technician,
+        db,
+    )
+    assert order["asset_id"] == asset["id"]
+
+
+def test_pharmacy_converts_purchase_packages_and_receives_orders_by_lot(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    pharmacist = DemoPrincipal(
+        "pharm-1",
+        "pharmacy",
+        "Farmacêutica",
+        "pharmacy",
+        ["pharmacy"],
+        {"pharmacy": ["consultar", "criar", "alterar"]},
+    )
+    manager = DemoPrincipal(
+        "manager-1",
+        "manager",
+        "Gestora",
+        "management",
+        ["management"],
+        {"management": ["consultar", "criar", "alterar", "administrar"]},
+    )
+    db = domain_database["pharmacy"]
+    lot = pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Dipirona",
+            balance=None,
+            purchase_quantity="10",
+            purchase_unit="caixa",
+            units_per_purchase_unit="20",
+            unit="comprimido",
+            lot="L-01",
+            expiry_date="2027-12-31",
+        ),
+        pharmacist,
+        db,
+    )
+    assert lot["balance"] == "200"
+    assert lot["unit"] == "comprimido"
+    assert lot["purchase_quantity"] == "10"
+
+    request = pharmacy.create_purchase_request(
+        pharmacy.PurchaseRequestPayload(
+            product_id=lot["product_id"],
+            item_name="Dipirona",
+            category="Medicamento",
+            base_unit="comprimido",
+            purchase_quantity="10",
+            purchase_unit="caixa",
+            units_per_purchase_unit="20",
+            justification="Reposição do estoque mínimo",
+        ),
+        pharmacist,
+        db,
+    )
+    quoted = pharmacy.update_purchase_request(
+        request["id"],
+        pharmacy.PurchaseRequestUpdatePayload(
+            status="quoted",
+            supplier="Fornecedor Hospitalar",
+            quoted_unit_price="12.50",
+        ),
+        manager,
+        db,
+    )
+    assert quoted["status"] == "quoted"
+    approved = pharmacy.update_purchase_request(
+        request["id"],
+        pharmacy.PurchaseRequestUpdatePayload(status="approved"),
+        manager,
+        db,
+    )
+    assert approved["approved_by"] == "Gestora"
+    ordered = pharmacy.update_purchase_request(
+        request["id"],
+        pharmacy.PurchaseRequestUpdatePayload(status="ordered"),
+        manager,
+        db,
+    )
+    assert ordered["status"] == "ordered"
+
+    partial_receipt = pharmacy.receive_purchase_request(
+        request["id"],
+        pharmacy.PurchaseReceiptPayload(
+            lot="L-02", expiry_date="2027-12-31", actual_purchase_quantity="4"
+        ),
+        pharmacist,
+        db,
+    )
+    assert partial_receipt["lot"]["balance"] == "80"
+    assert partial_receipt["request"]["status"] == "ordered"
+    complete_receipt = pharmacy.receive_purchase_request(
+        request["id"],
+        pharmacy.PurchaseReceiptPayload(
+            lot="L-03", expiry_date="2027-12-31", actual_purchase_quantity="6"
+        ),
+        pharmacist,
+        db,
+    )
+    assert complete_receipt["lot"]["balance"] == "120"
+    assert complete_receipt["request"]["status"] == "received"
+    assert complete_receipt["request"]["received_quantity"] == "10"
+
+
+@pytest.mark.parametrize(
+    ("quantity", "factor"),
+    [("0.001", "0.001"), ("999999999", "999999999")],
+)
+def test_pharmacy_rejects_unrepresentable_converted_stock(
+    quantity: str, factor: str
+) -> None:
+    with pytest.raises(ValidationError, match="quantidade convertida"):
+        pharmacy.InventoryPayload(
+            item_name="Medicamento",
+            balance=None,
+            purchase_quantity=quantity,
+            purchase_unit="caixa",
+            units_per_purchase_unit=factor,
+            unit="comprimido",
+            lot="L-01",
+            expiry_date="2027-12-31",
+        )
+    with pytest.raises(ValidationError, match="quantidade convertida"):
+        pharmacy.PurchaseRequestPayload(
+            item_name="Medicamento",
+            base_unit="comprimido",
+            purchase_quantity=quantity,
+            purchase_unit="caixa",
+            units_per_purchase_unit=factor,
+            justification="Reposição solicitada",
+        )
+
+
+def test_maintenance_tracks_assets_and_recurring_preventive_plans(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(maintenance, "emit_audit_event", lambda *args, **kwargs: None)
+    technician = DemoPrincipal(
+        "maintenance-1",
+        "maintenance",
+        "Técnica",
+        "maintenance",
+        ["maintenance"],
+        {"maintenance": ["consultar", "criar", "alterar"]},
+    )
+    db = domain_database["maintenance"]
+    asset = maintenance.create_asset(
+        maintenance.EquipmentAssetPayload(
+            asset_tag="  EQ-001 ",
+            name="Monitor multiparamétrico",
+            category="Equipamento clínico",
+            unit="UTI",
+            location="Leito 1",
+            serial_number="SN-001",
+        ),
+        technician,
+        db,
+    )
+    assert asset["asset_tag"] == "EQ-001"
+    order = maintenance.create_order(
+        maintenance.WorkOrderCreate(
+            title="Manutenção corretiva do monitor",
+            description="Verificar falha no sensor",
+            department="Engenharia Clínica",
+            asset_id=asset["id"],
+        ),
+        technician,
+        db,
+    )
+    assert order["asset_id"] == asset["id"]
+
+    plan = maintenance.create_preventive_plan(
+        maintenance.PreventiveMaintenancePlanPayload(
+            asset_id=asset["id"],
+            procedure="Calibração funcional",
+            interval_days=90,
+            due_date="2026-11-01",
+            responsible="Engenharia Clínica",
+        ),
+        technician,
+        db,
+    )
+    completed = maintenance.complete_preventive_plan(
+        plan["id"],
+        maintenance.PreventiveMaintenanceCompletionPayload(status="completed"),
+        technician,
+        db,
+    )
+    assert completed["last_completed_at"]
+    assert completed["due_date"] > "2026-10-19"
+    assert maintenance.list_assets(technician, db)["assets"][0]["id"] == asset["id"]
+
+
+def test_safety_incidents_and_document_approvals_are_auditable(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    manager = DemoPrincipal(
+        "manager-1",
+        "manager",
+        "Gestora",
+        "management",
+        ["management"],
+        {"management": ["consultar", "criar", "alterar", "administrar"]},
+    )
+    db = domain_database["nursing"]
+    incident = nursing.create_patient_safety_incident(
+        nursing.PatientSafetyIncidentPayload(
+            incident_type="other",
+            severity="near_miss",
+            occurred_at="2026-10-19T10:00:00Z",
+            unit="UTI",
+            location="Leito 1",
+            description="Falha interceptada antes de atingir o paciente",
+        ),
+        manager,
+        db,
+    )
+    updated_incident = nursing.update_patient_safety_incident(
+        incident["id"],
+        nursing.PatientSafetyIncidentUpdatePayload(
+            status="closed",
+            investigation="A equipe identificou a causa raiz",
+            corrective_action="Atualizado o procedimento e orientada a equipe",
+        ),
+        manager,
+        db,
+    )
+    assert updated_incident["status"] == "closed"
+
+    document = nursing.create_institutional_document(
+        nursing.InstitutionalDocumentPayload(
+            title="Protocolo de identificação",
+            document_type="protocol",
+            version="1.0",
+            content="Conferir dois identificadores antes do procedimento.",
+            valid_until="2027-10-01",
+        ),
+        manager,
+        db,
+    )
+    in_review = nursing.update_institutional_document_status(
+        document["id"],
+        nursing.InstitutionalDocumentStatusPayload(status="in_review"),
+        manager,
+        db,
+    )
+    approved = nursing.update_institutional_document_status(
+        document["id"],
+        nursing.InstitutionalDocumentStatusPayload(status="approved"),
+        manager,
+        db,
+    )
+    assert in_review["status"] == "in_review"
+    assert approved["status"] == "approved"
+    assert approved["approved_by"] == "Gestora"

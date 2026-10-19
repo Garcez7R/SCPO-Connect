@@ -42,9 +42,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0032_inpatient_care"
+    assert revision == "0033_admin_ops"
     if service == "nursing":
-        assert len(tables) == 15
+        assert len(tables) == 17
         assert "measured_at" in {
             column["name"] for column in inspect(get_engine(service)).get_columns("vital_records")
         }
@@ -88,6 +88,7 @@ def test_each_service_migration_creates_only_its_owned_table(
             column["name"]
             for column in inspect(get_engine(service)).get_columns("emergency_arrivals")
         }
+        assert {"patient_safety_incidents", "institutional_documents"} <= tables
     elif service == "access":
         assert len(tables) == 4
         assert "audit_outbox" in tables
@@ -95,9 +96,10 @@ def test_each_service_migration_creates_only_its_owned_table(
             column["name"] for column in inspect(get_engine(service)).get_columns("app_users")
         }
     elif service == "maintenance":
-        assert len(tables) == 5
+        assert len(tables) == 7
         assert "audit_outbox" in tables
         assert "hygiene_requests" in tables
+        assert {"equipment_assets", "preventive_maintenance_plans"} <= tables
     elif service == "social":
         assert len(tables) == 5
         assert "audit_outbox" in tables
@@ -108,10 +110,14 @@ def test_each_service_migration_creates_only_its_owned_table(
             for column in inspect(get_engine(service)).get_columns("psychology_referrals")
         }
     elif service == "pharmacy":
-        assert len(tables) == 8
+        assert len(tables) == 9
         assert "audit_outbox" in tables
         assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}
         assert "medication_dispensations" in tables
+        assert "purchase_requests" in tables
+        assert {"purchase_quantity", "purchase_unit", "units_per_purchase_unit"} <= {
+            column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")
+        }
         assert {"product_id", "location_id"} <= {
             column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")
         }
@@ -377,6 +383,49 @@ def test_therapy_migration_adds_report_fields_to_shared_nursing_database(
     inspector = inspect(get_engine("nursing"))
     report_columns = {column["name"] for column in inspector.get_columns("therapy_activities")}
     assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
+    clear_engine_cache()
+
+
+@pytest.mark.parametrize(
+    ("service", "created_tables"),
+    [
+        ("maintenance", {"equipment_assets", "preventive_maintenance_plans"}),
+        ("nursing", {"patient_safety_incidents", "institutional_documents"}),
+        ("pharmacy", {"purchase_requests"}),
+    ],
+)
+def test_administrative_operations_migration_downgrades_cleanly(
+    service: str,
+    created_tables: set[str],
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SCPO_SERVICE", service)
+    monkeypatch.setenv(
+        f"SCPO_{service.upper()}_DATABASE_URL",
+        f"sqlite:///{tmp_path / f'{service}.sqlite3'}",
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+
+    command.upgrade(config, "head")
+    command.downgrade(config, "0032_inpatient_care")
+
+    inspector = inspect(get_engine(service))
+    tables = set(inspector.get_table_names())
+    assert created_tables.isdisjoint(tables)
+    if service == "maintenance":
+        assert "asset_id" not in {
+            column["name"] for column in inspector.get_columns("work_orders")
+        }
+    if service == "pharmacy":
+        assert {
+            "purchase_quantity",
+            "purchase_unit",
+            "units_per_purchase_unit",
+        }.isdisjoint(
+            {column["name"] for column in inspector.get_columns("inventory_items")}
+        )
     clear_engine_cache()
 
 

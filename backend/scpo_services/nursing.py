@@ -271,6 +271,43 @@ class ClinicalRisk(Base):
     resolution_reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
 
 
+class PatientSafetyIncident(Base):
+    __tablename__ = "patient_safety_incidents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    incident_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    unit: Mapped[str] = mapped_column(String(100), nullable=False)
+    location: Mapped[str] = mapped_column(String(120), nullable=False)
+    patient_reference: Mapped[str | None] = mapped_column(ForeignKey("patients.reference", ondelete="SET NULL"), nullable=True)
+    description: Mapped[str] = mapped_column(String(2000), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    investigation: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    corrective_action: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    reported_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class InstitutionalDocument(Base):
+    __tablename__ = "institutional_documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    document_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    version: Mapped[str] = mapped_column(String(24), nullable=False)
+    content: Mapped[str] = mapped_column(String(10000), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class MedicationAdministration(Base):
     __tablename__ = "medication_administrations"
 
@@ -476,6 +513,59 @@ class ClinicalRiskResolutionPayload(BaseModel):
         if len(value) < 3:
             raise ValueError("Informe o motivo da resolução")
         return value
+
+
+class PatientSafetyIncidentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    incident_type: Literal["medication", "fall", "identification", "infection", "equipment", "other"]
+    severity: Literal["near_miss", "mild", "moderate", "severe", "critical"]
+    occurred_at: datetime
+    unit: str = Field(min_length=2, max_length=100)
+    location: str = Field(min_length=2, max_length=120)
+    patient_reference: str | None = Field(default=None, max_length=36)
+    description: str = Field(min_length=5, max_length=2000)
+
+    @field_validator("unit", "location", "description")
+    @classmethod
+    def trim_incident_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class PatientSafetyIncidentUpdatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["investigating", "action_required", "closed"]
+    investigation: str = Field(default="", max_length=2000)
+    corrective_action: str = Field(default="", max_length=2000)
+
+    @field_validator("investigation", "corrective_action")
+    @classmethod
+    def trim_incident_followup(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_closure_action(self) -> "PatientSafetyIncidentUpdatePayload":
+        if self.status == "closed" and len(self.corrective_action) < 5:
+            raise ValueError("Registre a ação corretiva antes de encerrar o incidente")
+        return self
+
+
+class InstitutionalDocumentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=3, max_length=160)
+    document_type: Literal["protocol", "policy", "form", "procedure", "other"]
+    version: str = Field(min_length=1, max_length=24)
+    content: str = Field(min_length=1, max_length=10000)
+    valid_until: date | None = None
+
+    @field_validator("title", "version", "content")
+    @classmethod
+    def trim_document_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class InstitutionalDocumentStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["in_review", "approved", "archived"]
 
 
 class EmergencyClinicalPriorityPayload(BaseModel):
@@ -1787,6 +1877,178 @@ def list_clinical_risks(
     ]
     emit_audit_event(principal, "nursing", "clinical_risk_center_read", "clinical_risks")
     return {"risks": allergies + contraindications}
+
+
+@app.get("/api/v1/nursing/safety-incidents")
+def list_patient_safety_incidents(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    incidents = db.scalars(
+        select(PatientSafetyIncident).order_by(
+            PatientSafetyIncident.occurred_at.desc(),
+            PatientSafetyIncident.created_at.desc(),
+        )
+    ).all()
+    emit_audit_event(principal, "nursing", "patient_safety_incidents_read", "all")
+    return {"incidents": [_serialize_patient_safety_incident(item) for item in incidents]}
+
+
+@app.post("/api/v1/nursing/safety-incidents", status_code=201)
+def create_patient_safety_incident(
+    payload: PatientSafetyIncidentPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    if payload.patient_reference and db.get(Patient, payload.patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    now = datetime.now(UTC)
+    incident = PatientSafetyIncident(
+        id=str(uuid.uuid4()),
+        **payload.model_dump(),
+        status="open",
+        investigation="",
+        corrective_action="",
+        reported_by=principal.actor_name,
+        updated_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(incident)
+    emit_audit_event(principal, "nursing", "patient_safety_incident_created", incident.id, db=db)
+    db.commit()
+    db.refresh(incident)
+    return _serialize_patient_safety_incident(incident)
+
+
+@app.patch("/api/v1/nursing/safety-incidents/{incident_id}")
+def update_patient_safety_incident(
+    incident_id: str,
+    payload: PatientSafetyIncidentUpdatePayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    incident = db.get(PatientSafetyIncident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incidente não encontrado")
+    if incident.status == "closed":
+        raise HTTPException(status_code=409, detail="Incidentes encerrados não podem ser alterados")
+    if payload.status in {"action_required", "closed"} and len(payload.investigation) < 5:
+        raise HTTPException(status_code=422, detail="Registre a investigação antes de avançar")
+    incident.status = payload.status
+    incident.investigation = payload.investigation
+    incident.corrective_action = payload.corrective_action
+    incident.updated_by = principal.actor_name
+    incident.updated_at = datetime.now(UTC)
+    emit_audit_event(principal, "nursing", "patient_safety_incident_updated", incident.id, db=db)
+    db.commit()
+    db.refresh(incident)
+    return _serialize_patient_safety_incident(incident)
+
+
+@app.get("/api/v1/nursing/institutional-documents")
+def list_institutional_documents(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    documents = db.scalars(
+        select(InstitutionalDocument).order_by(
+            InstitutionalDocument.updated_at.desc(),
+            InstitutionalDocument.title,
+        )
+    ).all()
+    emit_audit_event(principal, "management", "institutional_documents_read", "all")
+    return {"documents": [_serialize_institutional_document(item) for item in documents]}
+
+
+@app.post("/api/v1/nursing/institutional-documents", status_code=201)
+def create_institutional_document(
+    payload: InstitutionalDocumentPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    document = InstitutionalDocument(
+        id=str(uuid.uuid4()),
+        **payload.model_dump(),
+        status="draft",
+        created_by=principal.actor_name,
+        approved_by="",
+        approved_at=None,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(document)
+    emit_audit_event(principal, "management", "institutional_document_created", document.id, db=db)
+    db.commit()
+    db.refresh(document)
+    return _serialize_institutional_document(document)
+
+
+@app.patch("/api/v1/nursing/institutional-documents/{document_id}")
+def update_institutional_document_status(
+    document_id: str,
+    payload: InstitutionalDocumentStatusPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    document = db.get(InstitutionalDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento institucional não encontrado")
+    transitions = {
+        "draft": {"in_review", "archived"},
+        "in_review": {"approved", "archived"},
+        "approved": {"archived"},
+    }
+    if payload.status not in transitions.get(document.status, set()):
+        raise HTTPException(status_code=409, detail="Transição de aprovação inválida")
+    now = datetime.now(UTC)
+    document.status = payload.status
+    if payload.status == "approved":
+        document.approved_by = principal.actor_name
+        document.approved_at = now
+    document.updated_at = now
+    emit_audit_event(principal, "management", "institutional_document_status_updated", document.id, db=db)
+    db.commit()
+    db.refresh(document)
+    return _serialize_institutional_document(document)
+
+
+def _serialize_patient_safety_incident(incident: PatientSafetyIncident) -> dict[str, object]:
+    return {
+        "id": incident.id,
+        "incident_type": incident.incident_type,
+        "severity": incident.severity,
+        "occurred_at": incident.occurred_at.isoformat(),
+        "unit": incident.unit,
+        "location": incident.location,
+        "patient_reference": incident.patient_reference,
+        "description": incident.description,
+        "status": incident.status,
+        "investigation": incident.investigation,
+        "corrective_action": incident.corrective_action,
+        "reported_by": incident.reported_by,
+        "updated_by": incident.updated_by,
+        "created_at": incident.created_at.isoformat(),
+        "updated_at": incident.updated_at.isoformat(),
+    }
+
+
+def _serialize_institutional_document(document: InstitutionalDocument) -> dict[str, object]:
+    return {
+        "id": document.id,
+        "title": document.title,
+        "document_type": document.document_type,
+        "version": document.version,
+        "content": document.content,
+        "status": document.status,
+        "valid_until": document.valid_until.isoformat() if document.valid_until else None,
+        "created_by": document.created_by,
+        "approved_by": document.approved_by,
+        "approved_at": document.approved_at.isoformat() if document.approved_at else None,
+        "created_at": document.created_at.isoformat(),
+        "updated_at": document.updated_at.isoformat(),
+    }
 
 
 @app.get("/api/v1/nursing/management/dashboard")

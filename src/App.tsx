@@ -137,6 +137,7 @@ const PsychologyPage = lazy(() =>
 const WorkOrdersPage = lazy(() => import('./pages/OperationsPage').then((module) => ({ default: module.WorkOrdersPage })))
 const MaintenanceQueuePage = lazy(() => import('./pages/OperationsPage').then((module) => ({ default: module.MaintenanceQueuePage })))
 const HygienePage = lazy(() => import('./pages/OperationsPage').then((module) => ({ default: module.HygienePage })))
+const AdministrativeRoadmapPanel = lazy(() => import('./pages/ManagementOperationsPage').then((module) => ({ default: module.AdministrativeRoadmapPanel })))
 const OperationalTaskCenter = lazy(() => import('./components/OperationalTaskCenter'))
 
 type Profile = {
@@ -2226,7 +2227,7 @@ function ManagementPage({ onNavigate, allowedModules }: { onNavigate: (id: Modul
     { id: 'admin', label: 'Administração e auditoria' },
   ]
   const visibleShortcuts = shortcuts.filter(({ id }) => allowedModules.includes(id))
-  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><HospitalBedManagement /><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
+  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><HospitalBedManagement /><Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel /></Suspense><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
 }
 
 function BackupExportPanel() {

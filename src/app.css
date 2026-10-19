@@ -522,6 +522,15 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .pharmacy-dispensation-safety p { margin: 0; font-size: 12px; line-height: 1.6; }
 .pharmacy-dispensation-submit { justify-self: start; min-height: 44px; }
 .management-page, .system-admin-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
+.management-operations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.management-operations-grid > .form-message, .management-operations-grid > .patient-list-panel { grid-column: 1 / -1; }
+.management-operations-grid .form-message { margin: 0; }
+.management-operations-grid .account-create-panel { margin: 0; }
+.management-operations-grid h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
+.management-operations-grid .patient-list-panel { padding: 17px; }
+.management-operations-grid .collection-row > p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.management-operations-grid .patient-detail-actions { justify-content: flex-start; flex-wrap: wrap; }
+.management-operations-grid .field textarea { min-height: 86px; }
 .management-shortcuts > div:last-child { display: flex; flex-wrap: wrap; gap: 9px; }
 .admin-tabs, .psychology-tabs, .service-tabs { display: flex; flex-wrap: wrap; gap: 9px; }
 .module-tabs { align-items: center; }
@@ -991,6 +1000,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
   .pharmacy-summary article > span { min-height: 28px; font-size: 10px; }
 }
 @media (max-width: 520px) {
+  .management-operations-grid { grid-template-columns: 1fr; gap: 13px; }
   .hygiene-panel { gap: 13px; padding: 15px; }
   .hygiene-summary { gap: 7px; }
   .hygiene-summary article { padding: 11px; }

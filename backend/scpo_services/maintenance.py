@@ -7,8 +7,8 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import DateTime, ForeignKey, Integer, String, case, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, case, select
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from .common import (
     Base,
@@ -33,6 +33,7 @@ class WorkOrder(Base):
     department: Mapped[str] = mapped_column(String(100), nullable=False)
     location: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     patient_reference: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    asset_id: Mapped[str | None] = mapped_column(ForeignKey("equipment_assets.id", ondelete="SET NULL"), nullable=True)
     priority: Mapped[str] = mapped_column(String(12), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     requester_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -74,6 +75,39 @@ class HygieneRequest(Base):
     updated_by: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EquipmentAsset(Base):
+    __tablename__ = "equipment_assets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    asset_tag: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(60), nullable=False)
+    unit: Mapped[str] = mapped_column(String(100), nullable=False)
+    location: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    manufacturer: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    model: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    serial_number: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PreventiveMaintenancePlan(Base):
+    __tablename__ = "preventive_maintenance_plans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(ForeignKey("equipment_assets.id", ondelete="CASCADE"), nullable=False)
+    procedure: Mapped[str] = mapped_column(String(300), nullable=False)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
+    responsible: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="scheduled")
+    last_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    asset: Mapped[EquipmentAsset] = relationship()
 
 
 def get_maintenance_db():
@@ -229,6 +263,8 @@ class WorkOrderCreate(BaseModel):
     department: str = Field(min_length=2, max_length=100)
     location: str = Field(default="", max_length=120)
     patient_reference: str | None = Field(default=None, max_length=36)
+    asset_id: str | None = Field(default=None, max_length=36)
+    asset_tag: str | None = Field(default=None, max_length=40)
     priority: Literal["normal", "high", "urgent"] = "normal"
 
     @field_validator("service_type")
@@ -238,11 +274,59 @@ class WorkOrderCreate(BaseModel):
             raise ValueError("Solicitações de higienização devem usar a fila própria")
         return value
 
+    @field_validator("asset_tag")
+    @classmethod
+    def normalize_asset_tag(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().upper() or None
+
 
 class WorkOrderUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["open", "in_progress", "completed", "cancelled"]
     note: str = Field(default="", max_length=500)
+
+
+class EquipmentAssetPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset_tag: str = Field(min_length=2, max_length=40)
+    name: str = Field(min_length=2, max_length=120)
+    category: str = Field(min_length=2, max_length=60)
+    unit: str = Field(min_length=2, max_length=100)
+    location: str = Field(default="", max_length=120)
+    manufacturer: str = Field(default="", max_length=100)
+    model: str = Field(default="", max_length=100)
+    serial_number: str = Field(default="", max_length=100)
+
+    @field_validator("asset_tag")
+    @classmethod
+    def normalize_asset_tag(cls, value: str) -> str:
+        return value.strip().upper()
+
+    @field_validator("name", "category", "unit", "location", "manufacturer", "model", "serial_number")
+    @classmethod
+    def trim_asset_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class PreventiveMaintenancePlanPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset_id: str = Field(min_length=1, max_length=36)
+    procedure: str = Field(min_length=3, max_length=300)
+    interval_days: int = Field(gt=0, le=3650)
+    due_date: date
+    responsible: str = Field(default="", max_length=120)
+
+    @field_validator("procedure", "responsible")
+    @classmethod
+    def trim_plan_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class PreventiveMaintenanceCompletionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["completed"]
 
 
 def _require_maintenance(principal: DemoPrincipal, action: str) -> None:
@@ -259,6 +343,7 @@ def _serialize_order(order: WorkOrder) -> dict[str, object]:
         "department": order.department,
         "location": order.location,
         "patient_reference": order.patient_reference,
+        "asset_id": order.asset_id,
         "priority": order.priority,
         "status": order.status,
         "requester_id": order.requester_id,
@@ -282,10 +367,27 @@ def create_order(
 ) -> dict[str, object]:
     if payload.patient_reference:
         verify_patient_reference(payload.patient_reference)
+    asset_id = payload.asset_id
+    if payload.asset_tag:
+        asset = db.scalar(
+            select(EquipmentAsset).where(
+                EquipmentAsset.asset_tag == payload.asset_tag.strip().upper()
+            )
+        )
+        if asset is None or asset.status != "active":
+            raise HTTPException(status_code=404, detail="Ativo patrimonial não encontrado ou inativo")
+        if asset_id and asset_id != asset.id:
+            raise HTTPException(status_code=422, detail="O patrimônio informado não corresponde ao ativo")
+        asset_id = asset.id
+    if asset_id:
+        asset = db.get(EquipmentAsset, asset_id)
+        if asset is None or asset.status != "active":
+            raise HTTPException(status_code=404, detail="Ativo patrimonial não encontrado ou inativo")
     now = datetime.now(UTC)
     order = WorkOrder(
         id=str(uuid.uuid4()),
-        **payload.model_dump(),
+        **payload.model_dump(exclude={"asset_tag", "asset_id"}),
+        asset_id=asset_id,
         status="open",
         requester_id=principal.user_id,
         requester_name=principal.actor_name,
@@ -424,3 +526,131 @@ def update_order(
     db.commit()
     db.refresh(order)
     return _serialize_order(order)
+
+
+@app.get("/api/v1/maintenance/assets")
+def list_assets(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, list[dict[str, object]]]:
+    assets = db.scalars(
+        select(EquipmentAsset).order_by(EquipmentAsset.unit, EquipmentAsset.asset_tag)
+    ).all()
+    emit_audit_event(principal, "maintenance", "equipment_assets_read", "all")
+    return {"assets": [_serialize_asset(asset) for asset in assets]}
+
+
+@app.post("/api/v1/maintenance/assets", status_code=201)
+def create_asset(
+    payload: EquipmentAssetPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    duplicate = db.scalar(
+        select(EquipmentAsset.id).where(EquipmentAsset.asset_tag == payload.asset_tag)
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Já existe um ativo com este patrimônio")
+    now = datetime.now(UTC)
+    asset = EquipmentAsset(
+        id=str(uuid.uuid4()),
+        **payload.model_dump(),
+        status="active",
+        created_by=principal.actor_name,
+        created_at=now,
+    )
+    db.add(asset)
+    emit_audit_event(principal, "maintenance", "equipment_asset_created", asset.id, db=db)
+    db.commit()
+    db.refresh(asset)
+    return _serialize_asset(asset)
+
+
+@app.get("/api/v1/maintenance/preventive-plans")
+def list_preventive_plans(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, list[dict[str, object]]]:
+    plans = db.scalars(
+        select(PreventiveMaintenancePlan)
+        .join(EquipmentAsset)
+        .order_by(PreventiveMaintenancePlan.due_date, EquipmentAsset.asset_tag)
+    ).all()
+    emit_audit_event(principal, "maintenance", "preventive_plans_read", "all")
+    return {"plans": [_serialize_preventive_plan(plan) for plan in plans]}
+
+
+@app.post("/api/v1/maintenance/preventive-plans", status_code=201)
+def create_preventive_plan(
+    payload: PreventiveMaintenancePlanPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    asset = db.get(EquipmentAsset, payload.asset_id)
+    if asset is None or asset.status != "active":
+        raise HTTPException(status_code=404, detail="Ativo não encontrado ou inativo")
+    plan = PreventiveMaintenancePlan(
+        id=str(uuid.uuid4()),
+        **payload.model_dump(),
+        status="scheduled",
+        last_completed_at=None,
+        created_by=principal.actor_name,
+        created_at=datetime.now(UTC),
+    )
+    db.add(plan)
+    emit_audit_event(principal, "maintenance", "preventive_plan_created", plan.id, db=db)
+    db.commit()
+    db.refresh(plan)
+    return _serialize_preventive_plan(plan)
+
+
+@app.patch("/api/v1/maintenance/preventive-plans/{plan_id}")
+def complete_preventive_plan(
+    plan_id: str,
+    payload: PreventiveMaintenanceCompletionPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    plan = db.get(PreventiveMaintenancePlan, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plano preventivo não encontrado")
+    now = datetime.now(UTC)
+    plan.last_completed_at = now
+    plan.due_date = now.date() + timedelta(days=plan.interval_days)
+    plan.status = "scheduled"
+    emit_audit_event(principal, "maintenance", "preventive_plan_completed", plan.id, db=db)
+    db.commit()
+    db.refresh(plan)
+    return _serialize_preventive_plan(plan)
+
+
+def _serialize_asset(asset: EquipmentAsset) -> dict[str, object]:
+    return {
+        "id": asset.id,
+        "asset_tag": asset.asset_tag,
+        "name": asset.name,
+        "category": asset.category,
+        "unit": asset.unit,
+        "location": asset.location,
+        "manufacturer": asset.manufacturer,
+        "model": asset.model,
+        "serial_number": asset.serial_number,
+        "status": asset.status,
+        "created_by": asset.created_by,
+        "created_at": asset.created_at.isoformat(),
+    }
+
+
+def _serialize_preventive_plan(plan: PreventiveMaintenancePlan) -> dict[str, object]:
+    return {
+        "id": plan.id,
+        "asset_id": plan.asset_id,
+        "asset_tag": plan.asset.asset_tag if plan.asset else "",
+        "asset_name": plan.asset.name if plan.asset else "",
+        "procedure": plan.procedure,
+        "interval_days": plan.interval_days,
+        "due_date": plan.due_date.isoformat(),
+        "responsible": plan.responsible,
+        "status": plan.status,
+        "last_completed_at": plan.last_completed_at.isoformat() if plan.last_completed_at else None,
+    }
