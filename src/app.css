@@ -497,6 +497,11 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .history-filter-patient { grid-column: span 2; }
 .history-filter-panel .field-label, .pharmacy-form .field-label { font-size: 12px; }
 .history-filter-panel .field input, .history-filter-panel .field select, .pharmacy-form .field input { min-height: 44px; }
+.pharmacy-form .pharmacy-quantity-field { align-content: start; }
+.pharmacy-opening-balance { display: grid; align-content: center; gap: 4px; min-height: 74px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.pharmacy-opening-balance > span { color: var(--muted); font-size: 11px; font-weight: 600; }
+.pharmacy-opening-balance > strong { color: var(--ink); font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+.pharmacy-opening-balance > small { color: var(--subtle); font-size: 10px; line-height: 1.4; }
 .history-clear-button { justify-self: start; min-height: 38px; }
 .history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .history-pagination > div { display: flex; align-items: center; gap: 10px; }
@@ -1281,6 +1286,7 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
 .reception-status-control { max-width: 270px; }
 html[data-theme="dark"] :is(.pharmacy-movement-ledger, .pharmacy-movement-row, .reception-arrival-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .pharmacy-stock-movement-form { border-color: var(--line); background: #111c23; }
+html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); background: #111c23; }
 @media (max-width: 760px) {
   .nutrition-history-filters { grid-template-columns: 1fr 1fr; }
   .nutrition-history-filters .field:nth-child(2) { grid-column: 1 / -1; grid-row: 1; }
