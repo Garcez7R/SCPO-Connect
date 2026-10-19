@@ -42,9 +42,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0033_admin_ops"
+    assert revision == "0034_reception_encounters"
     if service == "nursing":
-        assert len(tables) == 17
+        assert len(tables) == 18
         assert "measured_at" in {
             column["name"] for column in inspect(get_engine(service)).get_columns("vital_records")
         }
@@ -197,6 +197,41 @@ def test_repeated_administration_migration_preserves_existing_records(
     assert existing == ("Medicamento", "1", "comprimido")
     assert count == 2
     verify_database_migrated("nursing")
+    clear_engine_cache()
+
+
+def test_repeated_administration_migration_drops_database_named_constraint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_SERVICE", "nursing")
+    monkeypatch.setenv(
+        "SCPO_NURSING_DATABASE_URL",
+        f"sqlite:///{tmp_path / 'nursing-custom-constraint.sqlite3'}",
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+    command.upgrade(config, "0030_vital_measurement_time")
+
+    with get_engine("nursing").begin() as connection:
+        connection.execute(text("DROP TABLE medication_administrations"))
+        connection.execute(
+            text(
+                "CREATE TABLE medication_administrations ("
+                "id INTEGER PRIMARY KEY, "
+                "dispensation_id VARCHAR(36) NOT NULL, "
+                "CONSTRAINT medication_administrations_dispensation_id_key "
+                "UNIQUE (dispensation_id))"
+            )
+        )
+
+    command.upgrade(config, "0031_repeat_med_admin")
+
+    inspector = inspect(get_engine("nursing"))
+    assert not inspector.get_unique_constraints("medication_administrations")
+    assert "ix_medication_administrations_dispensation_id" in {
+        index["name"]
+        for index in inspector.get_indexes("medication_administrations")
+    }
     clear_engine_cache()
 
 

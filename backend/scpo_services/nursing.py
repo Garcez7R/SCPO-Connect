@@ -92,6 +92,8 @@ class Patient(Base):
 
     reference: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    mother_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    health_plan: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     room: Mapped[str] = mapped_column(String(20), nullable=False)
     bed: Mapped[str] = mapped_column(String(20), nullable=False)
     cpf: Mapped[str] = mapped_column(String(11), nullable=False, default="")
@@ -166,6 +168,28 @@ class EmergencyArrival(Base):
     clinical_priority_reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     allergy_report_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_asked")
     reported_allergies: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+
+class OutpatientEncounter(Base):
+    __tablename__ = "outpatient_encounters"
+    __table_args__ = (Index("ix_outpatient_encounters_patient_created", "patient_reference", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(
+        String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False
+    )
+    patient_snapshot: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
+    encounter_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    physician_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    examination: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    activity_rows: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
+    group_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    programs: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    diagnostic_hypothesis: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    antibiotic_prescription: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    referral: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class PatientFlowEvent(Base):
@@ -934,6 +958,8 @@ VITAL_FIELDS = {"saturation", "pressure", "heartRate", "respiratoryRate", "tempe
 class PatientPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=2, max_length=120)
+    mother_name: str = Field(default="", max_length=120)
+    health_plan: str = Field(default="", max_length=120)
     room: str = Field(default="", max_length=20)
     bed: str = Field(default="", max_length=20)
     cpf: str = Field(default="", max_length=14)
@@ -1013,6 +1039,63 @@ class PatientPayload(BaseModel):
     @classmethod
     def normalize_sus_card(cls, value: str) -> str:
         return re.sub(r"\D", "", value)
+
+
+class ActivityProcedureRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    professional_activity: str = Field(default="", max_length=120)
+    procedure: str = Field(default="", max_length=120)
+
+    @field_validator("professional_activity", "procedure")
+    @classmethod
+    def trim_row_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class OutpatientEncounterPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str | None = Field(default=None, max_length=36)
+    new_patient: PatientPayload | None = None
+    encounter_type: Literal[
+        "outpatient",
+        "urgent_emergency",
+        "first_consultation",
+        "return",
+        "emergency_referral",
+        "reference_consultation",
+    ]
+    physician_name: str = Field(default="", max_length=120)
+    examination: str = Field(default="", max_length=1000)
+    activity_rows: list[ActivityProcedureRow] = Field(default_factory=list, max_length=3)
+    group_name: str = Field(default="", max_length=120)
+    programs: list[Literal["prenatal", "puericulture", "cervical_cancer"]] = Field(
+        default_factory=list, max_length=3
+    )
+    diagnostic_hypothesis: str = Field(default="", max_length=2000)
+    antibiotic_prescription: str = Field(default="", max_length=2000)
+    referral: Literal[
+        "discharge",
+        "return_same_unit",
+        "exams",
+        "specialty",
+        "hospital",
+        "emergency",
+    ]
+
+    @field_validator("physician_name", "examination", "group_name", "diagnostic_hypothesis", "antibiotic_prescription")
+    @classmethod
+    def trim_optional_fields(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_patient_source(self) -> "OutpatientEncounterPayload":
+        if bool(self.patient_reference) == bool(self.new_patient):
+            raise ValueError("Selecione um paciente cadastrado ou preencha um novo cadastro")
+        if self.new_patient and (self.new_patient.room or self.new_patient.bed):
+            raise ValueError("O cadastro ambulatorial deve iniciar sem quarto e leito")
+        if len(set(self.programs)) != len(self.programs):
+            raise ValueError("Não repita programas no mesmo atendimento")
+        return self
 
 
 class NutritionRecord(Base):
@@ -1442,6 +1525,71 @@ def create_emergency_arrival(
     )
 
 
+@app.get("/api/v1/reception/encounters")
+def list_outpatient_encounters(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    patient_reference: str | None = None,
+) -> dict[str, object]:
+    query = select(OutpatientEncounter)
+    if patient_reference:
+        query = query.where(OutpatientEncounter.patient_reference == patient_reference)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    encounters = db.scalars(
+        query.order_by(OutpatientEncounter.created_at.desc(), OutpatientEncounter.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    emit_audit_event(principal, "reception", "outpatient_encounters_read", patient_reference or "all")
+    return {
+        "encounters": [serialize_outpatient_encounter(encounter) for encounter in encounters],
+        "total": total,
+    }
+
+
+@app.post("/api/v1/reception/encounters", status_code=201)
+def create_outpatient_encounter(
+    payload: OutpatientEncounterPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    if payload.new_patient:
+        patient = create_patient_record(db, principal, payload.new_patient)
+    else:
+        patient = db.get(Patient, payload.patient_reference)
+        if patient is None or not patient.active:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+
+    now = datetime.now(UTC)
+    encounter = OutpatientEncounter(
+        patient_reference=patient.reference,
+        patient_snapshot=snapshot_outpatient_patient(patient),
+        encounter_type=payload.encounter_type,
+        physician_name=payload.physician_name,
+        examination=payload.examination,
+        activity_rows=[
+            row.model_dump()
+            for row in payload.activity_rows
+            if row.professional_activity or row.procedure
+        ],
+        group_name=payload.group_name,
+        programs=payload.programs,
+        diagnostic_hypothesis=payload.diagnostic_hypothesis,
+        antibiotic_prescription=payload.antibiotic_prescription,
+        referral=payload.referral,
+        created_by=principal.actor_name,
+        created_at=now,
+    )
+    db.add(encounter)
+    db.flush()
+    emit_audit_event(principal, "reception", "outpatient_encounter_created", str(encounter.id), db=db)
+    db.commit()
+    db.refresh(encounter)
+    return serialize_outpatient_encounter(encounter)
+
+
 @app.patch("/api/v1/reception/arrivals/{arrival_id}")
 def update_emergency_arrival(
     arrival_id: str,
@@ -1629,6 +1777,53 @@ def serialize_emergency_arrival(
     if include_allergy_details:
         serialized["reported_allergies"] = arrival.reported_allergies
     return serialized
+
+
+def snapshot_outpatient_patient(patient: Patient) -> dict[str, str]:
+    birth_date = patient.birth_date.isoformat() if patient.birth_date else ""
+    age = ""
+    if patient.birth_date:
+        today = datetime.now(UTC).date()
+        age = str(
+            today.year
+            - patient.birth_date.year
+            - ((today.month, today.day) < (patient.birth_date.month, patient.birth_date.day))
+        )
+    return {
+        "reference": patient.reference,
+        "name": patient.name,
+        "mother_name": patient.mother_name,
+        "birth_date": birth_date,
+        "age": age,
+        "sex": patient.sex,
+        "cpf": patient.cpf,
+        "sus_card": patient.sus_card,
+        "health_plan": patient.health_plan,
+        "address": patient.address,
+        "address_number": patient.address_number,
+        "neighborhood": patient.neighborhood,
+        "city": patient.city,
+        "state": patient.state,
+    }
+
+
+def serialize_outpatient_encounter(encounter: OutpatientEncounter) -> dict[str, object]:
+    return {
+        "id": encounter.id,
+        "patient_reference": encounter.patient_reference,
+        "patient_snapshot": encounter.patient_snapshot,
+        "encounter_type": encounter.encounter_type,
+        "physician_name": encounter.physician_name,
+        "examination": encounter.examination,
+        "activity_rows": encounter.activity_rows,
+        "group_name": encounter.group_name,
+        "programs": encounter.programs,
+        "diagnostic_hypothesis": encounter.diagnostic_hypothesis,
+        "antibiotic_prescription": encounter.antibiotic_prescription,
+        "referral": encounter.referral,
+        "created_by": encounter.created_by,
+        "created_at": encounter.created_at.isoformat(),
+    }
 
 
 def serialize_patient_flow_event(event: PatientFlowEvent) -> dict[str, object]:
@@ -2263,28 +2458,35 @@ def resolve_patient(
     return {"reference": patient.reference, "name": patient.name, "room": patient.room, "bed": patient.bed}
 
 
-@app.post("/api/v1/nursing/patients", status_code=201)
-def create_patient(
+def create_patient_record(
+    db: Session,
+    principal: DemoPrincipal,
     payload: PatientPayload,
-    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
-    db: Annotated[Session, Depends(get_nursing_db)],
-) -> dict[str, object]:
+) -> Patient:
     if payload.cpf and db.scalar(select(Patient.reference).where(Patient.cpf == payload.cpf)):
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este CPF")
     if payload.sus_card and db.scalar(select(Patient.reference).where(Patient.sus_card == payload.sus_card)):
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
-    if payload.room.strip() and payload.bed.strip() and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip())):
+    if payload.room.strip() and payload.bed.strip() and db.scalar(
+        select(Patient.reference).where(
+            Patient.active.is_(True),
+            Patient.room == payload.room.strip(),
+            Patient.bed == payload.bed.strip(),
+        )
+    ):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
+    now = datetime.now(UTC)
     patient_data = payload.model_dump(exclude={"treatment_track"})
     patient = Patient(
         reference=str(uuid.uuid4()),
         **patient_data,
         treatment_track=payload.treatment_track or "unclassified",
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        created_at=now,
+        updated_at=now,
         updated_by=principal.actor_name,
     )
     db.add(patient)
+    db.flush()
     if patient.allergies_status != "unknown":
         record_patient_allergy_change(
             db,
@@ -2296,9 +2498,17 @@ def create_patient(
             previous_status="unknown",
             previous_details="",
         )
-    emit_audit_event(
-        principal, "patients", "patient_created", patient.reference, db=db
-    )
+    emit_audit_event(principal, "patients", "patient_created", patient.reference, db=db)
+    return patient
+
+
+@app.post("/api/v1/nursing/patients", status_code=201)
+def create_patient(
+    payload: PatientPayload,
+    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = create_patient_record(db, principal, payload)
     db.commit()
     db.refresh(patient)
     return serialize_patient(patient, principal=principal, full_profile=can_view_full_patient_profile(principal))
