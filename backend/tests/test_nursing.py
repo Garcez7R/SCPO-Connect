@@ -555,6 +555,57 @@ def test_vital_structure_rejects_invalid_saturation_and_conflicting_na(nursing_d
         assert invalid.value.status_code == 422
 
 
+def test_vital_measurement_time_and_temperature_are_preserved(nursing_db: Session, nurse: DemoPrincipal) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    measured_at = datetime.now(UTC) - timedelta(minutes=10)
+    record = nursing.create_vital_record(
+        nursing.VitalPayload(
+            patient_reference=reference,
+            values={"temperature": "37.2"},
+            measured_at=measured_at,
+        ),
+        nurse,
+        nursing_db,
+    )
+    assert record["values"]["temperature"] == "37.2"
+    assert datetime.fromisoformat(str(record["measured_at"])) == measured_at
+
+    with pytest.raises(ValidationError):
+        nursing.VitalPayload(
+            patient_reference=reference,
+            values={"temperature": "37.2"},
+            measured_at=datetime.now(),
+        )
+
+
+def test_patient_vital_trends_return_full_time_ordered_period(nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    now = datetime.now(UTC)
+    for measured_at, temperature in (
+        (now - timedelta(hours=5), "36.8"),
+        (now - timedelta(minutes=5), "37.1"),
+        (now - timedelta(days=2), "38.0"),
+    ):
+        nursing.create_vital_record(
+            nursing.VitalPayload(
+                patient_reference=reference,
+                values={"temperature": temperature},
+                measured_at=measured_at,
+            ),
+            nurse,
+            nursing_db,
+        )
+
+    result = nursing.list_patient_vital_trends(reference, nurse, nursing_db, hours=6)
+    assert result["total"] == 2
+    records = result["records"]
+    assert [record["values"]["temperature"] for record in records] == ["36.8", "37.1"]
+    assert records[0]["measured_at"] < records[1]["measured_at"]
+
+
 def test_vital_elimination_and_venous_access_choices_are_restricted() -> None:
     nursing.VitalPayload(
         patient_reference="123e4567-e89b-12d3-a456-426614174000",

@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import PrintSelectionPanel, { type PrintRow } from './components/PrintSelectionPanel'
+import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
@@ -81,7 +82,7 @@ function getGreeting() {
   const hour = Number(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date()))
   return hour >= 5 && hour < 12 ? 'Bom dia' : hour >= 12 && hour < 18 ? 'Boa tarde' : 'Boa noite'
 }
-type VitalRecordData = { id: number; patient_reference: string; actor_name: string; values: Record<string, string>; glucose_unit: string; recorded_at: string }
+type VitalRecordData = { id: number; patient_reference: string; actor_name: string; values: Record<string, string>; glucose_unit: string; measured_at: string; recorded_at: string }
 type PatientObservation = { id: number; attention_level: 'green' | 'yellow' | 'red'; observation: string; treatment_status: 'in_progress' | 'completed' | 'discharged'; actor_name: string; created_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type MedicationAdministration = { id: number; dispensation_id: string; patient_reference: string; medication_name: string; dose: string; unit: string; status: 'administered' | 'refused' | 'held'; reason: string; actor_name: string; administered_at: string }
@@ -160,6 +161,7 @@ const emptyRecord = {
   pressure: '',
   heartRate: '',
   respiratoryRate: '',
+  temperature: '',
   glucose: '',
   glucoseUnit: 'mg/dL',
   venousSite: '',
@@ -205,6 +207,7 @@ const fieldLabels: Record<keyof RecordFields, string> = {
   pressure: 'Pressão arterial',
   heartRate: 'Frequência cardíaca',
   respiratoryRate: 'Frequência respiratória',
+  temperature: 'Temperatura',
   glucose: 'Glicose',
   glucoseUnit: 'Unidade da glicose',
   venousSite: 'Local do acesso',
@@ -1328,6 +1331,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
             <article><strong>{pendingMedicationCount}</strong><span>Dispensações sem registro de ação da Enfermagem</span></article>
           </div>
           <div className="nursing-overview-patient"><div><p className="eyebrow">PACIENTE SELECIONADO</p><strong>{patients.find((patient) => patient.reference === patientRef)?.name ?? 'Selecione um paciente'}</strong><span>{patients.find((patient) => patient.reference === patientRef) ? patientLocationLabel(patients.find((patient) => patient.reference === patientRef)!) : 'Cadastro necessário para iniciar registros.'}</span></div><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')} disabled={!patientRef}><Activity size={16} /> Iniciar coleta de sinais vitais</button></div>
+          {patientRef ? <VitalTrendsDashboard patientReference={patientRef} /> : <div className="placeholder-state patient-empty-state"><span className="placeholder-state-icon"><UsersRound size={20} /></span><div><strong>Selecione um paciente</strong><p>Os gráficos de evolução ficam disponíveis depois que um paciente é escolhido para a consulta.</p></div></div>}
           <div className="nursing-overview-actions">
             <button className="button button-secondary" type="button" onClick={() => setNursingTab('medications')}>Conferir medicações <ArrowRight size={15} /></button>
             <button className="button button-secondary" type="button" onClick={() => setNursingTab('safety')}>Abrir fila e segurança <ArrowRight size={15} /></button>

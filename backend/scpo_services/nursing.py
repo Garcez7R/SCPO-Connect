@@ -40,6 +40,7 @@ from .common import (
 
 class VitalRecord(Base):
     __tablename__ = "vital_records"
+    __table_args__ = (Index("ix_vital_records_patient_measured_at", "patient_reference", "measured_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     patient_reference: Mapped[str] = mapped_column(String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False)
@@ -48,6 +49,7 @@ class VitalRecord(Base):
     values: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
     glucose_unit: Mapped[str] = mapped_column(String(12), nullable=False)
     not_applicable: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -803,6 +805,7 @@ VALUE_FIELDS = {
     "pressure",
     "heartRate",
     "respiratoryRate",
+    "temperature",
     "glucose",
     "venousSite",
     "venousCondition",
@@ -822,8 +825,8 @@ VALUE_FIELDS = {
     "examFollowUp",
     "examResult",
 }
-NUMERIC_FIELDS = {"saturation", "heartRate", "respiratoryRate", "glucose", "pain"}
-VITAL_FIELDS = {"saturation", "pressure", "heartRate", "respiratoryRate", "glucose"}
+NUMERIC_FIELDS = {"saturation", "heartRate", "respiratoryRate", "temperature", "glucose", "pain"}
+VITAL_FIELDS = {"saturation", "pressure", "heartRate", "respiratoryRate", "temperature", "glucose"}
 
 
 class PatientPayload(BaseModel):
@@ -1036,6 +1039,14 @@ class VitalPayload(BaseModel):
     values: dict[str, str] = Field(default_factory=dict)
     glucose_unit: Literal["mg/dL", "mmol/L"] = "mg/dL"
     not_applicable: list[str] = Field(default_factory=list)
+    measured_at: datetime | None = None
+
+    @field_validator("measured_at")
+    @classmethod
+    def validate_measured_at(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("O horário da aferição deve incluir fuso horário")
+        return value
 
     @field_validator("values")
     @classmethod
@@ -1106,6 +1117,10 @@ def create_vital_record(
         systolic, diastolic = (int(value) for value in pressure.split("/"))
         if systolic == 0 or diastolic == 0:
             raise HTTPException(status_code=422, detail="Informe os dois componentes da pressão arterial")
+    recorded_at = datetime.now(UTC)
+    measured_at = payload.measured_at or recorded_at
+    if measured_at > recorded_at:
+        raise HTTPException(status_code=422, detail="O horário da aferição não pode estar no futuro")
     record = VitalRecord(
         patient_reference=payload.patient_reference,
         actor_id=principal.user_id,
@@ -1113,7 +1128,8 @@ def create_vital_record(
         values=payload.values,
         glucose_unit=payload.glucose_unit,
         not_applicable=payload.not_applicable,
-        recorded_at=datetime.now(UTC),
+        measured_at=measured_at,
+        recorded_at=recorded_at,
     )
     db.add(record)
     emit_audit_event(
@@ -2049,6 +2065,38 @@ def list_patient_history(
     return {"records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
+@app.get("/api/v1/nursing/patients/{patient_reference}/vital-trends")
+def list_patient_vital_trends(
+    patient_reference: str,
+    principal: Annotated[DemoPrincipal, PATIENT_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    hours: Literal[6, 24, 168] = 24,
+) -> dict[str, object]:
+    if db.get(Patient, patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    now = datetime.now(UTC)
+    start = now - timedelta(hours=hours)
+    measured_time = func.coalesce(VitalRecord.measured_at, VitalRecord.recorded_at)
+    records = db.scalars(
+        select(VitalRecord)
+        .where(
+            VitalRecord.patient_reference == patient_reference,
+            VitalRecord.voided_at.is_(None),
+            measured_time >= start,
+            measured_time <= now,
+        )
+        .order_by(measured_time.asc(), VitalRecord.id.asc())
+    ).all()
+    emit_audit_event(principal, "nursing", "patient_vital_trends_read", patient_reference)
+    return {
+        "patient_reference": patient_reference,
+        "hours": hours,
+        "generated_at": now.isoformat(),
+        "records": [serialize_record(record) for record in records],
+        "total": len(records),
+    }
+
+
 @app.get("/api/v1/nursing/patients/{patient_reference}/observations")
 def list_patient_observations(
     patient_reference: str,
@@ -2177,6 +2225,12 @@ def list_vital_records(
 
 
 def serialize_record(record: VitalRecord) -> dict[str, object]:
+    measured_at = record.measured_at or record.recorded_at
+    recorded_at = record.recorded_at
+    if measured_at.tzinfo is None:
+        measured_at = measured_at.replace(tzinfo=UTC)
+    if recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=UTC)
     return {
         "id": record.id,
         "patient_reference": record.patient_reference,
@@ -2185,7 +2239,8 @@ def serialize_record(record: VitalRecord) -> dict[str, object]:
         "values": record.values,
         "glucose_unit": record.glucose_unit,
         "not_applicable": record.not_applicable,
-        "recorded_at": record.recorded_at.isoformat(),
+        "measured_at": measured_at.isoformat(),
+        "recorded_at": recorded_at.isoformat(),
     }
 
 
