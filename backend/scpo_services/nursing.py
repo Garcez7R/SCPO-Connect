@@ -98,6 +98,7 @@ class Patient(Base):
     sus_card: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     allergies: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     allergies_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    treatment_track: Mapped[str] = mapped_column(String(20), nullable=False, default="unclassified")
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     deletion_reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
@@ -163,6 +164,8 @@ class EmergencyArrival(Base):
     clinical_priority_updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     clinical_priority_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     clinical_priority_reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    allergy_report_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_asked")
+    reported_allergies: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
 
 class PatientFlowEvent(Base):
@@ -291,6 +294,8 @@ class EmergencyArrivalPayload(BaseModel):
     new_patient: "EmergencyPatientPayload | None" = None
     arrival_mode: Literal["walk_in", "ambulance", "other"] = "walk_in"
     reason: str = Field(min_length=3, max_length=1000)
+    allergy_report_status: Literal["not_asked", "reported", "denied"] = "not_asked"
+    reported_allergies: str = Field(default="", max_length=500)
 
     @model_validator(mode="after")
     def validate_patient_source(self) -> "EmergencyArrivalPayload":
@@ -298,6 +303,10 @@ class EmergencyArrivalPayload(BaseModel):
             raise ValueError("Escolha um paciente existente ou crie um novo cadastro")
         if not self.new_patient and not self.patient_reference and len(self.patient_name.strip()) < 2:
             raise ValueError("Informe o nome da pessoa atendida")
+        if self.allergy_report_status == "reported" and not self.reported_allergies.strip():
+            raise ValueError("Descreva a alergia relatada pelo paciente ou acompanhante")
+        if self.allergy_report_status != "reported" and self.reported_allergies.strip():
+            raise ValueError("Informe detalhes somente quando uma alergia tiver sido relatada")
         return self
 
     @field_validator("reason")
@@ -363,6 +372,7 @@ class EmergencyArrivalStatusPayload(BaseModel):
 class EmergencyAdmissionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     bed_id: str = Field(min_length=1, max_length=36)
+    treatment_track: Literal["clinical", "psychiatric", "combined", "unclassified"] = "unclassified"
 
 
 class PatientTransferPayload(BaseModel):
@@ -840,6 +850,7 @@ class PatientPayload(BaseModel):
     sus_card: str = Field(default="", max_length=20)
     allergies: str = Field(default="", max_length=1000)
     allergies_status: Literal["unknown", "none_known", "known"] = "unknown"
+    treatment_track: Literal["clinical", "psychiatric", "combined", "unclassified"] | None = None
     birth_date: date | None = None
     sex: str = Field(default="", max_length=24)
     phone: str = Field(default="", max_length=40)
@@ -1213,7 +1224,14 @@ def list_emergency_arrivals(
     ).all()
     emit_audit_event(principal, "reception", "emergency_arrivals_read", "emergency_queue")
     return {
-        "arrivals": [serialize_emergency_arrival(arrival, allergies_status) for arrival, allergies_status in rows],
+        "arrivals": [
+            serialize_emergency_arrival(
+                arrival,
+                allergies_status,
+                include_allergy_details=can_view_patient_allergies(principal),
+            )
+            for arrival, allergies_status in rows
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -1246,6 +1264,7 @@ def update_emergency_clinical_priority(
     return serialize_emergency_arrival(
         arrival,
         patient.allergies_status if patient else "unknown",
+        include_allergy_details=can_view_patient_allergies(principal),
     )
 
 
@@ -1297,6 +1316,8 @@ def create_emergency_arrival(
         patient_name=patient.name if patient else payload.patient_name.strip(),
         arrival_mode=payload.arrival_mode,
         reason=payload.reason,
+        allergy_report_status=payload.allergy_report_status,
+        reported_allergies=payload.reported_allergies.strip(),
         status="waiting",
         created_by=principal.actor_name,
         updated_by=principal.actor_name,
@@ -1324,7 +1345,11 @@ def create_emergency_arrival(
     )
     db.commit()
     db.refresh(arrival)
-    return serialize_emergency_arrival(arrival, patient.allergies_status if patient else "unknown")
+    return serialize_emergency_arrival(
+        arrival,
+        patient.allergies_status if patient else "unknown",
+        include_allergy_details=can_view_patient_allergies(principal),
+    )
 
 
 @app.patch("/api/v1/reception/arrivals/{arrival_id}")
@@ -1348,7 +1373,11 @@ def update_emergency_arrival(
     db.commit()
     db.refresh(arrival)
     patient = db.get(Patient, arrival.patient_reference) if arrival.patient_reference else None
-    return serialize_emergency_arrival(arrival, patient.allergies_status if patient else "unknown")
+    return serialize_emergency_arrival(
+        arrival,
+        patient.allergies_status if patient else "unknown",
+        include_allergy_details=can_view_patient_allergies(principal),
+    )
 
 
 @app.post("/api/v1/reception/arrivals/{arrival_id}/admission")
@@ -1372,6 +1401,7 @@ def admit_emergency_arrival(
         raise HTTPException(status_code=409, detail="Este paciente já está vinculado a um leito físico")
     bed, _ = _available_hospital_bed(db, payload.bed_id)
     now = datetime.now(UTC)
+    patient.treatment_track = payload.treatment_track
     _assign_patient_to_bed(db, patient, bed, principal, now)
     arrival.status = "admitted"
     arrival.updated_by = principal.actor_name
@@ -1396,7 +1426,11 @@ def admit_emergency_arrival(
         db.rollback()
         raise HTTPException(status_code=409, detail="O leito foi ocupado por outra operação; atualize o mapa") from exc
     return {
-        "arrival": serialize_emergency_arrival(arrival, patient.allergies_status),
+        "arrival": serialize_emergency_arrival(
+            arrival,
+            patient.allergies_status,
+            include_allergy_details=can_view_patient_allergies(principal),
+        ),
         "patient": serialize_patient(patient, principal=principal),
         "flow_event": serialize_patient_flow_event(flow_event),
     }
@@ -1481,12 +1515,15 @@ def create_medication_administration(
 def serialize_emergency_arrival(
     arrival: EmergencyArrival,
     allergies_status: str = "unknown",
+    *,
+    include_allergy_details: bool = False,
 ) -> dict[str, object]:
-    return {
+    serialized: dict[str, object] = {
         "id": arrival.id,
         "patient_reference": arrival.patient_reference,
         "patient_name": arrival.patient_name,
         "allergies_status": allergies_status,
+        "allergy_report_status": arrival.allergy_report_status,
         "arrival_mode": arrival.arrival_mode,
         "reason": arrival.reason,
         "status": arrival.status,
@@ -1499,6 +1536,9 @@ def serialize_emergency_arrival(
         "created_at": arrival.created_at.isoformat(),
         "updated_at": arrival.updated_at.isoformat(),
     }
+    if include_allergy_details:
+        serialized["reported_allergies"] = arrival.reported_allergies
+    return serialized
 
 
 def serialize_patient_flow_event(event: PatientFlowEvent) -> dict[str, object]:
@@ -1973,7 +2013,15 @@ def create_patient(
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
     if payload.room.strip() and payload.bed.strip() and db.scalar(select(Patient.reference).where(Patient.active.is_(True), Patient.room == payload.room.strip(), Patient.bed == payload.bed.strip())):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
-    patient = Patient(reference=str(uuid.uuid4()), **payload.model_dump(), created_at=datetime.now(UTC), updated_at=datetime.now(UTC), updated_by=principal.actor_name)
+    patient_data = payload.model_dump(exclude={"treatment_track"})
+    patient = Patient(
+        reference=str(uuid.uuid4()),
+        **patient_data,
+        treatment_track=payload.treatment_track or "unclassified",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        updated_by=principal.actor_name,
+    )
     db.add(patient)
     if patient.allergies_status != "unknown":
         record_patient_allergy_change(
@@ -2025,7 +2073,7 @@ def update_patient(
         payload.allergies,
         "Atualização do cadastro do paciente",
     )
-    for key, value in payload.model_dump().items():
+    for key, value in payload.model_dump(exclude_none=True).items():
         setattr(patient, key, value)
     patient.updated_at = datetime.now(UTC)
     patient.updated_by = principal.actor_name
@@ -2180,6 +2228,13 @@ def can_view_patient_allergies(principal: DemoPrincipal) -> bool:
     )
 
 
+def can_view_patient_treatment_track(principal: DemoPrincipal) -> bool:
+    return any(
+        module in principal.modules and "consultar" in principal.permissions.get(module, [])
+        for module in ("nursing", "psychology", "management")
+    )
+
+
 def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profile: bool = False) -> dict[str, object]:
     result: dict[str, object] = {
         "reference": patient.reference,
@@ -2194,11 +2249,14 @@ def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profil
             key: getattr(patient, key)
             for key in PatientPayload.model_fields
             if key not in {"allergies", "allergies_status"} or can_view_patient_allergies(principal)
+            if key != "treatment_track" or can_view_patient_treatment_track(principal)
         })
         result.update({"created_at": patient.created_at.isoformat() if patient.created_at else None, "updated_at": patient.updated_at.isoformat() if patient.updated_at else None, "updated_by": patient.updated_by})
     if can_view_patient_allergies(principal):
         result["allergies"] = patient.allergies
         result["allergies_status"] = patient.allergies_status
+    if can_view_patient_treatment_track(principal):
+        result["treatment_track"] = patient.treatment_track
     return result
 
 

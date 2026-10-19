@@ -20,11 +20,14 @@ type Patient = {
 }
 type AuthUser = { id: string; permissions: Record<string, string[]> }
 type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
+type TreatmentTrack = 'clinical' | 'psychiatric' | 'combined'
+type AllergyReportStatus = 'not_asked' | 'reported' | 'denied'
 type EmergencyArrival = {
   id: string
   patient_reference: string | null
   patient_name: string
   allergies_status?: Patient['allergies_status']
+  allergy_report_status?: AllergyReportStatus
   arrival_mode: 'walk_in' | 'ambulance' | 'other'
   reason: string
   status: EmergencyArrivalStatus
@@ -82,6 +85,8 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [patientSearch, setPatientSearch] = useState('')
   const [arrivalMode, setArrivalMode] = useState<EmergencyArrival['arrival_mode']>('walk_in')
   const [reason, setReason] = useState('')
+  const [allergyReportStatus, setAllergyReportStatus] = useState<AllergyReportStatus>('not_asked')
+  const [reportedAllergies, setReportedAllergies] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | EmergencyArrivalStatus>('all')
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
@@ -90,7 +95,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [saving, setSaving] = useState(false)
   const [arrivalFormOpen, setArrivalFormOpen] = useState(false)
   const [updating, setUpdating] = useState('')
-  const [admissionDraft, setAdmissionDraft] = useState<Record<string, string>>({})
+  const [admissionDraft, setAdmissionDraft] = useState<Record<string, { bedId: string; treatmentTrack: TreatmentTrack }>>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const canCreate = user.permissions.reception?.includes('criar') ?? false
@@ -152,6 +157,8 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
           new_patient: createCentralPatient ? { name: patientName.trim(), ...emergencyPatient, birth_date: emergencyPatient.birth_date || null } : null,
           arrival_mode: arrivalMode,
           reason: reason.trim(),
+          allergy_report_status: allergyReportStatus,
+          reported_allergies: reportedAllergies.trim(),
         }),
       })
       await readApiResponse<EmergencyArrival>(response)
@@ -159,6 +166,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       setCreateCentralPatient(false)
       setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' })
       setArrivalMode('walk_in'); setReason('')
+      setAllergyReportStatus('not_asked'); setReportedAllergies('')
       setArrivalFormOpen(false)
       setNotice('Chegada registrada na fila de emergência.')
       await loadArrivals(statusFilter, query, 0)
@@ -184,7 +192,8 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   }
 
   async function admitArrival(arrival: EmergencyArrival) {
-    const bedId = admissionDraft[arrival.id]
+    const draft = admissionDraft[arrival.id]
+    const bedId = draft?.bedId
     const bed = beds.find((item) => item.id === bedId && item.status === 'available' && !item.occupied)
     if (!bed) return
     setUpdating(arrival.id); setError(''); setNotice('')
@@ -192,7 +201,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       const response = await fetch(`/api/v1/reception/arrivals/${encodeURIComponent(arrival.id)}/admission`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bed_id: bed.id }),
+        body: JSON.stringify({ bed_id: bed.id, treatment_track: draft.treatmentTrack }),
       })
       await readApiResponse(response)
       setNotice(`${arrival.patient_name} foi internado em ${bed.unit_name}, quarto ${bed.room}, leito ${bed.label}.`)
@@ -242,6 +251,8 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
             <PatientAllergyAlert patient={emergencyPatient} />
           </>}
           <label className="field"><span className="field-label">Meio de chegada</span><select value={arrivalMode} onChange={(event) => setArrivalMode(event.target.value as EmergencyArrival['arrival_mode'])}><option value="walk_in">Chegada espontânea</option><option value="ambulance">Ambulância</option><option value="other">Outro meio</option></select></label>
+          <label className="field"><span className="field-label">Relato de alergia pelo paciente/acompanhante</span><select value={allergyReportStatus} onChange={(event) => { const status = event.target.value as AllergyReportStatus; setAllergyReportStatus(status); if (status !== 'reported') setReportedAllergies('') }}><option value="not_asked">Não perguntado</option><option value="denied">Negado pelo paciente/acompanhante</option><option value="reported">Alergia relatada (aguarda confirmação clínica)</option></select></label>
+          {allergyReportStatus === 'reported' && <label className="field"><span className="field-label">Alergia relatada (não confirmada)</span><textarea required minLength={2} maxLength={500} value={reportedAllergies} onChange={(event) => setReportedAllergies(event.target.value)} placeholder="Registre o relato sem alterar o cadastro clínico confirmado" /></label>}
           <label className="field reception-reason-field"><span className="field-label">Motivo informado para a procura</span><textarea required minLength={3} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Registre a informação necessária para identificar a chegada" /></label>
         </div>
         <p className="work-order-privacy">A recepção registra a chegada e a situação operacional. Esta tela não atribui prioridade clínica nem substitui o protocolo institucional de classificação de risco.</p>
@@ -256,11 +267,13 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
         {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}>
           <div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div>
           <ReceptionAllergyAlert status={arrival.allergies_status} />
+          {arrival.allergy_report_status === 'reported' && <p className="field-hint">Alergia relatada na chegada · confirme com a equipe clínica.</p>}
           <div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>
           {canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span><select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
           {canUpdate && arrival.patient_reference && ['waiting', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}>
-            <label className="field"><span className="field-label">Leito físico disponível</span><select required value={admissionDraft[arrival.id] ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: event.target.value }))}><option value="">Selecione unidade, quarto e leito</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Cadastre ou libere um leito em Gestão Hospitalar.</span>}</label>
-            <button className="button button-secondary" type="submit" disabled={updating === arrival.id || !admissionDraft[arrival.id] || !beds.some((bed) => bed.id === admissionDraft[arrival.id] && bed.status === 'available' && !bed.occupied)}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button>
+            <label className="field"><span className="field-label">Perfil de cuidado da internação</span><select required value={admissionDraft[arrival.id]?.treatmentTrack ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: current[arrival.id]?.bedId ?? '', treatmentTrack: event.target.value as TreatmentTrack } }))}><option value="">Selecione o perfil de cuidado</option><option value="clinical">Tratamento clínico</option><option value="psychiatric">Tratamento psiquiátrico</option><option value="combined">Cuidado clínico e psiquiátrico</option></select><span className="field-hint">Classifica o fluxo assistencial; não representa diagnóstico.</span></label>
+            <label className="field"><span className="field-label">Leito físico disponível</span><select required value={admissionDraft[arrival.id]?.bedId ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: event.target.value, treatmentTrack: current[arrival.id]?.treatmentTrack ?? 'clinical' } }))}><option value="">Selecione unidade, quarto e leito</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Cadastre ou libere um leito em Gestão Hospitalar.</span>}</label>
+            <button className="button button-secondary" type="submit" disabled={updating === arrival.id || !admissionDraft[arrival.id]?.bedId || !admissionDraft[arrival.id]?.treatmentTrack || !beds.some((bed) => bed.id === admissionDraft[arrival.id]?.bedId && bed.status === 'available' && !bed.occupied)}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button>
           </form>}
         </article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}
         <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>

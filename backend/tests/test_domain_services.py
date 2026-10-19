@@ -580,6 +580,8 @@ def test_reception_records_emergency_arrival_without_inpatient_bed(
             patient_name="Pessoa sem cadastro",
             arrival_mode="ambulance",
             reason="Procura por atendimento de emergência",
+            allergy_report_status="reported",
+            reported_allergies="Relata reação à dipirona",
         ),
         receptionist,
         domain_database["nursing"],
@@ -588,6 +590,8 @@ def test_reception_records_emergency_arrival_without_inpatient_bed(
     assert arrival["patient_reference"] is None
     assert arrival["patient_name"] == "Pessoa sem cadastro"
     assert arrival["created_by"] == "Recepcionista"
+    assert arrival["allergy_report_status"] == "reported"
+    assert "reported_allergies" not in arrival
     db = domain_database["nursing"]
     db.add(
         nursing.Patient(
@@ -615,6 +619,19 @@ def test_reception_records_emergency_arrival_without_inpatient_bed(
     )
     assert listed["total"] == 2
     assert listed["status_counts"]["waiting"] == 2
+    nurse = DemoPrincipal(
+        "nurse-1",
+        "nurse",
+        "Enfermeira",
+        "nursing",
+        ["nursing"],
+        {"nursing": ["consultar"]},
+    )
+    clinical_list = nursing.list_emergency_arrivals(
+        nurse, domain_database["nursing"], status="waiting"
+    )
+    reported_arrival = next(item for item in clinical_list["arrivals"] if item["id"] == arrival["id"])
+    assert reported_arrival["reported_allergies"] == "Relata reação à dipirona"
     updated = nursing.update_emergency_arrival(
         arrival["id"],
         nursing.EmergencyArrivalStatusPayload(status="in_service"),
@@ -638,6 +655,89 @@ def test_reception_records_emergency_arrival_without_inpatient_bed(
         )
     assert closed_arrival.value.status_code == 409
     assert all("Procura por atendimento" not in repr(event) for event in events)
+
+
+def test_patient_care_track_persists_and_emergency_admission_assigns_it(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    db = domain_database["nursing"]
+    receptionist = DemoPrincipal(
+        "reception-1",
+        "reception",
+        "Recepcionista",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar", "alterar"]},
+    )
+    nurse = DemoPrincipal(
+        "nurse-1",
+        "nurse",
+        "Enfermeira",
+        "nursing",
+        ["nursing"],
+        {"nursing": ["consultar", "criar", "alterar"]},
+    )
+    patient = nursing.create_patient(
+        nursing.PatientPayload(name="Paciente psiquiátrico", treatment_track="psychiatric"),
+        nurse,
+        db,
+    )
+    patient_reference = str(patient["reference"])
+    updated = nursing.update_patient(
+        patient_reference,
+        nursing.PatientPayload(name="Paciente psiquiátrico"),
+        nurse,
+        db,
+    )
+    assert updated["treatment_track"] == "psychiatric"
+
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_reference=patient_reference,
+            reason="Admissão para cuidado continuado",
+        ),
+        receptionist,
+        db,
+    )
+    now = nursing.datetime.now(nursing.UTC)
+    db.add(
+        nursing.HospitalUnit(
+            id="unit-1",
+            name="Unidade de internação",
+            active=True,
+            created_at=now,
+            created_by="Administração",
+        )
+    )
+    db.flush()
+    db.add(
+        nursing.HospitalBed(
+            id="bed-1",
+            unit_id="unit-1",
+            room="10",
+            label="A",
+            status="available",
+            active=True,
+            created_at=now,
+            created_by="Administração",
+        )
+    )
+    db.commit()
+
+    admitted = nursing.admit_emergency_arrival(
+        str(arrival["id"]),
+        nursing.EmergencyAdmissionPayload(
+            bed_id="bed-1", treatment_track="psychiatric"
+        ),
+        receptionist,
+        db,
+    )
+    assert admitted["arrival"]["status"] == "admitted"
+    assert "treatment_track" not in admitted["patient"]
+    persisted_patient = db.get(nursing.Patient, patient_reference)
+    assert persisted_patient is not None
+    assert persisted_patient.treatment_track == "psychiatric"
 
 
 def test_nutrition_history_search_and_pagination_run_in_the_api(
