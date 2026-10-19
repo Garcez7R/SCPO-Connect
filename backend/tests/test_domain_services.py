@@ -148,10 +148,10 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     monkeypatch.setattr(pharmacy, "verify_patient_reference", lambda reference: {"reference": reference, "name": "Paciente"})
     pharmacist = DemoPrincipal("pharm-1", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
     item = pharmacy.create_item(
-        pharmacy.InventoryPayload(item_name="Soro", balance="12", unit="unidade", lot="L-01", expiry_date="2027-02-01"),
+        pharmacy.InventoryPayload(item_name="Comprimido de teste", balance="20", unit="comprimido", lot="L-01", expiry_date="2027-02-01"),
         pharmacist, domain_database["pharmacy"],
     )
-    assert item["balance"] == "12"
+    assert item["balance"] == "20"
     assert item["average_balance"] == "0"
     updated = pharmacy.update_stock_thresholds(
         item["id"],
@@ -178,9 +178,9 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
         domain_database["pharmacy"],
     )
     assert issued["quantity"] == "-2.5"
-    assert issued["balance_after"] == "9.5"
+    assert issued["balance_after"] == "17.5"
     assert issued["actor_id"] == pharmacist.user_id
-    assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "9.5"
+    assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "17.5"
     nurse = DemoPrincipal("nurse-1", "nurse", "Enfermeira", "nursing", ["nursing"], {"nursing": ["consultar", "criar"]})
     patient = nursing.create_patient(
         nursing.PatientPayload(
@@ -207,7 +207,8 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     )
     assert dispensation["patient_reference"] == patient["reference"]
     assert dispensation["prescription_reference"] == "PRESC-001"
-    assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "8.5"
+    assert dispensation["unit"] == "comprimido"
+    assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "16.5"
     assert pharmacy.list_dispensations(nurse, domain_database["pharmacy"])["dispensations"][0]["id"] == dispensation["id"]
     with pytest.raises(HTTPException) as allergy_unreviewed:
         pharmacy.create_dispensation(
@@ -227,12 +228,61 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
         pharmacy.create_stock_movement(
             item["id"],
             pharmacy.StockMovementPayload(
-                movement_type="issue", quantity="10", reason="Retirada maior que saldo"
+                movement_type="issue", quantity="20", reason="Retirada maior que saldo"
             ),
             pharmacist,
             domain_database["pharmacy"],
         )
     assert negative_balance.value.status_code == 409
+
+
+def test_pharmacy_dispenses_one_tablet_from_twenty_counted_in_tablets(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        pharmacy,
+        "verify_patient_reference",
+        lambda reference: {"reference": reference, "name": "Paciente"},
+    )
+    pharmacist = DemoPrincipal(
+        "pharm-tablets",
+        "pharm",
+        "Farmacêutica",
+        "pharmacy",
+        ["pharmacy"],
+        {"pharmacy": ["consultar", "criar"]},
+    )
+    item = pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Medicamento em comprimidos",
+            balance="20",
+            unit="comprimido",
+            lot="L-20",
+            expiry_date="2099-12-31",
+        ),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+
+    dispensation = pharmacy.create_dispensation(
+        pharmacy.MedicationDispensePayload(
+            patient_reference="123e4567-e89b-12d3-a456-426614174000",
+            item_id=item["id"],
+            quantity="1",
+            prescription_reference="PRESC-20",
+            prescriber_name="Dr. Teste",
+            allergy_reviewed=True,
+        ),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+
+    assert dispensation["quantity"] == "1"
+    assert dispensation["unit"] == "comprimido"
+    assert pharmacy.list_items(
+        pharmacist, domain_database["pharmacy"]
+    )["items"][0]["balance"] == "19"
 
 
 def test_pharmacy_gs1_parser_validates_gtin_lot_expiry_and_serial() -> None:
@@ -425,7 +475,7 @@ def test_pharmacy_stock_alerts_include_reorder_and_expiry_actions(
     assert alerts[0]["suggested_replenishment"] == "10"
 
 
-def test_nursing_records_patient_linked_dispensation_once(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
+def test_nursing_records_partial_doses_against_patient_linked_dispensation(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
     monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         nursing,
@@ -433,9 +483,9 @@ def test_nursing_records_patient_linked_dispensation_once(monkeypatch: pytest.Mo
         lambda identifier: {
             "id": identifier,
             "patient_reference": "123e4567-e89b-12d3-a456-426614174000",
-            "medication_name": "Soro",
-            "quantity": "2",
-            "unit": "frasco",
+            "medication_name": "Comprimido de teste",
+            "quantity": "20",
+            "unit": "comprimido",
         },
     )
     db = domain_database["nursing"]
@@ -451,16 +501,65 @@ def test_nursing_records_patient_linked_dispensation_once(monkeypatch: pytest.Mo
     payload = nursing.MedicationAdministrationPayload(
         dispensation_id="dispense-123",
         patient_reference=patient.reference,
+        dose="1",
         status="held",
         reason="Paciente em jejum",
     )
     record = nursing.create_medication_administration(payload, nurse, db)
-    assert record["medication_name"] == "Soro"
+    assert record["medication_name"] == "Comprimido de teste"
+    assert record["dose"] == "1"
+    assert record["unit"] == "comprimido"
     assert record["status"] == "held"
     assert nursing.list_medication_administrations(nurse, db, patient.reference)["administrations"][0]["id"] == record["id"]
-    with pytest.raises(HTTPException) as duplicate:
-        nursing.create_medication_administration(payload, nurse, db)
-    assert duplicate.value.status_code == 409
+    administered = nursing.create_medication_administration(
+        nursing.MedicationAdministrationPayload(
+            dispensation_id="dispense-123",
+            patient_reference=patient.reference,
+            dose="1",
+            status="administered",
+        ),
+        nurse,
+        db,
+    )
+    assert administered["dose"] == "1"
+    assert len(nursing.list_medication_administrations(nurse, db, patient.reference)["administrations"]) == 2
+
+    with pytest.raises(HTTPException) as over_dose:
+        nursing.create_medication_administration(
+            nursing.MedicationAdministrationPayload(
+                dispensation_id="dispense-123",
+                patient_reference=patient.reference,
+                dose="20",
+                status="administered",
+            ),
+            nurse,
+            db,
+        )
+    assert over_dose.value.status_code == 409
+
+    final_dose = nursing.create_medication_administration(
+        nursing.MedicationAdministrationPayload(
+            dispensation_id="dispense-123",
+            patient_reference=patient.reference,
+            dose="19",
+            status="administered",
+        ),
+        nurse,
+        db,
+    )
+    assert final_dose["dose"] == "19"
+    with pytest.raises(HTTPException) as exhausted:
+        nursing.create_medication_administration(
+            nursing.MedicationAdministrationPayload(
+                dispensation_id="dispense-123",
+                patient_reference=patient.reference,
+                dose="1",
+                status="administered",
+            ),
+            nurse,
+            db,
+        )
+    assert exhausted.value.status_code == 409
 
 
 def test_reception_records_emergency_arrival_without_inpatient_bed(

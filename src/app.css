@@ -794,6 +794,15 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .button-danger { min-height: 38px; padding: 7px 10px; border: 1px solid #e6c6c6; border-radius: 5px; background: #fff7f6; color: #9a3d3d; font-size: 11px; font-weight: 600; cursor: pointer; }
 .button-danger:hover { background: #fcebea; }
 .allergy-entry textarea { min-height: 80px; }
+.allergy-fields { display: grid; gap: 12px; min-width: 0; }
+.allergy-fields > legend { padding: 0 6px; color: var(--ink); font-size: 13px; font-weight: 700; }
+.allergy-fields-content { display: grid; gap: 10px; }
+.allergy-fields-content > .field-hint { margin: 0; }
+.allergy-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+.allergy-options label, .allergy-other-toggle { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: 12px; line-height: 1.45; }
+.allergy-options input, .allergy-other-toggle input { flex: 0 0 auto; width: 17px; height: 17px; margin: 0; }
+.allergy-other-toggle { font-weight: 700; }
+.allergy-fields-content textarea { min-height: 80px; }
 .allergy-flag { display: flex; align-items: flex-start; gap: 5px; max-width: 720px; margin-top: 6px; color: #9a3d32; font-size: 11px; line-height: 1.45; }
 .duplicate-warning, .clinical-alert { display: grid; gap: 8px; padding: 13px 15px; border: 1px solid #e6c7a0; border-radius: 7px; background: #fff8ee; color: #744a16; }
 .duplicate-warning span { font-size: 12px; }
@@ -804,6 +813,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .clinical-alert span { font-size: 12px; line-height: 1.5; }
 .clinical-alert-clear { border-color: #c9e2d5; background: #f0f8f3; color: #2b6548; }
 .clinical-alert-unknown { border-color: #e6c98f; background: #fff8e9; color: #76500f; }
+@media (max-width: 600px) { .allergy-options { grid-template-columns: 1fr; } }
 .patient-registry-card .clinical-alert { margin-top: 8px; padding: 9px 10px; }
 .patient-registry-card .clinical-alert span { font-size: 11px; }
 .emergency-patient-toggle > span:last-child { display: flex; align-items: center; gap: 8px; min-height: 40px; color: var(--ink); }

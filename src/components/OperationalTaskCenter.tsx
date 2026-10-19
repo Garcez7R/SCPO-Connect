@@ -57,7 +57,7 @@ export default function OperationalTaskCenter({
   const refresh = useCallback(async () => {
     type Arrival = { id: string; patient_name: string; reason: string; status: 'waiting' | 'in_service'; clinical_priority: string; created_at: string }
     type Dispensation = { id: string; patient_reference: string; medication_name: string; quantity: string; unit: string; created_at: string }
-    type Administration = { dispensation_id: string }
+    type Administration = { dispensation_id: string; dose: string; status: 'administered' | 'refused' | 'held' }
     type StockAlert = { item_id: number; item_name: string; balance: string; unit: string; expiry_date: string; days_to_expiry: number; alert_types: string[] }
     type WorkOrder = { id: string; title: string; location: string; priority: 'normal' | 'high' | 'urgent'; status: 'open' | 'in_progress' | 'completed' | 'cancelled' }
     type HygieneRequest = { id: string; request_type: string; custom_type: string; unit: string; area: string; location: string; priority: 'normal' | 'high' | 'urgent'; status: 'open' | 'in_progress' | 'completed' | 'cancelled'; created_at: string }
@@ -104,8 +104,14 @@ export default function OperationalTaskCenter({
             readApiResponse<{ dispensations?: Dispensation[] }>(dispensationResponse),
             readApiResponse<{ administrations?: Administration[] }>(administrationResponse),
           ])
-          const recordedIds = new Set((administrations.administrations ?? []).map((item) => item.dispensation_id))
-          const pending = (dispensations.dispensations ?? []).filter((item) => !recordedIds.has(item.id))
+          const administrationRecords = administrations.administrations ?? []
+          const pending = (dispensations.dispensations ?? []).map((item) => {
+            const administered = administrationRecords
+              .filter((record) => record.dispensation_id === item.id && record.status === 'administered')
+              .reduce((total, record) => total + Number(record.dose.replace(',', '.')), 0)
+            const remaining = Number(item.quantity.replace(',', '.')) - administered
+            return { ...item, remaining: Number.isFinite(remaining) && remaining > 0.000001 ? remaining : 0 }
+          }).filter((item) => Number.isFinite(item.remaining) && item.remaining > 0)
           return {
             module: 'nursing',
             label: 'Enfermagem · registros de medicação',
@@ -113,7 +119,7 @@ export default function OperationalTaskCenter({
             tasks: pending.slice(0, 5).map((item) => ({
               id: item.id,
               title: item.medication_name,
-              detail: `${item.quantity} ${item.unit} · dispensação ${localDateTime(item.created_at)} · registro de administração pendente`,
+              detail: `${item.remaining} de ${item.quantity} ${item.unit} restantes · dispensação ${localDateTime(item.created_at)}`,
               priority: 'normal',
             })),
           }

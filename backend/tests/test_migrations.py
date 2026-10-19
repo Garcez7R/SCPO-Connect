@@ -42,7 +42,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0030_vital_measurement_time"
+    assert revision == "0031_repeat_med_admin"
     if service == "nursing":
         assert len(tables) == 15
         assert "measured_at" in {
@@ -56,6 +56,15 @@ def test_each_service_migration_creates_only_its_owned_table(
         }
         assert {"allergies_status", "responsible_status"} <= patient_columns
         assert "medication_administrations" in tables
+        administration_indexes = {
+            index["name"]: index
+            for index in inspect(get_engine(service)).get_indexes("medication_administrations")
+        }
+        assert "ix_medication_administrations_dispensation_id" in administration_indexes
+        assert not any(
+            constraint["name"] == "uq_medication_administrations_dispensation_id"
+            for constraint in inspect(get_engine(service)).get_unique_constraints("medication_administrations")
+        )
         report_columns = {column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")}
         assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
         assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records"))
@@ -120,6 +129,61 @@ def test_each_service_migration_creates_only_its_owned_table(
         assert any(index["name"].endswith("patient_reference") for index in inspect(get_engine(service)).get_indexes(table))
     if service == "maintenance":
         assert "patient_reference" in {column["name"] for column in inspect(get_engine(service)).get_columns(table)}
+    clear_engine_cache()
+
+
+def test_repeated_administration_migration_preserves_existing_records(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_SERVICE", "nursing")
+    monkeypatch.setenv(
+        "SCPO_NURSING_DATABASE_URL",
+        f"sqlite:///{tmp_path / 'nursing.sqlite3'}",
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+    command.upgrade(config, "0030_vital_measurement_time")
+
+    with get_engine("nursing").begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO medication_administrations "
+                "(dispensation_id, patient_reference, medication_name, dose, unit, "
+                "status, reason, actor_id, actor_name, administered_at) "
+                "VALUES ('dispensation-1', 'patient-1', 'Medicamento', '1', "
+                "'comprimido', 'administered', '', 'nurse-1', 'Enfermeira', "
+                "'2026-01-01 10:00:00')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with get_engine("nursing").begin() as connection:
+        existing = connection.execute(
+            text(
+                "SELECT medication_name, dose, unit FROM medication_administrations "
+                "WHERE dispensation_id = 'dispensation-1'"
+            )
+        ).one()
+        connection.execute(
+            text(
+                "INSERT INTO medication_administrations "
+                "(dispensation_id, patient_reference, medication_name, dose, unit, "
+                "status, reason, actor_id, actor_name, administered_at) "
+                "VALUES ('dispensation-1', 'patient-1', 'Medicamento', '1', "
+                "'comprimido', 'administered', '', 'nurse-2', 'Enfermeira', "
+                "'2026-01-01 12:00:00')"
+            )
+        )
+        count = connection.execute(
+            text(
+                "SELECT count(*) FROM medication_administrations "
+                "WHERE dispensation_id = 'dispensation-1'"
+            )
+        ).scalar_one()
+
+    assert existing == ("Medicamento", "1", "comprimido")
+    assert count == 2
+    verify_database_migrated("nursing")
     clear_engine_cache()
 
 

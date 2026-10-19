@@ -3,6 +3,7 @@ import type { ComponentType, FormEvent } from 'react'
 import { ArrowRight, Building2, Search, AlertTriangle, BadgeCheck, Info } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { formatCpf, formatPhone } from '../inputFormatting'
+import AllergyFields from '../components/AllergyFields'
 
 type Patient = {
   reference: string
@@ -237,8 +238,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
             <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={emergencyPatient.birth_date} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, birth_date: event.target.value })} /></label>
             <label className="field"><span className="field-label">Sexo (opcional)</span><select value={emergencyPatient.sex} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sex: event.target.value })}><option value="">Não informado</option><option>Feminino</option><option>Masculino</option><option>Outro</option><option>Não informado</option></select></label>
             <label className="field"><span className="field-label">Telefone (opcional)</span><input inputMode="tel" maxLength={20} autoComplete="tel" value={formatPhone(emergencyPatient.phone)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, phone: formatPhone(event.target.value) })} /></label>
-            <label className="field"><span className="field-label">Status das alergias</span><select value={emergencyPatient.allergies_status} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies_status: event.target.value as NonNullable<Patient['allergies_status']>, allergies: event.target.value === 'known' ? emergencyPatient.allergies : '' })}><option value="unknown">Não verificado / desconhecido</option><option value="none_known">Sem alergias conhecidas · confirmado</option><option value="known">Alergia conhecida</option></select></label>
-            {emergencyPatient.allergies_status === 'known' && <label className="field"><span className="field-label">Alergias conhecidas</span><textarea required maxLength={1000} value={emergencyPatient.allergies} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, allergies: event.target.value })} /></label>}
+            <AllergyFields status={emergencyPatient.allergies_status} allergies={emergencyPatient.allergies} onChange={(allergies_status, allergies) => setEmergencyPatient((current) => ({ ...current, allergies_status, allergies }))} />
             <PatientAllergyAlert patient={emergencyPatient} />
           </>}
           <label className="field"><span className="field-label">Meio de chegada</span><select value={arrivalMode} onChange={(event) => setArrivalMode(event.target.value as EmergencyArrival['arrival_mode'])}><option value="walk_in">Chegada espontânea</option><option value="ambulance">Ambulância</option><option value="other">Outro meio</option></select></label>

@@ -2,6 +2,7 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -271,7 +272,7 @@ class MedicationAdministration(Base):
     __tablename__ = "medication_administrations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    dispensation_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    dispensation_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     medication_name: Mapped[str] = mapped_column(String(120), nullable=False)
     dose: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -485,6 +486,7 @@ class MedicationAdministrationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     dispensation_id: str = Field(min_length=1, max_length=36)
     patient_reference: str = Field(min_length=1, max_length=36)
+    dose: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
     status: Literal["administered", "refused", "held"]
     reason: str = Field(default="", max_length=500)
 
@@ -1425,22 +1427,39 @@ def create_medication_administration(
     dispensation = resolve_medication_dispensation(payload.dispensation_id)
     if dispensation["patient_reference"] != payload.patient_reference:
         raise HTTPException(status_code=409, detail="A dispensação não pertence ao paciente selecionado")
-    patient = db.get(Patient, payload.patient_reference)
+    patient = db.scalar(
+        select(Patient).where(Patient.reference == payload.patient_reference).with_for_update()
+    )
     if patient is None or not patient.active:
         raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
-    if db.scalar(
-        select(MedicationAdministration.id).where(
+    try:
+        dose = Decimal(payload.dose.replace(",", "."))
+        dispensed_quantity = Decimal(dispensation["quantity"].replace(",", "."))
+    except (InvalidOperation, KeyError) as exc:
+        raise HTTPException(status_code=502, detail="A quantidade da dispensação é inválida") from exc
+    if not dose.is_finite() or dose <= 0 or not dispensed_quantity.is_finite():
+        raise HTTPException(status_code=422, detail="Informe uma dose válida e maior que zero")
+    previous_records = db.scalars(
+        select(MedicationAdministration).where(
             MedicationAdministration.dispensation_id == payload.dispensation_id
         )
-    ):
-        raise HTTPException(status_code=409, detail="Esta dispensação já foi registrada na Enfermagem")
+    ).all()
+    administered_quantity = sum(
+        (Decimal(record.dose.replace(",", ".")) for record in previous_records if record.status == "administered"),
+        Decimal(0),
+    )
+    remaining_quantity = dispensed_quantity - administered_quantity
+    if remaining_quantity <= 0:
+        raise HTTPException(status_code=409, detail="A quantidade dispensada já foi totalmente administrada")
+    if dose > remaining_quantity:
+        raise HTTPException(status_code=409, detail="A dose informada excede a quantidade ainda disponível da dispensação")
     if payload.status != "administered" and len(payload.reason) < 3:
         raise HTTPException(status_code=422, detail="Informe o motivo da recusa ou suspensão")
     record = MedicationAdministration(
         dispensation_id=dispensation["id"],
         patient_reference=patient.reference,
         medication_name=dispensation["medication_name"],
-        dose=dispensation["quantity"],
+        dose=format(dose.normalize(), "f"),
         unit=dispensation["unit"],
         status=payload.status,
         reason=payload.reason,
