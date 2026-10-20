@@ -5,7 +5,7 @@ import { readApiResponse } from '../api'
 
 type Patient = { reference: string; name: string; active?: boolean }
 type AppointmentType = 'consultation' | 'exam' | 'procedure' | 'return'
-type AppointmentStatus = 'scheduled' | 'confirmed' | 'arrived' | 'completed' | 'cancelled' | 'no_show'
+type AppointmentStatus = 'scheduled' | 'confirmed' | 'arrived' | 'called' | 'completed' | 'cancelled' | 'no_show'
 type Appointment = {
   id: number
   patient_reference: string
@@ -31,6 +31,7 @@ const appointmentStatuses: Record<AppointmentStatus, string> = {
   scheduled: 'Agendado',
   confirmed: 'Confirmado',
   arrived: 'Chegou',
+  called: 'Chamado',
   completed: 'Concluído',
   cancelled: 'Cancelado',
   no_show: 'Não compareceu',
@@ -199,6 +200,7 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
       <article><strong>{appointments.filter((item) => item.status === 'scheduled').length}</strong><span>Agendados</span></article>
       <article><strong>{appointments.filter((item) => item.status === 'confirmed').length}</strong><span>Confirmados</span></article>
       <article><strong>{appointments.filter((item) => item.status === 'arrived').length}</strong><span>Chegaram</span></article>
+      <article><strong>{appointments.filter((item) => item.status === 'called').length}</strong><span>Chamados</span></article>
       <article><strong>{appointments.filter((item) => item.status === 'completed').length}</strong><span>Concluídos</span></article>
     </div>
 
@@ -233,7 +235,7 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
             ? ['confirmed', 'arrived', 'cancelled', 'no_show']
             : appointment.status === 'confirmed'
               ? ['arrived', 'cancelled', 'no_show']
-              : appointment.status === 'arrived' ? ['completed'] : []
+              : appointment.status === 'arrived' ? ['called', 'completed'] : appointment.status === 'called' ? ['completed'] : []
           return <article className="reception-appointment-card" key={appointment.id}>
             <div className="reception-appointment-date"><CalendarClock size={18} /><strong>{displayDateTime(appointment.starts_at)}</strong><span><Clock3 size={14} /> até {new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(new Date(appointment.ends_at))}</span></div>
             <div className="reception-appointment-info"><strong>{appointment.patient_name}</strong><span>{appointmentTypes[appointment.appointment_type]} · {appointment.professional_name} · {appointment.location}</span>{appointment.purpose && <small>{appointment.purpose}</small>}</div>

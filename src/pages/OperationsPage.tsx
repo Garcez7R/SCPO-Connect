@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, ShieldCheck, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
@@ -448,12 +448,17 @@ export function HygienePage({ user }: { user: AuthUser }) {
 }
 
 export function MaintenanceQueuePage() {
+  const [tab, setTab] = useState<'requests' | 'assets'>('requests')
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [filters, setFilters] = useState({ from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [changes, setChanges] = useState<Record<string, { status: WorkOrderStatus; note: string }>>({})
+  const [alertsEnabled, setAlertsEnabled] = useState(false)
+  const seenOrderIds = useRef(new Set<string>())
+  const hasNotificationBaseline = useRef(false)
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   async function loadQueue(nextFilters = filters) {
     try {
@@ -490,6 +495,79 @@ export function MaintenanceQueuePage() {
     return () => { active = false }
   }, [filters])
 
+  useEffect(() => {
+    let active = true
+    const checkForNewOrders = async () => {
+      try {
+        const data = await readApiResponse<{ orders?: WorkOrder[] }>(
+          await fetch('/api/v1/maintenance/queue'),
+        )
+        if (!active) return
+        const openOrders = (data.orders ?? []).filter((order) => order.status === 'open')
+        const newOrders = openOrders.filter((order) => !seenOrderIds.current.has(order.id))
+        if (hasNotificationBaseline.current && alertsEnabled && newOrders.length) {
+          const latest = newOrders[0]
+          setNotice(`Nova solicitação de manutenção: ${latest.title} · ${latest.department}.`)
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification('Nova solicitação de serviço', {
+                body: 'Há um novo chamado aguardando a equipe de manutenção.',
+                icon: '/scpo-connect-icon.png',
+              })
+            } catch (notificationError) {
+              setError(notificationError instanceof Error ? `Aviso do navegador indisponível: ${notificationError.message}` : 'Aviso do navegador indisponível.')
+            }
+          }
+          try {
+            const audio = audioContextRef.current
+            if (!audio || audio.state !== 'running') throw new Error('Reative o áudio do navegador nesta tela.')
+            const oscillator = audio.createOscillator()
+            const gain = audio.createGain()
+            oscillator.frequency.value = 880
+            gain.gain.setValueAtTime(0.15, audio.currentTime)
+            gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.35)
+            oscillator.connect(gain)
+            gain.connect(audio.destination)
+            oscillator.start()
+            oscillator.stop(audio.currentTime + 0.35)
+          } catch (audioError) {
+            setError(audioError instanceof Error ? `Alerta sonoro indisponível: ${audioError.message}` : 'Alerta sonoro indisponível.')
+          }
+        }
+        for (const order of data.orders ?? []) seenOrderIds.current.add(order.id)
+        hasNotificationBaseline.current = true
+      } catch (pollError) {
+        if (active) setError(pollError instanceof Error ? `Não foi possível verificar novos chamados: ${pollError.message}` : 'Não foi possível verificar novos chamados.')
+      }
+    }
+    void checkForNewOrders()
+    const interval = window.setInterval(() => void checkForNewOrders(), 20_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [alertsEnabled])
+
+  useEffect(() => () => {
+    if (audioContextRef.current) void audioContextRef.current.close()
+  }, [])
+
+  async function enableAlerts() {
+    setError('')
+    try {
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission()
+      }
+      const audio = new AudioContext()
+      await audio.resume()
+      audioContextRef.current = audio
+      setAlertsEnabled(true)
+      setNotice('Avisos ativos enquanto esta tela estiver aberta. Novos chamados serão sinalizados visualmente e por som.')
+    } catch (permissionError) {
+      setError(permissionError instanceof Error ? `Não foi possível ativar os avisos de áudio/navegador: ${permissionError.message}` : 'Não foi possível ativar os avisos de áudio/navegador.')
+    }
+  }
+
   function printResults() {
     document.body.classList.add('print-maintenance-queue')
     window.print()
@@ -519,14 +597,19 @@ export function MaintenanceQueuePage() {
 
   return <section className="work-orders-page page-enter maintenance-queue-page">
     <div className="page-title-row"><div><p className="eyebrow">EQUIPE · MANUTENÇÃO</p><h1>Manutenção</h1><p className="welcome-copy">Consulte solicitações de todos os setores e atualize o andamento dos serviços.</p></div><span className="module-icon module-icon-maintenance"><Wrench size={23} /></span></div>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas da Manutenção">
+      <button className={`button ${tab === 'requests' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'requests'} onClick={() => setTab('requests')}><ClipboardList size={16} /> Solicitações recebidas <span>{orders.filter((order) => order.status === 'open' || order.status === 'in_progress').length}</span></button>
+      <button className={`button ${tab === 'assets' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'assets'} onClick={() => setTab('assets')}><Wrench size={16} /> Patrimônio e preventivas</button>
+    </div>
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions"><button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
+    {tab === 'requests' ? <>
+    <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions">{alertsEnabled ? <span className="field-hint" role="status">Avisos ativos</span> : <button className="button button-secondary" type="button" onClick={() => void enableAlerts()}>Ativar alertas sonoros</button>}<button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
       <form className="maintenance-filters" onSubmit={(event) => { event.preventDefault(); void loadQueue(filters) }}><label className="field"><span className="field-label">De</span><input type="date" value={filters.from_date} onChange={(event) => setFilters({ ...filters, from_date: event.target.value })} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={filters.to_date} onChange={(event) => setFilters({ ...filters, to_date: event.target.value })} /></label><label className="field"><span className="field-label">Tipo de serviço</span><select value={filters.service_type} onChange={(event) => setFilters({ ...filters, service_type: event.target.value })}><option value="">Todos</option>{['Elétrica', 'Hidráulica', 'Climatização', 'Higienização', 'Equipamento', 'Estrutura e mobiliário', 'Rede e telefonia', 'Outro serviço'].map((type) => <option key={type}>{type}</option>)}</select></label><label className="field"><span className="field-label">Setor solicitante</span><input value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })} placeholder="Todos os setores" /></label><label className="field"><span className="field-label">Status</span><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos</option>{Object.entries(workOrderStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select value={filters.priority} onChange={(event) => setFilters({ ...filters, priority: event.target.value })}><option value="">Todas</option>{Object.entries(workOrderPriorities).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Assunto, local ou solicitante" /></label><div className="maintenance-filter-actions"><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Filtrar</button><button className="button button-secondary" type="button" onClick={() => { const empty = { from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' }; setFilters(empty); void loadQueue(empty) }}>Limpar</button></div></form>
       <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{orders.length} ordens</strong>{Object.entries(workOrderStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status] ?? 0}</b></span>)}</div>
       {loading ? <div className="history-empty">Carregando fila…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} editable onStatusChange={(status) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status, note: '' }), status } }))} status={changes[order.id]?.status ?? order.status} note={changes[order.id]?.note ?? ''} onNoteChange={(note) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status }), note } }))} onSave={() => void saveStatus(order)} saving={false} />)}</div> : <div className="history-empty"><CheckCircle2 size={20} /><span>Nenhuma ordem de serviço corresponde aos filtros.</span></div>}
     </section>
-    <AssetMaintenancePanel />
     <PrintSelectionPanel title="Relatório de Manutenção" rows={maintenancePrintRows} />
+    </> : <AssetMaintenancePanel />}
   </section>
 }
 

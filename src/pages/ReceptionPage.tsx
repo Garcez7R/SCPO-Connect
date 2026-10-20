@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ComponentType, FormEvent } from 'react'
 import { ArrowRight, Building2, Search, AlertTriangle, BadgeCheck, Info } from 'lucide-react'
 import { readApiResponse } from '../api'
-import { formatCpf, formatPhone } from '../inputFormatting'
+import { formatCpf, formatPhone, formatPostalCode } from '../inputFormatting'
 import AllergyFields from '../components/AllergyFields'
 import OutpatientEncounterPage from './OutpatientEncounterPage'
 import ReceptionAppointmentsPage from './ReceptionAppointmentsPage'
@@ -14,14 +14,29 @@ type Patient = {
   bed: string
   cpf?: string
   sus_card?: string
+  same_number?: string
+  mother_name?: string
+  health_plan?: string
   birth_date?: string | null
   phone?: string
+  email?: string
+  address?: string
+  address_number?: string
+  address_complement?: string
+  neighborhood?: string
+  city?: string
+  state?: string
+  postal_code?: string
+  responsible_name?: string
+  responsible_status?: 'unknown' | 'not_applicable' | 'provided'
+  responsible_relationship?: string
+  responsible_phone?: string
   allergies?: string
   allergies_status?: 'unknown' | 'none_known' | 'known'
   active?: boolean
 }
 type AuthUser = { id: string; permissions: Record<string, string[]> }
-type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
+type EmergencyArrivalStatus = 'waiting' | 'called' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
 type TreatmentTrack = 'clinical' | 'psychiatric' | 'combined'
 type AllergyReportStatus = 'not_asked' | 'reported' | 'denied'
 type EmergencyArrival = {
@@ -39,16 +54,49 @@ type EmergencyArrival = {
   updated_at: string
 }
 type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
-type ReceptionTab = 'emergency' | 'outpatient' | 'appointments' | 'admissions'
+type ReceptionTab = 'emergency' | 'outpatient' | 'appointments' | 'admissions' | 'calls'
 type HospitalBed = { id: string; unit_name: string; room: string; label: string; status: string; occupied: boolean }
 
 const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
   waiting: 'Aguardando',
+  called: 'Chamado',
   in_service: 'Em atendimento',
   completed: 'Concluído',
   cancelled: 'Cancelado',
   admitted: 'Internado',
 }
+
+const emptyEmergencyPatient = () => ({
+  cpf: '',
+  sus_card: '',
+  same_number: '',
+  mother_name: '',
+  health_plan: '',
+  birth_date: '',
+  sex: '',
+  phone: '',
+  email: '',
+  address: '',
+  address_number: '',
+  address_complement: '',
+  neighborhood: '',
+  city: '',
+  state: '',
+  postal_code: '',
+  responsible_name: '',
+  responsible_status: 'unknown' as 'unknown' | 'not_applicable' | 'provided',
+  responsible_relationship: '',
+  responsible_phone: '',
+  responsible_address: '',
+  responsible_address_number: '',
+  responsible_address_complement: '',
+  responsible_neighborhood: '',
+  responsible_city: '',
+  responsible_state: '',
+  responsible_postal_code: '',
+  allergies: '',
+  allergies_status: 'unknown' as NonNullable<Patient['allergies_status']>,
+})
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -79,11 +127,11 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [patients, setPatients] = useState<Patient[]>([])
   const [beds, setBeds] = useState<HospitalBed[]>([])
   const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
-  const [counts, setCounts] = useState<EmergencyArrivalCounts>({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0 })
+  const [counts, setCounts] = useState<EmergencyArrivalCounts>({ waiting: 0, called: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0 })
   const [patientReference, setPatientReference] = useState('')
   const [patientName, setPatientName] = useState('')
   const [createCentralPatient, setCreateCentralPatient] = useState(false)
-  const [emergencyPatient, setEmergencyPatient] = useState({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' as NonNullable<Patient['allergies_status']> })
+  const [emergencyPatient, setEmergencyPatient] = useState(emptyEmergencyPatient)
   const [patientSearch, setPatientSearch] = useState('')
   const [arrivalMode, setArrivalMode] = useState<EmergencyArrival['arrival_mode']>('walk_in')
   const [reason, setReason] = useState('')
@@ -113,7 +161,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       const data = await readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(response)
       setArrivals(data.arrivals ?? [])
       setTotal(data.total ?? 0)
-      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...data.status_counts })
+      setCounts({ waiting: 0, called: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...data.status_counts })
       setOffset(pageOffset)
       setError('')
     } catch (loadError) {
@@ -138,7 +186,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       setBeds(bedData.beds ?? [])
       setArrivals(arrivalsData.arrivals ?? [])
       setTotal(arrivalsData.total ?? 0)
-      setCounts({ waiting: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...arrivalsData.status_counts })
+      setCounts({ waiting: 0, called: 0, in_service: 0, completed: 0, cancelled: 0, admitted: 0, ...arrivalsData.status_counts })
       setError('')
     }).catch((loadError) => {
       if (current) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a Recepção.')
@@ -156,7 +204,13 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
         body: JSON.stringify({
           patient_reference: patientReference || null,
           patient_name: patientName.trim(),
-          new_patient: createCentralPatient ? { name: patientName.trim(), ...emergencyPatient, birth_date: emergencyPatient.birth_date || null } : null,
+          new_patient: createCentralPatient ? {
+            name: patientName.trim(),
+            ...emergencyPatient,
+            birth_date: emergencyPatient.birth_date || null,
+            state: emergencyPatient.state.trim().toUpperCase(),
+            postal_code: emergencyPatient.postal_code.replace(/\D/g, ''),
+          } : null,
           arrival_mode: arrivalMode,
           reason: reason.trim(),
           allergy_report_status: allergyReportStatus,
@@ -166,7 +220,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       await readApiResponse<EmergencyArrival>(response)
       setPatientReference(''); setPatientName(''); setPatientSearch('')
       setCreateCentralPatient(false)
-      setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' })
+      setEmergencyPatient(emptyEmergencyPatient())
       setArrivalMode('walk_in'); setReason('')
       setAllergyReportStatus('not_asked'); setReportedAllergies('')
       setArrivalFormOpen(false)
@@ -237,14 +291,15 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
 
   return <section className="reception-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : tab === 'appointments' ? 'Organize consultas, exames e procedimentos em uma agenda compartilhada.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : tab === 'appointments' ? 'Organize consultas, exames e procedimentos em uma agenda compartilhada.' : tab === 'calls' ? 'Chame pacientes na sala de espera com painel visual e anúncio por voz opcional.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
     <div className="admin-tabs module-tabs reception-primary-tabs" role="tablist" aria-label="Fluxos da Recepção">
       <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
       <button className={`button ${tab === 'outpatient' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'outpatient'} onClick={() => setTab('outpatient')}>Ficha ambulatorial</button>
       <button className={`button ${tab === 'appointments' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'appointments'} onClick={() => setTab('appointments')}>Agendamentos</button>
+      <button className={`button ${tab === 'calls' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calls'} onClick={() => setTab('calls')}><span>Painel de chamadas</span><span>{counts.waiting + counts.called}</span></button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} /> : <>
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
       {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
       <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
@@ -255,13 +310,37 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
           {!createCentralPatient && <><label className="field"><span className="field-label">Buscar paciente cadastrado (opcional)</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, quarto, leito ou identificador" /></label>
           <label className="field"><span className="field-label">Vincular ao cadastro existente</span><select value={patientReference} onChange={(event) => { const reference = event.target.value; const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? ''); if (patient) setPatientSearch(`${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}`) }}><option value="">Sem vínculo cadastral</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}{patient.cpf ? ` · CPF ${patient.cpf}` : ''}</option>)}</select></label>{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}{patientSearch.trim() && !filteredPatients.length && <p className="form-message" role="status">Nenhum cadastro correspondente. Você pode registrar a chegada sem vínculo ou criar um cadastro central.</p>}</>}
           <label className="field"><span className="field-label">{createCentralPatient ? 'Nome completo para novo cadastro' : 'Nome da pessoa atendida'}</span><input required minLength={2} maxLength={120} value={patientName} onChange={(event) => { setPatientName(event.target.value); if (patientReference) setPatientReference('') }} placeholder="Nome informado na recepção" /></label>
-          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setPatientSearch(''); setEmergencyPatient({ cpf: '', sus_card: '', birth_date: '', sex: '', phone: '', allergies: '', allergies_status: 'unknown' }) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
+          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setPatientSearch(''); setEmergencyPatient(emptyEmergencyPatient()) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
           {createCentralPatient && <>
             <label className="field"><span className="field-label">CPF (opcional)</span><input inputMode="numeric" maxLength={14} value={formatCpf(emergencyPatient.cpf)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, cpf: formatCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
             <label className="field"><span className="field-label">Cartão Nacional de Saúde (opcional)</span><input inputMode="numeric" maxLength={20} value={emergencyPatient.sus_card} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
+            <label className="field"><span className="field-label">Nº SAME / prontuário</span><input maxLength={40} value={emergencyPatient.same_number} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, same_number: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Nome da mãe</span><input maxLength={120} value={emergencyPatient.mother_name} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, mother_name: event.target.value })} /></label>
             <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={emergencyPatient.birth_date} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, birth_date: event.target.value })} /></label>
             <label className="field"><span className="field-label">Sexo (opcional)</span><select value={emergencyPatient.sex} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sex: event.target.value })}><option value="">Não informado</option><option>Feminino</option><option>Masculino</option><option>Outro</option><option>Não informado</option></select></label>
             <label className="field"><span className="field-label">Telefone (opcional)</span><input inputMode="tel" maxLength={20} autoComplete="tel" value={formatPhone(emergencyPatient.phone)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, phone: formatPhone(event.target.value) })} /></label>
+            <label className="field"><span className="field-label">E-mail (opcional)</span><input type="email" maxLength={160} autoComplete="email" value={emergencyPatient.email} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, email: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Convênio</span><input maxLength={120} value={emergencyPatient.health_plan} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, health_plan: event.target.value })} placeholder="SUS ou convênio cadastrado" /></label>
+            <label className="field"><span className="field-label">Rua / endereço</span><input maxLength={180} value={emergencyPatient.address} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, address: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Número</span><input maxLength={24} value={emergencyPatient.address_number} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, address_number: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={emergencyPatient.address_complement} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, address_complement: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={emergencyPatient.neighborhood} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, neighborhood: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Município</span><input maxLength={100} value={emergencyPatient.city} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, city: event.target.value })} /></label>
+            <label className="field"><span className="field-label">UF</span><input maxLength={2} value={emergencyPatient.state} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, state: event.target.value.toUpperCase() })} /></label>
+            <label className="field"><span className="field-label">CEP</span><input inputMode="numeric" maxLength={9} value={formatPostalCode(emergencyPatient.postal_code)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, postal_code: formatPostalCode(event.target.value) })} /></label>
+            <label className="field"><span className="field-label">Situação do responsável</span><select value={emergencyPatient.responsible_status} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_status: event.target.value as typeof emergencyPatient.responsible_status })}><option value="unknown">Não informado</option><option value="not_applicable">Não se aplica</option><option value="provided">Informado</option></select></label>
+            {emergencyPatient.responsible_status === 'provided' && <>
+              <label className="field"><span className="field-label">Nome do responsável</span><input required maxLength={120} value={emergencyPatient.responsible_name} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_name: event.target.value })} /></label>
+              <label className="field"><span className="field-label">Vínculo com o paciente</span><input maxLength={60} value={emergencyPatient.responsible_relationship} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_relationship: event.target.value })} /></label>
+              <label className="field"><span className="field-label">Telefone do responsável</span><input inputMode="tel" maxLength={20} value={formatPhone(emergencyPatient.responsible_phone)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_phone: formatPhone(event.target.value) })} /></label>
+              <label className="field"><span className="field-label">Endereço do responsável</span><input maxLength={180} value={emergencyPatient.responsible_address} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_address: event.target.value })} /></label>
+              <label className="field"><span className="field-label">Número</span><input maxLength={24} value={emergencyPatient.responsible_address_number} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_address_number: event.target.value })} /></label>
+              <label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={emergencyPatient.responsible_address_complement} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_address_complement: event.target.value })} /></label>
+              <label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={emergencyPatient.responsible_neighborhood} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_neighborhood: event.target.value })} /></label>
+              <label className="field"><span className="field-label">Município</span><input maxLength={100} value={emergencyPatient.responsible_city} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_city: event.target.value })} /></label>
+              <label className="field"><span className="field-label">UF</span><input maxLength={2} value={emergencyPatient.responsible_state} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_state: event.target.value.toUpperCase() })} /></label>
+              <label className="field"><span className="field-label">CEP</span><input inputMode="numeric" maxLength={9} value={formatPostalCode(emergencyPatient.responsible_postal_code)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, responsible_postal_code: formatPostalCode(event.target.value) })} /></label>
+            </>}
             <AllergyFields status={emergencyPatient.allergies_status} allergies={emergencyPatient.allergies} onChange={(allergies_status, allergies) => setEmergencyPatient((current) => ({ ...current, allergies_status, allergies }))} />
             <PatientAllergyAlert patient={emergencyPatient} />
           </>}
@@ -284,8 +363,8 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
           <ReceptionAllergyAlert status={arrival.allergies_status} />
           {arrival.allergy_report_status === 'reported' && <p className="field-hint">Alergia relatada na chegada · confirme com a equipe clínica.</p>}
           <div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>
-          {canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span><select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
-          {canUpdate && arrival.patient_reference && ['waiting', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}>
+          {canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span><select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="called">Chamado</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
+          {canUpdate && arrival.patient_reference && ['waiting', 'called', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}>
             <label className="field"><span className="field-label">Perfil de cuidado da internação</span><select required value={admissionDraft[arrival.id]?.treatmentTrack ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: current[arrival.id]?.bedId ?? '', treatmentTrack: event.target.value as TreatmentTrack } }))}><option value="">Selecione o perfil de cuidado</option><option value="clinical">Tratamento clínico</option><option value="psychiatric">Tratamento psiquiátrico</option><option value="combined">Cuidado clínico e psiquiátrico</option></select><span className="field-hint">Classifica o fluxo assistencial; não representa diagnóstico.</span></label>
             <label className="field"><span className="field-label">Leito físico disponível</span><select required value={admissionDraft[arrival.id]?.bedId ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: event.target.value, treatmentTrack: current[arrival.id]?.treatmentTrack ?? 'clinical' } }))}><option value="">Selecione unidade, quarto e leito</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Cadastre ou libere um leito em Gestão Hospitalar.</span>}</label>
             <button className="button button-secondary" type="submit" disabled={updating === arrival.id || !admissionDraft[arrival.id]?.bedId || !admissionDraft[arrival.id]?.treatmentTrack || !beds.some((bed) => bed.id === admissionDraft[arrival.id]?.bedId && bed.status === 'available' && !bed.occupied)}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button>
@@ -297,5 +376,129 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   </section>
 }
 
+type WaitingRoomItem = {
+  id: string
+  patient_name: string
+  status: 'waiting' | 'called'
+  type: 'appointment' | 'arrival'
+  starts_at: string
+  code: string
+}
+
+function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
+  const [items, setItems] = useState<WaitingRoomItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [updating, setUpdating] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  async function loadQueue() {
+    try {
+      const today = new Date()
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+      const params = new URLSearchParams({ from_at: start.toISOString(), to_at: end.toISOString() })
+      const [appointmentsResponse, arrivalsResponse] = await Promise.all([
+        fetch(`/api/v1/reception/appointments?${params}&limit=100&offset=0`),
+        fetch('/api/v1/reception/arrivals?limit=100&offset=0'),
+      ])
+      const [appointmentData, arrivalData] = await Promise.all([
+        readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; status: string }> }>(appointmentsResponse),
+        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string }> }>(arrivalsResponse),
+      ])
+      const appointments = (appointmentData.appointments ?? [])
+        .filter((item) => item.status === 'arrived' || item.status === 'called')
+        .map((item): WaitingRoomItem => ({
+          id: String(item.id),
+          patient_name: item.patient_name,
+          starts_at: item.starts_at,
+          status: item.status === 'called' ? 'called' : 'waiting',
+          type: 'appointment',
+          code: `A-${item.id}`,
+        }))
+      const arrivals = (arrivalData.arrivals ?? [])
+        .filter((item) => item.status === 'waiting' || item.status === 'called')
+        .map((item): WaitingRoomItem => ({
+          id: item.id,
+          patient_name: item.patient_name,
+          starts_at: item.created_at,
+          status: item.status === 'called' ? 'called' : 'waiting',
+          type: 'arrival',
+          code: `E-${item.id.slice(0, 6).toUpperCase()}`,
+        }))
+      setItems([...appointments, ...arrivals].sort((left, right) =>
+        Number(left.status === 'called') - Number(right.status === 'called')
+        || left.starts_at.localeCompare(right.starts_at),
+      ))
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível atualizar a fila de chamadas.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadQueue(), 0)
+    const interval = window.setInterval(() => void loadQueue(), 15_000)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  function announce(item: WaitingRoomItem) {
+    if (!('speechSynthesis' in window)) {
+      setNotice('Este navegador não oferece anúncio por voz. A chamada visual continua disponível.')
+      return false
+    }
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(
+      `Paciente ${item.patient_name}, código ${item.code}. Por favor, dirija-se à recepção.`,
+    )
+    utterance.lang = 'pt-BR'
+    utterance.onerror = () => setError('O navegador não conseguiu reproduzir o anúncio por voz.')
+    window.speechSynthesis.speak(utterance)
+    return true
+  }
+
+  async function callPatient(item: WaitingRoomItem, withVoice: boolean) {
+    setUpdating(`${item.type}-${item.id}`)
+    setError('')
+    setNotice('')
+    try {
+      const path = item.type === 'appointment'
+        ? `/api/v1/reception/appointments/${encodeURIComponent(item.id)}`
+        : `/api/v1/reception/arrivals/${encodeURIComponent(item.id)}`
+      await readApiResponse(await fetch(path, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'called' }),
+      }))
+      const voiceAvailable = withVoice ? announce(item) : true
+      setNotice(`${item.code} · ${item.patient_name} foi chamado.${withVoice && !voiceAvailable ? ' O navegador não oferece anúncio por voz.' : ''}`)
+      await loadQueue()
+    } catch (callError) {
+      setError(callError instanceof Error ? callError.message : 'Não foi possível chamar o paciente.')
+    } finally {
+      setUpdating('')
+    }
+  }
+
+  const waiting = items.filter((item) => item.status === 'waiting')
+  const called = items.filter((item) => item.status === 'called')
+
+  return <section className="waiting-room-board patient-list-panel">
+    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. Exibe somente código e nome, sem motivo ou informação clínica.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={() => { void document.documentElement.requestFullscreen().catch((fullscreenError: unknown) => setError(fullscreenError instanceof Error ? fullscreenError.message : 'Não foi possível ativar a tela cheia.')) }}>Tela cheia</button></div></div>
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {!canUpdate && <div className="form-message form-message-warning" role="note">Seu perfil pode acompanhar as chamadas, mas não pode iniciar uma chamada.</div>}
+    <div className="waiting-room-counts"><article><strong>{waiting.length}</strong><span>Aguardando chamada</span></article><article><strong>{called.length}</strong><span>Chamados</span></article></div>
+    {loading ? <div className="history-empty">Carregando fila de chamadas…</div> : !items.length ? <div className="history-empty">Não há pacientes aguardando ou chamados neste momento.</div> : <div className="waiting-room-lists" aria-live="polite">
+      {waiting.length > 0 && <section><h3>Aguardando</h3><div className="waiting-room-cards">{waiting.map((item) => <article className="waiting-room-card" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>{item.type === 'appointment' ? 'Agendamento' : 'Emergência'} · {dateTime(item.starts_at)}</small>{canUpdate && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, false)}>Chamar na tela</button><button className="button button-secondary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, true)}>Chamar com voz</button></div>}</article>)}</div></section>}
+      {called.length > 0 && <section><h3>Chamados</h3><div className="waiting-room-cards">{called.map((item) => <article className="waiting-room-card waiting-room-card-called" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>Chamado · {dateTime(item.starts_at)}</small>{'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar por voz</button>}</article>)}</div></section>}
+    </div>}
+  </section>
+}
 
 export default ReceptionPage

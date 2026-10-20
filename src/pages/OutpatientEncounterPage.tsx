@@ -12,6 +12,7 @@ type Patient = {
   bed: string
   cpf?: string
   sus_card?: string
+  same_number?: string
   active?: boolean
 }
 
@@ -45,12 +46,17 @@ type NewPatientForm = {
   sex: string
   cpf: string
   sus_card: string
+  same_number: string
   health_plan: string
+  phone: string
+  email: string
   address: string
   address_number: string
+  address_complement: string
   neighborhood: string
   city: string
   state: string
+  postal_code: string
 }
 
 const encounterTypes: Array<[EncounterType, string]> = [
@@ -86,12 +92,17 @@ const emptyNewPatient = (): NewPatientForm => ({
   sex: '',
   cpf: '',
   sus_card: '',
+  same_number: '',
   health_plan: '',
+  phone: '',
+  email: '',
   address: '',
   address_number: '',
+  address_complement: '',
   neighborhood: '',
   city: '',
   state: '',
+  postal_code: '',
 })
 
 function dateTime(value: string) {
@@ -131,7 +142,6 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
   const [newPatientMode, setNewPatientMode] = useState(false)
   const [newPatient, setNewPatient] = useState<NewPatientForm>(emptyNewPatient)
   const [encounterType, setEncounterType] = useState<EncounterType>('outpatient')
-  const [sameNumber, setSameNumber] = useState('')
   const [physicianName, setPhysicianName] = useState('')
   const [examination, setExamination] = useState('')
   const [activityRows, setActivityRows] = useState<ActivityRow[]>(emptyActivityRows)
@@ -218,7 +228,9 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
         allergies_status: 'unknown',
       } : null,
       encounter_type: encounterType,
-      same_number: sameNumber.trim(),
+      same_number: newPatientMode
+        ? newPatient.same_number.trim()
+        : patients.find((patient) => patient.reference === patientReference)?.same_number ?? '',
       physician_name: physicianName.trim(),
       examination: examination.trim(),
       activity_rows: activityRows,
@@ -241,7 +253,6 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
       setNewPatientMode(false)
       setNewPatient(emptyNewPatient())
       setEncounterType('outpatient')
-      setSameNumber('')
       setPhysicianName('')
       setExamination('')
       setActivityRows(emptyActivityRows())
@@ -288,18 +299,23 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
             <label className="field"><span className="field-label">Sexo</span><select value={newPatient.sex} onChange={(event) => setNewPatient({ ...newPatient, sex: event.target.value })}><option value="">Não informado</option><option value="Feminino">Feminino</option><option value="Masculino">Masculino</option><option value="Outro">Outro</option><option value="Prefere não informar">Prefere não informar</option></select></label>
             <label className="field"><span className="field-label">CPF</span><input inputMode="numeric" maxLength={14} value={formatCpf(newPatient.cpf)} onChange={(event) => setNewPatient({ ...newPatient, cpf: formatCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
             <label className="field"><span className="field-label">CNS / Cartão SUS</span><input inputMode="numeric" maxLength={20} value={newPatient.sus_card} onChange={(event) => setNewPatient({ ...newPatient, sus_card: event.target.value.replace(/\D/g, '') })} /></label>
+            <label className="field"><span className="field-label">Nº SAME / prontuário</span><input maxLength={40} value={newPatient.same_number} onChange={(event) => setNewPatient({ ...newPatient, same_number: event.target.value })} /></label>
             <label className="field"><span className="field-label">Convênio</span><input maxLength={120} value={newPatient.health_plan} onChange={(event) => setNewPatient({ ...newPatient, health_plan: event.target.value })} placeholder="SUS ou convênio cadastrado" /></label>
+            <label className="field"><span className="field-label">Telefone</span><input inputMode="tel" maxLength={40} value={newPatient.phone} onChange={(event) => setNewPatient({ ...newPatient, phone: event.target.value })} /></label>
+            <label className="field"><span className="field-label">E-mail</span><input type="email" maxLength={160} value={newPatient.email} onChange={(event) => setNewPatient({ ...newPatient, email: event.target.value })} /></label>
             <label className="field"><span className="field-label">Rua / endereço</span><input maxLength={180} value={newPatient.address} onChange={(event) => setNewPatient({ ...newPatient, address: event.target.value })} /></label>
             <label className="field"><span className="field-label">Número</span><input maxLength={24} value={newPatient.address_number} onChange={(event) => setNewPatient({ ...newPatient, address_number: event.target.value })} /></label>
+            <label className="field"><span className="field-label">Complemento</span><input maxLength={100} value={newPatient.address_complement} onChange={(event) => setNewPatient({ ...newPatient, address_complement: event.target.value })} /></label>
             <label className="field"><span className="field-label">Bairro</span><input maxLength={100} value={newPatient.neighborhood} onChange={(event) => setNewPatient({ ...newPatient, neighborhood: event.target.value })} /></label>
             <label className="field"><span className="field-label">Município</span><input maxLength={100} value={newPatient.city} onChange={(event) => setNewPatient({ ...newPatient, city: event.target.value })} /></label>
             <label className="field"><span className="field-label">UF</span><input maxLength={2} value={newPatient.state} onChange={(event) => setNewPatient({ ...newPatient, state: event.target.value.toUpperCase() })} /></label>
+            <label className="field"><span className="field-label">CEP</span><input inputMode="numeric" maxLength={12} value={newPatient.postal_code} onChange={(event) => setNewPatient({ ...newPatient, postal_code: event.target.value.replace(/\D/g, '').slice(0, 8) })} /></label>
           </div>
         </>}
       </div>
       <div className="field-grid field-grid-three outpatient-details-grid">
         <label className="field"><span className="field-label">Tipo de atendimento</span><select value={encounterType} onChange={(event) => setEncounterType(event.target.value as EncounterType)}>{encounterTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">Nº SAME / prontuário</span><input maxLength={40} value={sameNumber} onChange={(event) => setSameNumber(event.target.value)} placeholder="Número do prontuário, se disponível" /></label>
+        <label className="field"><span className="field-label">Nº SAME / prontuário</span><input maxLength={40} value={newPatientMode ? newPatient.same_number : patients.find((patient) => patient.reference === patientReference)?.same_number ?? ''} readOnly={!newPatientMode} onChange={(event) => setNewPatient((current) => ({ ...current, same_number: event.target.value }))} placeholder="Cadastro central do paciente" /></label>
         <label className="field"><span className="field-label">Médico responsável / plantonista</span><input maxLength={120} value={physicianName} onChange={(event) => setPhysicianName(event.target.value)} placeholder="Nome do médico" /></label>
       </div>
       <label className="field"><span className="field-label">Exame</span><textarea maxLength={1000} rows={3} value={examination} onChange={(event) => setExamination(event.target.value)} placeholder="Exames ou observações para o atendimento" /></label>
@@ -348,9 +364,9 @@ function OutpatientPrintSheet({ encounter }: { encounter: OutpatientEncounter })
     </header>
     <div className="outpatient-print-record"><span><strong>Atendimento Nº:</strong> {encounter.id}</span><span><strong>Data:</strong> {printedDate}</span><span><strong>Horário:</strong> {printedTime}</span><span><strong>Recepcionista:</strong> {encounter.created_by}</span></div>
     <section className="outpatient-print-section">
-      <div className="outpatient-print-grid outpatient-print-grid-three"><span><strong>Paciente:</strong> {patient.name}</span><span><strong>Nº do cadastro:</strong> {patient.reference}</span><span><strong>SAME:</strong> {patient.same_number || 'Não informado'}</span></div>
-      <div className="outpatient-print-grid outpatient-print-grid-four"><span><strong>Nascimento:</strong> {dateOnly(patient.birth_date)}</span><span><strong>Idade:</strong> {ageLabel(patient)}</span><span><strong>Mãe:</strong> {patient.mother_name || 'Não informado'}</span><span><strong>Sexo:</strong> {patient.sex || 'Não informado'}</span></div>
-      <div className="outpatient-print-grid outpatient-print-grid-two"><span><strong>CPF:</strong> {patient.cpf || 'Não informado'}</span><span><strong>CNS:</strong> {patient.sus_card || 'Não informado'}</span></div>
+      <div className="outpatient-print-grid outpatient-print-grid-two"><span><strong>Paciente:</strong> {patient.name}</span><span><strong>Nº do cadastro:</strong> {patient.reference}</span></div>
+      <div className="outpatient-print-grid outpatient-print-grid-two"><span><strong>Nascimento:</strong> {dateOnly(patient.birth_date)} · <strong>Idade:</strong> {ageLabel(patient)}</span><span><strong>Mãe:</strong> {patient.mother_name || 'Não informado'} · <strong>Sexo:</strong> {patient.sex || 'Não informado'}</span></div>
+      <div className="outpatient-print-grid outpatient-print-grid-two"><span><strong>CPF:</strong> {patient.cpf || 'Não informado'}</span><span><strong>CNS:</strong> {patient.sus_card || 'Não informado'} · <strong>SAME:</strong> {patient.same_number || 'Não informado'}</span></div>
     </section>
     <section className="outpatient-print-section">
       <strong>Endereço</strong>

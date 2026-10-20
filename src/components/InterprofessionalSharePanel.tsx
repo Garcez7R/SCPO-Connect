@@ -142,7 +142,7 @@ export default function InterprofessionalSharePanel({
 
   return <section className="interprofessional-sharing">
     <form className="psychology-panel interprofessional-share-form" onSubmit={(event) => void submit(event)}>
-      <div className="section-heading"><div><p className="eyebrow">COMPARTILHAMENTO SELETIVO</p><h2>Enviar resumo assistencial</h2><p className="welcome-copy">Destino: {moduleLabel(recipientModule)}. Nenhum registro privado do módulo será copiado automaticamente.</p></div><LockKeyhole size={19} /></div>
+      <div className="section-heading"><div><p className="eyebrow">COMPARTILHAMENTO SELETIVO</p><h2>Enviar resumo assistencial</h2><p className="welcome-copy">Destino: {moduleLabel(recipientModule)}. Nenhum registro privado do módulo será copiado automaticamente; o envio também não cria encaminhamento nem atendimento no módulo destinatário.</p></div><LockKeyhole size={19} /></div>
       <div className="field-grid field-grid-two">
         <label className="field"><span className="field-label">Paciente</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione o paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patientName(patient.reference)}</option>)}</select></label>
         <label className="field"><span className="field-label">Finalidade do compartilhamento</span><input required minLength={10} maxLength={300} value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder="Ex.: coordenar o acompanhamento após alta" /></label>
@@ -159,7 +159,7 @@ export default function InterprofessionalSharePanel({
       <button className="button button-primary" type="submit" disabled={saving || !patients.length || !categories.length}>{saving ? 'Compartilhando…' : 'Compartilhar resumo'} <ArrowRight size={16} /></button>
     </form>
     <section className="psychology-panel interprofessional-share-list">
-      <div className="section-heading"><div><p className="eyebrow">REGISTROS SELETIVOS</p><h2>Compartilhamentos</h2><p className="welcome-copy">A equipe destinatária visualiza somente resumos ativos destinados ao seu módulo.</p></div><span className="module-total">{visibleShares.length}</span></div>
+      <div className="section-heading"><div><p className="eyebrow">REGISTROS SELETIVOS</p><h2>Compartilhamentos</h2><p className="welcome-copy">A equipe destinatária visualiza somente resumos ativos destinados ao seu módulo. Se o caso exigir atendimento, a equipe destinatária deve avaliar o resumo e registrar a demanda na própria fila.</p></div><span className="module-total">{visibleShares.length}</span></div>
       <div className="psychology-filter-row"><label className="field"><span className="field-label">Exibir</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="all">Enviados e recebidos</option><option value="received">Recebidos</option><option value="sent">Enviados por mim</option></select></label></div>
       {loading ? <div className="history-empty">Carregando compartilhamentos…</div> : visibleShares.length ? <div className="interprofessional-share-items">{visibleShares.map((share) => {
         const revoked = Boolean(share.revoked_at)

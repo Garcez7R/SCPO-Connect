@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
 from pydantic import ValidationError
-from scpo_services import common, nursing
+from scpo_services import common, demo_vitals, nursing
 from scpo_services.common import (
     AuditOutbox,
     DemoPrincipal,
@@ -79,6 +79,93 @@ def test_patient_identity_and_active_bed_are_unique(nursing_db: Session, nurse: 
     with pytest.raises(HTTPException, match="quarto e leito") as conflict:
         create_patient(nursing_db, nurse)
     assert conflict.value.status_code == 409
+
+
+def test_synthetic_vitals_dataset_can_be_seeded_and_removed(
+    nursing_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(demo_vitals, "emit_audit_event", lambda *args, **kwargs: None)
+    generated_at = datetime(2025, 2, 1, 12, tzinfo=UTC)
+
+    created_patients, created_records = demo_vitals.seed_demo_data(nursing_db, generated_at)
+    assert (created_patients, created_records) == (7, 210)
+    demo_patients = nursing_db.scalars(
+        select(nursing.Patient).where(nursing.Patient.name.like("DEMO - %"))
+    ).all()
+    assert len(demo_patients) == 7
+    demo_records = nursing_db.scalars(
+        select(nursing.VitalRecord).where(
+            nursing.VitalRecord.patient_reference.in_(
+                [patient.reference for patient in demo_patients]
+            )
+        )
+    ).all()
+    assert len(demo_records) == 210
+    assert all(
+        record.values["notes"].startswith("DADO SINTETICO PARA APRESENTACAO")
+        for record in demo_records
+    )
+    nursing_db.commit()
+
+    with pytest.raises(RuntimeError, match="já existem"):
+        demo_vitals.seed_demo_data(nursing_db, generated_at)
+    nursing_db.rollback()
+
+    dependency = nursing.PatientObservation(
+        patient_reference=demo_patients[0].reference,
+        attention_level="green",
+        observation="Registro de teste vinculado.",
+        treatment_status="completed",
+        actor_id="test-user",
+        actor_name="Usuário de teste",
+        created_at=generated_at,
+    )
+    nursing_db.add(dependency)
+    nursing_db.commit()
+    with pytest.raises(RuntimeError, match="patient_observations"):
+        demo_vitals.cleanup_demo_data(nursing_db, nursing_db.get_bind())
+    nursing_db.delete(dependency)
+    nursing_db.commit()
+
+    additional_record = nursing.VitalRecord(
+        patient_reference=demo_patients[0].reference,
+        actor_id="clinician",
+        actor_name="Profissional de teste",
+        values={"notes": "Aferição registrada durante o atendimento."},
+        glucose_unit="mg/dL",
+        not_applicable=[],
+        measured_at=generated_at,
+        recorded_at=generated_at,
+        voided_at=None,
+        voided_by="",
+        void_reason="",
+    )
+    nursing_db.add(additional_record)
+    nursing_db.commit()
+    with pytest.raises(RuntimeError, match="aferições não demonstrativas"):
+        demo_vitals.cleanup_demo_data(nursing_db, nursing_db.get_bind())
+    assert nursing_db.get(nursing.VitalRecord, additional_record.id) is not None
+    nursing_db.delete(additional_record)
+    nursing_db.commit()
+
+    removed_patients, removed_records = demo_vitals.cleanup_demo_data(
+        nursing_db, nursing_db.get_bind()
+    )
+    assert (removed_patients, removed_records) == (7, 210)
+    assert not nursing_db.scalars(
+        select(nursing.Patient).where(nursing.Patient.name.like("DEMO - %"))
+    ).all()
+
+
+def test_synthetic_vitals_requires_non_production_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(RuntimeError, match="--confirm-non-production"):
+        demo_vitals.require_non_production_confirmation(False)
+
+    monkeypatch.setenv("SCPO_ENV", "production")
+    with pytest.raises(RuntimeError, match="bloqueada no ambiente de produção"):
+        demo_vitals.require_non_production_confirmation(True)
 
 
 def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
@@ -396,6 +483,16 @@ def test_emergency_arrival_can_create_central_patient_without_admission(
                 name="Pessoa em emergência",
                 allergies="Penicilina",
                 allergies_status="known",
+                email="pessoa@example.test",
+                address_complement="Casa 2",
+                responsible_name="Responsável de teste",
+                responsible_status="provided",
+                responsible_relationship="Familiar",
+                responsible_phone="(53) 99999-0000",
+                responsible_address="Rua de teste",
+                responsible_address_number="25",
+                responsible_city="Pedro Osório",
+                responsible_state="RS",
             ),
             reason="Atendimento de emergência",
         ),
@@ -408,6 +505,16 @@ def test_emergency_arrival_can_create_central_patient_without_admission(
     assert (patient.room, patient.bed) == ("", "")
     assert patient.active is True
     assert patient.allergies_status == "known"
+    assert patient.email == "pessoa@example.test"
+    assert patient.address_complement == "Casa 2"
+    assert patient.responsible_name == "Responsável de teste"
+    assert patient.responsible_status == "provided"
+    assert patient.responsible_relationship == "Familiar"
+    assert patient.responsible_phone == "(53) 99999-0000"
+    assert patient.responsible_address == "Rua de teste"
+    assert patient.responsible_address_number == "25"
+    assert patient.responsible_city == "Pedro Osório"
+    assert patient.responsible_state == "RS"
     assert arrival["allergies_status"] == "known"
     assert "allergies" not in arrival
 

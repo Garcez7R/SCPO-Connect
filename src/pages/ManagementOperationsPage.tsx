@@ -8,7 +8,7 @@ type PreventivePlan = { id: string; asset_id: string; asset_tag: string; asset_n
 type SafetyIncident = { id: string; incident_type: string; severity: string; occurred_at: string; unit: string; location: string; patient_reference: string | null; description: string; status: 'open' | 'investigating' | 'action_required' | 'closed'; investigation: string; corrective_action: string; reported_by: string; updated_by: string }
 type PatientReference = { reference: string; name: string; room: string; bed: string }
 type InstitutionalDocument = { id: string; title: string; document_type: string; version: string; content: string; status: 'draft' | 'in_review' | 'approved' | 'archived'; valid_until: string | null; created_by: string; approved_by: string; approved_at: string | null }
-type PanelTab = 'assets' | 'safety' | 'documents'
+type PanelTab = 'safety' | 'documents'
 
 function localDateTime() {
   const now = new Date()
@@ -21,23 +21,23 @@ function dateLabel(value: string | null) {
 }
 
 export function AdministrativeRoadmapPanel() {
-  const [tab, setTab] = useState<PanelTab>('assets')
+  const [tab, setTab] = useState<PanelTab>('safety')
   return <section className="patient-list-panel">
     <div className="section-heading"><div><p className="eyebrow">ROADMAP ADMINISTRATIVO · MVP</p><h2>Operações e governança</h2><p className="welcome-copy">Compras estão integradas ao módulo Farmácia; esta área reúne patrimônio, segurança e documentos institucionais.</p></div></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Frentes administrativas">
-      <button className={`button ${tab === 'assets' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'assets'} onClick={() => setTab('assets')}><Wrench size={16} /> Patrimônio</button>
       <button className={`button ${tab === 'safety' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'safety'} onClick={() => setTab('safety')}><AlertTriangle size={16} /> Segurança do paciente</button>
       <button className={`button ${tab === 'documents' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'documents'} onClick={() => setTab('documents')}><FileText size={16} /> Documentos e aprovações</button>
     </div>
-    {tab === 'assets' && <AssetMaintenancePanel />}
     {tab === 'safety' && <SafetyIncidentPanel />}
     {tab === 'documents' && <InstitutionalDocumentsPanel />}
   </section>
 }
 
 export function AssetMaintenancePanel() {
+  type AssetTab = 'assets' | 'preventive' | 'inventory' | 'calendar'
   const [assets, setAssets] = useState<Asset[]>([])
   const [plans, setPlans] = useState<PreventivePlan[]>([])
+  const [tab, setTab] = useState<AssetTab>('assets')
   const [assetForm, setAssetForm] = useState({ asset_tag: '', name: '', category: '', unit: '', location: '', manufacturer: '', model: '', serial_number: '' })
   const [planForm, setPlanForm] = useState({ asset_id: '', procedure: '', interval_days: '90', due_date: '', responsible: '' })
   const [saving, setSaving] = useState(false)
@@ -105,10 +105,18 @@ export function AssetMaintenancePanel() {
     } finally { setSaving(false) }
   }
 
+  const activePlans = plans.filter((plan) => plan.status !== 'completed')
+
   return <div className="management-operations-grid">
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <form className="account-create-panel" onSubmit={(event) => void createAsset(event)}>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Gestão de manutenção">
+      <button className={`button ${tab === 'assets' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'assets'} onClick={() => setTab('assets')}><Building2 size={16} /> Bens e equipamentos</button>
+      <button className={`button ${tab === 'preventive' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'preventive'} onClick={() => setTab('preventive')}><Wrench size={16} /> Manutenção preventiva</button>
+      <button className={`button ${tab === 'inventory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'inventory'} onClick={() => setTab('inventory')}>Inventário <span>{assets.length}</span></button>
+      <button className={`button ${tab === 'calendar' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calendar'} onClick={() => setTab('calendar')}>Calendário <span>{activePlans.length}</span></button>
+    </div>
+    {tab === 'assets' && <form className="account-create-panel" onSubmit={(event) => void createAsset(event)}>
       <h3><Building2 size={17} /> Cadastrar bem ou equipamento</h3>
       <div className="field-grid field-grid-two">
         <label className="field"><span className="field-label">Número patrimonial</span><input required minLength={2} maxLength={40} value={assetForm.asset_tag} onChange={(event) => setAssetForm({ ...assetForm, asset_tag: event.target.value })} /></label>
@@ -121,8 +129,8 @@ export function AssetMaintenancePanel() {
         <label className="field"><span className="field-label">Número de série (opcional)</span><input maxLength={100} value={assetForm.serial_number} onChange={(event) => setAssetForm({ ...assetForm, serial_number: event.target.value })} /></label>
       </div>
       <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar ativo'}</button>
-    </form>
-    <form className="account-create-panel" onSubmit={(event) => void createPlan(event)}>
+    </form>}
+    {tab === 'preventive' && <form className="account-create-panel" onSubmit={(event) => void createPlan(event)}>
       <h3>Programar manutenção preventiva</h3>
       <div className="field-grid field-grid-two">
         <label className="field"><span className="field-label">Ativo</span><select required value={planForm.asset_id} onChange={(event) => setPlanForm({ ...planForm, asset_id: event.target.value })}><option value="">Selecione um ativo</option>{assets.filter((asset) => asset.status === 'active').map((asset) => <option key={asset.id} value={asset.id}>{asset.asset_tag} · {asset.name}</option>)}</select></label>
@@ -132,15 +140,19 @@ export function AssetMaintenancePanel() {
         <label className="field"><span className="field-label">Responsável</span><input maxLength={120} value={planForm.responsible} onChange={(event) => setPlanForm({ ...planForm, responsible: event.target.value })} /></label>
       </div>
       <button className="button button-primary" type="submit" disabled={saving || !assets.length}>{saving ? 'Agendando…' : 'Agendar manutenção'}</button>
-    </form>
-    <section className="patient-list-panel">
-      <div className="section-heading"><div><p className="eyebrow">INVENTÁRIO E CALENDÁRIO</p><h3>Ativos e rotinas preventivas</h3></div><span className="module-total">{assets.length} ativos · {plans.length} rotinas</span></div>
-      {loading ? <div className="history-empty">Carregando patrimônio…</div> : <div className="collection-list">
-        {assets.map((asset) => <article className="collection-row" key={asset.id}><div className="collection-row-heading"><strong>{asset.asset_tag} · {asset.name}</strong><span className="work-order-status status-completed">Ativo</span></div><small>{asset.category} · {asset.unit}{asset.location ? ` · ${asset.location}` : ''}{asset.serial_number ? ` · Série ${asset.serial_number}` : ''}</small></article>)}
-        {plans.map((plan) => <article className="collection-row" key={plan.id}><div className="collection-row-heading"><strong>{plan.asset_tag} · {plan.procedure}</strong><span className={`work-order-status ${plan.due_date < new Date().toISOString().slice(0, 10) ? 'status-cancelled' : 'status-open'}`}>Próxima: {dateLabel(plan.due_date)}</span></div><small>A cada {plan.interval_days} dias · Responsável: {plan.responsible || 'Não definido'}{plan.last_completed_at ? ` · Última conclusão ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(plan.last_completed_at))}` : ''}</small><button className="button button-secondary" type="button" disabled={saving} onClick={() => void completePlan(plan)}><BadgeCheck size={15} /> Registrar conclusão</button></article>)}
-        {!assets.length && <div className="history-empty">Nenhum ativo patrimonial cadastrado.</div>}
-      </div>}
-    </section>
+    </form>}
+    {tab === 'inventory' && <section className="patient-list-panel">
+      <div className="section-heading"><div><p className="eyebrow">PATRIMÔNIO</p><h3>Inventário de bens e equipamentos</h3></div><span className="module-total">{assets.length} ativos</span></div>
+      {loading ? <div className="history-empty">Carregando inventário…</div> : assets.length ? <div className="collection-list">
+        {assets.map((asset) => <article className="collection-row" key={asset.id}><div className="collection-row-heading"><strong>{asset.asset_tag} · {asset.name}</strong><span className="work-order-status status-completed">Ativo</span></div><small>{asset.category} · {asset.unit}{asset.location ? ` · ${asset.location}` : ''}{asset.manufacturer ? ` · ${asset.manufacturer}` : ''}{asset.model ? ` · Modelo ${asset.model}` : ''}{asset.serial_number ? ` · Série ${asset.serial_number}` : ''}</small></article>)}
+      </div> : <div className="history-empty">Nenhum ativo patrimonial cadastrado.</div>}
+    </section>}
+    {tab === 'calendar' && <section className="patient-list-panel">
+      <div className="section-heading"><div><p className="eyebrow">AGENDA PREVENTIVA</p><h3>Próximas manutenções</h3></div><span className="module-total">{activePlans.length} rotinas</span></div>
+      {loading ? <div className="history-empty">Carregando calendário…</div> : activePlans.length ? <div className="collection-list">
+        {activePlans.map((plan) => <article className="collection-row" key={plan.id}><div className="collection-row-heading"><strong>{plan.asset_tag} · {plan.procedure}</strong><span className={`work-order-status ${plan.due_date < new Date().toISOString().slice(0, 10) ? 'status-cancelled' : 'status-open'}`}>Próxima: {dateLabel(plan.due_date)}</span></div><small>A cada {plan.interval_days} dias · Responsável: {plan.responsible || 'Não definido'}{plan.last_completed_at ? ` · Última conclusão ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(plan.last_completed_at))}` : ''}</small><button className="button button-secondary" type="button" disabled={saving} onClick={() => void completePlan(plan)}><BadgeCheck size={15} /> Registrar conclusão</button></article>)}
+      </div> : <div className="history-empty">Não há manutenções preventivas programadas.</div>}
+    </section>}
   </div>
 }
 

@@ -96,6 +96,7 @@ class Patient(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     mother_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     health_plan: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    same_number: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     room: Mapped[str] = mapped_column(String(20), nullable=False)
     bed: Mapped[str] = mapped_column(String(20), nullable=False)
     cpf: Mapped[str] = mapped_column(String(11), nullable=False, default="")
@@ -416,8 +417,30 @@ class EmergencyPatientPayload(BaseModel):
     cpf: str = Field(default="", max_length=14)
     sus_card: str = Field(default="", max_length=20)
     birth_date: date | None = None
+    mother_name: str = Field(default="", max_length=120)
+    health_plan: str = Field(default="", max_length=120)
+    same_number: str = Field(default="", max_length=40)
     sex: str = Field(default="", max_length=24)
     phone: str = Field(default="", max_length=40)
+    email: str = Field(default="", max_length=160)
+    address: str = Field(default="", max_length=180)
+    address_number: str = Field(default="", max_length=24)
+    address_complement: str = Field(default="", max_length=100)
+    neighborhood: str = Field(default="", max_length=100)
+    city: str = Field(default="", max_length=100)
+    state: str = Field(default="", max_length=2)
+    postal_code: str = Field(default="", max_length=12)
+    responsible_name: str = Field(default="", max_length=120)
+    responsible_status: Literal["unknown", "not_applicable", "provided"] = "unknown"
+    responsible_relationship: str = Field(default="", max_length=60)
+    responsible_phone: str = Field(default="", max_length=40)
+    responsible_address: str = Field(default="", max_length=180)
+    responsible_address_number: str = Field(default="", max_length=24)
+    responsible_address_complement: str = Field(default="", max_length=100)
+    responsible_neighborhood: str = Field(default="", max_length=100)
+    responsible_city: str = Field(default="", max_length=100)
+    responsible_state: str = Field(default="", max_length=2)
+    responsible_postal_code: str = Field(default="", max_length=12)
     allergies: str = Field(default="", max_length=1000)
     allergies_status: Literal["unknown", "none_known", "known"] = "unknown"
 
@@ -451,7 +474,6 @@ class EmergencyPatientPayload(BaseModel):
         if self.allergies_status != "known" and self.allergies:
             raise ValueError("Descreva alergias somente quando o status for 'known'")
         return self
-
 
 EmergencyArrivalPayload.model_rebuild()
 
@@ -492,12 +514,12 @@ class ReceptionAppointmentPayload(BaseModel):
 
 class ReceptionAppointmentStatusPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["confirmed", "arrived", "completed", "cancelled", "no_show"]
+    status: Literal["confirmed", "arrived", "called", "completed", "cancelled", "no_show"]
 
 
 class EmergencyArrivalStatusPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["waiting", "in_service", "completed", "cancelled"]
+    status: Literal["waiting", "called", "in_service", "completed", "cancelled"]
 
 
 class EmergencyAdmissionPayload(BaseModel):
@@ -1153,6 +1175,7 @@ class PatientPayload(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     mother_name: str = Field(default="", max_length=120)
     health_plan: str = Field(default="", max_length=120)
+    same_number: str = Field(default="", max_length=40)
     room: str = Field(default="", max_length=20)
     bed: str = Field(default="", max_length=20)
     cpf: str = Field(default="", max_length=14)
@@ -1546,7 +1569,7 @@ def list_emergency_arrivals(
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
-    status: Literal["waiting", "in_service", "completed", "cancelled", "admitted"] | None = None,
+    status: Literal["waiting", "called", "in_service", "completed", "cancelled", "admitted"] | None = None,
     q: Annotated[str, Query(max_length=120)] = "",
 ) -> dict[str, object]:
     filters = []
@@ -1572,7 +1595,8 @@ def list_emergency_arrivals(
             ),
             case(
                 (EmergencyArrival.status == "waiting", 0),
-                (EmergencyArrival.status == "in_service", 1),
+                (EmergencyArrival.status == "called", 1),
+                (EmergencyArrival.status == "in_service", 2),
                 else_=2,
             ),
             EmergencyArrival.created_at.desc(),
@@ -1660,6 +1684,9 @@ def create_emergency_arrival(
         patient = Patient(
             reference=str(uuid.uuid4()),
             name=patient_payload.name,
+            mother_name=patient_payload.mother_name,
+            health_plan=patient_payload.health_plan,
+            same_number=patient_payload.same_number,
             room="",
             bed="",
             cpf=patient_payload.cpf,
@@ -1669,7 +1696,25 @@ def create_emergency_arrival(
             birth_date=patient_payload.birth_date,
             sex=patient_payload.sex,
             phone=patient_payload.phone,
-            responsible_status="unknown",
+            email=patient_payload.email,
+            address=patient_payload.address,
+            address_number=patient_payload.address_number,
+            address_complement=patient_payload.address_complement,
+            neighborhood=patient_payload.neighborhood,
+            city=patient_payload.city,
+            state=patient_payload.state,
+            postal_code=patient_payload.postal_code,
+            responsible_name=patient_payload.responsible_name,
+            responsible_status=patient_payload.responsible_status,
+            responsible_relationship=patient_payload.responsible_relationship,
+            responsible_phone=patient_payload.responsible_phone,
+            responsible_address=patient_payload.responsible_address,
+            responsible_address_number=patient_payload.responsible_address_number,
+            responsible_address_complement=patient_payload.responsible_address_complement,
+            responsible_neighborhood=patient_payload.responsible_neighborhood,
+            responsible_city=patient_payload.responsible_city,
+            responsible_state=patient_payload.responsible_state,
+            responsible_postal_code=patient_payload.responsible_postal_code,
             created_at=now,
             updated_at=now,
             updated_by=principal.actor_name,
@@ -1725,7 +1770,7 @@ def list_reception_appointments(
     db: Annotated[Session, Depends(get_nursing_db)],
     from_at: datetime | None = None,
     to_at: datetime | None = None,
-    status: Literal["scheduled", "confirmed", "arrived", "completed", "cancelled", "no_show"] | None = None,
+    status: Literal["scheduled", "confirmed", "arrived", "called", "completed", "cancelled", "no_show"] | None = None,
     q: Annotated[str, Query(max_length=120)] = "",
 ) -> dict[str, object]:
     if any(value and (value.tzinfo is None or value.utcoffset() is None) for value in (from_at, to_at)):
@@ -1847,7 +1892,8 @@ def update_reception_appointment_status(
     transitions = {
         "scheduled": {"confirmed", "arrived", "cancelled", "no_show"},
         "confirmed": {"arrived", "cancelled", "no_show"},
-        "arrived": {"completed"},
+        "arrived": {"called", "completed"},
+        "called": {"completed"},
     }
     if payload.status not in transitions.get(appointment.status, set()):
         raise HTTPException(
@@ -1910,7 +1956,7 @@ def create_outpatient_encounter(
 
     now = datetime.now(UTC)
     patient_snapshot = snapshot_outpatient_patient(patient)
-    patient_snapshot["same_number"] = payload.same_number
+    patient_snapshot["same_number"] = patient.same_number or payload.same_number
     encounter = OutpatientEncounter(
         patient_reference=patient.reference,
         patient_snapshot=patient_snapshot,
@@ -1950,6 +1996,13 @@ def update_emergency_arrival(
         raise HTTPException(status_code=404, detail="Atendimento não encontrado")
     if arrival.status in {"completed", "cancelled"}:
         raise HTTPException(status_code=409, detail="O atendimento já foi encerrado")
+    transitions = {
+        "waiting": {"called", "in_service", "completed", "cancelled"},
+        "called": {"waiting", "in_service", "completed", "cancelled"},
+        "in_service": {"completed", "cancelled"},
+    }
+    if payload.status not in transitions.get(arrival.status, set()):
+        raise HTTPException(status_code=409, detail="Transição da chegada não permitida")
     arrival.status = payload.status
     arrival.updated_by = principal.actor_name
     arrival.updated_at = datetime.now(UTC)
@@ -2148,12 +2201,17 @@ def snapshot_outpatient_patient(patient: Patient) -> dict[str, str]:
         "sex": patient.sex,
         "cpf": patient.cpf,
         "sus_card": patient.sus_card,
+        "same_number": patient.same_number,
         "health_plan": patient.health_plan,
         "address": patient.address,
         "address_number": patient.address_number,
+        "address_complement": patient.address_complement,
         "neighborhood": patient.neighborhood,
         "city": patient.city,
         "state": patient.state,
+        "postal_code": patient.postal_code,
+        "phone": patient.phone,
+        "email": patient.email,
         "photo_data": patient.photo_data,
     }
 
@@ -2666,7 +2724,7 @@ def get_management_dashboard(
         ) or 0,
         "open_emergency_arrivals": db.scalar(
             select(func.count(EmergencyArrival.id)).where(
-                EmergencyArrival.status.in_(("waiting", "in_service"))
+                EmergencyArrival.status.in_(("waiting", "called", "in_service"))
             )
         ) or 0,
         "emergency_arrivals_today": db.scalar(

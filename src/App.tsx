@@ -55,7 +55,7 @@ type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursi
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 type Patient = {
-  reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
+  reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; same_number?: string; mother_name?: string; health_plan?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
   treatment_track?: 'clinical' | 'psychiatric' | 'combined' | 'unclassified'
   address?: string; address_number?: string; address_complement?: string; neighborhood?: string; city?: string; state?: string; postal_code?: string
   responsible_name?: string; responsible_status?: 'unknown' | 'not_applicable' | 'provided'; responsible_relationship?: string; responsible_phone?: string; responsible_address?: string
@@ -115,7 +115,7 @@ function remainingDispensedQuantity(dispensation: MedicationDispensation, admini
 type PatientFlowEvent = { id: number; patient_reference: string; event_type: 'admission' | 'transfer' | 'discharge'; previous_room: string; previous_bed: string; next_room: string; next_bed: string; reason: string; summary: string; actor_name: string; occurred_at: string }
 type HospitalBed = { id: string; unit_id: string; unit_name: string; room: string; label: string; status: 'available' | 'cleaning' | 'maintenance' | 'blocked'; isolation_capable: boolean; notes: string; active: boolean; occupied: boolean; patient_reference: string | null }
 type ClinicalRisk = { id: number | string; patient_reference: string; patient_name: string; room: string; bed: string; risk_type: 'allergy' | 'contraindication'; description: string; severity: 'unspecified' | 'low' | 'moderate' | 'high'; status: 'active' | 'resolved'; reason: string; actor_name: string; created_at: string; resolved_at?: string | null; resolved_by?: string; resolution_reason?: string }
-type EmergencyArrivalStatus = 'waiting' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
+type EmergencyArrivalStatus = 'waiting' | 'called' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
 type EmergencyClinicalPriority = 'unassigned' | 'routine' | 'priority' | 'urgent'
 type EmergencyArrival = { id: string; patient_reference: string | null; patient_name: string; allergies_status?: Patient['allergies_status']; allergy_report_status?: 'not_asked' | 'reported' | 'denied'; reported_allergies?: string; arrival_mode: 'walk_in' | 'ambulance' | 'other'; reason: string; status: EmergencyArrivalStatus; clinical_priority: EmergencyClinicalPriority; clinical_priority_updated_by: string; clinical_priority_updated_at: string | null; clinical_priority_reason: string; created_by: string; updated_by: string; created_at: string; updated_at: string }
 type TherapyActivityStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
@@ -588,7 +588,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
 }
 
 const emptyPatientForm = {
-  name: '', room: '', bed: '', cpf: '', sus_card: '', allergies: '', allergies_status: 'unknown', birth_date: '', sex: '', phone: '', email: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '', postal_code: '',
+  name: '', mother_name: '', health_plan: '', same_number: '', room: '', bed: '', cpf: '', sus_card: '', allergies: '', allergies_status: 'unknown', birth_date: '', sex: '', phone: '', email: '', address: '', address_number: '', address_complement: '', neighborhood: '', city: '', state: '', postal_code: '',
   responsible_name: '', responsible_status: 'unknown', responsible_relationship: '', responsible_phone: '', responsible_address: '', responsible_address_number: '', responsible_address_complement: '', responsible_neighborhood: '', responsible_city: '', responsible_state: '', responsible_postal_code: '', photo_data: '',
 }
 
@@ -831,6 +831,9 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : receptionMode ? 'Identificação e internação' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
       <div className="patient-form-grid">
         <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Nome da mãe</span><input maxLength={120} autoComplete="off" value={form.mother_name} onChange={(event) => setForm({ ...form, mother_name: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Convênio</span><input maxLength={120} value={form.health_plan} onChange={(event) => setForm({ ...form, health_plan: event.target.value })} placeholder="SUS ou convênio cadastrado" /></label>
+        <label className="field"><span className="field-label">Nº SAME / prontuário</span><input maxLength={40} value={form.same_number} onChange={(event) => setForm({ ...form, same_number: event.target.value })} /></label>
         <label className="field"><span className="field-label">CPF</span><input inputMode="numeric" autoComplete="off" maxLength={14} value={formatCpf(form.cpf)} onChange={(event) => setForm({ ...form, cpf: formatCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
         <label className="field"><span className="field-label">Cartão Nacional de Saúde (SUS)</span><input inputMode="numeric" autoComplete="off" maxLength={20} value={form.sus_card} onChange={(event) => setForm({ ...form, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
         <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={form.birth_date} onChange={(event) => setForm({ ...form, birth_date: event.target.value })} /></label>
@@ -1472,7 +1475,7 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
     try {
       const response = await fetch('/api/v1/reception/arrivals?limit=100')
       const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
-      const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'in_service')
+      const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'called' || arrival.status === 'in_service')
       setArrivals(openArrivals)
       if (!openArrivals.some((arrival) => arrival.id === selectedId)) setSelectedId(openArrivals[0]?.id ?? '')
       setError('')
@@ -1487,7 +1490,7 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
       try {
         const response = await fetch('/api/v1/reception/arrivals?limit=100')
         const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
-        const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'in_service')
+        const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'called' || arrival.status === 'in_service')
         if (!active) return
         setArrivals(openArrivals)
         if (!openArrivals.some((arrival) => arrival.id === selectedId)) setSelectedId(openArrivals[0]?.id ?? '')
@@ -2270,6 +2273,7 @@ function HospitalBedManagement() {
 }
 
 function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; onNavigate: (id: ModuleId) => void; allowedModules: ModuleId[] }) {
+  const [tab, setTab] = useState<'overview' | 'tasks' | 'beds' | 'governance' | 'shortcuts'>('overview')
   const shortcuts: { id: ModuleId; label: string }[] = [
     { id: 'patients', label: 'Cadastro de pacientes' },
     { id: 'reception', label: 'Recepção e chegadas' },
@@ -2279,7 +2283,21 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
     { id: 'admin', label: 'Administração e auditoria' },
   ]
   const visibleShortcuts = shortcuts.filter(({ id }) => allowedModules.includes(id))
-  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><Suspense fallback={<div className="history-empty" role="status">Carregando pendências operacionais…</div>}><OperationalTaskCenter user={user} onNavigate={onNavigate} /></Suspense><HospitalBedManagement /><Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel /></Suspense><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
+  return <section className="management-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas da Gestão Hospitalar">
+      <button className={`button ${tab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}><Activity size={16} /> Visão geral</button>
+      <button className={`button ${tab === 'tasks' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}><ClipboardList size={16} /> Pendências</button>
+      <button className={`button ${tab === 'beds' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}><Building2 size={16} /> Unidades e leitos</button>
+      <button className={`button ${tab === 'governance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'governance'} onClick={() => setTab('governance')}><ShieldCheck size={16} /> Governança</button>
+      <button className={`button ${tab === 'shortcuts' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'shortcuts'} onClick={() => setTab('shortcuts')}><ArrowRight size={16} /> Acesso rápido</button>
+    </div>
+    {tab === 'overview' && <ExecutiveDashboard />}
+    {tab === 'tasks' && <Suspense fallback={<div className="history-empty" role="status">Carregando pendências operacionais…</div>}><OperationalTaskCenter user={user} onNavigate={onNavigate} /></Suspense>}
+    {tab === 'beds' && <HospitalBedManagement />}
+    {tab === 'governance' && <Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel /></Suspense>}
+    {tab === 'shortcuts' && <section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section>}
+  </section>
 }
 
 function BackupExportPanel() {

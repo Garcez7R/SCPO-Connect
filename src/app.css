@@ -1427,11 +1427,12 @@ html[data-theme="dark"] :is(.outpatient-encounter-form, .outpatient-history-pane
   body.print-outpatient-encounter { margin: 0 !important; background: #fff !important; }
   body.print-outpatient-encounter > *:not(.outpatient-print-sheet) { display: none !important; }
   body.print-outpatient-encounter > .outpatient-print-sheet { display: block !important; width: auto; margin: 0; padding: 0; color: #111; background: #fff; font-family: Arial, sans-serif; font-size: 8.5pt; line-height: 1.25; }
-  .outpatient-print-masthead { display: grid; grid-template-columns: 25mm minmax(0, 1fr); align-items: center; gap: 7mm; }
-  .outpatient-print-masthead > img { width: 25mm; height: 25mm; object-fit: cover; }
-  .outpatient-print-masthead > div { min-width: 0; }
-  .outpatient-print-topline { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 4px; border-bottom: 1px solid #111; font-size: 9pt; }
-  .outpatient-print-masthead h1 { margin: 7px 0; text-align: center; font-size: 13pt; }
+  .outpatient-print-masthead { display: grid; grid-template-columns: 25mm minmax(0, 1fr); align-items: center; gap: 7mm; min-height: 25mm; }
+  .outpatient-print-masthead > img { display: block; width: 25mm; height: 25mm; object-fit: cover; }
+  .outpatient-print-masthead > div { display: grid; min-width: 0; gap: 5px; }
+  .outpatient-print-topline { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 2fr); align-items: center; gap: 10px; padding-bottom: 4px; border-bottom: 1px solid #111; font-size: 9pt; }
+  .outpatient-print-topline > :last-child { text-align: right; }
+  .outpatient-print-masthead h1 { margin: 2px 0; text-align: center; font-size: 13pt; }
   .outpatient-print-record { display: grid; grid-template-columns: .9fr .8fr .8fr 1.5fr; gap: 6px; padding: 6px 0; border-block: 1px solid #777; }
   .outpatient-print-section { display: grid; gap: 4px; margin-top: 6px; }
   .outpatient-print-section > strong { font-size: 9pt; }
@@ -1440,7 +1441,8 @@ html[data-theme="dark"] :is(.outpatient-encounter-form, .outpatient-history-pane
   .outpatient-print-grid-four { grid-template-columns: 1fr .7fr 1.5fr .7fr; }
   .outpatient-print-grid-two { grid-template-columns: 1fr 1fr; }
   .outpatient-print-grid-address { grid-template-columns: 1.5fr 1fr 1fr 1fr; }
-  .outpatient-print-options { display: flex; flex-wrap: wrap; gap: 5px 14px; }
+  .outpatient-print-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px 12px; }
+  .outpatient-print-options > span { display: flex; align-items: flex-start; gap: 4px; min-width: 0; }
   .outpatient-print-activities { width: 100%; margin-top: 7px; border-collapse: collapse; table-layout: fixed; }
   .outpatient-print-activities th, .outpatient-print-activities td { height: 20px; padding: 3px 5px; border: 1px solid #555; text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
   .outpatient-print-activities th { font-size: 8pt; }
@@ -1483,4 +1485,29 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
   .button, .icon-button, .appearance-button, .nav-link, .psychology-tab, .task-center-card-heading .button { min-height: 44px; }
   .field input, .field select, .field textarea, .input-with-unit input { min-height: 44px; }
   .patient-registry-actions .button { min-height: 44px; }
+}
+.waiting-room-board { display: grid; gap: 18px; }
+.waiting-room-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.waiting-room-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.waiting-room-counts article { display: grid; gap: 5px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.waiting-room-counts strong { color: var(--ink); font-size: 24px; }
+.waiting-room-counts span { color: var(--muted); font-size: 12px; }
+.waiting-room-lists { display: grid; gap: 22px; }
+.waiting-room-lists > section { display: grid; gap: 12px; }
+.waiting-room-lists h3 { margin: 0; color: var(--ink); font-size: 16px; }
+.waiting-room-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.waiting-room-card { display: grid; align-content: start; gap: 9px; min-width: 0; padding: 18px; border: 1px solid var(--line); border-left: 4px solid var(--amber); border-radius: 8px; background: var(--surface); }
+.waiting-room-card-called { border-left-color: var(--green); }
+.waiting-room-code { color: var(--blue-dark); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.waiting-room-card > strong { color: var(--ink); font-size: clamp(18px, 2.4vw, 26px); overflow-wrap: anywhere; }
+.waiting-room-card > small { color: var(--muted); font-size: 12px; }
+.waiting-room-card .waiting-room-actions .button { flex: 1; justify-content: center; }
+html[data-theme="dark"] .waiting-room-card { border-color: var(--line); background: var(--surface); }
+.status-called { background: #e8f1f7; color: #205777; }
+html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
+@media (max-width: 520px) {
+  .waiting-room-actions { width: 100%; }
+  .waiting-room-actions .button { flex: 1; justify-content: center; }
+  .waiting-room-counts { grid-template-columns: 1fr 1fr; }
+  .waiting-room-cards { grid-template-columns: 1fr; }
 }
