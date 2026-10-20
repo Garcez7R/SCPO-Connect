@@ -898,11 +898,8 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .therapy-report-actions > .field { width: min(100%, 260px); }
 .therapy-report-actions .button { min-height: 42px; }
 .therapy-report-author { color: var(--subtle); font-size: 10px; }
-.print-therapy-report .app-shell * { visibility: hidden !important; }
-.print-therapy-report .therapy-report-panel, .print-therapy-report .therapy-report-panel * { visibility: visible !important; }
-.print-therapy-report .therapy-report-panel { position: absolute; inset: 0; width: 100%; max-width: none; border: 0; box-shadow: none; }
-.print-therapy-report .therapy-report-print-button, .print-therapy-report .therapy-report-actions { display: none !important; }
-.print-therapy-report .therapy-report-card { break-inside: avoid; }
+.therapy-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 760px) { .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .beta-celebration { position: fixed; z-index: 1800; inset: 0; display: grid; place-items: center; overflow: hidden; padding: 20px; }
 .beta-celebration-backdrop { position: absolute; inset: 0; background: rgba(18, 37, 49, .54); animation: beta-backdrop-in .2s ease-out both; }
 .beta-confetti-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
@@ -1057,6 +1054,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
   .patient-history-summary { grid-template-columns: auto 1fr; }
   .patient-history-summary .module-total { grid-column: 1 / -1; justify-self: start; }
   .therapy-layout { grid-template-columns: 1fr; }
+  .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .therapy-calendar-day { min-height: 66px; padding: 4px; }
   .therapy-calendar-tag { font-size: 8px; }
   .therapy-activity-grid { grid-template-columns: 1fr; }

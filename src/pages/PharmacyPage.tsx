@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Search, X } from 'lucide-react'
 import { readApiResponse } from '../api'
-import PrintSelectionPanel, { type PrintRow } from '../components/PrintSelectionPanel'
+import PrintSelectionPanel from '../components/PrintSelectionPanel'
+import type { PrintRow } from '../printReport'
 import { formatDecimalInput } from '../inputFormatting'
 
 type Patient = { reference: string; name: string; room: string; bed: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known' }

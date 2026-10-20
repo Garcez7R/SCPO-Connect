@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, ShieldCheck, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
-import PrintSelectionPanel, { type PrintRow } from '../components/PrintSelectionPanel'
+import PrintSelectionPanel from '../components/PrintSelectionPanel'
+import { printRows, type PrintRow } from '../printReport'
 import { AssetMaintenancePanel } from './ManagementOperationsPage'
 
 type AuthUser = { id: string; username: string; name: string; modules: string[]; permissions: Record<string, string[]> }
@@ -17,6 +18,11 @@ function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+}
+
+function localDateKey(value: string) {
+  const date = new Date(value)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 const workOrderStatuses: Record<WorkOrderStatus, string> = {
@@ -269,6 +275,8 @@ export function HygienePage({ user }: { user: AuthUser }) {
   const [drafts, setDrafts] = useState<Record<string, { status: HygieneStatus; assignee: string }>>({})
   const [filter, setFilter] = useState<'active' | 'all' | HygieneStatus>('active')
   const [query, setQuery] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState('')
   const [error, setError] = useState('')
@@ -311,10 +319,37 @@ export function HygienePage({ user }: { user: AuthUser }) {
     const matchesStatus = filter === 'all' || (filter === 'active'
       ? request.status === 'open' || request.status === 'in_progress'
       : request.status === filter)
+    const requestDate = localDateKey(request.created_at)
     const searchable = `${request.unit} ${request.location} ${request.description} ${request.custom_type ?? ''} ${request.requester_name} ${request.assignee} ${hygieneAreas[request.area]} ${hygieneRequestTypes[request.request_type]}`.toLocaleLowerCase('pt-BR')
-    return matchesStatus && searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
+    return matchesStatus && (!fromDate || requestDate >= fromDate) && (!toDate || requestDate <= toDate)
+      && searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
   })
-  const activeCount = requests.filter((request) => request.status === 'open' || request.status === 'in_progress').length
+  const statusSummary = visibleRequests.reduce<Record<HygieneStatus, number>>((summary, request) => {
+    summary[request.status] += 1
+    return summary
+  }, { open: 0, in_progress: 0, completed: 0, cancelled: 0 })
+  const activeCount = visibleRequests.filter((request) => request.status === 'open' || request.status === 'in_progress').length
+  const hygienePrintRows: PrintRow[] = visibleRequests.map((request) => ({
+    id: request.id,
+    date: localDateKey(request.created_at),
+    title: request.request_type === 'other' ? request.custom_type ?? hygieneRequestTypes.other : hygieneRequestTypes[request.request_type],
+    fields: [
+      ['Status', hygieneStatuses[request.status]],
+      ['Prioridade', workOrderPriorities[request.priority]],
+      ['Unidade', request.unit],
+      ['Área', hygieneAreas[request.area]],
+      ['Local', request.location],
+      ['Responsável', request.assignee || 'Não atribuído'],
+      ['Solicitante', request.requester_name],
+      ['Descrição', request.description],
+    ],
+  }))
+
+  function printHygieneRequests() {
+    if (!printRows('Relatório de Higienização', hygienePrintRows, fromDate, toDate)) {
+      setError('Permita a janela de impressão para este site e tente novamente.')
+    }
+  }
 
   async function saveRequest(request: HygieneRequest) {
     const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
@@ -338,14 +373,14 @@ export function HygienePage({ user }: { user: AuthUser }) {
     }
   }
 
-  return <section className="hygiene-page page-enter">
+  return <section className="work-orders-page maintenance-queue-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
-    <div className="hygiene-summary" aria-label="Resumo da fila"><article><strong>{activeCount}</strong><span>Solicitações ativas</span></article><article><strong>{requests.filter((request) => request.status === 'open').length}</strong><span>Aguardando atendimento</span></article><article><strong>{requests.filter((request) => request.status === 'in_progress').length}</strong><span>Em andamento</span></article></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    <section className="hygiene-panel">
-      <div className="section-heading"><div><p className="eyebrow">PAINEL DA EQUIPE</p><h2>Fila de solicitações</h2></div><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
-      <div className="hygiene-filters"><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Buscar por local ou serviço</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label></div>
+    <section className="work-order-list-panel">
+      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{visibleRequests.length}</span></h2></div><div className="maintenance-actions"><button className="button button-secondary" type="button" onClick={printHygieneRequests} disabled={loading || !visibleRequests.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
+      <div className="maintenance-filters hygiene-queue-filters"><label className="field"><span className="field-label">De</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label><div className="maintenance-filter-actions"><button className="button button-secondary" type="button" onClick={() => { setFromDate(''); setToDate(''); setFilter('active'); setQuery('') }}>Limpar filtros</button></div></div>
+      <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{visibleRequests.length} solicitações</strong>{Object.entries(hygieneStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status as HygieneStatus]}</b></span>)}<span>Ativas: <b>{activeCount}</b></span></div>
       {loading ? <div className="history-empty">Carregando fila…</div> : visibleRequests.length ? <div className="hygiene-request-list">{visibleRequests.map((request) => {
         const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
         return <article className="hygiene-request-card" key={request.id}>
@@ -357,6 +392,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
         </article>
       })}</div> : <div className="history-empty">Nenhuma solicitação corresponde a este filtro.</div>}
     </section>
+    <PrintSelectionPanel title="Relatório de Higienização" rows={hygienePrintRows} />
   </section>
 }
 
