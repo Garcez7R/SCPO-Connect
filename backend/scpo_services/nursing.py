@@ -20,6 +20,7 @@ from sqlalchemy import (
     case,
     exists,
     func,
+    or_,
     select,
     text,
 )
@@ -190,6 +191,31 @@ class OutpatientEncounter(Base):
     referral: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReceptionAppointment(Base):
+    __tablename__ = "reception_appointments"
+    __table_args__ = (
+        Index("ix_reception_appointments_patient_start", "patient_reference", "starts_at"),
+        Index("ix_reception_appointments_status_start", "status", "starts_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(
+        String(36), ForeignKey("patients.reference", ondelete="RESTRICT"), nullable=False
+    )
+    appointment_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    professional_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    location: Mapped[str] = mapped_column(String(120), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="scheduled")
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    updated_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class PatientFlowEvent(Base):
@@ -423,6 +449,45 @@ class EmergencyPatientPayload(BaseModel):
 
 
 EmergencyArrivalPayload.model_rebuild()
+
+
+class ReceptionAppointmentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str = Field(min_length=1, max_length=36)
+    appointment_type: Literal["consultation", "exam", "procedure", "return"]
+    professional_name: str = Field(min_length=2, max_length=120)
+    location: str = Field(min_length=2, max_length=120)
+    purpose: str = Field(default="", max_length=300)
+    starts_at: datetime
+    ends_at: datetime
+
+    @field_validator("professional_name", "location", "purpose")
+    @classmethod
+    def trim_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("starts_at", "ends_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Informe data e horário com fuso horário")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "ReceptionAppointmentPayload":
+        duration = self.ends_at - self.starts_at
+        if duration <= timedelta(0) or duration > timedelta(hours=8):
+            raise ValueError("O horário final deve ser posterior ao inicial e limitado a 8 horas")
+        if self.starts_at <= datetime.now(UTC):
+            raise ValueError("O agendamento deve começar no futuro")
+        if len(self.professional_name) < 2 or len(self.location) < 2:
+            raise ValueError("Informe profissional e local válidos")
+        return self
+
+
+class ReceptionAppointmentStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["confirmed", "arrived", "completed", "cancelled", "no_show"]
 
 
 class EmergencyArrivalStatusPayload(BaseModel):
@@ -1526,6 +1591,158 @@ def create_emergency_arrival(
     )
 
 
+@app.get("/api/v1/reception/appointments")
+def list_reception_appointments(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    from_at: datetime | None = None,
+    to_at: datetime | None = None,
+    status: Literal["scheduled", "confirmed", "arrived", "completed", "cancelled", "no_show"] | None = None,
+    q: Annotated[str, Query(max_length=120)] = "",
+) -> dict[str, object]:
+    if any(value and (value.tzinfo is None or value.utcoffset() is None) for value in (from_at, to_at)):
+        raise HTTPException(status_code=422, detail="Informe o período com fuso horário")
+    if from_at:
+        from_at = from_at.astimezone(UTC)
+    if to_at:
+        to_at = to_at.astimezone(UTC)
+    if from_at and to_at and to_at <= from_at:
+        raise HTTPException(status_code=422, detail="O período final deve ser posterior ao inicial")
+
+    filters = []
+    if from_at:
+        filters.append(ReceptionAppointment.starts_at >= from_at)
+    if to_at:
+        filters.append(ReceptionAppointment.starts_at < to_at)
+    if status:
+        filters.append(ReceptionAppointment.status == status)
+    search_term = q.strip()
+    if search_term:
+        search_pattern = f"%{search_term}%"
+        filters.append(
+            or_(
+                Patient.name.ilike(search_pattern),
+                ReceptionAppointment.professional_name.ilike(search_pattern),
+                ReceptionAppointment.location.ilike(search_pattern),
+            )
+        )
+
+    rows = db.execute(
+        select(ReceptionAppointment, Patient.name)
+        .join(Patient, Patient.reference == ReceptionAppointment.patient_reference)
+        .where(*filters)
+        .order_by(ReceptionAppointment.starts_at, ReceptionAppointment.id)
+        .limit(500)
+    ).all()
+    total = db.scalar(
+        select(func.count(ReceptionAppointment.id))
+        .join(Patient, Patient.reference == ReceptionAppointment.patient_reference)
+        .where(*filters)
+    ) or 0
+    emit_audit_event(principal, "reception", "appointments_read", "appointment_schedule")
+    return {
+        "appointments": [
+            serialize_reception_appointment(appointment, patient_name)
+            for appointment, patient_name in rows
+        ],
+        "total": total,
+    }
+
+
+@app.post("/api/v1/reception/appointments", status_code=201)
+def create_reception_appointment(
+    payload: ReceptionAppointmentPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, payload.patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
+
+    overlapping = db.scalar(
+        select(ReceptionAppointment.id)
+        .where(
+            ReceptionAppointment.status.not_in(("completed", "cancelled", "no_show")),
+            ReceptionAppointment.starts_at < payload.ends_at,
+            ReceptionAppointment.ends_at > payload.starts_at,
+            or_(
+                ReceptionAppointment.patient_reference == patient.reference,
+                func.lower(ReceptionAppointment.professional_name)
+                == payload.professional_name.lower(),
+                func.lower(ReceptionAppointment.location) == payload.location.lower(),
+            ),
+        )
+        .limit(1)
+    )
+    if overlapping is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Conflito de horário: paciente, profissional ou local já possui agendamento nesse período",
+        )
+
+    now = datetime.now(UTC)
+    appointment = ReceptionAppointment(
+        patient_reference=patient.reference,
+        appointment_type=payload.appointment_type,
+        professional_name=payload.professional_name,
+        location=payload.location,
+        purpose=payload.purpose,
+        starts_at=payload.starts_at,
+        ends_at=payload.ends_at,
+        status="scheduled",
+        created_by=principal.user_id,
+        created_by_name=principal.actor_name,
+        updated_by_name=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(appointment)
+    db.flush()
+    emit_audit_event(
+        principal, "reception", "appointment_created", str(appointment.id), db=db
+    )
+    db.commit()
+    db.refresh(appointment)
+    return serialize_reception_appointment(appointment, patient.name)
+
+
+@app.patch("/api/v1/reception/appointments/{appointment_id}")
+def update_reception_appointment_status(
+    appointment_id: int,
+    payload: ReceptionAppointmentStatusPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    appointment = db.get(ReceptionAppointment, appointment_id)
+    if appointment is None:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    transitions = {
+        "scheduled": {"confirmed", "arrived", "cancelled", "no_show"},
+        "confirmed": {"arrived", "cancelled", "no_show"},
+        "arrived": {"completed"},
+    }
+    if payload.status not in transitions.get(appointment.status, set()):
+        raise HTTPException(
+            status_code=409,
+            detail="Esta mudança de situação não é permitida para o agendamento",
+        )
+
+    appointment.status = payload.status
+    appointment.updated_by_name = principal.actor_name
+    appointment.updated_at = datetime.now(UTC)
+    emit_audit_event(
+        principal,
+        "reception",
+        "appointment_status_updated",
+        str(appointment.id),
+        db=db,
+    )
+    db.commit()
+    db.refresh(appointment)
+    patient = db.get(Patient, appointment.patient_reference)
+    return serialize_reception_appointment(appointment, patient.name if patient else "")
+
+
 @app.get("/api/v1/reception/encounters")
 def list_outpatient_encounters(
     principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
@@ -1808,6 +2025,33 @@ def snapshot_outpatient_patient(patient: Patient) -> dict[str, str]:
         "city": patient.city,
         "state": patient.state,
         "photo_data": patient.photo_data,
+    }
+
+
+def serialize_reception_appointment(
+    appointment: ReceptionAppointment, patient_name: str
+) -> dict[str, object]:
+    starts_at = appointment.starts_at
+    ends_at = appointment.ends_at
+    if starts_at.tzinfo is None:
+        starts_at = starts_at.replace(tzinfo=UTC)
+    if ends_at.tzinfo is None:
+        ends_at = ends_at.replace(tzinfo=UTC)
+    return {
+        "id": appointment.id,
+        "patient_reference": appointment.patient_reference,
+        "patient_name": patient_name,
+        "appointment_type": appointment.appointment_type,
+        "professional_name": appointment.professional_name,
+        "location": appointment.location,
+        "purpose": appointment.purpose,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": ends_at.isoformat(),
+        "status": appointment.status,
+        "created_by_name": appointment.created_by_name,
+        "updated_by_name": appointment.updated_by_name,
+        "created_at": appointment.created_at.isoformat(),
+        "updated_at": appointment.updated_at.isoformat(),
     }
 
 

@@ -5,6 +5,7 @@ import { readApiResponse } from '../api'
 import { formatCpf, formatPhone } from '../inputFormatting'
 import AllergyFields from '../components/AllergyFields'
 import OutpatientEncounterPage from './OutpatientEncounterPage'
+import ReceptionAppointmentsPage from './ReceptionAppointmentsPage'
 
 type Patient = {
   reference: string
@@ -38,7 +39,7 @@ type EmergencyArrival = {
   updated_at: string
 }
 type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
-type ReceptionTab = 'emergency' | 'outpatient' | 'admissions'
+type ReceptionTab = 'emergency' | 'outpatient' | 'appointments' | 'admissions'
 type HospitalBed = { id: string; unit_name: string; room: string; label: string; status: string; occupied: boolean }
 
 const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
@@ -236,13 +237,14 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
 
   return <section className="reception-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : tab === 'appointments' ? 'Organize consultas, exames e procedimentos em uma agenda compartilhada.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
     <div className="admin-tabs module-tabs reception-primary-tabs" role="tablist" aria-label="Fluxos da Recepção">
       <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
       <button className={`button ${tab === 'outpatient' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'outpatient'} onClick={() => setTab('outpatient')}>Ficha ambulatorial</button>
+      <button className={`button ${tab === 'appointments' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'appointments'} onClick={() => setTab('appointments')}>Agendamentos</button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : <>
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
       {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
       <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>

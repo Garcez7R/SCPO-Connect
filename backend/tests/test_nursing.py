@@ -155,6 +155,91 @@ def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
     assert history["encounters"][0]["id"] == created["id"]
 
 
+def test_reception_appointments_validate_conflicts_and_status_transitions(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    receptionist = DemoPrincipal(
+        "reception-id",
+        "reception-user",
+        "Recepcionista de teste",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar", "alterar"]},
+    )
+    starts_at = datetime.now(UTC) + timedelta(days=2)
+    payload = nursing.ReceptionAppointmentPayload(
+        patient_reference=str(patient["reference"]),
+        appointment_type="consultation",
+        professional_name="Dra. Médica",
+        location="Consultório 1",
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(minutes=30),
+    )
+
+    created = nursing.create_reception_appointment(payload, receptionist, nursing_db)
+
+    assert created["patient_name"] == "Paciente de teste"
+    assert created["status"] == "scheduled"
+    assert created["starts_at"].endswith("+00:00")
+    listed = nursing.list_reception_appointments(
+        receptionist,
+        nursing_db,
+        from_at=starts_at - timedelta(hours=1),
+        to_at=starts_at + timedelta(days=1),
+        q="Paciente de teste",
+    )
+    assert listed["total"] == 1
+    assert listed["appointments"][0]["id"] == created["id"]
+    with pytest.raises(HTTPException) as conflict:
+        nursing.create_reception_appointment(payload, receptionist, nursing_db)
+    assert conflict.value.status_code == 409
+
+    confirmed = nursing.update_reception_appointment_status(
+        int(created["id"]),
+        nursing.ReceptionAppointmentStatusPayload(status="confirmed"),
+        receptionist,
+        nursing_db,
+    )
+    assert confirmed["status"] == "confirmed"
+    arrived = nursing.update_reception_appointment_status(
+        int(created["id"]),
+        nursing.ReceptionAppointmentStatusPayload(status="arrived"),
+        receptionist,
+        nursing_db,
+    )
+    assert arrived["status"] == "arrived"
+    completed = nursing.update_reception_appointment_status(
+        int(created["id"]),
+        nursing.ReceptionAppointmentStatusPayload(status="completed"),
+        receptionist,
+        nursing_db,
+    )
+    assert completed["status"] == "completed"
+    with pytest.raises(HTTPException) as invalid_transition:
+        nursing.update_reception_appointment_status(
+            int(created["id"]),
+            nursing.ReceptionAppointmentStatusPayload(status="cancelled"),
+            receptionist,
+            nursing_db,
+        )
+    assert invalid_transition.value.status_code == 409
+
+
+def test_reception_appointment_requires_timezone_and_valid_future_interval() -> None:
+    now = datetime.now(UTC)
+    with pytest.raises(ValidationError):
+        nursing.ReceptionAppointmentPayload(
+            patient_reference="patient",
+            appointment_type="exam",
+            professional_name="Profissional",
+            location="Sala 1",
+            starts_at=now.replace(tzinfo=None) + timedelta(days=1),
+            ends_at=now + timedelta(days=1, minutes=30),
+        )
+
+
 def test_patient_creation_persists_audit_outbox_in_the_same_transaction(
     nursing_db: Session,
     nurse: DemoPrincipal,

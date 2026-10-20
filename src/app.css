@@ -1274,6 +1274,25 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
 .reception-page > .hygiene-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .reception-arrival-action { display: flex; justify-content: flex-end; }
 .reception-admissions-page .patient-registry-page { gap: 18px; }
+.reception-appointments { display: grid; gap: 16px; }
+.reception-appointment-toolbar { display: grid; grid-template-columns: minmax(130px, .45fr) minmax(130px, .45fr) minmax(220px, 1fr) minmax(150px, .5fr) auto auto; align-items: end; gap: 12px; }
+.reception-appointment-toolbar > .button { min-height: 42px; }
+.reception-appointment-list { display: grid; gap: 10px; }
+.reception-appointment-card { display: grid; grid-template-columns: minmax(170px, .75fr) minmax(220px, 1.4fr) minmax(150px, .55fr); align-items: center; gap: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.reception-appointment-date, .reception-appointment-info, .reception-appointment-state { display: grid; gap: 6px; }
+.reception-appointment-date { color: var(--accent); }
+.reception-appointment-date strong { color: var(--ink); font-size: 13px; }
+.reception-appointment-date > span { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.reception-appointment-info strong { color: var(--ink); font-size: 13px; }
+.reception-appointment-info > span, .reception-appointment-info small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.reception-appointment-state .field { gap: 4px; }
+.reception-appointment-state .field-label { font-size: 9px; }
+.status-badge { justify-self: start; padding: 5px 8px; border-radius: 20px; background: #e8eef2; color: #3b4b55; font-size: 10px; font-weight: 700; }
+.status-scheduled { background: #e7eefb; color: #315f9a; }
+.status-confirmed { background: #e5f3eb; color: #286644; }
+.status-arrived { background: #fff2d6; color: #815c13; }
+.status-completed { background: #e7f3eb; color: #316846; }
+.status-cancelled, .status-no_show { background: #f8e7e7; color: #963e3e; }
 .pharmacy-movement-ledger { display: grid; gap: 14px; margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .pharmacy-movement-ledger .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .pharmacy-movement-ledger h3 { margin: 2px 0 4px; color: var(--ink); font-size: 17px; }
@@ -1303,18 +1322,33 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
 .reception-arrival-meta strong { color: var(--subtle); font-size: 9px; text-transform: uppercase; }
 .reception-status-control { max-width: 270px; }
 html[data-theme="dark"] :is(.pharmacy-movement-ledger, .pharmacy-movement-row, .reception-arrival-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .reception-appointment-card { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .status-badge { background: #27323a; color: #c0c9cf; }
+html[data-theme="dark"] .status-scheduled { background: #26374b; color: #b6d4f6; }
+html[data-theme="dark"] .status-confirmed, html[data-theme="dark"] .status-completed { background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .status-arrived { background: #443922; color: #f4d48a; }
+html[data-theme="dark"] .status-cancelled, html[data-theme="dark"] .status-no_show { background: #432d2d; color: #f1b4b4; }
 html[data-theme="dark"] .pharmacy-stock-movement-form { border-color: var(--line); background: #111c23; }
 html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); background: #111c23; }
 @media (max-width: 760px) {
   .nutrition-history-filters { grid-template-columns: 1fr 1fr; }
   .nutrition-history-filters .field:nth-child(2) { grid-column: 1 / -1; grid-row: 1; }
+  .reception-appointment-toolbar { grid-template-columns: 1fr 1fr; }
+  .reception-appointment-toolbar .field:nth-child(3), .reception-appointment-toolbar .field:nth-child(4) { grid-column: 1 / -1; }
+  .reception-appointment-toolbar > .button { justify-content: center; }
   .reception-arrival-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reception-appointment-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+  .reception-appointment-state { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; align-items: end; }
   .pharmacy-movement-row { grid-template-columns: 1fr 1fr; }
   .pharmacy-movement-author { grid-column: 1 / -1; text-align: left; }
 }
 @media (max-width: 520px) {
   .reception-page > .hygiene-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .reception-arrival-action .button { width: 100%; justify-content: center; }
+  .reception-appointment-toolbar { grid-template-columns: 1fr; }
+  .reception-appointment-toolbar > .button { width: 100%; justify-content: center; }
+  .reception-appointment-card { grid-template-columns: 1fr; }
+  .reception-appointment-state { grid-column: auto; }
   .nutrition-history-filters, .reception-search { grid-template-columns: 1fr; }
   .nutrition-history-filters .field:nth-child(2) { grid-column: auto; grid-row: auto; }
   .nutrition-history-filters > .button, .reception-search > .button { width: 100%; justify-content: center; }

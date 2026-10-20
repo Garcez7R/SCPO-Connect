@@ -18,7 +18,7 @@ Os campos demográficos exatos (ex.: data de nascimento, documento, contato e re
 
 | Perfil | Cadastro mínimo | Foto | Dados clínicos | Escrita |
 | --- | --- | --- | --- | --- |
-| Recepção | Identificação, situação e localização necessária ao atendimento | Consultar para conferência | Somente status/alerta de alergia para encaminhamento seguro; sem detalhes clínicos | Admissão/correção cadastral conforme regra aprovada |
+| Recepção | Identificação, situação e localização necessária ao atendimento; dados operacionais de agendamento | Consultar para conferência | Somente status/alerta de alergia para encaminhamento seguro; sem detalhes clínicos | Admissão/correção cadastral e agenda conforme regra aprovada |
 | Enfermagem | Identificação e localização | Consultar para conferência | Enfermagem e informações assistenciais necessárias | Registros de Enfermagem |
 | Nutrição | Identificação | Conforme necessidade aprovada | Avaliação, dieta, restrições e dados necessários ao cuidado nutricional | Registros de Nutrição |
 | Farmácia | Identificação | Não por padrão | Dados necessários a dispensação segura | Registros de Farmácia |
@@ -29,6 +29,8 @@ Os campos demográficos exatos (ex.: data de nascimento, documento, contato e re
 | Gestão Hospitalar | Cadastro e todos os dados clínicos | Sim | Acesso total solicitado | Conforme autorização administrativa; toda operação auditada |
 
 O cadastro distingue alergia conhecida (com detalhes), ausência de alergias conhecidas confirmada e situação desconhecida/não verificada. Os módulos clínicos autorizados recebem o alerta e os detalhes necessários ao cuidado. A Recepção recebe somente a sinalização no fluxo de emergência para chamar a equipe clínica, sem receber os detalhes clínicos na fila ou na listagem cadastral; a finalidade, os dados exibidos e o acesso institucional precisam ser validados antes de uso com dados reais.
+
+A agenda da Recepção contém somente dados operacionais (paciente, tipo, profissional, local, horário e situação); não deve ser usada para registrar hipótese diagnóstica ou evolução clínica. O acesso requer permissão no módulo de Recepção, e criação/alteração gera auditoria.
 
 Esta matriz é uma proposta técnica e deve ser confirmada com cada área e com os responsáveis institucionais por privacidade, segurança e assistência. Permissões individuais podem restringir os acessos do perfil; concessões adicionais devem ter justificativa, aprovador, validade e auditoria.
 
