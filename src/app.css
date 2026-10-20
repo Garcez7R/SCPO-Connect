@@ -171,7 +171,12 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-icon-pharmacy { background: #edf5ee; color: #39734f; }
 .module-icon-xray { background: #f0eff8; color: #65549b; }
 .module-icon-social { background: #fff4e7; color: #9a620e; }
+.module-icon-nutrition { background: #fbf3e5; color: #8a6517; }
+.module-icon-reception { background: #e8f4f6; color: #26717e; }
+.module-icon-therapy { background: #f1eef8; color: #6a5597; }
+.module-icon-hygiene { background: #eaf4ee; color: #39724f; }
 .module-icon-admin { background: #edf1f5; color: #516778; }
+.module-icon-management { background: #edf2f4; color: #456875; }
 .module-icon-psychology { background: #eaf3f7; color: #246b8e; }
 .module-icon-maintenance { background: #edf3f5; color: #426a7a; }
 .module-card-title { margin-top: 12px; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.35; }
@@ -181,6 +186,11 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .status-ready { color: #377052; }
 .status-later { color: var(--subtle); }
 .module-arrow { position: absolute; right: 15px; bottom: 15px; color: #628094; }
+html[data-theme="dark"] .module-card .module-icon-nutrition { background: #3c3423; color: #f0d08a; }
+html[data-theme="dark"] .module-card .module-icon-reception { background: #203840; color: #92d4df; }
+html[data-theme="dark"] .module-card .module-icon-therapy { background: #332d43; color: #c4b4ef; }
+html[data-theme="dark"] .module-card .module-icon-hygiene { background: #24382d; color: #a2dfbb; }
+html[data-theme="dark"] .module-card .module-icon-management { background: #28363a; color: #a9d1d9; }
 .dashboard-lower { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, .9fr); gap: 13px; margin-top: 17px; }
 .activity-panel, .next-step-panel, .users-panel, .permission-map { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .activity-panel { padding: 17px 18px 5px; }
@@ -1220,6 +1230,12 @@ html[data-theme="dark"] .psychology-privacy { border-color: #355d70; background:
 html[data-theme="dark"] .clinical-alert-clear { border-color: #315744; background: #21372d; color: #a2dfbb; }
 html[data-theme="dark"] .clinical-alert-unknown { border-color: #705b31; background: #332d20; color: #f1ce86; }
 html[data-theme="dark"] .psychology-priority.is-priority { background: #44371f; color: #efc16e; }
+html[data-theme="dark"] .auth-brand { border-color: var(--line); background: linear-gradient(110deg, #243d49 0%, var(--surface) 88%); }
+html[data-theme="dark"] .field-label { color: var(--muted); }
+html[data-theme="dark"] .button-primary { background-color: #246b8e; color: #fff; }
+html[data-theme="dark"] .button-primary:hover:not(:disabled) { background-color: #1e5876; }
+html[data-theme="dark"] .button-secondary { background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .button-danger { border-color: #693b40; background-color: #352528; color: #f1b4b4; }
 html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, .module-card-status, .field-hint, .patient-registry-identity p, .patient-registry-identity small, .work-order-meta, .pharmacy-item-description, .pharmacy-item-meta, .session-row, .app-footer, .breadcrumbs, .history-empty) { color: var(--muted); }
 html[data-theme="dark"] :is(.nav-link:hover, .appearance-button:hover, .button-secondary:hover) { background-color: #263944; color: var(--ink); }
 html[data-theme="dark"] .patient-modal-backdrop { background: rgb(0 0 0 / 72%); }
