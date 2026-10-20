@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -2631,8 +2632,12 @@ def get_management_dashboard(
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
-    day_start = datetime.combine(now.date(), time.min, tzinfo=UTC)
-    next_day = day_start + timedelta(days=1)
+    hospital_timezone = ZoneInfo("America/Sao_Paulo")
+    hospital_today = datetime.now(hospital_timezone).date()
+    local_day_start = datetime.combine(hospital_today, time.min, tzinfo=hospital_timezone)
+    day_start = local_day_start.astimezone(UTC)
+    next_day = (local_day_start + timedelta(days=1)).astimezone(UTC)
+    document_expiry_limit = hospital_today + timedelta(days=30)
     active_patients = Patient.active.is_(True)
     bed_capacity = _bed_capacity(db)
     summary = {
@@ -2696,6 +2701,67 @@ def get_management_dashboard(
                 PatientFlowEvent.event_type == "discharge",
                 PatientFlowEvent.occurred_at >= day_start,
                 PatientFlowEvent.occurred_at < next_day,
+            )
+        ) or 0,
+        "appointments_today": db.scalar(
+            select(func.count(ReceptionAppointment.id)).where(
+                ReceptionAppointment.starts_at >= day_start,
+                ReceptionAppointment.starts_at < next_day,
+            )
+        ) or 0,
+        "appointments_pending_today": db.scalar(
+            select(func.count(ReceptionAppointment.id)).where(
+                ReceptionAppointment.starts_at >= day_start,
+                ReceptionAppointment.starts_at < next_day,
+                ReceptionAppointment.status.in_(("scheduled", "confirmed")),
+            )
+        ) or 0,
+        "appointments_no_show_today": db.scalar(
+            select(func.count(ReceptionAppointment.id)).where(
+                ReceptionAppointment.starts_at >= day_start,
+                ReceptionAppointment.starts_at < next_day,
+                ReceptionAppointment.status == "no_show",
+            )
+        ) or 0,
+        "beds_in_cleaning": db.scalar(
+            select(func.count(HospitalBed.id)).where(
+                HospitalBed.active.is_(True),
+                HospitalBed.status == "cleaning",
+            )
+        ) or 0,
+        "beds_in_maintenance": db.scalar(
+            select(func.count(HospitalBed.id)).where(
+                HospitalBed.active.is_(True),
+                HospitalBed.status == "maintenance",
+            )
+        ) or 0,
+        "open_safety_incidents": db.scalar(
+            select(func.count(PatientSafetyIncident.id)).where(
+                PatientSafetyIncident.status != "closed",
+            )
+        ) or 0,
+        "serious_open_safety_incidents": db.scalar(
+            select(func.count(PatientSafetyIncident.id)).where(
+                PatientSafetyIncident.status != "closed",
+                PatientSafetyIncident.severity.in_(("severe", "critical")),
+            )
+        ) or 0,
+        "documents_pending_review": db.scalar(
+            select(func.count(InstitutionalDocument.id)).where(
+                InstitutionalDocument.status == "in_review",
+            )
+        ) or 0,
+        "approved_documents_expired": db.scalar(
+            select(func.count(InstitutionalDocument.id)).where(
+                InstitutionalDocument.status == "approved",
+                InstitutionalDocument.valid_until < hospital_today,
+            )
+        ) or 0,
+        "approved_documents_expiring_soon": db.scalar(
+            select(func.count(InstitutionalDocument.id)).where(
+                InstitutionalDocument.status == "approved",
+                InstitutionalDocument.valid_until >= hospital_today,
+                InstitutionalDocument.valid_until <= document_expiry_limit,
             )
         ) or 0,
         "physical_beds": bed_capacity["total_beds"],

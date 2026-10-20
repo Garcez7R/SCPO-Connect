@@ -1,5 +1,7 @@
+import uuid
 from collections.abc import Generator
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -807,6 +809,137 @@ def test_management_dashboard_returns_aggregate_counts_only(
     assert result["active_patients"] == 1
     assert result["occupied_beds"] == 1
     assert "patient_reference" not in result
+
+
+def test_management_dashboard_reports_administrative_indicators(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    manager = DemoPrincipal(
+        "manager-id",
+        "manager",
+        "Gestora",
+        "management",
+        ["management"],
+        {"management": ["consultar"]},
+    )
+    timezone = ZoneInfo("America/Sao_Paulo")
+    local_today = datetime.now(timezone).date()
+    local_start = datetime.combine(local_today, datetime.min.time(), tzinfo=timezone)
+    appointment_start = (local_start + timedelta(hours=12)).astimezone(UTC)
+    now = datetime.now(UTC)
+
+    for index, status in enumerate(("scheduled", "confirmed", "no_show")):
+        patient = create_patient(nursing_db, nurse, room=str(index + 1), bed="A")
+        nursing_db.add(
+            nursing.ReceptionAppointment(
+                patient_reference=str(patient["reference"]),
+                appointment_type="consultation",
+                professional_name="Profissional de teste",
+                location="Ambulatório",
+                purpose="Consulta",
+                starts_at=appointment_start,
+                ends_at=appointment_start + timedelta(minutes=30),
+                status=status,
+                created_by=nurse.user_id,
+                created_by_name=nurse.actor_name,
+                updated_by_name=nurse.actor_name,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    bed_data = create_physical_bed(nursing_db, "10", "A")
+    bed = nursing_db.get(nursing.HospitalBed, str(bed_data["id"]))
+    assert bed is not None
+    bed.status = "cleaning"
+    maintenance_bed_data = create_physical_bed(nursing_db, "11", "A")
+    maintenance_bed = nursing_db.get(nursing.HospitalBed, str(maintenance_bed_data["id"]))
+    assert maintenance_bed is not None
+    maintenance_bed.status = "maintenance"
+
+    for severity, status in (("critical", "investigating"), ("moderate", "closed")):
+        nursing_db.add(
+            nursing.PatientSafetyIncident(
+                id=str(uuid.uuid4()),
+                incident_type="fall",
+                severity=severity,
+                occurred_at=now,
+                unit="Unidade de teste",
+                location="Quarto 10",
+                description="Ocorrência registrada para teste.",
+                status=status,
+                investigation="",
+                corrective_action="",
+                reported_by=nurse.actor_name,
+                updated_by=nurse.actor_name,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    nursing_db.add_all(
+        [
+            nursing.InstitutionalDocument(
+                id=str(uuid.uuid4()),
+                title="Protocolo em revisão",
+                document_type="protocol",
+                version="1.0",
+                content="Conteúdo de teste.",
+                status="in_review",
+                valid_until=None,
+                created_by=manager.actor_name,
+                approved_by="",
+                approved_at=None,
+                created_at=now,
+                updated_at=now,
+            ),
+            nursing.InstitutionalDocument(
+                id=str(uuid.uuid4()),
+                title="Protocolo vencido",
+                document_type="protocol",
+                version="1.0",
+                content="Conteúdo de teste.",
+                status="approved",
+                valid_until=local_today - timedelta(days=1),
+                created_by=manager.actor_name,
+                approved_by=manager.actor_name,
+                approved_at=now,
+                created_at=now,
+                updated_at=now,
+            ),
+            nursing.InstitutionalDocument(
+                id=str(uuid.uuid4()),
+                title="Protocolo próximo do vencimento",
+                document_type="protocol",
+                version="1.0",
+                content="Conteúdo de teste.",
+                status="approved",
+                valid_until=local_today + timedelta(days=10),
+                created_by=manager.actor_name,
+                approved_by=manager.actor_name,
+                approved_at=now,
+                created_at=now,
+                updated_at=now,
+            ),
+        ]
+    )
+    nursing_db.commit()
+
+    result = nursing.get_management_dashboard(manager, nursing_db)
+
+    assert result["appointments_today"] == 3
+    assert result["appointments_pending_today"] == 2
+    assert result["appointments_no_show_today"] == 1
+    assert result["beds_in_cleaning"] == 1
+    assert result["beds_in_maintenance"] == 1
+    assert result["open_safety_incidents"] == 1
+    assert result["serious_open_safety_incidents"] == 1
+    assert result["documents_pending_review"] == 1
+    assert result["approved_documents_expired"] == 1
+    assert result["approved_documents_expiring_soon"] == 1
 
 
 def test_vitals_require_a_measurement_and_keep_actor(nursing_db: Session, nurse: DemoPrincipal) -> None:

@@ -2035,6 +2035,16 @@ function ExecutiveDashboard() {
     patient_transfers_today: number
     patient_admissions_today: number
     patient_discharges_today: number
+    appointments_today: number
+    appointments_pending_today: number
+    appointments_no_show_today: number
+    beds_in_cleaning: number
+    beds_in_maintenance: number
+    open_safety_incidents: number
+    serious_open_safety_incidents: number
+    documents_pending_review: number
+    approved_documents_expired: number
+    approved_documents_expiring_soon: number
     physical_beds: number
     mapped_occupied_beds: number
     operational_beds: number
@@ -2107,15 +2117,22 @@ function ExecutiveDashboard() {
         <article><strong>{summary?.open_emergency_arrivals ?? '—'}</strong><span>Chegadas em atendimento</span></article>
         <article><strong>{summary?.emergency_arrivals_today ?? '—'}</strong><span>Chegadas hoje</span></article>
         <article><strong>{summary?.vital_records_today ?? '—'}</strong><span>Coletas de enfermagem hoje</span></article>
+        <article><strong>{summary?.appointments_today ?? '—'}</strong><span>Agendamentos hoje</span></article>
+        <article><strong>{summary ? summary.beds_in_cleaning + summary.beds_in_maintenance : '—'}</strong><span>Leitos em higienização/manutenção</span></article>
+        <article><strong>{summary?.open_safety_incidents ?? '—'}</strong><span>Incidentes de segurança abertos</span></article>
+        <article><strong>{summary?.documents_pending_review ?? '—'}</strong><span>Documentos aguardando revisão</span></article>
         <article><strong>{stockAvailable ? criticalStock : '—'}</strong><span>Itens abaixo do mínimo</span></article>
       </div>
       <div className="executive-risk-strip" role="status"><AlertTriangle size={18} /><span><strong>Alertas assistenciais:</strong> {summary?.patients_with_known_allergies ?? '—'} paciente(s) com alergia conhecida, {summary?.patients_without_allergy_confirmation ?? '—'} sem confirmação e {summary?.active_contraindications ?? '—'} contraindicação(ões) ativa(s).</span></div>
       <div className="executive-summary-grid">
         <article><strong>Fluxo de leitos hoje</strong><span>{summary?.patient_admissions_today ?? '—'} admissões · {summary?.patient_transfers_today ?? '—'} transferências · {summary?.patient_discharges_today ?? '—'} altas</span></article>
+        <article><strong>Agenda de hoje</strong><span>{summary?.appointments_pending_today ?? '—'} pendentes · {summary?.appointments_no_show_today ?? '—'} não compareceram</span></article>
+        <article><strong>Segurança do paciente</strong><span>{summary?.open_safety_incidents ?? '—'} incidentes abertos · {summary?.serious_open_safety_incidents ?? '—'} graves/críticos</span></article>
+        <article><strong>Documentos institucionais</strong><span>{summary?.documents_pending_review ?? '—'} aguardando revisão · {summary?.approved_documents_expired ?? '—'} vencidos · {summary?.approved_documents_expiring_soon ?? '—'} vencem em até 30 dias</span></article>
         <article><strong>Validade de estoque</strong><span>{stockAvailable ? `${expiredStock} lote(s) vencido(s) · ${expiringStock} vencendo em até 30 dias` : 'Indicador indisponível'}</span></article>
       </div>
       {stockAlerts.length > 0 && <section className="executive-stock-alerts"><div className="section-heading"><div><p className="eyebrow">LOGÍSTICA · AÇÃO NECESSÁRIA</p><h3>Estoque crítico e validade</h3></div><span className="module-total">{stockAlerts.length} alertas</span></div><div className="collection-list">{stockAlerts.slice(0, 8).map((alert) => <article className="collection-row" key={alert.item_id}><div className="collection-row-heading"><strong>{alert.item_name}</strong><span>{alert.balance} {alert.unit} disponíveis</span></div><small>{alert.alert_types.includes('expired') ? 'Lote vencido' : alert.alert_types.includes('expiring') ? `Vencimento em ${Math.max(0, alert.days_to_expiry)} dias` : 'Abaixo do mínimo'} · Reposição sugerida: {alert.suggested_replenishment} {alert.unit} · Validade {alert.expiry_date}</small></article>)}</div></section>}
-      {summary?.updated_at && <p className="field-hint">Atualizado em {dateTime(summary.updated_at)}. {summary.unreconciled_legacy_patients > 0 ? `${summary.unreconciled_legacy_patients} localização(ões) legada(s) aguardam reconciliação; o percentual não é calculado.` : summary.occupancy_percent === null ? 'Percentual indisponível até haver leitos físicos operacionais cadastrados.' : `Ocupação calculada sobre ${summary.operational_beds} leito(s) operacional(is), com ${summary.available_beds} disponível(is).`}</p>}
+      {summary?.updated_at && <p className="field-hint">Atualizado em {dateTime(summary.updated_at)}. {summary.unreconciled_legacy_patients > 0 ? `${summary.unreconciled_legacy_patients} localização(ões) legada(s) aguardam reconciliação; o percentual não é calculado.` : summary.occupancy_percent === null ? 'Percentual indisponível até haver leitos físicos operacionais cadastrados.' : `Ocupação calculada sobre ${summary.operational_beds} leito(s) operacional(is), com ${summary.available_beds} disponível(is).`} Agenda considera o dia local de São Paulo; incidentes são os não encerrados e a validade documental considera documentos aprovados.</p>}
     </>}
   </section>
 }
