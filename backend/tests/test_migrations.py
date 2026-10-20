@@ -42,7 +42,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0034_reception_encounters"
+    assert revision == "0035_interprofessional_shares"
     if service == "nursing":
         assert len(tables) == 18
         assert "measured_at" in {
@@ -101,10 +101,11 @@ def test_each_service_migration_creates_only_its_owned_table(
         assert "hygiene_requests" in tables
         assert {"equipment_assets", "preventive_maintenance_plans"} <= tables
     elif service == "social":
-        assert len(tables) == 5
+        assert len(tables) == 6
         assert "audit_outbox" in tables
         assert "psychology_referrals" in tables
         assert "psychology_encounters" in tables
+        assert "interprofessional_shares" in tables
         assert "priority" in {
             column["name"]
             for column in inspect(get_engine(service)).get_columns("psychology_referrals")

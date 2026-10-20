@@ -13,6 +13,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
+import InterprofessionalSharePanel from '../components/InterprofessionalSharePanel'
 
 type Patient = {
   reference: string
@@ -59,6 +60,7 @@ export function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOpe
   const [description, setDescription] = useState('')
   const [socialQuery, setSocialQuery] = useState('')
   const [socialStatus, setSocialStatus] = useState<'all' | keyof typeof socialReferralStatuses>('all')
+  const [socialTab, setSocialTab] = useState<'referrals' | 'sharing'>('referrals')
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -104,12 +106,16 @@ export function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOpe
   const canUpdateSocial = user?.permissions.social?.includes('alterar') ?? false
   return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">Registros vinculados ao cadastro compartilhado de pacientes.</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <Activity size={23} /> : <UsersRound size={23} />}</span></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}{notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {!isXray && <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do Serviço Social"><button className={`button ${socialTab === 'referrals' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={socialTab === 'referrals'} onClick={() => setSocialTab('referrals')}>Encaminhamentos</button><button className={`button ${socialTab === 'sharing' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={socialTab === 'sharing'} onClick={() => setSocialTab('sharing')}>Compartilhamento seletivo</button></div>}
+    {(isXray || socialTab === 'referrals') && <>
     <form className="work-order-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVO REGISTRO</p><h2>{isXray ? 'Solicitar exame' : 'Registrar encaminhamento'}</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Paciente · quarto · leito</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione um paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}</option>)}</select></label><label className="field"><span className="field-label">{isXray ? 'Exame solicitado' : 'Tipo de encaminhamento'}</span><input required minLength={2} maxLength={80} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={isXray ? 'Ex.: radiografia de tórax' : 'Ex.: acompanhamento familiar'} /></label></div>{isXray && <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientReference)} />}<button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Salvando…' : 'Registrar'}</button></form>
     <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">{isXray ? 'HISTÓRICO' : 'ACOMPANHAMENTO'}</p><h2>{isXray ? 'Solicitações recentes' : 'Encaminhamentos sociais'}</h2></div><span className="module-total">{isXray ? items.length : visibleItems.length}</span></div>{!isXray && <div className="psychology-filter-row"><label className="field"><span className="field-label">Buscar paciente ou encaminhamento</span><input value={socialQuery} onChange={(event) => setSocialQuery(event.target.value)} placeholder="Nome ou tipo de acompanhamento" /></label><label className="field"><span className="field-label">Situação</span><select value={socialStatus} onChange={(event) => setSocialStatus(event.target.value as typeof socialStatus)}><option value="all">Todas</option>{Object.entries(socialReferralStatuses).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label></div>}{loading ? <div className="history-empty">Carregando registros…</div> : visibleItems.length ? <div className="work-order-list">{visibleItems.map((item) => <article className="work-order-card" key={item.id}><div><h3>{patientName(item.patient_reference)}</h3><p>{isXray ? item.exam_label : item.referral_type}</p></div>{!isXray && canUpdateSocial ? <label className="field xray-status-control"><span className="field-label">Situação</span><select value={item.status} disabled={updatingId === item.id || item.status === 'completed' || item.status === 'cancelled'} onChange={(event) => void updateSocialReferral(item, event.target.value as keyof typeof socialReferralStatuses)}>{Object.entries(socialReferralStatuses).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label> : <span>{isXray ? (item.status === 'open' ? 'Aberto' : item.status) : socialReferralStatuses[item.status] ?? item.status}</span>}<time>{dateTime(item.created_at)}</time></article>)}</div> : <div className="history-empty">{items.length ? 'Nenhum encaminhamento corresponde aos filtros.' : 'Nenhum registro encontrado.'}</div>}</section>
+    </>}
+    {!isXray && socialTab === 'sharing' && <InterprofessionalSharePanel moduleId="social" patients={patients} />}
   </section>
 }
 
-type PsychologyTab = 'triage' | 'encounters'
+type PsychologyTab = 'triage' | 'encounters' | 'sharing'
 type PsychologyReferral = { id: number; patient_reference: string; referral_type: string; status: string; priority: 'routine' | 'priority'; created_at: string }
 type PsychologyEncounter = { id: number; patient_reference: string; encounter_type: 'intake' | 'follow_up' | 'psychiatry'; objective: string; evolution: string; plan: string; actor_name: string; created_at: string }
 
@@ -309,6 +315,7 @@ export function PsychologyPage() {
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do módulo de Psicologia e Psiquiatria">
       <button type="button" role="tab" aria-selected={tab === 'triage'} className={`button ${tab === 'triage' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('triage')}>Fila e triagem <span>{referrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
       <button type="button" role="tab" aria-selected={tab === 'encounters'} className={`button ${tab === 'encounters' ? 'button-primary' : 'button-secondary'}`} onClick={() => { setEncountersPatient(''); setEncounterLoadError(''); setTab('encounters') }}>Atendimentos e registros</button>
+      <button type="button" role="tab" aria-selected={tab === 'sharing'} className={`button ${tab === 'sharing' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('sharing')}>Compartilhamento seletivo</button>
     </div>
     {tab === 'triage' && <>
       <form className="psychology-panel" onSubmit={(event) => void createReferral(event)}>
@@ -361,5 +368,6 @@ export function PsychologyPage() {
         </article>)}</div> : <div className="history-empty">Nenhum registro clínico para este paciente.</div>}
       </section>
     </>}
+    {tab === 'sharing' && <InterprofessionalSharePanel moduleId="psychology" patients={patients} />}
   </section>
 }

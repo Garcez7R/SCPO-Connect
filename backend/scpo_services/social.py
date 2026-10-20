@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import DateTime, Integer, String, Text, select
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from sqlalchemy import JSON, DateTime, Integer, String, Text, and_, or_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -54,6 +54,24 @@ class PsychologyEncounter(Base):
     actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
     actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class InterprofessionalShare(Base):
+    __tablename__ = "interprofessional_shares"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    sender_module: Mapped[str] = mapped_column(String(16), nullable=False)
+    recipient_module: Mapped[str] = mapped_column(String(16), nullable=False)
+    categories: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    purpose: Mapped[str] = mapped_column(String(300), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 def get_social_db():
@@ -116,6 +134,42 @@ class PsychologyEncounterPayload(BaseModel):
     @classmethod
     def trim_clinical_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+
+class InterprofessionalSharePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str = Field(min_length=1, max_length=36)
+    sender_module: Literal["social", "psychology"]
+    recipient_module: Literal["social", "psychology"]
+    categories: list[Literal[
+        "care_needs", "family_support", "social_context", "safety_followup", "contact_plan", "other"
+    ]] = Field(min_length=1, max_length=6)
+    summary: str = Field(min_length=3, max_length=2000)
+    purpose: str = Field(min_length=10, max_length=300)
+    expires_in_days: Literal[7, 14, 30] = 7
+
+    @field_validator("categories")
+    @classmethod
+    def require_unique_categories(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("Não repita categorias de informação")
+        return value
+
+    @field_validator("summary", "purpose", mode="before")
+    @classmethod
+    def trim_shared_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_distinct_modules(self) -> "InterprofessionalSharePayload":
+        if self.sender_module == self.recipient_module:
+            raise ValueError("Escolha o outro módulo como destinatário")
+        return self
+
+
+class InterprofessionalShareRevocation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    revoked: Literal[True]
 
 
 @app.get("/health")
@@ -274,6 +328,141 @@ def create_psychology_encounter(
     db.commit()
     db.refresh(encounter)
     return serialize_psychology_encounter(encounter)
+
+
+@app.get("/api/v1/interprofessional/shares")
+def list_interprofessional_shares(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("social", "psychology"))],
+    db: Annotated[Session, Depends(get_social_db)],
+    module: Literal["social", "psychology"] | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    modules = [module] if module else ["social", "psychology"]
+    authorized_modules = [
+        selected
+        for selected in modules
+        if selected in principal.modules and "consultar" in principal.permissions.get(selected, [])
+    ]
+    if not authorized_modules:
+        raise HTTPException(status_code=403, detail="Acesso não autorizado ao compartilhamento")
+
+    now = datetime.now(UTC)
+    access_conditions = []
+    for selected in authorized_modules:
+        access_conditions.extend([
+            and_(
+                InterprofessionalShare.recipient_module == selected,
+                InterprofessionalShare.revoked_at.is_(None),
+                InterprofessionalShare.expires_at > now,
+            ),
+            and_(
+                InterprofessionalShare.sender_module == selected,
+                InterprofessionalShare.created_by == principal.user_id,
+            ),
+        ])
+    shares = db.scalars(
+        select(InterprofessionalShare)
+        .where(or_(*access_conditions))
+        .order_by(InterprofessionalShare.created_at.desc())
+        .limit(500)
+    ).all()
+    result = []
+    for share in shares:
+        direction = "sent" if share.created_by == principal.user_id else "received"
+        emit_audit_event(
+            principal, "interprofessional", "interprofessional_share_read", str(share.id)
+        )
+        result.append(serialize_interprofessional_share(share, direction, now))
+    return {"shares": result}
+
+
+@app.post("/api/v1/interprofessional/shares", status_code=201)
+def create_interprofessional_share(
+    payload: InterprofessionalSharePayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("social", "psychology"))],
+    db: Annotated[Session, Depends(get_social_db)],
+) -> dict[str, object]:
+    if payload.sender_module == payload.recipient_module:
+        raise HTTPException(status_code=422, detail="Escolha o outro módulo como destinatário")
+    if (
+        payload.sender_module not in principal.modules
+        or "criar" not in principal.permissions.get(payload.sender_module, [])
+    ):
+        raise HTTPException(status_code=403, detail="Sem permissão para compartilhar por este módulo")
+
+    verify_patient_reference(payload.patient_reference)
+    now = datetime.now(UTC)
+    share = InterprofessionalShare(
+        patient_reference=payload.patient_reference,
+        sender_module=payload.sender_module,
+        recipient_module=payload.recipient_module,
+        categories=payload.categories,
+        summary=payload.summary,
+        purpose=payload.purpose,
+        created_by=principal.user_id,
+        created_by_name=principal.actor_name,
+        created_at=now,
+        expires_at=now + timedelta(days=payload.expires_in_days),
+    )
+    db.add(share)
+    db.flush()
+    emit_audit_event(
+        principal, "interprofessional", "interprofessional_share_created", str(share.id), db=db
+    )
+    db.commit()
+    db.refresh(share)
+    return serialize_interprofessional_share(share, "sent", now)
+
+
+@app.patch("/api/v1/interprofessional/shares/{share_id}")
+def revoke_interprofessional_share(
+    share_id: int,
+    payload: InterprofessionalShareRevocation,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("social", "psychology"))],
+    db: Annotated[Session, Depends(get_social_db)],
+) -> dict[str, object]:
+    share = db.get(InterprofessionalShare, share_id)
+    if share is None:
+        raise HTTPException(status_code=404, detail="Compartilhamento não encontrado")
+    if (
+        share.created_by != principal.user_id
+        or share.sender_module not in principal.modules
+        or "alterar" not in principal.permissions.get(share.sender_module, [])
+    ):
+        raise HTTPException(status_code=403, detail="Somente o autor pode revogar este compartilhamento")
+    if share.revoked_at is not None:
+        raise HTTPException(status_code=409, detail="O compartilhamento já foi revogado")
+
+    share.revoked_at = datetime.now(UTC)
+    share.revoked_by = principal.user_id
+    emit_audit_event(
+        principal, "interprofessional", "interprofessional_share_revoked", str(share.id), db=db
+    )
+    db.commit()
+    db.refresh(share)
+    return serialize_interprofessional_share(share, "sent", datetime.now(UTC))
+
+
+def serialize_interprofessional_share(
+    share: InterprofessionalShare, direction: str, now: datetime
+) -> dict[str, object]:
+    expires_at = share.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return {
+        "id": share.id,
+        "patient_reference": share.patient_reference,
+        "sender_module": share.sender_module,
+        "recipient_module": share.recipient_module,
+        "direction": direction,
+        "categories": share.categories,
+        "summary": share.summary,
+        "purpose": share.purpose,
+        "created_by_name": share.created_by_name,
+        "created_at": share.created_at.isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "expired": expires_at <= now,
+        "revoked_at": share.revoked_at.isoformat() if share.revoked_at else None,
+    }
 
 
 def serialize_psychology_encounter(encounter: PsychologyEncounter) -> dict[str, object]:

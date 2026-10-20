@@ -915,6 +915,102 @@ def test_psychology_encounters_require_structured_content() -> None:
         )
 
 
+def test_interprofessional_shares_are_scoped_expiring_and_revocable(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    reference = "123e4567-e89b-12d3-a456-426614174000"
+    audit_events = []
+    monkeypatch.setattr(social, "verify_patient_reference", lambda value: {"reference": value})
+    monkeypatch.setattr(social, "emit_audit_event", lambda *args, **kwargs: audit_events.append(args))
+    social_worker = DemoPrincipal(
+        "social-1", "social", "Assistente social", "social", ["social"],
+        {"social": ["consultar", "criar", "alterar"]},
+    )
+    psychologist = DemoPrincipal(
+        "psych-1", "psych", "Psicóloga", "psychology", ["psychology"],
+        {"psychology": ["consultar", "criar", "alterar"]},
+    )
+    other_social_worker = DemoPrincipal(
+        "social-2", "social2", "Outra assistente", "social", ["social"],
+        {"social": ["consultar", "alterar"]},
+    )
+    payload = social.InterprofessionalSharePayload(
+        patient_reference=reference,
+        sender_module="social",
+        recipient_module="psychology",
+        categories=["family_support", "contact_plan"],
+        summary="Contato familiar solicitado após a alta.",
+        purpose="Coordenar o acompanhamento após a alta hospitalar.",
+        expires_in_days=7,
+    )
+    share = social.create_interprofessional_share(payload, social_worker, domain_database["social"])
+    assert share["sender_module"] == "social"
+    assert share["recipient_module"] == "psychology"
+    assert share["categories"] == ["family_support", "contact_plan"]
+    assert share["expired"] is False
+
+    received = social.list_interprofessional_shares(
+        psychologist, domain_database["social"], module="psychology"
+    )["shares"]
+    assert len(received) == 1
+    assert received[0]["direction"] == "received"
+    assert received[0]["summary"] == payload.summary
+    sent = social.list_interprofessional_shares(
+        social_worker, domain_database["social"], module="social"
+    )["shares"]
+    assert sent[0]["direction"] == "sent"
+
+    with pytest.raises(HTTPException) as wrong_module:
+        social.list_interprofessional_shares(
+            psychologist, domain_database["social"], module="social"
+        )
+    assert wrong_module.value.status_code == 403
+    with pytest.raises(HTTPException) as wrong_author:
+        social.revoke_interprofessional_share(
+            share["id"],
+            social.InterprofessionalShareRevocation(revoked=True),
+            other_social_worker,
+            domain_database["social"],
+        )
+    assert wrong_author.value.status_code == 403
+
+    revoked = social.revoke_interprofessional_share(
+        share["id"],
+        social.InterprofessionalShareRevocation(revoked=True),
+        social_worker,
+        domain_database["social"],
+    )
+    assert revoked["revoked_at"] is not None
+    assert social.list_interprofessional_shares(
+        psychologist, domain_database["social"], module="psychology"
+    )["shares"] == []
+    assert social.list_interprofessional_shares(
+        social_worker, domain_database["social"], module="social"
+    )["shares"][0]["revoked_at"] is not None
+    assert all(payload.summary not in repr(event) for event in audit_events)
+
+
+def test_interprofessional_share_requires_distinct_modules_and_unique_categories() -> None:
+    with pytest.raises(ValidationError):
+        social.InterprofessionalSharePayload(
+            patient_reference="123e4567-e89b-12d3-a456-426614174000",
+            sender_module="social",
+            recipient_module="social",
+            categories=["care_needs"],
+            summary="Resumo válido.",
+            purpose="Coordenar o cuidado do paciente.",
+        )
+    with pytest.raises(ValidationError):
+        social.InterprofessionalSharePayload(
+            patient_reference="123e4567-e89b-12d3-a456-426614174000",
+            sender_module="social",
+            recipient_module="psychology",
+            categories=["care_needs", "care_needs"],
+            summary="Resumo válido.",
+            purpose="Coordenar o cuidado do paciente.",
+        )
+
+
 def test_psychology_routes_require_module_permission(monkeypatch: pytest.MonkeyPatch) -> None:
     principal = DemoPrincipal(
         "psych-1",

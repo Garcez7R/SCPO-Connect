@@ -32,6 +32,14 @@ O cadastro distingue alergia conhecida (com detalhes), ausência de alergias con
 
 Esta matriz é uma proposta técnica e deve ser confirmada com cada área e com os responsáveis institucionais por privacidade, segurança e assistência. Permissões individuais podem restringir os acessos do perfil; concessões adicionais devem ter justificativa, aprovador, validade e auditoria.
 
+## Compartilhamento seletivo entre Serviço Social e Psicologia/Psiquiatria
+
+Os registros de atendimento psicológico/psiquiátrico continuam privados ao módulo de origem. O fluxo de compartilhamento não copia automaticamente evoluções, planos ou encaminhamentos: o profissional cria um resumo independente, seleciona as categorias estritamente necessárias e indica uma finalidade e o módulo destinatário. O resumo fica acessível somente ao módulo destinatário e ao autor no módulo de origem.
+
+Cada compartilhamento tem prazo limitado (7 dias por padrão, com opções de 14 ou 30 dias), autoria registrada e pode ser revogado pelo autor. Leituras, criação e revogação geram eventos de auditoria sem incluir o conteúdo do resumo. A revogação impede novas consultas do destinatário; não apaga o registro de auditoria nem substitui a política institucional de retenção.
+
+Esse mecanismo técnico não determina a base legal, não registra consentimento válido nem substitui análise do responsável institucional por privacidade. Antes de usar dados reais, a Santa Casa deve aprovar finalidade, fluxo de consentimento/base legal, retenção, exceções assistenciais, perfis autorizados e procedimento para correção de compartilhamento indevido. Até essa aprovação, o sistema deve ser validado somente com dados fictícios.
+
 ## Foto e trilha de auditoria
 
 A imagem deve ser opcional, armazenada em repositório privado fora da pasta pública do frontend, com tipo/tamanho validados, acesso temporário autorizado pela API, política de retenção e cópias de segurança protegidas. Não embutir imagem em logs nem em listagens de massa.

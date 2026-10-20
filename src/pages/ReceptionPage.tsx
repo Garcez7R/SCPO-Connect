@@ -38,8 +38,7 @@ type EmergencyArrival = {
   updated_at: string
 }
 type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
-type ReceptionTab = 'attendances' | 'admissions'
-type AttendanceView = 'emergency' | 'outpatient'
+type ReceptionTab = 'emergency' | 'outpatient' | 'admissions'
 type HospitalBed = { id: string; unit_name: string; room: string; label: string; status: string; occupied: boolean }
 
 const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
@@ -75,8 +74,7 @@ function ReceptionAllergyAlert({ status }: { status?: Patient['allergies_status'
 }
 
 function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean }> }) {
-  const [tab, setTab] = useState<ReceptionTab>('attendances')
-  const [attendanceView, setAttendanceView] = useState<AttendanceView>('emergency')
+  const [tab, setTab] = useState<ReceptionTab>('emergency')
   const [patients, setPatients] = useState<Patient[]>([])
   const [beds, setBeds] = useState<HospitalBed[]>([])
   const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
@@ -238,17 +236,13 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
 
   return <section className="reception-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'attendances' ? 'Registre e acompanhe chegadas, atendimentos de emergência e fichas ambulatoriais.' : 'Consulte os pacientes e organize admissões e internações.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
-    <div className="admin-tabs module-tabs" role="tablist" aria-label="Fluxos da Recepção">
-      <button className={`button ${tab === 'attendances' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'attendances'} onClick={() => setTab('attendances')}>Atendimentos <span>{counts.waiting}</span></button>
-      <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e internações</button>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
+    <div className="admin-tabs module-tabs reception-primary-tabs" role="tablist" aria-label="Fluxos da Recepção">
+      <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
+      <button className={`button ${tab === 'outpatient' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'outpatient'} onClick={() => setTab('outpatient')}>Ficha ambulatorial</button>
+      <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : <>
-      <div className="admin-tabs module-tabs reception-attendance-tabs" role="tablist" aria-label="Tipo de atendimento">
-        <button className={`button ${attendanceView === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={attendanceView === 'emergency'} onClick={() => setAttendanceView('emergency')}>Chegadas e emergência <span>{counts.waiting}</span></button>
-        <button className={`button ${attendanceView === 'outpatient' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={attendanceView === 'outpatient'} onClick={() => setAttendanceView('outpatient')}>Ficha ambulatorial</button>
-      </div>
-      {attendanceView === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : <>
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
       {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
       <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
@@ -297,7 +291,6 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
         </article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}
         <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
       </section>
-      </>}
     </>}
   </section>
 }
