@@ -1087,6 +1087,93 @@ def test_hygiene_requests_have_a_dedicated_assignable_queue(
     )["requests"][0]["id"] == request["id"]
 
 
+def test_hygiene_bed_turnover_blocks_until_completed_and_supports_release_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_database: dict[str, Session],
+) -> None:
+    actions: list[str] = []
+    fail_release = True
+
+    def update_bed(
+        bed_id: str,
+        request_id: str,
+        action: str,
+        actor_id: str,
+        actor_name: str,
+    ) -> dict[str, str]:
+        nonlocal fail_release
+        assert bed_id == "00000000-0000-4000-8000-000000000001"
+        assert request_id
+        assert actor_id == "hygiene-1"
+        assert actor_name == "Equipe de Higienização"
+        actions.append(action)
+        if action == "release" and fail_release:
+            raise HTTPException(status_code=503, detail="Serviço de Enfermagem indisponível")
+        return {"id": bed_id, "status": "cleaning" if action == "start" else "available"}
+
+    monkeypatch.setattr(maintenance, "update_hospital_bed_cleaning_state", update_bed)
+    monkeypatch.setattr(maintenance, "emit_audit_event", lambda *args, **kwargs: None)
+    hygiene_worker = DemoPrincipal(
+        "hygiene-1",
+        "hygiene",
+        "Equipe de Higienização",
+        "hygiene",
+        ["hygiene"],
+        {"hygiene": ["consultar", "criar", "alterar"]},
+    )
+    request = maintenance.create_hygiene_request(
+        maintenance.HygieneRequestCreate(
+            request_type="after_procedure",
+            unit="Hospital",
+            area="room",
+            bed_id="00000000-0000-4000-8000-000000000001",
+            location="Quarto 3 · Leito A",
+        ),
+        hygiene_worker,
+        domain_database["maintenance"],
+    )
+    assert request["bed_status"] == "cleaning"
+    assert actions == ["start"]
+
+    in_progress = maintenance.update_hygiene_request(
+        request["id"],
+        maintenance.HygieneRequestUpdate(status="in_progress"),
+        hygiene_worker,
+        domain_database["maintenance"],
+    )
+    assert in_progress["bed_status"] == "cleaning"
+    assert actions == ["start"]
+
+    completed = maintenance.update_hygiene_request(
+        request["id"],
+        maintenance.HygieneRequestUpdate(status="completed"),
+        hygiene_worker,
+        domain_database["maintenance"],
+    )
+    assert completed["status"] == "completed"
+    assert completed["bed_status"] == "release_pending"
+    assert "bed_release_error" in completed
+    assert actions == ["start", "release"]
+
+    with pytest.raises(HTTPException) as cancellation:
+        maintenance.update_hygiene_request(
+            request["id"],
+            maintenance.HygieneRequestUpdate(status="cancelled"),
+            hygiene_worker,
+            domain_database["maintenance"],
+        )
+    assert cancellation.value.status_code == 409
+
+    fail_release = False
+    released = maintenance.retry_hygiene_bed_release(
+        request["id"],
+        hygiene_worker,
+        domain_database["maintenance"],
+    )
+    assert released["bed_status"] == "available"
+    assert actions == ["start", "release", "release"]
+
+
 def test_hygiene_custom_request_requires_a_description() -> None:
     with pytest.raises(ValidationError):
         maintenance.HygieneRequestCreate(

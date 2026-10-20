@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import quote
 
 import httpx
 from fastapi import Header, HTTPException, Request
@@ -104,7 +105,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0036_reception_appointments"
+    expected_revision = "0037_hygiene_bed_turnover"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."
@@ -328,6 +329,51 @@ def verify_patient_reference(reference: str) -> dict[str, str]:
         return {"reference": str(data["reference"]), "name": str(data["name"]), "room": str(data["room"]), "bed": str(data["bed"])}
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=503, detail="Resposta inválida do cadastro de pacientes") from exc
+
+
+def update_hospital_bed_cleaning_state(
+    bed_id: str,
+    request_id: str,
+    action: Literal["start", "release", "rollback"],
+    actor_id: str,
+    actor_name: str,
+) -> dict[str, str]:
+    nursing_url = os.getenv("SCPO_NURSING_API_URL", "http://nursing:8000").rstrip("/")
+    service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
+    if not service_token:
+        raise HTTPException(status_code=503, detail="Integração com os leitos indisponível")
+    try:
+        response = httpx.post(
+            f"{nursing_url}/internal/v1/hospital-beds/{quote(bed_id, safe='')}/cleaning",
+            headers={"X-Service-Token": service_token},
+            json={
+                "action": action,
+                "request_id": request_id,
+                "actor_id": actor_id,
+                "actor_name": actor_name,
+            },
+            timeout=3.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Serviço de Enfermagem indisponível") from exc
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail="Leito não encontrado ou inativo")
+    if response.status_code == 409:
+        raise HTTPException(
+            status_code=409,
+            detail="O leito mudou de situação ou está ocupado; verifique a Gestão Hospitalar",
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=503, detail="Não foi possível atualizar a situação do leito")
+    try:
+        data = response.json()
+        bed_status = str(data["status"])
+        expected_status = "cleaning" if action == "start" else "available"
+        if str(data["id"]) != bed_id or bed_status != expected_status:
+            raise ValueError("Estado do leito não corresponde à operação")
+        return {"id": bed_id, "status": bed_status}
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="Resposta inválida do serviço de Enfermagem") from exc
 
 
 def resolve_medication_dispensation(dispensation_id: str) -> dict[str, str]:

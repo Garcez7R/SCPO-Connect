@@ -733,6 +733,10 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .hygiene-request-controls { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(170px, 1fr) auto; align-items: end; gap: 10px; }
 .hygiene-request-controls .field { gap: 6px; }
 .hygiene-request-controls .button { min-height: 42px; }
+.hygiene-bed-link { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #d7b664; border-radius: 7px; background: #fff8e8; color: #654d16; font-size: 11px; }
+.hygiene-bed-link span { color: #786433; line-height: 1.45; }
+.hygiene-bed-link-available { border-color: #8bc3a0; background: #edf8f1; color: #285d3b; }
+.hygiene-bed-link-release_pending { border-color: #d7b664; background: #fff8e8; }
 .hygiene-updated { color: var(--subtle); font-size: 10px; }
 .patient-registry-page, .patient-history-page, .therapy-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
 .patient-registry-form, .patient-list-panel, .patient-history-summary, .therapy-form, .therapy-calendar-panel, .therapy-birthday-panel, .therapy-activity-list { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
@@ -1208,7 +1212,8 @@ html[data-theme="dark"] {
   color: var(--ink);
 }
 html[data-theme="dark"] body { background: var(--page); color: var(--ink); }
-html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .nutrition-context-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .interprofessional-share-card, .hygiene-panel, .hygiene-summary article, .hygiene-request-card, .xray-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .nutrition-context-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .interprofessional-share-card, .hygiene-panel, .hygiene-summary article, .hygiene-request-card, .hygiene-bed-link, .xray-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .hygiene-bed-link span { color: var(--muted); }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
 html[data-theme="dark"] .psychology-privacy { border-color: #355d70; background: #203743; color: #b5e3f5; }

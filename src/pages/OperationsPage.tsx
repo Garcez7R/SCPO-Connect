@@ -176,6 +176,9 @@ type HygieneRequest = {
   custom_type: string | null
   unit: string
   area: HygieneArea
+  bed_id: string | null
+  bed_status: 'none' | 'cleaning' | 'release_pending' | 'available'
+  bed_release_error?: string
   location: string
   description: string
   priority: HygienePriority
@@ -186,6 +189,7 @@ type HygieneRequest = {
   created_at: string
   updated_at: string
 }
+type HygieneBed = { id: string; unit_name: string; room: string; label: string; status: string; occupied: boolean }
 
 const hygieneRequestTypes: Record<HygieneRequestType, string> = {
   routine: 'Higienização programada',
@@ -212,11 +216,31 @@ const hygieneStatuses: Record<HygieneStatus, string> = {
 }
 
 function HygieneRequestForm() {
+  const [beds, setBeds] = useState<HygieneBed[]>([])
+  const [bedLoadError, setBedLoadError] = useState('')
+  useEffect(() => {
+    let active = true
+    const loadBeds = async () => {
+      try {
+        const response = await fetch('/api/v1/nursing/beds')
+        const data = await readApiResponse<{ beds?: HygieneBed[] }>(response)
+        if (active) {
+          setBeds(data.beds ?? [])
+          setBedLoadError('')
+        }
+      } catch (loadError) {
+        if (active) setBedLoadError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os leitos.')
+      }
+    }
+    void loadBeds()
+    return () => { active = false }
+  }, [])
   const [form, setForm] = useState({
     request_type: 'routine' as HygieneRequestType,
     custom_type: '',
     unit: '',
     area: '' as HygieneArea | '',
+    bed_id: '',
     location: '',
     description: '',
     priority: 'normal' as HygienePriority,
@@ -225,6 +249,8 @@ function HygieneRequestForm() {
   const [reviewing, setReviewing] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const availableBeds = beds.filter((bed) => bed.status === 'available' && !bed.occupied)
+  const selectedBed = beds.find((bed) => bed.id === form.bed_id)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -241,10 +267,12 @@ function HygieneRequestForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, custom_type: form.custom_type.trim() || null }),
       })
-      await readApiResponse<HygieneRequest>(response)
-      setForm({ request_type: 'routine', custom_type: '', unit: '', area: '', location: '', description: '', priority: 'normal' })
+      const created = await readApiResponse<HygieneRequest>(response)
+      setForm({ request_type: 'routine', custom_type: '', unit: '', area: '', bed_id: '', location: '', description: '', priority: 'normal' })
       setReviewing(false)
-      setNotice('Solicitação enviada à equipe de Higienização.')
+      setNotice(created.bed_id
+        ? 'Solicitação enviada; o leito foi bloqueado para higienização.'
+        : 'Solicitação enviada à equipe de Higienização.')
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Falha ao registrar a solicitação.')
     } finally {
@@ -256,13 +284,14 @@ function HygieneRequestForm() {
       <div className="section-heading"><div><p className="eyebrow">NOVA SOLICITAÇÃO · HIGIENIZAÇÃO</p><h2>{reviewing ? 'Revise antes de enviar' : 'Descreva o serviço'}</h2><p className="welcome-copy">{reviewing ? 'Confira os dados do chamado e confirme o envio à equipe.' : 'Informe o serviço, a unidade e o local que precisa de atendimento.'}</p></div></div>
       {!reviewing ? <div className="field-grid field-grid-two">
         <label className="field"><span className="field-label">Tipo de solicitação</span><select required value={form.request_type} onChange={(event) => setForm({ ...form, request_type: event.target.value as HygieneRequestType, custom_type: '' })}>{Object.entries(hygieneRequestTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">Unidade</span><select required value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outra unidade</option></select></label>
-        <label className="field"><span className="field-label">Área</span><select required value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value as HygieneArea })}><option value="">Selecione</option>{Object.entries(hygieneAreas).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="field"><span className="field-label">Quarto, sala ou referência do local</span><input required minLength={2} maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
+        <label className="field"><span className="field-label">Unidade</span><select required disabled={Boolean(form.bed_id)} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outra unidade</option>{selectedBed && !['Hospital', 'Pronto atendimento', 'Área externa', 'Outra unidade'].includes(selectedBed.unit_name) && <option value={selectedBed.unit_name}>{selectedBed.unit_name}</option>}</select></label>
+        <label className="field"><span className="field-label">Área</span><select required disabled={Boolean(form.bed_id)} value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value as HygieneArea })}><option value="">Selecione</option>{Object.entries(hygieneAreas).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        {form.area === 'room' && <label className="field"><span className="field-label">Vincular leito físico (opcional)</span><select value={form.bed_id} onChange={(event) => { const bedId = event.target.value; const bed = availableBeds.find((item) => item.id === bedId); setForm({ ...form, bed_id: bedId, unit: bed?.unit_name ?? form.unit, location: bed ? `Quarto ${bed.room} · Leito ${bed.label}` : form.location }) }}><option value="">Solicitação sem vínculo a leito</option>{availableBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{bedLoadError && <span className="field-hint">Não foi possível carregar os leitos físicos: {bedLoadError}</span>}</label>}
+        <label className="field"><span className="field-label">Quarto, sala ou referência do local</span><input required minLength={2} maxLength={120} value={form.location} readOnly={Boolean(form.bed_id)} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
         <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as HygienePriority })}><option value="normal">Rotina</option><option value="high">Prioritária</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente conforme os critérios e canais definidos pela instituição.</span></label>
         {form.request_type === 'other' && <label className="field"><span className="field-label">Tipo de solicitação</span><input required minLength={3} maxLength={80} value={form.custom_type} onChange={(event) => setForm({ ...form, custom_type: event.target.value })} placeholder="Descreva o serviço necessário" /></label>}
         <label className="field hygiene-field-wide"><span className="field-label">{form.request_type === 'restock' ? 'Material e quantidade' : 'Detalhes operacionais (opcional)'}</span><textarea maxLength={1000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder={form.request_type === 'restock' ? 'Informe o material e a quantidade necessária' : 'Descreva o serviço e condições relevantes do local'} /></label>
-      </div> : <div className="work-order-review"><div><small>Tipo de solicitação</small><strong>{form.request_type === 'other' ? form.custom_type : hygieneRequestTypes[form.request_type]}</strong></div><div><small>Unidade e local</small><strong>{form.unit} · {form.location}</strong></div><div><small>Área e prioridade</small><strong>{hygieneAreas[form.area as HygieneArea]} · {workOrderPriorities[form.priority]}</strong></div><div className="work-order-review-description"><small>Detalhes</small><p>{form.description || 'Sem detalhes adicionais.'}</p></div></div>}
+      </div> : <div className="work-order-review"><div><small>Tipo de solicitação</small><strong>{form.request_type === 'other' ? form.custom_type : hygieneRequestTypes[form.request_type]}</strong></div><div><small>Unidade e local</small><strong>{form.unit} · {form.location}</strong></div>{selectedBed && <div><small>Leito vinculado</small><strong>{selectedBed.unit_name} · Quarto {selectedBed.room} · Leito {selectedBed.label}</strong></div>}<div><small>Área e prioridade</small><strong>{hygieneAreas[form.area as HygieneArea]} · {workOrderPriorities[form.priority]}</strong></div><div className="work-order-review-description"><small>Detalhes</small><p>{form.description || 'Sem detalhes adicionais.'}</p></div></div>}
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
       {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
       <p className="work-order-privacy">Não inclua nomes, diagnósticos ou outros dados de pacientes na descrição.</p>
@@ -365,9 +394,30 @@ export function HygienePage({ user }: { user: AuthUser }) {
       const data = await readApiResponse<HygieneRequest>(response)
       setRequests((current) => current.map((item) => item.id === data.id ? data : item))
       setDrafts((current) => { const next = { ...current }; delete next[request.id]; return next })
-      setNotice('Solicitação atualizada.')
+      if (data.bed_release_error) {
+        setError(`Higienização concluída, mas o leito permanece bloqueado: ${data.bed_release_error}`)
+        setNotice('A liberação do leito pode ser tentada novamente após verificar a conexão.')
+      } else {
+        setNotice('Solicitação atualizada.')
+      }
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar a solicitação.')
+    } finally {
+      setUpdating('')
+    }
+  }
+
+  async function retryBedRelease(request: HygieneRequest) {
+    setUpdating(request.id)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch(`/api/v1/hygiene/requests/${request.id}/bed-release`, { method: 'POST' })
+      const data = await readApiResponse<HygieneRequest>(response)
+      setRequests((current) => current.map((item) => item.id === data.id ? data : item))
+      setNotice('Leito liberado após a confirmação da conclusão da higienização.')
+    } catch (releaseError) {
+      setError(releaseError instanceof Error ? releaseError.message : 'Não foi possível liberar o leito.')
     } finally {
       setUpdating('')
     }
@@ -385,9 +435,10 @@ export function HygienePage({ user }: { user: AuthUser }) {
         const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
         return <article className="hygiene-request-card" key={request.id}>
           <div className="hygiene-request-heading"><div><span className={`work-order-priority priority-${request.priority}`}>{workOrderPriorities[request.priority]}</span><h3>{request.request_type === 'other' ? request.custom_type : hygieneRequestTypes[request.request_type]}</h3><p>{request.unit} · {hygieneAreas[request.area]} · {request.location}</p></div><span className={`work-order-status status-${request.status}`}>{hygieneStatuses[request.status]}</span></div>
+          {request.bed_id && <div className={`hygiene-bed-link hygiene-bed-link-${request.bed_status}`}><strong>{request.bed_status === 'available' ? 'Leito liberado' : request.bed_status === 'release_pending' ? 'Higienização concluída · liberação pendente' : 'Leito bloqueado para higienização'}</strong>{request.bed_status !== 'available' && <span>O leito não pode receber nova internação até a liberação confirmada.</span>}</div>}
           {request.description && <p className="hygiene-request-description">{request.description}</p>}
           <div className="hygiene-request-meta"><span>Solicitado por <strong>{request.requester_name}</strong></span><time>{dateTime(request.created_at)}</time></div>
-          <div className="hygiene-request-controls"><label className="field"><span className="field-label">Responsável</span><input maxLength={120} value={draft.assignee} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, assignee: event.target.value } }))} placeholder="Atribuir membro da equipe" /></label><label className="field"><span className="field-label">Situação</span><select value={draft.status} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, status: event.target.value as HygieneStatus } }))}><option value="open">Aguardando atendimento</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select></label><button className="button button-secondary" type="button" onClick={() => void saveRequest(request)} disabled={updating === request.id || (draft.status === request.status && draft.assignee === request.assignee)}>{updating === request.id ? 'Salvando…' : 'Salvar atualização'}</button></div>
+          <div className="hygiene-request-controls"><label className="field"><span className="field-label">Responsável</span><input maxLength={120} value={draft.assignee} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, assignee: event.target.value } }))} placeholder="Atribuir membro da equipe" /></label><label className="field"><span className="field-label">Situação</span><select value={draft.status} onChange={(event) => setDrafts((current) => ({ ...current, [request.id]: { ...draft, status: event.target.value as HygieneStatus } }))}><option value="open">Aguardando atendimento</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option><option value="cancelled" disabled={Boolean(request.bed_id)}>Cancelada</option></select></label><button className="button button-secondary" type="button" onClick={() => void saveRequest(request)} disabled={updating === request.id || (draft.status === request.status && draft.assignee === request.assignee)}>{updating === request.id ? 'Salvando…' : 'Salvar atualização'}</button>{request.bed_id && request.status === 'completed' && request.bed_status !== 'available' && <button className="button button-primary" type="button" onClick={() => void retryBedRelease(request)} disabled={updating === request.id}>{updating === request.id ? 'Verificando…' : 'Tentar liberar leito'}</button>}</div>
           <small className="hygiene-updated">Última atualização por {request.updated_by} · {dateTime(request.updated_at)}</small>
         </article>
       })}</div> : <div className="history-empty">Nenhuma solicitação corresponde a este filtro.</div>}

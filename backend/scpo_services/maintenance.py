@@ -7,7 +7,8 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, case, select
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, case, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from .common import (
@@ -18,6 +19,7 @@ from .common import (
     database_session,
     emit_audit_event,
     require_demo_role,
+    update_hospital_bed_cleaning_state,
     verify_database_migrated,
     verify_patient_reference,
 )
@@ -59,12 +61,15 @@ class WorkOrderEvent(Base):
 
 class HygieneRequest(Base):
     __tablename__ = "hygiene_requests"
+    __table_args__ = (Index("ix_hygiene_requests_bed_id", "bed_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     request_type: Mapped[str] = mapped_column(String(32), nullable=False)
     custom_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     unit: Mapped[str] = mapped_column(String(80), nullable=False)
     area: Mapped[str] = mapped_column(String(32), nullable=False)
+    bed_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    bed_status: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
     location: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     priority: Mapped[str] = mapped_column(String(12), nullable=False)
@@ -132,6 +137,7 @@ class HygieneRequestCreate(BaseModel):
     custom_type: str | None = Field(default=None, min_length=3, max_length=80)
     unit: str = Field(min_length=2, max_length=80)
     area: Literal["room", "bathroom", "shared", "clinical", "circulation", "other"]
+    bed_id: str | None = Field(default=None, max_length=36)
     location: str = Field(min_length=2, max_length=120)
     description: str = Field(default="", max_length=1000)
     priority: Literal["normal", "high", "urgent"] = "normal"
@@ -141,12 +147,24 @@ class HygieneRequestCreate(BaseModel):
     def trim_hygiene_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
+    @field_validator("bed_id")
+    @classmethod
+    def trim_bed_id(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        try:
+            return str(uuid.UUID(value.strip()))
+        except ValueError as exc:
+            raise ValueError("Identificador do leito inválido") from exc
+
     @model_validator(mode="after")
     def validate_custom_type(self) -> "HygieneRequestCreate":
         if self.request_type == "other" and not self.custom_type:
             raise ValueError("Informe o tipo da solicitação")
         if self.request_type != "other" and self.custom_type:
             raise ValueError("Tipo personalizado só pode ser informado para outra solicitação")
+        if self.bed_id and self.area != "room":
+            raise ValueError("Vincule um leito somente a uma solicitação de quarto/leito")
         return self
 
 
@@ -168,6 +186,8 @@ def _serialize_hygiene_request(request: HygieneRequest) -> dict[str, object]:
         "custom_type": request.custom_type,
         "unit": request.unit,
         "area": request.area,
+        "bed_id": request.bed_id,
+        "bed_status": request.bed_status,
         "location": request.location,
         "description": request.description,
         "priority": request.priority,
@@ -212,9 +232,23 @@ def create_hygiene_request(
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
+    request_id = str(uuid.uuid4())
+    bed_status = "none"
+    if payload.bed_id:
+        if not (principal.is_superuser or {"hygiene", "management"} & set(principal.modules)):
+            raise HTTPException(status_code=403, detail="Somente Higienização ou Gestão pode vincular um leito")
+        update_hospital_bed_cleaning_state(
+            payload.bed_id,
+            request_id,
+            "start",
+            principal.user_id,
+            principal.actor_name,
+        )
+        bed_status = "cleaning"
     request = HygieneRequest(
-        id=str(uuid.uuid4()),
+        id=request_id,
         **payload.model_dump(),
+        bed_status=bed_status,
         status="open",
         assignee="",
         requester_id=principal.user_id,
@@ -223,9 +257,27 @@ def create_hygiene_request(
         created_at=now,
         updated_at=now,
     )
-    db.add(request)
-    emit_audit_event(principal, "hygiene", "hygiene_request_created", request.id, db=db)
-    db.commit()
+    try:
+        db.add(request)
+        emit_audit_event(principal, "hygiene", "hygiene_request_created", request.id, db=db)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        if payload.bed_id:
+            try:
+                update_hospital_bed_cleaning_state(
+                    payload.bed_id,
+                    request_id,
+                    "rollback",
+                    principal.user_id,
+                    principal.actor_name,
+                )
+            except HTTPException as rollback_error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="A solicitação não foi salva e o leito permanece bloqueado para higienização; acione a Gestão Hospitalar",
+                ) from rollback_error
+        raise
     db.refresh(request)
     return _serialize_hygiene_request(request)
 
@@ -245,6 +297,11 @@ def update_hygiene_request(
         raise HTTPException(status_code=404, detail="Solicitação de higienização não encontrada")
     if request.status in {"completed", "cancelled"} and changes.get("status", request.status) != request.status:
         raise HTTPException(status_code=409, detail="Solicitação encerrada; abra uma nova solicitação para novo atendimento")
+    if request.bed_id and changes.get("status") == "cancelled":
+        raise HTTPException(
+            status_code=409,
+            detail="Conclua a higienização vinculada antes de encerrar a solicitação",
+        )
     for field, value in changes.items():
         setattr(request, field, value)
     request.updated_by = principal.actor_name
@@ -252,6 +309,68 @@ def update_hygiene_request(
     emit_audit_event(principal, "hygiene", "hygiene_request_updated", request.id, db=db)
     db.commit()
     db.refresh(request)
+    release_error = _release_completed_hygiene_bed(request, principal, db)
+    response = _serialize_hygiene_request(request)
+    if release_error:
+        response["bed_release_error"] = release_error
+    return response
+
+
+def _release_completed_hygiene_bed(
+    request: HygieneRequest,
+    principal: DemoPrincipal,
+    db: Session,
+) -> str | None:
+    if (
+        request.status != "completed"
+        or not request.bed_id
+        or request.bed_status == "available"
+    ):
+        return None
+    try:
+        update_hospital_bed_cleaning_state(
+            request.bed_id,
+            request.id,
+            "release",
+            principal.user_id,
+            principal.actor_name,
+        )
+    except HTTPException as exc:
+        request.bed_status = "release_pending"
+        request.updated_at = datetime.now(UTC)
+        emit_audit_event(
+            principal, "hygiene", "hygiene_bed_release_pending", request.id, db=db
+        )
+        db.commit()
+        return str(exc.detail)
+    request.bed_status = "available"
+    request.updated_at = datetime.now(UTC)
+    emit_audit_event(principal, "hygiene", "hygiene_bed_released", request.id, db=db)
+    db.commit()
+    db.refresh(request)
+    return None
+
+
+@app.post("/api/v1/hygiene/requests/{request_id}/bed-release")
+def retry_hygiene_bed_release(
+    request_id: str,
+    principal: Annotated[DemoPrincipal, Depends(HYGIENE_ROLE)],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    request = db.get(HygieneRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Solicitação de higienização não encontrada")
+    if request.status != "completed" or not request.bed_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Somente uma solicitação concluída e vinculada a leito pode liberar o leito",
+        )
+    release_error = _release_completed_hygiene_bed(request, principal, db)
+    if release_error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Higienização concluída; o leito continua bloqueado. Tente novamente após verificar o serviço de Enfermagem. {release_error}",
+        )
     return _serialize_hygiene_request(request)
 
 

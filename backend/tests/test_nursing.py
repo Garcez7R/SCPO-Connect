@@ -240,6 +240,89 @@ def test_reception_appointment_requires_timezone_and_valid_future_interval() -> 
         )
 
 
+def test_hygiene_linked_bed_requires_internal_release(nursing_db: Session) -> None:
+    bed = create_physical_bed(nursing_db, "7", "A")
+    bed_id = str(bed["id"])
+    principal = DemoPrincipal(
+        "hygiene-user",
+        "hygiene",
+        "Equipe de Higienização",
+        "hygiene",
+        ["hygiene"],
+        {"hygiene": ["consultar", "alterar"]},
+    )
+    started = nursing.update_internal_hospital_bed_cleaning(
+        bed_id,
+        nursing.InternalHospitalBedCleaningPayload(
+            action="start",
+            request_id="hygiene-request-1",
+            actor_id=principal.user_id,
+            actor_name=principal.actor_name,
+        ),
+        nursing_db,
+        None,
+    )
+    assert started["status"] == "cleaning"
+    with pytest.raises(HTTPException) as direct_release:
+        nursing.update_hospital_bed_status(
+            bed_id,
+            nursing.HospitalBedStatusPayload(status="available"),
+            principal,
+            nursing_db,
+        )
+    assert direct_release.value.status_code == 403
+    manager = DemoPrincipal(
+        "manager-id",
+        "manager",
+        "Gestor de teste",
+        "management",
+        ["management"],
+        {"management": ["consultar", "alterar"]},
+    )
+    with pytest.raises(HTTPException) as premature_release:
+        nursing.update_hospital_bed_status(
+            bed_id,
+            nursing.HospitalBedStatusPayload(status="available"),
+            manager,
+            nursing_db,
+        )
+    assert premature_release.value.status_code == 409
+
+    released = nursing.update_internal_hospital_bed_cleaning(
+        bed_id,
+        nursing.InternalHospitalBedCleaningPayload(
+            action="release",
+            request_id="hygiene-request-1",
+            actor_id=principal.user_id,
+            actor_name=principal.actor_name,
+        ),
+        nursing_db,
+        None,
+    )
+    assert released["status"] == "available"
+
+
+def test_hygiene_cannot_start_on_an_unreconciled_legacy_patient(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+) -> None:
+    bed = create_physical_bed(nursing_db, "9", "A")
+    create_patient(nursing_db, nurse, room="9", bed="A")
+    with pytest.raises(HTTPException) as occupied:
+        nursing.update_internal_hospital_bed_cleaning(
+            str(bed["id"]),
+            nursing.InternalHospitalBedCleaningPayload(
+                action="start",
+                request_id="hygiene-request-legacy",
+                actor_id="hygiene-user",
+                actor_name="Equipe de Higienização",
+            ),
+            nursing_db,
+            None,
+        )
+    assert occupied.value.status_code == 409
+
+
 def test_patient_creation_persists_audit_outbox_in_the_same_transaction(
     nursing_db: Session,
     nurse: DemoPrincipal,

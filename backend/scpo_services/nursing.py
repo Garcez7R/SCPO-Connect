@@ -247,6 +247,9 @@ class HospitalUnit(Base):
 
 class HospitalBed(Base):
     __tablename__ = "hospital_beds"
+    __table_args__ = (
+        Index("ix_hospital_beds_hygiene_request_id", "hygiene_request_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     unit_id: Mapped[str] = mapped_column(ForeignKey("hospital_units.id", ondelete="RESTRICT"), nullable=False)
@@ -256,6 +259,7 @@ class HospitalBed(Base):
     isolation_capable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    hygiene_request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
 
@@ -555,6 +559,14 @@ class HospitalBedStatusPayload(BaseModel):
     status: Literal["available", "cleaning", "maintenance", "blocked"]
 
 
+class InternalHospitalBedCleaningPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["start", "release", "rollback"]
+    request_id: str = Field(min_length=1, max_length=36)
+    actor_id: str = Field(min_length=1, max_length=36)
+    actor_name: str = Field(min_length=2, max_length=120)
+
+
 class PatientBedReconciliationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     bed_id: str = Field(min_length=1, max_length=36)
@@ -711,8 +723,35 @@ def _active_assignment_for_patient(db: Session, patient_reference: str) -> BedAs
     )
 
 
-def _available_hospital_bed(db: Session, bed_id: str) -> tuple[HospitalBed, HospitalUnit]:
-    bed = db.get(HospitalBed, bed_id)
+def _legacy_patient_at_bed(
+    db: Session,
+    bed: HospitalBed,
+    exclude_patient_reference: str | None = None,
+) -> str | None:
+    filters = [
+            Patient.active.is_(True),
+            Patient.room == bed.room,
+            Patient.bed == bed.label,
+            ~exists().where(
+                BedAssignment.patient_reference == Patient.reference,
+                BedAssignment.released_at.is_(None),
+            ),
+    ]
+    if exclude_patient_reference:
+        filters.append(Patient.reference != exclude_patient_reference)
+    return db.scalar(select(Patient.reference).where(*filters).limit(1))
+
+
+def _available_hospital_bed(
+    db: Session,
+    bed_id: str,
+    exclude_patient_reference: str | None = None,
+) -> tuple[HospitalBed, HospitalUnit]:
+    bed = db.scalar(
+        select(HospitalBed)
+        .where(HospitalBed.id == bed_id)
+        .with_for_update()
+    )
     if bed is None or not bed.active:
         raise HTTPException(status_code=404, detail="Leito não encontrado ou inativo")
     unit = db.get(HospitalUnit, bed.unit_id)
@@ -722,6 +761,11 @@ def _available_hospital_bed(db: Session, bed_id: str) -> tuple[HospitalBed, Hosp
         raise HTTPException(status_code=409, detail="O leito não está liberado para internação")
     if _active_assignment_for_bed(db, bed.id):
         raise HTTPException(status_code=409, detail="O leito já está ocupado")
+    if _legacy_patient_at_bed(db, bed, exclude_patient_reference):
+        raise HTTPException(
+            status_code=409,
+            detail="Há um paciente legado neste quarto/leito; reconcilie o cadastro antes de reutilizá-lo",
+        )
     return bed, unit
 
 
@@ -931,20 +975,32 @@ def update_hospital_bed_status(
     principal: Annotated[DemoPrincipal, Depends(BED_ACCESS)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    bed = db.get(HospitalBed, bed_id)
+    bed = db.scalar(
+        select(HospitalBed)
+        .where(HospitalBed.id == bed_id)
+        .with_for_update()
+    )
     if bed is None or not bed.active:
         raise HTTPException(status_code=404, detail="Leito não encontrado ou inativo")
     if _active_assignment_for_bed(db, bed.id):
         raise HTTPException(status_code=409, detail="Não é possível alterar a situação de um leito ocupado")
     modules = set(principal.modules)
-    if payload.status == "cleaning" and not (principal.is_superuser or {"management", "hygiene"} & modules):
-        raise HTTPException(status_code=403, detail="Apenas Higienização ou Gestão pode liberar/solicitar limpeza de leito")
+    if payload.status == "cleaning" and not (principal.is_superuser or "management" in modules):
+        raise HTTPException(
+            status_code=403,
+            detail="A Higienização deve iniciar a limpeza por uma solicitação vinculada ao leito",
+        )
     if payload.status == "maintenance" and not (principal.is_superuser or {"management", "maintenance"} & modules):
         raise HTTPException(status_code=403, detail="Apenas Manutenção ou Gestão pode bloquear leito para manutenção")
     if payload.status == "blocked" and not (principal.is_superuser or "management" in modules):
         raise HTTPException(status_code=403, detail="Apenas Gestão pode bloquear este leito")
-    if payload.status == "available" and not (principal.is_superuser or {"management", "hygiene", "maintenance"} & modules):
-        raise HTTPException(status_code=403, detail="Apenas Higienização, Manutenção ou Gestão pode liberar este leito")
+    if payload.status == "available" and not (principal.is_superuser or {"management", "maintenance"} & modules):
+        raise HTTPException(status_code=403, detail="Apenas Manutenção ou Gestão pode liberar este leito")
+    if payload.status == "available" and bed.hygiene_request_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Conclua a solicitação de higienização vinculada antes de liberar este leito",
+        )
     bed.status = payload.status
     unit = db.get(HospitalUnit, bed.unit_id)
     if unit is None:
@@ -952,6 +1008,75 @@ def update_hospital_bed_status(
     emit_audit_event(
         principal, "management", "hospital_bed_status_updated", bed.id, db=db
     )
+    db.commit()
+    return _serialize_hospital_bed(bed, unit, None)
+
+
+@app.post("/internal/v1/hospital-beds/{bed_id}/cleaning")
+def update_internal_hospital_bed_cleaning(
+    bed_id: str,
+    payload: InternalHospitalBedCleaningPayload,
+    db: Annotated[Session, Depends(get_nursing_db)],
+    _: Annotated[None, Depends(require_service_token)],
+) -> dict[str, object]:
+    bed = db.scalar(
+        select(HospitalBed)
+        .where(HospitalBed.id == bed_id)
+        .with_for_update()
+    )
+    if bed is None or not bed.active:
+        raise HTTPException(status_code=404, detail="Leito não encontrado ou inativo")
+    unit = db.get(HospitalUnit, bed.unit_id)
+    if unit is None:
+        raise HTTPException(status_code=409, detail="Unidade do leito não encontrada")
+    if _active_assignment_for_bed(db, bed.id):
+        raise HTTPException(status_code=409, detail="Não é possível alterar um leito ocupado")
+    if payload.action == "start" and _legacy_patient_at_bed(db, bed):
+        raise HTTPException(
+            status_code=409,
+            detail="Há um paciente legado neste quarto/leito; reconcilie o cadastro antes de iniciar a higienização",
+        )
+
+    expected_request_id = payload.request_id
+    changed = False
+    if payload.action == "start":
+        if bed.status == "cleaning" and bed.hygiene_request_id == expected_request_id:
+            return _serialize_hospital_bed(bed, unit, None)
+        if bed.status != "available" or bed.hygiene_request_id is not None:
+            raise HTTPException(status_code=409, detail="O leito não está disponível para iniciar a higienização")
+        bed.status = "cleaning"
+        bed.hygiene_request_id = expected_request_id
+        action = "hospital_bed_cleaning_started"
+        changed = True
+    elif payload.action == "release":
+        if bed.status == "available" and bed.hygiene_request_id is None:
+            return _serialize_hospital_bed(bed, unit, None)
+        if bed.status != "cleaning" or bed.hygiene_request_id != expected_request_id:
+            raise HTTPException(status_code=409, detail="O leito não está vinculado a esta solicitação de higienização")
+        bed.status = "available"
+        bed.hygiene_request_id = None
+        action = "hospital_bed_cleaning_released"
+        changed = True
+    else:
+        if bed.status == "available" and bed.hygiene_request_id is None:
+            return _serialize_hospital_bed(bed, unit, None)
+        if bed.status != "cleaning" or bed.hygiene_request_id != expected_request_id:
+            raise HTTPException(status_code=409, detail="Não é possível reverter uma solicitação que não controla este leito")
+        bed.status = "available"
+        bed.hygiene_request_id = None
+        action = "hospital_bed_cleaning_rolled_back"
+        changed = True
+
+    if changed:
+        principal = DemoPrincipal(
+            payload.actor_id,
+            payload.actor_id,
+            payload.actor_name,
+            "hygiene",
+            ["hygiene"],
+            {"hygiene": ["consultar", "alterar"]},
+        )
+        emit_audit_event(principal, "management", action, bed.id, db=db)
     db.commit()
     return _serialize_hospital_bed(bed, unit, None)
 
@@ -968,7 +1093,9 @@ def reconcile_legacy_patient_bed(
         raise HTTPException(status_code=404, detail="Paciente ativo não encontrado")
     if _active_assignment_for_patient(db, patient.reference):
         raise HTTPException(status_code=409, detail="Este paciente já está vinculado a um leito físico")
-    bed, unit = _available_hospital_bed(db, payload.bed_id)
+    bed, unit = _available_hospital_bed(
+        db, payload.bed_id, exclude_patient_reference=patient.reference
+    )
     if patient.room != bed.room or patient.bed != bed.label:
         raise HTTPException(
             status_code=409,
@@ -1857,7 +1984,9 @@ def admit_emergency_arrival(
         raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
     if _active_assignment_for_patient(db, patient.reference):
         raise HTTPException(status_code=409, detail="Este paciente já está vinculado a um leito físico")
-    bed, _ = _available_hospital_bed(db, payload.bed_id)
+    bed, _ = _available_hospital_bed(
+        db, payload.bed_id, exclude_patient_reference=patient.reference
+    )
     now = datetime.now(UTC)
     patient.treatment_track = payload.treatment_track
     _assign_patient_to_bed(db, patient, bed, principal, now)
@@ -2198,7 +2327,9 @@ def transfer_patient(
         raise HTTPException(status_code=404, detail="Paciente não encontrado ou não está internado")
     if not patient.room or not patient.bed:
         raise HTTPException(status_code=409, detail="O paciente não possui leito de internação para transferir")
-    bed, _ = _available_hospital_bed(db, payload.bed_id)
+    bed, _ = _available_hospital_bed(
+        db, payload.bed_id, exclude_patient_reference=patient.reference
+    )
     current_assignment = _active_assignment_for_patient(db, patient.reference)
     if current_assignment and bed.id == current_assignment.bed_id:
         raise HTTPException(status_code=409, detail="O paciente já está neste leito")
