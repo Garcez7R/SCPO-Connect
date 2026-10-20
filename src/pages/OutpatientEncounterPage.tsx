@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Printer, Save } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Plus, Printer, Save, Trash2 } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { formatCpf } from '../inputFormatting'
 
@@ -76,7 +77,8 @@ const programOptions: Array<[Program, string]> = [
   ['cervical_cancer', 'CA ginecológico'],
 ]
 
-const emptyActivityRows = (): ActivityRow[] => Array.from({ length: 3 }, () => ({ professional_activity: '', procedure: '' }))
+const emptyActivityRow = (): ActivityRow => ({ professional_activity: '', procedure: '' })
+const emptyActivityRows = (): ActivityRow[] => Array.from({ length: 3 }, emptyActivityRow)
 const emptyNewPatient = (): NewPatientForm => ({
   name: '',
   mother_name: '',
@@ -302,11 +304,13 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
       </div>
       <label className="field"><span className="field-label">Exame</span><textarea maxLength={1000} rows={3} value={examination} onChange={(event) => setExamination(event.target.value)} placeholder="Exames ou observações para o atendimento" /></label>
       <div className="outpatient-activity-fields">
-        <div className="outpatient-subheading"><strong>Atividade profissional e procedimento</strong><span>Até três linhas, conforme a ficha impressa.</span></div>
+        <div className="outpatient-subheading"><strong>Atividade profissional e procedimento</strong></div>
         {activityRows.map((row, index) => <div className="field-grid field-grid-two" key={index}>
           <label className="field"><span className="field-label">Atividade profissional {index + 1}</span><input maxLength={120} value={row.professional_activity} onChange={(event) => setActivityRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, professional_activity: event.target.value } : item))} /></label>
           <label className="field"><span className="field-label">Procedimento {index + 1}</span><input maxLength={120} value={row.procedure} onChange={(event) => setActivityRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, procedure: event.target.value } : item))} /></label>
+          {index >= 3 && <button className="button button-secondary outpatient-remove-activity" type="button" onClick={() => setActivityRows((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 size={15} /> Remover linha {index + 1}</button>}
         </div>)}
+        <button className="button button-secondary outpatient-add-activity" type="button" disabled={activityRows.length >= 20} onClick={() => setActivityRows((current) => [...current, emptyActivityRow()])}><Plus size={15} /> Adicionar linha</button>
       </div>
       <div className="field-grid field-grid-two">
         <label className="field"><span className="field-label">Grupo</span><input maxLength={120} value={groupName} onChange={(event) => setGroupName(event.target.value)} /></label>
@@ -325,7 +329,7 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
         <button className="button button-secondary" type="button" onClick={() => setPrintingEncounter(encounter)}><Printer size={15} /> Imprimir ficha</button>
       </article>)}</div> : <div className="history-empty">Nenhuma ficha ambulatorial registrada.</div>}
     </section>
-    {printEncounter && <OutpatientPrintSheet encounter={printEncounter} />}
+    {printEncounter && createPortal(<OutpatientPrintSheet encounter={printEncounter} />, document.body)}
   </section>
 }
 
@@ -338,8 +342,10 @@ function OutpatientPrintSheet({ encounter }: { encounter: OutpatientEncounter })
   const printedDate = Number.isNaN(createdAt.getTime()) ? 'Não informado' : new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(createdAt)
   const printedTime = Number.isNaN(createdAt.getTime()) ? 'Não informado' : new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(createdAt)
   return <article className="outpatient-print-sheet">
-    <div className="outpatient-print-topline"><strong>SIA/SUS - RS</strong><span>FICHA DE ATENDIMENTO AMBULATORIAL</span></div>
-    <h1>SANTA CASA DE PEDRO OSÓRIO</h1>
+    <header className="outpatient-print-masthead">
+      {patient.photo_data && <img src={patient.photo_data} alt="Foto do paciente" />}
+      <div><div className="outpatient-print-topline"><strong>SIA/SUS - RS</strong><span>FICHA DE ATENDIMENTO AMBULATORIAL</span></div><h1>SANTA CASA DE PEDRO OSÓRIO</h1></div>
+    </header>
     <div className="outpatient-print-record"><span><strong>Atendimento Nº:</strong> {encounter.id}</span><span><strong>Data:</strong> {printedDate}</span><span><strong>Horário:</strong> {printedTime}</span><span><strong>Recepcionista:</strong> {encounter.created_by}</span></div>
     <section className="outpatient-print-section">
       <div className="outpatient-print-grid outpatient-print-grid-three"><span><strong>Paciente:</strong> {patient.name}</span><span><strong>Nº do cadastro:</strong> {patient.reference}</span><span><strong>SAME:</strong> {patient.same_number || 'Não informado'}</span></div>
@@ -355,15 +361,15 @@ function OutpatientPrintSheet({ encounter }: { encounter: OutpatientEncounter })
       <strong>Tipo de atendimento</strong>
       <div className="outpatient-print-options">{encounterTypes.map(([value, label]) => <span key={value}>{marked(encounter.encounter_type === value)} {label}</span>)}</div>
     </section>
-    <table className="outpatient-print-activities"><thead><tr><th>Atividade profissional</th><th>Procedimento</th><th>Ass. / carimbo</th></tr></thead><tbody>
-      {Array.from({ length: 3 }, (_, index) => <tr key={index}><td>{encounter.activity_rows[index]?.professional_activity || ''}</td><td>{encounter.activity_rows[index]?.procedure || ''}</td><td>{index === 2 ? 'Ass. / carimbo' : ''}</td></tr>)}
+    <table className="outpatient-print-activities"><thead><tr><th>Atividade profissional</th><th>Procedimento</th></tr></thead><tbody>
+      {Array.from({ length: Math.max(3, encounter.activity_rows.length) }, (_, index) => <tr key={index}><td>{encounter.activity_rows[index]?.professional_activity || ''}</td><td>{encounter.activity_rows[index]?.procedure || ''}</td></tr>)}
     </tbody></table>
+    <div className="outpatient-print-stamp"><span>Assinatura / carimbo</span><i /></div>
     <section className="outpatient-print-section outpatient-print-programs"><span><strong>Grupo:</strong> {encounter.group_name || ' '}</span><span><strong>Programa:</strong> {programOptions.map(([value, label]) => `${marked(selectedPrograms.has(value))} ${label}`).join('    ')}</span></section>
     <section className="outpatient-print-writing"><strong>Hipótese diagnóstica:</strong><p>{encounter.diagnostic_hypothesis || ''}</p></section>
     <section className="outpatient-print-writing"><strong>Prescrição de antibiótico:</strong><p>{encounter.antibiotic_prescription || ''}</p></section>
     <section className="outpatient-print-section"><strong>Encaminhamento</strong><div className="outpatient-print-options">{referralOptions.map(([value, label]) => <span key={value}>{marked(encounter.referral === value)} {label}</span>)}</div></section>
     <div className="outpatient-print-signatures"><div><span>Assinatura do paciente ou responsável</span></div><div><span>Carimbo e assinatura do médico</span></div></div>
-    <footer>SANTA CASA DE PEDRO OSÓRIO</footer>
   </article>
 }
 

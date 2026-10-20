@@ -111,7 +111,19 @@ def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
             nursing.ActivityProcedureRow(
                 professional_activity="Consulta médica",
                 procedure="Consulta ambulatorial",
-            )
+            ),
+            nursing.ActivityProcedureRow(
+                professional_activity="Enfermagem",
+                procedure="Aferição de sinais vitais",
+            ),
+            nursing.ActivityProcedureRow(
+                professional_activity="Técnico de enfermagem",
+                procedure="Orientação ao paciente",
+            ),
+            nursing.ActivityProcedureRow(
+                professional_activity="Serviço social",
+                procedure="Avaliação social",
+            ),
         ],
         group_name="Saúde da mulher",
         programs=["prenatal"],
@@ -129,9 +141,11 @@ def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
     assert snapshot["health_plan"] == "SUS"
     assert snapshot["same_number"] == "SAME-2026-001"
     assert created["created_by"] == "Recepcionista de teste"
-    assert created["activity_rows"] == [
-        {"professional_activity": "Consulta médica", "procedure": "Consulta ambulatorial"}
-    ]
+    assert len(created["activity_rows"]) == 4
+    assert created["activity_rows"][-1] == {
+        "professional_activity": "Serviço social",
+        "procedure": "Avaliação social",
+    }
     history = nursing.list_outpatient_encounters(
         receptionist,
         nursing_db,
@@ -508,6 +522,43 @@ def test_capacity_percent_waits_for_legacy_reconciliation(
     after_block = nursing.get_management_dashboard(manager, nursing_db)
     assert after_block["occupancy_percent"] is None
     assert after_block["operational_beds"] == 0
+
+
+def test_new_unit_is_available_for_multiple_beds_in_the_same_room(
+    nursing_db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    manager = DemoPrincipal(
+        "manager-id", "manager", "Gestor de teste", "management",
+        ["management"], {"management": ["consultar", "criar", "alterar"]},
+    )
+
+    unit = nursing.create_hospital_unit(
+        nursing.HospitalUnitPayload(name="Clínica médica"),
+        manager,
+        nursing_db,
+    )
+    unit_id = str(unit["id"])
+    first_bed = nursing.create_hospital_bed(
+        nursing.HospitalBedPayload(unit_id=unit_id, room="1", label="A"),
+        manager,
+        nursing_db,
+    )
+    second_bed = nursing.create_hospital_bed(
+        nursing.HospitalBedPayload(unit_id=unit_id, room="1", label="B"),
+        manager,
+        nursing_db,
+    )
+
+    capacity = nursing.list_hospital_beds(manager, nursing_db)
+    assert {"id": unit_id, "name": "Clínica médica"} in capacity["units"]
+    assert {
+        (bed["room"], bed["label"])
+        for bed in capacity["beds"]
+        if bed["unit_id"] == unit_id
+    } == {("1", "A"), ("1", "B")}
+    assert first_bed["unit_name"] == second_bed["unit_name"] == "Clínica médica"
 
 
 def test_clinical_risks_are_resolved_with_reason_and_emergency_priority_is_auditable(

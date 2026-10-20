@@ -1067,7 +1067,7 @@ class OutpatientEncounterPayload(BaseModel):
     same_number: str = Field(default="", max_length=40)
     physician_name: str = Field(default="", max_length=120)
     examination: str = Field(default="", max_length=1000)
-    activity_rows: list[ActivityProcedureRow] = Field(default_factory=list, max_length=3)
+    activity_rows: list[ActivityProcedureRow] = Field(default_factory=list, max_length=20)
     group_name: str = Field(default="", max_length=120)
     programs: list[Literal["prenatal", "puericulture", "cervical_cancer"]] = Field(
         default_factory=list, max_length=3
@@ -1807,6 +1807,7 @@ def snapshot_outpatient_patient(patient: Patient) -> dict[str, str]:
         "neighborhood": patient.neighborhood,
         "city": patient.city,
         "state": patient.state,
+        "photo_data": patient.photo_data,
     }
 
 

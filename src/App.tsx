@@ -295,7 +295,21 @@ function StartupScreen() {
 }
 
 function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
-  const [activeModule, setActiveModule] = useState<ModuleId>('home')
+  const [activeModule, setActiveModule] = useState<ModuleId>(() => {
+    try {
+      const saved = navigation.find((item) => item.id === window.sessionStorage.getItem(`scpo-active-module:${user.id}`))
+      if (!saved) return 'home'
+      const id = saved.id
+      return id === 'home' || id === 'about' || id === 'work-orders'
+        || (id === 'system-admin' && user.is_superuser)
+        || (id === 'therapy' && user.modules.includes('management'))
+        || user.modules.includes(id)
+        ? id
+        : 'home'
+    } catch {
+      return 'home'
+    }
+  })
   const [menuOpen, setMenuOpen] = useState(false)
   const [historyPatientReference, setHistoryPatientReference] = useState('')
   const [showBetaPopup, setShowBetaPopup] = useState(false)
@@ -358,6 +372,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
     if (id === 'system-admin' && !user.is_superuser) return
     if (id !== 'about' && id !== 'work-orders' && id !== 'system-admin' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
     setActiveModule(id)
+    if (navigation.some((item) => item.id === id)) window.sessionStorage.setItem(`scpo-active-module:${user.id}`, id)
     setMenuOpen(false)
   }
 
@@ -432,7 +447,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
         </header>
 
         <div className="page-content">
-          {activeModule === 'home' && <Dashboard profile={profile} user={user} onNavigate={navigate} />}
+          {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
           {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
           {activeModule === 'pharmacy' && <Suspense fallback={<div className="history-empty" role="status">Carregando Farmácia…</div>}><PharmacyPage user={user} /></Suspense>}
@@ -445,7 +460,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
           {activeModule === 'admin' && <AdminPage />}
-          {activeModule === 'management' && <ManagementPage onNavigate={navigate} allowedModules={profile.modules} />}
+          {activeModule === 'management' && <ManagementPage user={user} onNavigate={navigate} allowedModules={profile.modules} />}
           {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage />}
@@ -980,7 +995,7 @@ function AboutPage() {
   </section>
 }
 
-function Dashboard({ profile, user, onNavigate }: { profile: Profile; user: AuthUser; onNavigate: (id: ModuleId) => void }) {
+function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id: ModuleId) => void }) {
   const allowedModules = modules.filter((item) => profile.modules.includes(item.id))
   const firstName = profile.name.split(' ')[0]
 
@@ -1007,18 +1022,6 @@ function Dashboard({ profile, user, onNavigate }: { profile: Profile; user: Auth
         })}
       </div>
 
-      <Suspense fallback={<div className="history-empty" role="status">Carregando suas pendências…</div>}>
-        <OperationalTaskCenter user={user} onNavigate={onNavigate} />
-      </Suspense>
-
-      <div className="dashboard-lower">
-        <section className="activity-panel">
-          <div className="panel-heading"><div><p className="eyebrow">SESSÃO ATUAL</p><h2>Visão do ambiente</h2></div><span className="live-indicator"><span className="status-dot" /> Ativo</span></div>
-          <div className="session-row"><span className="session-icon"><UserRound size={18} /></span><div><span>Perfil em uso</span><strong>{profile.name} · {profile.role}</strong></div></div>
-          <div className="session-row"><span className="session-icon"><LockKeyhole size={18} /></span><div><span>Permissões</span><strong>Acesso limitado aos módulos autorizados</strong></div><ShieldCheck className="session-verified" size={18} /></div>
-        </section>
-        <aside className="next-step-panel"><span className="next-step-icon"><ClipboardList size={19} /></span><p className="eyebrow">ROTINAS ORGANIZADAS</p><h3>Informação clara para o trabalho em equipe.</h3><p>Acesse os módulos disponíveis para consultar e registrar informações do ambiente.</p></aside>
-      </div>
     </section>
   )
 }
@@ -2127,7 +2130,7 @@ function HospitalBedManagement() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preferredUnitId = '') => {
     try {
       const [bedData, patientData] = await Promise.all([
         fetch('/api/v1/nursing/beds').then(readApiResponse<{ units?: Unit[]; beds?: HospitalBed[]; capacity?: Capacity }>),
@@ -2137,7 +2140,11 @@ function HospitalBedManagement() {
       setBeds(bedData.beds ?? [])
       setCapacity(bedData.capacity ?? null)
       setPatients(patientData.patients ?? [])
-      setUnitId((current) => current || bedData.units?.[0]?.id || '')
+      setUnitId((current) => {
+        if (bedData.units?.some((unit) => unit.id === current)) return current
+        if (preferredUnitId && bedData.units?.some((unit) => unit.id === preferredUnitId)) return preferredUnitId
+        return bedData.units?.[0]?.id ?? ''
+      })
       setError('')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar o mapa de leitos.')
@@ -2169,6 +2176,27 @@ function HospitalBedManagement() {
     } finally { setSaving(false) }
   }
 
+  async function createUnit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const unit = await readApiResponse<Unit>(await fetch('/api/v1/management/units', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: unitName.trim() }),
+      }))
+      setUnits((current) => [...current.filter((item) => item.id !== unit.id), unit].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+      setUnitId(unit.id)
+      setUnitName('')
+      setNotice('Unidade cadastrada e selecionada para criação de leitos.')
+      await load(unit.id)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível cadastrar a unidade.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function updateStatus(bed: HospitalBed, status: HospitalBed['status']) {
     setSaving(true); setError(''); setNotice('')
     try {
@@ -2191,16 +2219,17 @@ function HospitalBedManagement() {
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
     {capacity && <div className="hygiene-summary executive-kpis"><article><strong>{capacity.total_beds}</strong><span>Leitos cadastrados</span></article><article><strong>{capacity.occupied_beds}</strong><span>Ocupados no mapa físico</span></article><article><strong>{capacity.available_beds}</strong><span>Liberados</span></article><article><strong>{capacity.occupancy_percent === null ? '—' : `${capacity.occupancy_percent}%`}</strong><span>Ocupação física</span></article></div>}
     {capacity && capacity.unreconciled_legacy_patients > 0 && <div className="notice-band" role="status"><Info size={18} /><span>{capacity.unreconciled_legacy_patients} paciente(s) com quarto/leito legado aguardam reconciliação manual. O percentual de ocupação permanece indisponível.</span></div>}
-    <form className="account-create-panel" onSubmit={(event) => { event.preventDefault(); void submitMutation('/api/v1/management/units', { name: unitName }, 'Unidade cadastrada.') .then((saved) => { if (saved) setUnitName('') }) }}>
+    <form className="account-create-panel" onSubmit={(event) => void createUnit(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVA UNIDADE</p><h3>Cadastrar setor ou unidade</h3></div></div>
       <label className="field"><span className="field-label">Nome da unidade</span><input required minLength={2} maxLength={100} value={unitName} onChange={(event) => setUnitName(event.target.value)} placeholder="Ex.: Clínica médica" /></label>
-      <button className="button button-secondary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar unidade'}</button>
+      <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar unidade'}</button>
     </form>
-    <form className="account-create-panel" onSubmit={(event) => { event.preventDefault(); void submitMutation('/api/v1/management/beds', { unit_id: unitId, room, label, isolation_capable: isolationCapable }, 'Leito cadastrado como disponível.').then((saved) => { if (saved) { setRoom(''); setLabel(''); setIsolationCapable(false) } }) }}>
+    <form className="account-create-panel" onSubmit={(event) => { event.preventDefault(); void submitMutation('/api/v1/management/beds', { unit_id: unitId, room, label, isolation_capable: isolationCapable }, 'Leito cadastrado como disponível.').then((saved) => { if (saved) { setLabel(''); setIsolationCapable(false) } }) }}>
       <div className="section-heading"><div><p className="eyebrow">CAPACIDADE</p><h3>Cadastrar leito físico</h3></div></div>
-      <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Unidade</span><select required value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Selecione</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={room} onChange={(event) => setRoom(event.target.value)} /></label><label className="field"><span className="field-label">Identificação do leito</span><input required maxLength={20} value={label} onChange={(event) => setLabel(event.target.value)} /></label></div>
+      <p className="field-hint">Cadastre um leito por vez. Para o mesmo quarto, mantenha o número e informe A, B, C… na identificação de cada leito.</p>
+      <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Unidade</span><select required value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Selecione</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={room} onChange={(event) => setRoom(event.target.value)} placeholder="Ex.: 1" /></label><label className="field"><span className="field-label">Identificação do leito</span><input required maxLength={20} value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Ex.: A" /></label></div>
       <label className="field emergency-patient-toggle"><span className="field-label">Característica</span><span><input type="checkbox" checked={isolationCapable} onChange={(event) => setIsolationCapable(event.target.checked)} /> Leito preparado para isolamento (cadastro estrutural; não substitui indicação clínica)</span></label>
-      <button className="button button-secondary" type="submit" disabled={saving || !units.length}>{saving ? 'Salvando…' : 'Cadastrar leito'}</button>
+      <button className="button button-primary" type="submit" disabled={saving || !units.length}>{saving ? 'Salvando…' : 'Cadastrar leito'}</button>
     </form>
     {unreconciledPatients.length > 0 && <form className="account-create-panel" onSubmit={(event) => { event.preventDefault(); void submitMutation(`/api/v1/management/patients/${encodeURIComponent(patientReference)}/bed-reconciliation`, { bed_id: reconciliationBedId }, 'Paciente reconciliado com o mapa físico.').then((saved) => { if (saved) { setPatientReference(''); setReconciliationBedId('') } }) }}>
       <div className="section-heading"><div><p className="eyebrow">RECONCILIAÇÃO MANUAL</p><h3>Vincular cadastro legado ao leito físico</h3></div></div>
@@ -2214,7 +2243,7 @@ function HospitalBedManagement() {
   </section>
 }
 
-function ManagementPage({ onNavigate, allowedModules }: { onNavigate: (id: ModuleId) => void; allowedModules: ModuleId[] }) {
+function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; onNavigate: (id: ModuleId) => void; allowedModules: ModuleId[] }) {
   const shortcuts: { id: ModuleId; label: string }[] = [
     { id: 'patients', label: 'Cadastro de pacientes' },
     { id: 'reception', label: 'Recepção e chegadas' },
@@ -2224,7 +2253,7 @@ function ManagementPage({ onNavigate, allowedModules }: { onNavigate: (id: Modul
     { id: 'admin', label: 'Administração e auditoria' },
   ]
   const visibleShortcuts = shortcuts.filter(({ id }) => allowedModules.includes(id))
-  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><HospitalBedManagement /><Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel /></Suspense><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
+  return <section className="management-page page-enter"><div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div><ExecutiveDashboard /><Suspense fallback={<div className="history-empty" role="status">Carregando pendências operacionais…</div>}><OperationalTaskCenter user={user} onNavigate={onNavigate} /></Suspense><HospitalBedManagement /><Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel /></Suspense><section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section></section>
 }
 
 function BackupExportPanel() {

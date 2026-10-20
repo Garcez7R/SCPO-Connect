@@ -1336,6 +1336,8 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
 .outpatient-new-patient-heading span { color: var(--muted); font-size: 11px; }
 .outpatient-new-patient-fields { grid-column: 1 / -1; width: 100%; }
 .outpatient-activity-fields { display: grid; gap: 12px; }
+.outpatient-add-activity { justify-self: start; min-height: 40px; }
+.outpatient-remove-activity { grid-column: 1 / -1; justify-self: start; min-height: 36px; }
 .outpatient-subheading { display: flex; justify-content: space-between; gap: 10px; }
 .outpatient-subheading strong { color: var(--ink); font-size: 12px; }
 .outpatient-subheading span { color: var(--muted); font-size: 11px; }
@@ -1364,34 +1366,37 @@ html[data-theme="dark"] :is(.outpatient-encounter-form, .outpatient-history-pane
   .outpatient-new-patient-heading { align-items: flex-start; flex-direction: column; }
 }
 @media print {
-  @page { size: A4; margin: 12mm; }
-  body.print-outpatient-encounter * { visibility: hidden !important; }
-  body.print-outpatient-encounter .outpatient-print-sheet,
-  body.print-outpatient-encounter .outpatient-print-sheet * { visibility: visible !important; }
-  body.print-outpatient-encounter .outpatient-print-sheet { position: absolute; inset: 0; display: block; width: 100%; margin: 0; padding: 0; color: #111; background: #fff; font-family: Arial, sans-serif; font-size: 9pt; line-height: 1.35; }
-  .outpatient-print-topline { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid #111; font-size: 9pt; }
-  .outpatient-print-sheet > h1 { margin: 10px 0; text-align: center; font-size: 14pt; }
-  .outpatient-print-record { display: grid; grid-template-columns: .9fr .8fr .8fr 1.5fr; gap: 8px; padding: 8px 0; border-block: 1px solid #777; }
-  .outpatient-print-section { display: grid; gap: 5px; margin-top: 9px; }
+  @page { size: A4; margin: 9mm; }
+  body.print-outpatient-encounter { margin: 0 !important; background: #fff !important; }
+  body.print-outpatient-encounter > *:not(.outpatient-print-sheet) { display: none !important; }
+  body.print-outpatient-encounter > .outpatient-print-sheet { display: block !important; width: auto; margin: 0; padding: 0; color: #111; background: #fff; font-family: Arial, sans-serif; font-size: 8.5pt; line-height: 1.25; }
+  .outpatient-print-masthead { display: grid; grid-template-columns: 25mm minmax(0, 1fr); align-items: center; gap: 7mm; }
+  .outpatient-print-masthead > img { width: 25mm; height: 25mm; object-fit: cover; }
+  .outpatient-print-masthead > div { min-width: 0; }
+  .outpatient-print-topline { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 4px; border-bottom: 1px solid #111; font-size: 9pt; }
+  .outpatient-print-masthead h1 { margin: 7px 0; text-align: center; font-size: 13pt; }
+  .outpatient-print-record { display: grid; grid-template-columns: .9fr .8fr .8fr 1.5fr; gap: 6px; padding: 6px 0; border-block: 1px solid #777; }
+  .outpatient-print-section { display: grid; gap: 4px; margin-top: 6px; }
   .outpatient-print-section > strong { font-size: 9pt; }
-  .outpatient-print-grid { display: grid; gap: 7px 12px; }
+  .outpatient-print-grid { display: grid; gap: 4px 8px; }
   .outpatient-print-grid-three { grid-template-columns: 1.5fr 1fr 1fr; }
   .outpatient-print-grid-four { grid-template-columns: 1fr .7fr 1.5fr .7fr; }
   .outpatient-print-grid-two { grid-template-columns: 1fr 1fr; }
   .outpatient-print-grid-address { grid-template-columns: 1.5fr 1fr 1fr 1fr; }
   .outpatient-print-options { display: flex; flex-wrap: wrap; gap: 5px 14px; }
-  .outpatient-print-activities { width: 100%; margin-top: 10px; border-collapse: collapse; table-layout: fixed; }
-  .outpatient-print-activities th, .outpatient-print-activities td { height: 25px; padding: 4px 6px; border: 1px solid #555; text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
+  .outpatient-print-activities { width: 100%; margin-top: 7px; border-collapse: collapse; table-layout: fixed; }
+  .outpatient-print-activities th, .outpatient-print-activities td { height: 20px; padding: 3px 5px; border: 1px solid #555; text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
   .outpatient-print-activities th { font-size: 8pt; }
-  .outpatient-print-activities th:nth-child(1), .outpatient-print-activities th:nth-child(2) { width: 38%; }
-  .outpatient-print-activities th:nth-child(3) { width: 24%; }
+  .outpatient-print-activities th:nth-child(1), .outpatient-print-activities th:nth-child(2) { width: 50%; }
+  .outpatient-print-stamp { display: grid; grid-template-columns: 30mm minmax(0, 1fr); align-items: end; gap: 6px; height: 18px; margin-top: 4px; }
+  .outpatient-print-stamp > i { display: block; height: 1px; background: #555; }
   .outpatient-print-programs { grid-template-columns: .8fr 2fr; }
-  .outpatient-print-writing { display: grid; grid-template-rows: auto 1fr; gap: 5px; min-height: 88px; margin-top: 10px; }
-  .outpatient-print-writing p { min-height: 63px; margin: 0; padding: 5px; border: 1px solid #777; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .outpatient-print-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; margin-top: 32px; }
-  .outpatient-print-signatures > div { display: grid; height: 55px; align-content: end; border-bottom: 1px solid #111; text-align: center; }
-  .outpatient-print-signatures span { position: relative; top: 21px; font-size: 8pt; }
-  .outpatient-print-sheet > footer { margin-top: 35px; padding-top: 7px; border-top: 1px solid #777; text-align: center; font-weight: 700; }
+  .outpatient-print-writing { display: grid; grid-template-rows: auto 1fr; gap: 4px; min-height: 58px; margin-top: 6px; break-inside: avoid; }
+  .outpatient-print-writing p { min-height: 38px; margin: 0; padding: 4px; border: 1px solid #777; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .outpatient-print-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px; break-inside: avoid; }
+  .outpatient-print-signatures > div { display: grid; height: 40px; align-content: end; border-bottom: 1px solid #111; text-align: center; }
+  .outpatient-print-signatures span { position: relative; top: 16px; font-size: 8pt; }
+  .outpatient-print-sheet > footer { display: none; }
 }
 .task-center-card li strong { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
 .task-center-card li small { color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
