@@ -751,7 +751,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .xray-status-control { max-width: 320px; }
 .patient-address-group .patient-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .patient-photo-editor { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.patient-photo-editor > img, .patient-photo-placeholder { display: grid; width: 72px; height: 72px; place-items: center; border-radius: 50%; object-fit: cover; background: #edf4f6; color: var(--blue); }
+.patient-photo-editor > img, .patient-photo-placeholder { display: grid; width: 72px; height: 72px; place-items: center; border-radius: 14px; object-fit: cover; background: #edf4f6; color: var(--blue); }
 .patient-photo-editor input[type=file] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 .patient-photo-editor small { width: 100%; color: var(--muted); font-size: 11px; }
 .patient-camera-panel { display: grid; width: min(100%, 560px); gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafb; }
@@ -764,8 +764,8 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .patient-registry-list { display: grid; gap: 10px; }
 .patient-registry-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 .patient-registry-identity { display: flex; min-width: 0; align-items: center; gap: 12px; }
-.patient-registry-identity > img, .patient-history-summary > img { width: 52px; height: 52px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
-.patient-registry-avatar { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #edf4f6; color: var(--blue); }
+.patient-registry-identity > img, .patient-history-summary > img { width: 52px; height: 52px; flex: 0 0 auto; border-radius: 14px; object-fit: cover; }
+.patient-registry-avatar { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: #edf4f6; color: var(--blue); }
 .patient-registry-identity h3 { margin: 0 0 3px; font-size: 14px; }
 .patient-registry-identity p, .patient-registry-identity small { display: block; margin: 2px 0; color: var(--muted); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .patient-registry-actions { display: flex; flex: 0 0 auto; gap: 7px; }
@@ -789,7 +789,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .patient-detail-header { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 155px 16px 0; border-bottom: 1px solid var(--line); }
 .patient-detail-header > button { position: absolute; top: -5px; right: 0; z-index: 1004; }
 .patient-detail-identity { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.patient-detail-identity > img { width: 68px; height: 68px; flex: 0 0 auto; border-radius: 50%; object-fit: cover; }
+.patient-detail-identity > img { width: 68px; height: 68px; flex: 0 0 auto; border-radius: 16px; object-fit: cover; }
 .patient-detail-identity h2 { margin: 3px 0; font-size: 21px; }
 .patient-detail-identity p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 13px; }
 .patient-detail-sections { display: grid; gap: 16px; }

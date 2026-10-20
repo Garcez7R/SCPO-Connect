@@ -48,6 +48,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import PrintSelectionPanel, { type PrintRow } from './components/PrintSelectionPanel'
 import VitalTrendsDashboard from './components/VitalTrendsDashboard'
+import { squareImageFile, squareVideoFrame } from './patientPhoto'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
@@ -786,28 +787,24 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       setCameraError('Aguarde a câmera iniciar antes de tirar a foto.')
       return
     }
-    const canvas = document.createElement('canvas')
-    const scale = Math.min(1, 900 / Math.max(video.videoWidth, video.videoHeight))
-    canvas.width = Math.round(video.videoWidth * scale)
-    canvas.height = Math.round(video.videoHeight * scale)
-    const context = canvas.getContext('2d')
-    if (!context) { setCameraError('Não foi possível processar a imagem.'); return }
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-    setForm((current) => ({ ...current, photo_data: canvas.toDataURL('image/jpeg', 0.82) }))
-    setCameraOpen(false)
-    setCameraError('')
+    try {
+      setForm((current) => ({ ...current, photo_data: squareVideoFrame(video) }))
+      setCameraOpen(false)
+      setCameraError('')
+    } catch (error) {
+      setCameraError(error instanceof Error ? error.message : 'Não foi possível processar a imagem.')
+    }
   }
 
   function loadPhoto(file?: File) {
     if (!file) return
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Selecione uma imagem JPEG, PNG ou WebP.'); return }
     if (file.size > 1_000_000) { setError('A foto deve ter até 1 MB.'); return }
-    const reader = new FileReader()
-    reader.onload = () => setForm((current) => ({ ...current, photo_data: String(reader.result ?? '') }))
-    reader.onerror = () => setError('Não foi possível ler a imagem selecionada.')
-    reader.readAsDataURL(file)
     setError('')
     setCameraOpen(false)
+    void squareImageFile(file)
+      .then((photoData) => setForm((current) => ({ ...current, photo_data: photoData })))
+      .catch((error) => setError(error instanceof Error ? error.message : 'Não foi possível ler a imagem selecionada.'))
   }
 
   return <section className="patient-registry-page page-enter">

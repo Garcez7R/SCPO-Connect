@@ -130,27 +130,32 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setError('')
-    fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/vital-trends?hours=${hours}`, { signal: controller.signal })
-      .then((response) => readApiResponse<TrendResponse>(response))
-      .then((result) => {
-        setData(result)
-        setSelectedRecordId(null)
-      })
-      .catch((loadError) => {
-        if (loadError instanceof DOMException && loadError.name === 'AbortError') return
-        setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a evolução dos sinais.')
-        setData(null)
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
+    const timer = window.setTimeout(() => {
+      setLoading(true)
+      setError('')
+      fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/vital-trends?hours=${hours}`, { signal: controller.signal })
+        .then((response) => readApiResponse<TrendResponse>(response))
+        .then((result) => {
+          setData(result)
+          setSelectedRecordId(null)
+        })
+        .catch((loadError) => {
+          if (loadError instanceof DOMException && loadError.name === 'AbortError') return
+          setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a evolução dos sinais.')
+          setData(null)
+        })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    }, 0)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [patientReference, hours])
 
-  const records = data?.records ?? []
+  const records = useMemo(() => data?.records ?? [], [data])
   const start = data ? new Date(data.generated_at).getTime() - hours * 60 * 60 * 1000 : 0
   const end = data ? new Date(data.generated_at).getTime() : 0
-  const recordCount = useMemo(() => records.length, [records])
+  const recordCount = records.length
   const series = {
     systolic: { key: 'systolic', label: 'Sistólica', color: '#287da0', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[0]) },
     diastolic: { key: 'diastolic', label: 'Diastólica', color: '#a45b9d', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[1]) },
