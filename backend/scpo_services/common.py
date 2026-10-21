@@ -135,6 +135,8 @@ def _outbox_database_service(service: str | None = None) -> str | None:
         "reception": "nursing",
         "nutrition": "nursing",
         "therapy": "nursing",
+        "management": "nursing",
+        "admin": "access",
         "pharmacy": "pharmacy",
         "social": "social",
         "psychology": "social",
@@ -417,7 +419,7 @@ def emit_audit_event(
     service: str | None = None,
 ) -> None:
     """Persist a minimum-necessary event locally; delivery is retried asynchronously."""
-    database_service = _outbox_database_service(service)
+    database_service = _outbox_database_service(service or os.getenv("SCPO_SERVICE") or module)
     if database_service is None:
         raise RuntimeError(f"Audit outbox service is unknown for {module}/{action}")
     if db is not None:

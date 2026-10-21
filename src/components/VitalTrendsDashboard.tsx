@@ -122,7 +122,7 @@ function TrendChart({
 }
 
 export default function VitalTrendsDashboard({ patientReference }: { patientReference: string }) {
-  const [hours, setHours] = useState<6 | 24 | 168>(24)
+  const [hours, setHours] = useState<6 | 24 | 168 | 720>(168)
   const [data, setData] = useState<TrendResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -167,7 +167,7 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
   }
 
   return <section className="vital-trends-dashboard" aria-label="Painel longitudinal de sinais vitais">
-    <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>Visualização dos registros no tempo; não interpreta os valores nem recomenda condutas.</p></div><label className="field"><span className="field-label">Período</span><select value={hours} onChange={(event) => setHours(Number(event.target.value) as 6 | 24 | 168)}><option value={6}>Últimas 6 horas</option><option value={24}>Últimas 24 horas</option><option value={168}>Últimos 7 dias</option></select></label></div>
+    <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>Visualização dos registros no tempo; não interpreta os valores nem recomenda condutas.</p></div><label className="field"><span className="field-label">Período</span><select value={hours} onChange={(event) => setHours(Number(event.target.value) as 6 | 24 | 168 | 720)}><option value={6}>Últimas 6 horas</option><option value={24}>Últimas 24 horas</option><option value={168}>Últimos 7 dias</option><option value={720}>Últimos 30 dias</option></select></label></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {loading ? <div className="history-empty">Carregando evolução…</div> : <>
       <div className="vital-trends-meta"><span>{recordCount} {recordCount === 1 ? 'coleta' : 'coletas'} no período</span><span>Atualizado em {data ? dateTime(data.generated_at) : '—'}</span></div>

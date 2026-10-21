@@ -8,6 +8,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from scpo_services import common, demo_vitals, nursing
 from scpo_services.common import (
@@ -166,9 +167,34 @@ def test_synthetic_vitals_dataset_can_be_seeded_and_removed(
 
 def test_synthetic_vitals_requires_non_production_confirmation(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     with pytest.raises(RuntimeError, match="--confirm-non-production"):
         demo_vitals.require_non_production_confirmation(False)
+
+    monkeypatch.setenv("SCPO_ENV", "development")
+    demo_data_dir = tmp_path / "demo"
+    monkeypatch.setenv("SCPO_DEMO_DATA_DIR", str(demo_data_dir))
+    monkeypatch.setenv(
+        "SCPO_NURSING_DATABASE_URL",
+        f"sqlite:///{demo_data_dir / 'nursing.sqlite3'}",
+    )
+    demo_vitals.require_non_production_confirmation(True)
+
+    monkeypatch.setenv("SCPO_NURSING_DATABASE_URL", "postgresql://localhost/scpo_demo")
+    with pytest.raises(RuntimeError, match="somente um banco SQLite isolado"):
+        demo_vitals.require_non_production_confirmation(True)
+
+    monkeypatch.setenv(
+        "SCPO_NURSING_DATABASE_URL",
+        f"sqlite:///{tmp_path / 'local' / 'nursing.sqlite3'}",
+    )
+    with pytest.raises(RuntimeError, match="dentro de SCPO_DEMO_DATA_DIR"):
+        demo_vitals.require_non_production_confirmation(True)
+
+    monkeypatch.delenv("SCPO_NURSING_DATABASE_URL")
+    with pytest.raises(RuntimeError, match="SCPO_NURSING_DATABASE_URL explicitamente"):
+        demo_vitals.require_non_production_confirmation(True)
 
     monkeypatch.setenv("SCPO_ENV", "production")
     with pytest.raises(RuntimeError, match="bloqueada no ambiente de produção"):
@@ -433,6 +459,25 @@ def test_patient_creation_persists_audit_outbox_in_the_same_transaction(
     )
     assert event is not None
     assert event.delivered_at is None
+
+
+def test_audit_outbox_routes_events_by_module_without_service_environment(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SCPO_SERVICE")
+
+    common.emit_audit_event(nurse, "patients", "patient_list_read", "patient_registry")
+
+    event = nursing_db.scalar(
+        select(AuditOutbox).where(
+            AuditOutbox.action == "patient_list_read",
+            AuditOutbox.target_id == "patient_registry",
+        )
+    )
+    assert event is not None
+    assert event.module == "patients"
 
 
 def test_audit_outbox_retries_delivery_and_marks_success(
@@ -1132,6 +1177,38 @@ def test_patient_vital_trends_return_full_time_ordered_period(nursing_db: Sessio
     records = result["records"]
     assert [record["values"]["temperature"] for record in records] == ["36.8", "37.1"]
     assert records[0]["measured_at"] < records[1]["measured_at"]
+
+
+def test_patient_vital_trends_query_accepts_numeric_periods(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    nursing.create_vital_record(
+        nursing.VitalPayload(
+            patient_reference=reference,
+            values={"temperature": "36.8"},
+            measured_at=datetime.now(UTC) - timedelta(days=29),
+        ),
+        nurse,
+        nursing_db,
+    )
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    nursing.app.dependency_overrides[nursing.PATIENT_HISTORY_ACCESS.dependency] = lambda: nurse
+    try:
+        with TestClient(nursing.app) as client:
+            response = client.get(
+                f"/api/v1/nursing/patients/{reference}/vital-trends",
+                params={"hours": 720},
+            )
+        assert response.status_code == 200
+        assert response.json()["hours"] == 720
+        assert response.json()["total"] == 1
+    finally:
+        nursing.app.dependency_overrides.clear()
 
 
 def test_vital_elimination_and_venous_access_choices_are_restricted() -> None:

@@ -2,7 +2,12 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-mkdir -p .logs data/local
+LOCAL_DATA_DIR="${SCPO_LOCAL_DATA_DIR:-$PWD/data/local}"
+if [[ "$LOCAL_DATA_DIR" != /* ]]; then
+  LOCAL_DATA_DIR="$PWD/$LOCAL_DATA_DIR"
+fi
+mkdir -p .logs "$LOCAL_DATA_DIR"
+export SCPO_ENV="${SCPO_ENV:-development}"
 export PYTHONPATH="$PWD/backend${PYTHONPATH:+:$PYTHONPATH}"
 export UV_CACHE_DIR="$PWD/data/uv-cache"
 export SCPO_SERVICE_TOKEN="${SCPO_SERVICE_TOKEN:-$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')}"
@@ -11,9 +16,9 @@ export SCPO_ACCESS_API_URL="${SCPO_ACCESS_API_URL:-http://127.0.0.1:8002}"
 export SCPO_NURSING_API_URL="${SCPO_NURSING_API_URL:-http://127.0.0.1:8001}"
 export SCPO_PHARMACY_API_URL="${SCPO_PHARMACY_API_URL:-http://127.0.0.1:8003}"
 export SCPO_COOKIE_SECURE="${SCPO_COOKIE_SECURE:-false}"
-auth_keys_file="$PWD/data/local/auth.keys.env"
+auth_keys_file="$LOCAL_DATA_DIR/auth.keys.env"
 if [[ ! -f "$auth_keys_file" ]]; then
-  python3 - "$auth_keys_file" "$PWD/.env" "$PWD/data/local/bootstrap-admin.token" <<'PY'
+  python3 - "$auth_keys_file" "$PWD/.env" "$LOCAL_DATA_DIR/bootstrap-admin.token" <<'PY'
 from pathlib import Path
 import os
 import secrets
@@ -36,14 +41,14 @@ fi
 set -a
 source "$auth_keys_file"
 set +a
-bootstrap_token_file="$PWD/data/local/bootstrap-admin.token"
+bootstrap_token_file="$LOCAL_DATA_DIR/bootstrap-admin.token"
 printf '%s\n' "$SCPO_BOOTSTRAP_ADMIN_TOKEN" > "$bootstrap_token_file"
 chmod 0600 "$bootstrap_token_file"
 API_BIND_HOST="${SCPO_API_BIND_HOST:-127.0.0.1}"
 
 for service in access audit nursing pharmacy social xray maintenance; do
   database_variable="SCPO_${service^^}_DATABASE_URL"
-  export "$database_variable=sqlite:///$PWD/data/local/${service}.sqlite3"
+  export "$database_variable=sqlite:///$LOCAL_DATA_DIR/${service}.sqlite3"
   SCPO_SERVICE="$service" uv run --no-sync alembic upgrade head
 done
 

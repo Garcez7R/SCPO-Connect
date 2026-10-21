@@ -1255,6 +1255,7 @@ html[data-theme="dark"] .button-primary:hover:not(:disabled) { background-color:
 html[data-theme="dark"] .button-secondary { background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .button-danger { border-color: #693b40; background-color: #352528; color: #f1b4b4; }
 html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, .module-card-status, .field-hint, .patient-registry-identity p, .patient-registry-identity small, .work-order-meta, .pharmacy-item-description, .pharmacy-item-meta, .session-row, .app-footer, .breadcrumbs, .history-empty) { color: var(--muted); }
+html[data-theme="dark"] .nav-count { background: #263944; color: var(--blue-dark); }
 html[data-theme="dark"] :is(.nav-link:hover, .appearance-button:hover, .button-secondary:hover) { background-color: #263944; color: var(--ink); }
 html[data-theme="dark"] .patient-modal-backdrop { background: rgb(0 0 0 / 72%); }
 html[data-theme="dark"] :is(.pharmacy-summary-warning, .pharmacy-level-count.level-attention) { border-color: #705b31; background: #332d20; }

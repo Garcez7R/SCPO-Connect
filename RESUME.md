@@ -8,48 +8,40 @@ Continuar as melhorias aprovadas para Recepção, Manutenção, Gestão Hospital
 
 - Repositório: `/home/rgarcez/SCPO Connect`
 - Branch de referência: `main`
-- O commit `efaf868` era o último publicado antes desta rodada.
+- Último commit publicado antes desta rodada: `c968a00` (`Improve emergency queue and shared access`).
+- Esta rodada está validada, mas ainda não foi commitada nem enviada.
 - O usuário autorizou testar, criar commit e enviar ao remoto após a revisão desta rodada; não fazer implantação.
-- O usuário informou que a tela que estava desformatada voltou a funcionar. A causa da falha visual transitória não foi confirmada; em execução local, o frontend carregou, mas as APIs retornaram 502 porque os serviços locais não estavam ativos.
-- O frontend local respondeu HTTP 200; o manifesto e os ícones referenciados também responderam HTTP 200.
+- A árvore de dados demonstrativos está isolada em `data/demo`; os bancos existentes em `data/local` não foram alterados.
 
-## Alterações já iniciadas nesta rodada
+## Alterações desta rodada
 
-- A ficha impressa da Recepção foi reorganizada: cabeçalho mais alinhado, dados do paciente em duas colunas e opções de atendimento em grade 3×2.
-- Manutenção e Gestão Hospitalar foram divididas em abas para reduzir telas longas e separar fila de solicitações de patrimônio/preventivas.
-- Foi incluído SAME/prontuário no cadastro central, no atendimento ambulatorial e na migração `0038_patient_same_number`.
-- Foram adicionados o status `called` e o painel de chamadas da sala de espera, com código, nome completo, atualização periódica e voz opcional.
-- Foram iniciados alertas visuais, de navegador e sonoros para novas ordens de manutenção, ativados por ação do usuário.
-- O cadastro emergencial foi ampliado com e-mail, complemento e dados do responsável; a persistência foi adicionada no backend. Ainda é necessário revisar toda a paridade dos campos entre os formulários.
-- O compartilhamento Serviço Social ↔ Psicologia/Psiquiatria recebeu mensagens que esclarecem que um resumo seletivo não cria automaticamente um encaminhamento ou atendimento na fila do outro módulo.
-- Foi iniciado um gerador/removedor seguro de dados sintéticos: sete pacientes marcados como `DEMO` e 30 dias de sinais vitais. A lógica está em `backend/scpo_services/demo_vitals.py`, com entrypoint em `scripts/demo_vitals.py`.
-- O gerador exige `--confirm-non-production`, bloqueia ambientes/bancos identificados como produção, verifica que as migrações estão atualizadas e interrompe a limpeza se houver registros adicionais vinculados aos pacientes sintéticos.
-- A limpeza também interrompe se houver aferições não demonstrativas ou alteradas vinculadas aos pacientes sintéticos.
-- O anúncio por voz no painel de chamadas só ocorre depois que a API confirma a chamada.
+- O lançador de desenvolvimento permite selecionar diretório local com `SCPO_LOCAL_DATA_DIR`; as APIs foram executadas e migradas em `data/demo`, sem tocar nos bancos existentes.
+- Foram semeados no banco isolado 7 pacientes `DEMO - ...` e 210 aferições sintéticas (30 datas por paciente). A limpeza exige ambiente não produtivo e confirmação, só permite arquivo SQLite dentro de `SCPO_DEMO_DATA_DIR` nomeado `demo`, e aborta diante de dados vinculados ou alterados.
+- O painel de sinais vitais agora aceita corretamente os valores de período enviados como query string e oferece janela de 30 dias; a janela inicial de 7 dias exibe dados demonstrativos recentes.
+- A validação com APIs ativas encontrou falha no roteamento de auditoria de leituras quando `SCPO_SERVICE` não estava definido no processo. A API agora deriva o banco de auditoria do módulo e cobre também Gestão Hospitalar; isso removeu respostas 500 em páginas de leitura.
+- O tema escuro foi verificado no navegador em Visão Geral, Enfermagem e Administração; badges laterais receberam superfície escura legível. Os ícones dos módulos usam símbolos e fundos distintos, incluindo comprimido para Farmácia, raio X para diagnóstico e calendário para Oficina Terapêutica.
+- A interface da Administração e a documentação agora explicam a matriz aplicada e alertam que Gestão Hospitalar amplia acesso a todos os módulos e ações.
+- Corrigido o plural da contagem de espaços na Visão Geral e a indicação hardcoded do caminho do token bootstrap.
+- A validação navegável percorreu Visão Geral, Pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Nutrição, Recepção, Oficina Terapêutica, Psicologia/Psiquiatria, Higienização, Manutenção, Gestão Hospitalar e Administração, sem alertas de API nas telas.
 
 ## Validação executada
 
-- `./.venv/bin/pytest backend/tests -q`: passou.
+- `./.venv/bin/pytest backend/tests -q`: passou (100 testes; avisos de depreciação em dependências).
 - Ruff nos arquivos Python alterados: passou.
-- `npm run typecheck`: passou.
-- `npm run build`: passou.
-- `npm run lint`: passou.
+- `npm run typecheck`, `npm run lint` e `npm run build`: passaram.
 - `git diff --check`: passou.
-- `PYTHONPATH=backend .venv/bin/python scripts/demo_vitals.py --help`: passou.
-- Teste automatizado cobre criação e remoção de 7 pacientes/210 aferições, bloqueio da limpeza quando há registros adicionais e exigência de confirmação não produtiva.
-- A prévia de produção abriu no navegador, mas a interface ficou no estado de carregamento porque os serviços de API retornaram 502.
+- Os nove serviços de API e o frontend responderam; os períodos do painel foram verificados no navegador: 7 registros em 7 dias e 30 em 30 dias.
+- A validação de interface foi feita com conta e bancos somente demonstrativos; nenhum dado real foi inserido ou acessado.
 
 ## Próximas ações
 
-1. Revisar o commit enviado e acompanhar a validação no ambiente com APIs ativas.
-2. Se for usar o conjunto sintético em ambiente de demonstração, após confirmar que o banco é local/não produtivo, executar:
-   `SCPO_SERVICE=nursing PYTHONPATH=backend .venv/bin/python scripts/demo_vitals.py seed --confirm-non-production`
-   e a remoção correspondente com `cleanup`.
-3. As telas autenticadas e a impressão ainda não foram verificadas visualmente porque os serviços de API locais não estavam disponíveis. Validar com backends de desenvolvimento ativos antes de publicar.
+1. Revisar as mudanças, criar o commit e enviá-lo para `origin/main`, conforme autorizado.
+2. Manter `data/demo` separado dos bancos de produção. Consultar [docs/demo-data.md](docs/demo-data.md) para executar ou limpar os dados demonstrativos.
+3. A validação de prontidão para uso real ainda requer aprovação institucional da matriz de permissões, backup externo com teste de restauração, infraestrutura/HTTPS e teste de carga.
 
 ## Observações funcionais
 
 - O painel de chamadas mostra nome completo conforme preferência expressa pelo usuário, além de código, sem motivo clínico.
 - Chamadas de emergência usam `waiting → called → in_service/completed`; agendamentos usam `arrived → called → completed`.
 - O compartilhamento entre Serviço Social e Psicologia permanece seletivo, temporário e revogável; não copiar registros privados automaticamente nem converter resumos em encaminhamentos sem ação explícita da equipe.
-- Não executar `seed` do conjunto sintético contra dados de produção. O utilitário é apenas para apresentação/teste e deve permitir limpeza segura.
+- Não executar `seed` do conjunto sintético contra dados de produção. O utilitário exige ambiente não produtivo e SQLite explícitos; a limpeza cancela se houver vínculos ou alterações não demonstrativas.

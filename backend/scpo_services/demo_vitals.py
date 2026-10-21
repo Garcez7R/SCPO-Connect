@@ -5,6 +5,7 @@ import os
 import random
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import MetaData, Table, delete, inspect, select
@@ -67,20 +68,53 @@ def require_non_production_confirmation(confirmed: bool) -> None:
     if not confirmed:
         raise RuntimeError("Use --confirm-non-production somente após confirmar que o banco não é de produção.")
 
-    environments = {
+    environments = [
         os.getenv(name, "").strip().lower()
         for name in ("SCPO_ENV", "APP_ENV", "ENVIRONMENT")
         if os.getenv(name, "").strip()
-    }
+    ]
     if any("prod" in environment or environment == "live" for environment in environments):
         raise RuntimeError("A geração de dados sintéticos foi bloqueada no ambiente de produção.")
+    if not environments or not set(environments).issubset(
+        {"dev", "development", "test", "testing", "demo"}
+    ):
+        raise RuntimeError(
+            "Defina SCPO_ENV como development, test ou demo para habilitar dados sintéticos."
+        )
 
     database_url = os.getenv("SCPO_NURSING_DATABASE_URL")
-    if database_url:
-        parsed_url = make_url(database_url)
-        endpoint = f"{parsed_url.host or ''} {parsed_url.database or ''}".lower()
-        if "prod" in endpoint or "live" in endpoint:
-            raise RuntimeError("A geração de dados sintéticos foi bloqueada para um banco identificado como produção.")
+    if not database_url:
+        raise RuntimeError(
+            "Defina SCPO_NURSING_DATABASE_URL explicitamente para selecionar o banco demonstrativo."
+        )
+    demo_data_dir = os.getenv("SCPO_DEMO_DATA_DIR")
+    if not demo_data_dir:
+        raise RuntimeError(
+            "Defina SCPO_DEMO_DATA_DIR como um diretório dedicado chamado demo."
+        )
+    resolved_demo_dir = Path(demo_data_dir).expanduser().resolve()
+    if resolved_demo_dir.name != "demo":
+        raise RuntimeError(
+            "SCPO_DEMO_DATA_DIR deve apontar para um diretório dedicado chamado demo."
+        )
+
+    parsed_url = make_url(database_url)
+    endpoint = f"{parsed_url.host or ''} {parsed_url.database or ''}".lower()
+    if "prod" in endpoint or "live" in endpoint:
+        raise RuntimeError("A geração de dados sintéticos foi bloqueada para um banco identificado como produção.")
+    if not parsed_url.drivername.startswith("sqlite"):
+        raise RuntimeError(
+            "O gerador de demonstração aceita somente um banco SQLite isolado; bancos remotos não são alterados."
+        )
+    if not parsed_url.database:
+        raise RuntimeError("O banco demonstrativo deve ser um arquivo SQLite, não um banco em memória.")
+    database_path = Path(parsed_url.database).expanduser().resolve()
+    try:
+        database_path.relative_to(resolved_demo_dir)
+    except ValueError as error:
+        raise RuntimeError(
+            "O arquivo SQLite deve estar dentro de SCPO_DEMO_DATA_DIR para proteger outros bancos locais."
+        ) from error
 
 
 def seed_demo_data(session: Session, now: datetime | None = None) -> tuple[int, int]:

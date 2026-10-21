@@ -8,6 +8,23 @@ O perfil **Superadministrador do Sistema** é um privilégio independente dos m�
 
 A Administração comum apresenta guias separadas para usuários/permissões e logs de auditoria. A Gestão Hospitalar é uma visão de indicadores operacionais agregados já disponíveis; não é um sistema financeiro/ERP hospitalar completo. Os logs e a recuperação de acesso continuam dependendo de validação operacional da instituição e da melhoria de durabilidade e resistência à alteração da trilha.
 
+## Matriz efetiva no código
+
+O sistema não possui cargos operacionais fixos: os módulos e ações são atribuídos por conta. A tabela abaixo descreve o comportamento atual da API e da tela de Administração, não uma matriz aprovada pela Santa Casa.
+
+| Acesso atribuído | Consultar | Criar | Alterar | Excluir/arquivar | Administrar contas |
+| --- | --- | --- | --- | --- | --- |
+| Módulo operacional individual | Sim, se selecionado | Sim, padrão | Sim, padrão | Opcional somente para Pacientes, Enfermagem, Nutrição e Recepção | Não |
+| Gestão Hospitalar | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Sim |
+| Administração sem Gestão Hospitalar | Não pode ser atribuída isoladamente | — | — | — | — |
+| Superadministrador | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Operações de sistema restritas |
+
+Uma conta que recebe Gestão Hospitalar é ampliada pelo backend para todos os módulos e todas as ações; não é uma seleção de painel somente leitura. Por isso, a interface mostra um aviso de privilégio amplo ao conceder esse acesso. O superadministrador é um privilégio independente e reservado, não um cargo que outros administradores possam atribuir.
+
+As ações gerais correspondem a `consultar`, `criar`, `alterar`, `excluir` e `administrar`. A autorização é checada no backend; esconder ou desabilitar um controle na interface não substitui essa checagem. A opção de arquivamento na interface existe somente para Pacientes, Enfermagem, Nutrição e Recepção.
+
+Antes de uso real, os responsáveis de cada área devem aprovar uma matriz nominal com módulo, ação, dados/campos acessíveis, justificativa, aprovador, validade e revisão. O comportamento amplo de Gestão Hospitalar deve ser validado; não conceda esse módulo para representar um gestor de painel com escopo reduzido.
+
 | Controle | Estado | Para dados reais |
 | --- | --- | --- |
 | Identidade de usuário | Contas locais com senha e MFA TOTP | Revisar requisitos, recuperação, rotação de segredos e procedimento de suporte |

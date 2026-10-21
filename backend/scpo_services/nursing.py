@@ -3,6 +3,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from enum import IntEnum
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
@@ -59,6 +60,13 @@ class VitalRecord(Base):
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     voided_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     void_reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+
+class VitalTrendPeriod(IntEnum):
+    SIX_HOURS = 6
+    ONE_DAY = 24
+    SEVEN_DAYS = 168
+    THIRTY_DAYS = 720
 
 
 class PatientObservation(Base):
@@ -3114,12 +3122,13 @@ def list_patient_vital_trends(
     patient_reference: str,
     principal: Annotated[DemoPrincipal, PATIENT_HISTORY_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
-    hours: Literal[6, 24, 168] = 24,
+    hours: VitalTrendPeriod = VitalTrendPeriod.ONE_DAY,
 ) -> dict[str, object]:
     if db.get(Patient, patient_reference) is None:
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
     now = datetime.now(UTC)
-    start = now - timedelta(hours=hours)
+    period_hours = int(hours)
+    start = now - timedelta(hours=period_hours)
     measured_time = func.coalesce(VitalRecord.measured_at, VitalRecord.recorded_at)
     records = db.scalars(
         select(VitalRecord)
@@ -3134,7 +3143,7 @@ def list_patient_vital_trends(
     emit_audit_event(principal, "nursing", "patient_vital_trends_read", patient_reference)
     return {
         "patient_reference": patient_reference,
-        "hours": hours,
+        "hours": period_hours,
         "generated_at": now.isoformat(),
         "records": [serialize_record(record) for record in records],
         "total": len(records),
