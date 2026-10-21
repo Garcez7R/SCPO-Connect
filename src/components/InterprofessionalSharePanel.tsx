@@ -17,7 +17,7 @@ type InterprofessionalShare = {
   purpose: string
   created_by_name: string
   created_at: string
-  expires_at: string
+  expires_at: string | null
   expired: boolean
   revoked_at: string | null
 }
@@ -52,7 +52,7 @@ export default function InterprofessionalSharePanel({
   const [categories, setCategories] = useState<ShareCategory[]>([])
   const [summary, setSummary] = useState('')
   const [purpose, setPurpose] = useState('')
-  const [expiresInDays, setExpiresInDays] = useState<7 | 14 | 30>(7)
+  const [expiresInDays, setExpiresInDays] = useState<7 | 14 | 30 | null>(7)
   const [filter, setFilter] = useState<'all' | 'received' | 'sent'>('all')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -151,9 +151,9 @@ export default function InterprofessionalSharePanel({
           {Object.entries(categoryLabels).map(([category, label]) => <label key={category}><input type="checkbox" checked={categories.includes(category as ShareCategory)} onChange={(event) => setCategories((current) => event.target.checked ? [...current, category as ShareCategory] : current.filter((item) => item !== category))} /> {label}</label>)}
         </fieldset>
         <label className="field"><span className="field-label">Resumo mínimo necessário</span><textarea required minLength={3} maxLength={2000} rows={4} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="Registre somente o que a equipe destinatária precisa saber para esta finalidade." /></label>
-        <label className="field"><span className="field-label">Acesso do destinatário</span><select value={expiresInDays} onChange={(event) => setExpiresInDays(Number(event.target.value) as 7 | 14 | 30)}><option value={7}>Expira em 7 dias</option><option value={14}>Expira em 14 dias</option><option value={30}>Expira em 30 dias</option></select></label>
+        <label className="field"><span className="field-label">Acesso do destinatário</span><select value={expiresInDays ?? 'never'} onChange={(event) => setExpiresInDays(event.target.value === 'never' ? null : Number(event.target.value) as 7 | 14 | 30)}><option value={7}>Expira em 7 dias</option><option value={14}>Expira em 14 dias</option><option value={30}>Expira em 30 dias</option><option value="never">Sem expiração automática</option></select></label>
       </div>
-      <p className="psychology-help">Confirme que o compartilhamento segue a finalidade assistencial e as regras institucionais. O sistema mantém autoria, prazo e auditoria; revogue o acesso quando não for mais necessário.</p>
+      <p className="psychology-help">Confirme que o compartilhamento segue a finalidade assistencial e as regras institucionais. O sistema mantém autoria e auditoria. Sem expiração automática, o acesso permanece ativo até ser revogado pelo autor.</p>
       {error && <div className="form-message form-message-error" role="alert">{error}</div>}
       {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
       <button className="button button-primary" type="submit" disabled={saving || !patients.length || !categories.length}>{saving ? 'Compartilhando…' : 'Compartilhar resumo'} <ArrowRight size={16} /></button>
@@ -167,7 +167,7 @@ export default function InterprofessionalSharePanel({
         const isSender = share.direction === 'sent'
         const destination = isSender ? moduleLabel(share.recipient_module) : moduleLabel(share.sender_module)
         return <article className="interprofessional-share-card" key={share.id}>
-          <div className="interprofessional-share-heading"><div><h3>{patientName(share.patient_reference)}</h3><p>{isSender ? `Enviado para ${destination}` : `Recebido de ${destination}`} · {dateTime(share.created_at)}</p></div><span className={`work-order-status ${revoked || expired ? 'status-cancelled' : 'status-in_progress'}`}>{revoked ? 'Revogado' : expired ? 'Expirado' : 'Ativo até ' + dateTime(share.expires_at)}</span></div>
+          <div className="interprofessional-share-heading"><div><h3>{patientName(share.patient_reference)}</h3><p>{isSender ? `Enviado para ${destination}` : `Recebido de ${destination}`} · {dateTime(share.created_at)}</p></div><span className={`work-order-status ${revoked || expired ? 'status-cancelled' : 'status-in_progress'}`}>{revoked ? 'Revogado' : expired ? 'Expirado' : share.expires_at ? 'Ativo até ' + dateTime(share.expires_at) : 'Ativo · sem expiração'}</span></div>
           <p><strong>Finalidade:</strong> {share.purpose}</p>
           <div className="interprofessional-share-tags">{share.categories.map((category) => <span key={category}>{categoryLabels[category]}</span>)}</div>
           <p className="interprofessional-share-summary">{share.summary}</p>

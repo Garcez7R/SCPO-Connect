@@ -48,6 +48,7 @@ type EmergencyArrival = {
   arrival_mode: 'walk_in' | 'ambulance' | 'other'
   reason: string
   status: EmergencyArrivalStatus
+  clinical_priority: 'unassigned' | 'routine' | 'priority' | 'urgent'
   created_by: string
   updated_by: string
   created_at: string
@@ -383,6 +384,14 @@ type WaitingRoomItem = {
   type: 'appointment' | 'arrival'
   starts_at: string
   code: string
+  clinical_priority: EmergencyArrival['clinical_priority']
+}
+
+const priorityOrder: Record<EmergencyArrival['clinical_priority'], number> = {
+  urgent: 0,
+  priority: 1,
+  routine: 2,
+  unassigned: 3,
 }
 
 function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
@@ -404,7 +413,7 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
       ])
       const [appointmentData, arrivalData] = await Promise.all([
         readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; status: string }> }>(appointmentsResponse),
-        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string }> }>(arrivalsResponse),
+        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority'] }> }>(arrivalsResponse),
       ])
       const appointments = (appointmentData.appointments ?? [])
         .filter((item) => item.status === 'arrived' || item.status === 'called')
@@ -415,6 +424,7 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
           status: item.status === 'called' ? 'called' : 'waiting',
           type: 'appointment',
           code: `A-${item.id}`,
+          clinical_priority: 'routine',
         }))
       const arrivals = (arrivalData.arrivals ?? [])
         .filter((item) => item.status === 'waiting' || item.status === 'called')
@@ -425,9 +435,12 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
           status: item.status === 'called' ? 'called' : 'waiting',
           type: 'arrival',
           code: `E-${item.id.slice(0, 6).toUpperCase()}`,
+          clinical_priority: item.clinical_priority,
         }))
       setItems([...appointments, ...arrivals].sort((left, right) =>
         Number(left.status === 'called') - Number(right.status === 'called')
+        || Number(right.type === 'arrival') - Number(left.type === 'arrival')
+        || priorityOrder[left.clinical_priority] - priorityOrder[right.clinical_priority]
         || left.starts_at.localeCompare(right.starts_at),
       ))
       setError('')

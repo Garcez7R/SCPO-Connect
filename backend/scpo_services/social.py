@@ -73,7 +73,7 @@ class InterprofessionalShare(Base):
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
@@ -170,7 +170,7 @@ class InterprofessionalSharePayload(BaseModel):
     ]] = Field(min_length=1, max_length=6)
     summary: str = Field(min_length=3, max_length=2000)
     purpose: str = Field(min_length=10, max_length=300)
-    expires_in_days: Literal[7, 14, 30] = 7
+    expires_in_days: Literal[7, 14, 30] | None = 7
 
     @field_validator("categories")
     @classmethod
@@ -384,7 +384,10 @@ def list_interprofessional_shares(
             and_(
                 InterprofessionalShare.recipient_module == selected,
                 InterprofessionalShare.revoked_at.is_(None),
-                InterprofessionalShare.expires_at > now,
+                or_(
+                    InterprofessionalShare.expires_at.is_(None),
+                    InterprofessionalShare.expires_at > now,
+                ),
             ),
             and_(
                 InterprofessionalShare.sender_module == selected,
@@ -433,7 +436,9 @@ def create_interprofessional_share(
         created_by=principal.user_id,
         created_by_name=principal.actor_name,
         created_at=now,
-        expires_at=now + timedelta(days=payload.expires_in_days),
+        expires_at=now + timedelta(days=payload.expires_in_days)
+        if payload.expires_in_days is not None
+        else None,
     )
     db.add(share)
     db.flush()
@@ -478,7 +483,7 @@ def serialize_interprofessional_share(
     share: InterprofessionalShare, direction: str, now: datetime
 ) -> dict[str, object]:
     expires_at = share.expires_at
-    if expires_at.tzinfo is None:
+    if expires_at is not None and expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
     return {
         "id": share.id,
@@ -491,8 +496,8 @@ def serialize_interprofessional_share(
         "purpose": share.purpose,
         "created_by_name": share.created_by_name,
         "created_at": share.created_at.isoformat(),
-        "expires_at": expires_at.isoformat(),
-        "expired": expires_at <= now,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "expired": expires_at is not None and expires_at <= now,
         "revoked_at": share.revoked_at.isoformat() if share.revoked_at else None,
     }
 

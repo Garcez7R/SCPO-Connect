@@ -1588,18 +1588,20 @@ def list_emergency_arrivals(
         .where(*filters)
         .order_by(
             case(
+                (EmergencyArrival.status == "waiting", 0),
+                (EmergencyArrival.status == "called", 1),
+                (EmergencyArrival.status == "in_service", 2),
+                (EmergencyArrival.status == "completed", 3),
+                (EmergencyArrival.status == "cancelled", 4),
+                else_=5,
+            ),
+            case(
                 (EmergencyArrival.clinical_priority == "urgent", 0),
                 (EmergencyArrival.clinical_priority == "priority", 1),
                 (EmergencyArrival.clinical_priority == "routine", 2),
                 else_=3,
             ),
-            case(
-                (EmergencyArrival.status == "waiting", 0),
-                (EmergencyArrival.status == "called", 1),
-                (EmergencyArrival.status == "in_service", 2),
-                else_=2,
-            ),
-            EmergencyArrival.created_at.desc(),
+            EmergencyArrival.created_at.asc(),
             EmergencyArrival.id.desc(),
         )
         .offset(offset)

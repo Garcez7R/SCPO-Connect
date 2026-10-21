@@ -42,7 +42,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0039_social_therapy_workflows"
+    assert revision == "0040_permanent_shares"
     if service == "nursing":
         assert len(tables) == 20
         assert "reception_appointments" in tables
@@ -122,6 +122,11 @@ def test_each_service_migration_creates_only_its_owned_table(
             column["name"]
             for column in inspect(get_engine(service)).get_columns("psychology_referrals")
         }
+        share_columns = {
+            column["name"]: column
+            for column in inspect(get_engine(service)).get_columns("interprofessional_shares")
+        }
+        assert share_columns["expires_at"]["nullable"] is True
     elif service == "access":
         assert len(tables) == 4
         assert "audit_outbox" in tables

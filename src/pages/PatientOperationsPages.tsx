@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
   Brain,
   CheckCircle2,
   Handshake,
-  HeartPulse,
   Info,
   LockKeyhole,
   Search,
   ScanLine,
-  UsersRound,
 } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import InterprofessionalSharePanel from '../components/InterprofessionalSharePanel'

@@ -101,10 +101,17 @@ def test_synthetic_vitals_dataset_can_be_seeded_and_removed(
         )
     ).all()
     assert len(demo_records) == 210
+    assert len({record.measured_at.date() for record in demo_records}) == 30
     assert all(
         record.values["notes"].startswith("DADO SINTETICO PARA APRESENTACAO")
         for record in demo_records
     )
+    first_patient_records = [
+        record
+        for record in demo_records
+        if record.patient_reference == demo_patients[0].reference
+    ]
+    assert len({record.values["heartRate"] for record in first_patient_records}) > 10
     nursing_db.commit()
 
     with pytest.raises(RuntimeError, match="já existem"):

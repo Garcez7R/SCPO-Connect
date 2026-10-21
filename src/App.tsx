@@ -36,7 +36,6 @@ import {
   LogOut,
   Menu,
   Moon,
-  Package,
   Pill,
   Pencil,
   Printer,

@@ -614,11 +614,14 @@ def test_reception_records_emergency_arrival_without_inpatient_bed(
     assert linked_arrival["patient_name"] == "Paciente já cadastrado"
     assert linked_arrival["patient_reference"] == "123e4567-e89b-12d3-a456-426614174000"
 
+    db.get(nursing.EmergencyArrival, arrival["id"]).clinical_priority = "urgent"
+    db.commit()
     listed = nursing.list_emergency_arrivals(
         receptionist, domain_database["nursing"], status="waiting"
     )
     assert listed["total"] == 2
     assert listed["status_counts"]["waiting"] == 2
+    assert listed["arrivals"][0]["clinical_priority"] == "urgent"
     nurse = DemoPrincipal(
         "nurse-1",
         "nurse",
@@ -1031,6 +1034,27 @@ def test_interprofessional_shares_are_scoped_expiring_and_revocable(
     assert social.list_interprofessional_shares(
         social_worker, domain_database["social"], module="social"
     )["shares"][0]["revoked_at"] is not None
+
+    permanent_payload = social.InterprofessionalSharePayload(
+        patient_reference=reference,
+        sender_module="social",
+        recipient_module="psychology",
+        categories=["care_needs"],
+        summary="Acompanhamento conjunto sem prazo automático.",
+        purpose="Manter a coordenação assistencial enquanto necessária.",
+        expires_in_days=None,
+    )
+    permanent_share = social.create_interprofessional_share(
+        permanent_payload, social_worker, domain_database["social"]
+    )
+    assert permanent_share["expires_at"] is None
+    assert permanent_share["expired"] is False
+    assert [
+        item["id"]
+        for item in social.list_interprofessional_shares(
+            psychologist, domain_database["social"], module="psychology"
+        )["shares"]
+    ] == [permanent_share["id"]]
     assert all(payload.summary not in repr(event) for event in audit_events)
 
 

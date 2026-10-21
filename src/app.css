@@ -285,7 +285,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .draft-hint { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
 .draft-hint svg { color: var(--amber); }
 .button { display: inline-flex; min-height: 38px; align-items: center; justify-content: center; gap: 8px; padding: 0 13px; border: 1px solid transparent; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 600; transition: background 130ms ease, border-color 130ms ease; }
-.button:disabled { cursor: wait; opacity: .7; }
+.button:disabled { cursor: not-allowed; opacity: .7; }
 .button-primary { background: var(--blue); color: #fff; }
 .button-primary:hover:not(:disabled) { background: var(--blue-dark); }
 .button-secondary { border-color: var(--line); background: #fff; color: var(--ink); }

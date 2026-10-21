@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, SprayCan, Wrench } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, ShieldCheck, SprayCan, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
 import { printRows, type PrintRow } from '../printReport'
