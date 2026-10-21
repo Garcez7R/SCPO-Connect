@@ -842,6 +842,50 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     assert closed_request.value.status_code == 409
 
 
+def test_social_referrals_support_operational_follow_up_and_clearing_due_date(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    reference = "123e4567-e89b-12d3-a456-426614174000"
+    monkeypatch.setattr(social, "verify_patient_reference", lambda value: {"reference": value})
+    monkeypatch.setattr(social, "emit_audit_event", lambda *args, **kwargs: None)
+    social_worker = DemoPrincipal(
+        "social-1", "social", "Assistente social", "social",
+        ["social"], {"social": ["consultar", "criar", "alterar"]},
+    )
+
+    created = social.create_referral(
+        social.ReferralPayload(
+            patient_reference=reference,
+            referral_type="Alta e continuidade do cuidado",
+            priority="priority",
+            assignee="Equipe social",
+            follow_up_due="2026-11-01",
+            next_step="Confirmar contato com a rede de apoio",
+        ),
+        social_worker,
+        domain_database["social"],
+    )
+    assert created["priority"] == "priority"
+    assert created["assignee"] == "Equipe social"
+    assert created["follow_up_due"] == "2026-11-01"
+    assert created["next_step"] == "Confirmar contato com a rede de apoio"
+
+    updated = social.update_referral(
+        created["id"],
+        social.ReferralUpdatePayload(
+            status="in_progress",
+            assignee="Assistente responsável",
+            follow_up_due=None,
+        ),
+        social_worker,
+        domain_database["social"],
+    )
+    assert updated["status"] == "in_progress"
+    assert updated["assignee"] == "Assistente responsável"
+    assert updated["follow_up_due"] is None
+    assert social.list_referrals(social_worker, domain_database["social"])["referrals"] == [updated]
+
+
 def test_psychology_queue_is_persisted_separately_from_social_referrals(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:

@@ -42,10 +42,11 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0038_patient_same_number"
+    assert revision == "0039_social_therapy_workflows"
     if service == "nursing":
-        assert len(tables) == 19
+        assert len(tables) == 20
         assert "reception_appointments" in tables
+        assert "therapy_activity_attendance" in tables
         assert "same_number" in {
             column["name"] for column in inspect(get_engine(service)).get_columns("patients")
         }
@@ -73,10 +74,18 @@ def test_each_service_migration_creates_only_its_owned_table(
             constraint["name"] == "uq_medication_administrations_dispensation_id"
             for constraint in inspect(get_engine(service)).get_unique_constraints("medication_administrations")
         )
-        report_columns = {column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")}
+        report_columns = {
+            column["name"] for column in inspect(get_engine(service)).get_columns("therapy_activities")
+        }
         assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
-        assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records"))
-        assert any(foreign_key.get("referred_table") == "patients" for foreign_key in inspect(get_engine(service)).get_foreign_keys("emergency_arrivals"))
+        assert any(
+            foreign_key.get("referred_table") == "patients"
+            for foreign_key in inspect(get_engine(service)).get_foreign_keys("vital_records")
+        )
+        assert any(
+            foreign_key.get("referred_table") == "patients"
+            for foreign_key in inspect(get_engine(service)).get_foreign_keys("emergency_arrivals")
+        )
         assert {
             "patient_flow_events",
             "patient_allergy_history",
@@ -85,18 +94,34 @@ def test_each_service_migration_creates_only_its_owned_table(
             "hospital_beds",
             "bed_assignments",
             "audit_outbox",
+            "patient_safety_incidents",
+            "institutional_documents",
         } <= tables
-        assert {"clinical_priority", "clinical_priority_updated_by", "clinical_priority_updated_at", "clinical_priority_reason"} <= {
+        assert {
+            "clinical_priority",
+            "clinical_priority_updated_by",
+            "clinical_priority_updated_at",
+            "clinical_priority_reason",
+        } <= {
             column["name"] for column in inspect(get_engine(service)).get_columns("emergency_arrivals")
         }
-        assert {
-            "allergy_report_status",
-            "reported_allergies",
-        } <= {
-            column["name"]
-            for column in inspect(get_engine(service)).get_columns("emergency_arrivals")
+        assert {"allergy_report_status", "reported_allergies"} <= {
+            column["name"] for column in inspect(get_engine(service)).get_columns("emergency_arrivals")
         }
-        assert {"patient_safety_incidents", "institutional_documents"} <= tables
+    elif service == "social":
+        referral_columns = {
+            column["name"] for column in inspect(get_engine(service)).get_columns("social_referrals")
+        }
+        assert {"priority", "assignee", "follow_up_due", "next_step"} <= referral_columns
+        assert len(tables) == 6
+        assert "audit_outbox" in tables
+        assert "psychology_referrals" in tables
+        assert "psychology_encounters" in tables
+        assert "interprofessional_shares" in tables
+        assert "priority" in {
+            column["name"]
+            for column in inspect(get_engine(service)).get_columns("psychology_referrals")
+        }
     elif service == "access":
         assert len(tables) == 4
         assert "audit_outbox" in tables
@@ -112,16 +137,6 @@ def test_each_service_migration_creates_only_its_owned_table(
         }
         assert {"bed_id", "bed_status"} <= hygiene_columns
         assert {"equipment_assets", "preventive_maintenance_plans"} <= tables
-    elif service == "social":
-        assert len(tables) == 6
-        assert "audit_outbox" in tables
-        assert "psychology_referrals" in tables
-        assert "psychology_encounters" in tables
-        assert "interprofessional_shares" in tables
-        assert "priority" in {
-            column["name"]
-            for column in inspect(get_engine(service)).get_columns("psychology_referrals")
-        }
     elif service == "pharmacy":
         assert len(tables) == 9
         assert "audit_outbox" in tables
@@ -431,6 +446,40 @@ def test_therapy_migration_adds_report_fields_to_shared_nursing_database(
     inspector = inspect(get_engine("nursing"))
     report_columns = {column["name"] for column in inspector.get_columns("therapy_activities")}
     assert {"activity_report", "report_updated_by", "report_updated_at"} <= report_columns
+    clear_engine_cache()
+
+
+@pytest.mark.parametrize(
+    ("service", "expected_table"),
+    [
+        ("social", "social_referrals"),
+        ("nursing", "therapy_activity_attendance"),
+    ],
+)
+def test_social_and_therapy_workflow_migration_downgrades_cleanly(
+    service: str,
+    expected_table: str,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SCPO_SERVICE", service)
+    monkeypatch.setenv(
+        f"SCPO_{service.upper()}_DATABASE_URL",
+        f"sqlite:///{tmp_path / f'{service}.sqlite3'}",
+    )
+    clear_engine_cache()
+    config = Config("alembic.ini")
+
+    command.upgrade(config, "head")
+    command.downgrade(config, "0038_patient_same_number")
+
+    inspector = inspect(get_engine(service))
+    if service == "social":
+        assert not {"priority", "assignee", "follow_up_due", "next_step"} & {
+            column["name"] for column in inspector.get_columns(expected_table)
+        }
+    else:
+        assert expected_table not in inspector.get_table_names()
     clear_engine_cache()
 
 

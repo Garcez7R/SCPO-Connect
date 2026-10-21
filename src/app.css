@@ -174,10 +174,10 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-icon-nutrition { background: #fbf3e5; color: #8a6517; }
 .module-icon-reception { background: #e8f4f6; color: #26717e; }
 .module-icon-therapy { background: #f1eef8; color: #6a5597; }
-.module-icon-hygiene { background: #eaf4ee; color: #39724f; }
+.module-icon-hygiene { background: #e8f4ed; color: #39724f; }
 .module-icon-admin { background: #edf1f5; color: #516778; }
-.module-icon-management { background: #edf2f4; color: #456875; }
-.module-icon-psychology { background: #eaf3f7; color: #246b8e; }
+.module-icon-management { background: #e7f1f4; color: #456875; }
+.module-icon-psychology { background: #faedf1; color: #984d67; }
 .module-icon-maintenance { background: #edf3f5; color: #426a7a; }
 .module-card-title { margin-top: 12px; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.35; }
 .module-card-description { max-width: 34ch; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -186,11 +186,18 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .status-ready { color: #377052; }
 .status-later { color: var(--subtle); }
 .module-arrow { position: absolute; right: 15px; bottom: 15px; color: #628094; }
-html[data-theme="dark"] .module-card .module-icon-nutrition { background: #3c3423; color: #f0d08a; }
-html[data-theme="dark"] .module-card .module-icon-reception { background: #203840; color: #92d4df; }
-html[data-theme="dark"] .module-card .module-icon-therapy { background: #332d43; color: #c4b4ef; }
-html[data-theme="dark"] .module-card .module-icon-hygiene { background: #24382d; color: #a2dfbb; }
-html[data-theme="dark"] .module-card .module-icon-management { background: #28363a; color: #a9d1d9; }
+html[data-theme="dark"] .module-icon-nursing { background: #203743; color: #a8ddf3; }
+html[data-theme="dark"] .module-icon-pharmacy { background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .module-icon-xray { background: #302a43; color: #c4b4ef; }
+html[data-theme="dark"] .module-icon-social { background: #403221; color: #f2cc8a; }
+html[data-theme="dark"] .module-icon-nutrition { background: #3c3423; color: #f0d08a; }
+html[data-theme="dark"] .module-icon-reception { background: #203840; color: #92d4df; }
+html[data-theme="dark"] .module-icon-therapy { background: #332d43; color: #c4b4ef; }
+html[data-theme="dark"] .module-icon-hygiene { background: #24382d; color: #a2dfbb; }
+html[data-theme="dark"] .module-icon-admin { background: #2b3540; color: #c1d2df; }
+html[data-theme="dark"] .module-icon-management { background: #28363a; color: #a9d1d9; }
+html[data-theme="dark"] .module-icon-psychology { background: #402b35; color: #f0b6c9; }
+html[data-theme="dark"] .module-icon-maintenance { background: #263744; color: #acd2e7; }
 .dashboard-lower { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, .9fr); gap: 13px; margin-top: 17px; }
 .activity-panel, .next-step-panel, .users-panel, .permission-map { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .activity-panel { padding: 17px 18px 5px; }
@@ -1256,7 +1263,8 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 }
 
 .executive-kpis { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
-.executive-kpis article { min-height: 78px; }
+.executive-kpis article { min-height: 78px; transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+.executive-kpis article:hover { transform: translateY(-2px); border-color: #a9c6d3; box-shadow: var(--shadow); }
 .executive-risk-strip { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #e6c98f; border-radius: 7px; background: #fff8e9; color: #76500f; font-size: 12px; line-height: 1.55; }
 .executive-risk-strip svg { flex: 0 0 auto; }
 .executive-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -1274,6 +1282,31 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 html[data-theme="dark"] .executive-risk-strip { border-color: #705b31; background: #332d20; color: #f1ce86; }
 html[data-theme="dark"] .status-urgent { background: #48292d; color: #f08c91; }
 html[data-theme="dark"] .status-priority { background: #44371f; color: #efc16e; }
+html[data-theme="dark"] :is(.notice-band, .admin-warning) { border-color: #355d70; background: #203743; color: #b5e3f5; }
+html[data-theme="dark"] .clinical-note { border-color: #705b31; background: #332d20; color: #f1ce86; }
+html[data-theme="dark"] .form-message { border-color: #355d70; background: #203743; color: #b5e3f5; }
+html[data-theme="dark"] .form-message-success { border-color: #315744; background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .form-message-error { border-color: #693b40; background: #352528; color: #f1b4b4; }
+html[data-theme="dark"] :is(.saved-confirmation, .review-panel, .therapy-form, .therapy-attendance-panel, .therapy-report-panel, .install-dialog) {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+html[data-theme="dark"] .work-order-review { border-color: var(--line); background: #17232b; }
+html[data-theme="dark"] .install-dialog-close { background: #263944; color: var(--ink); }
+html[data-theme="dark"] :is(.next-step-panel, .account-access-editor, .auth-mfa-instructions) { border-color: var(--line); background: #17232b; color: var(--ink); }
+html[data-theme="dark"] .auth-mfa-instructions code { background: #111c23; color: var(--blue-dark); }
+html[data-theme="dark"] .session-icon { background: #263944; color: #b8d8ec; }
+html[data-theme="dark"] .notice-tag { background: #263944; color: #b8d8ec; }
+html[data-theme="dark"] .entry-status { border-color: var(--line); background: #17232b; color: var(--muted); }
+html[data-theme="dark"] .entry-status-draft { border-color: #705b31; background: #332d20; color: #f1ce86; }
+html[data-theme="dark"] .entry-status-review, html[data-theme="dark"] .entry-status-saving { border-color: #355d70; background: #203743; color: #b5e3f5; }
+html[data-theme="dark"] .entry-status-saved { border-color: #315744; background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .entry-status-error, html[data-theme="dark"] .clinical-alert { border-color: #693b40; background: #352528; color: #f1b4b4; }
+html[data-theme="dark"] .duplicate-warning { border-color: #705b31; background: #332d20; color: #f1ce86; }
+html[data-theme="dark"] .status-open { background: #263a46; color: #b8d8ec; }
+html[data-theme="dark"] .status-in_progress, html[data-theme="dark"] .priority-high { background: #44371f; color: #efc16e; }
+html[data-theme="dark"] .priority-urgent { background: #48292d; color: #f08c91; }
 @media (max-width: 700px) {
   .nursing-overview-summary { grid-template-columns: 1fr; }
   .nursing-overview-patient { align-items: stretch; flex-direction: column; }

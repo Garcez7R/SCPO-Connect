@@ -310,6 +310,10 @@ export function HygienePage({ user }: { user: AuthUser }) {
   const [updating, setUpdating] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [alertsEnabled, setAlertsEnabled] = useState(false)
+  const seenRequestIds = useRef(new Set<string>())
+  const hasNotificationBaseline = useRef(false)
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   async function loadRequests() {
     try {
@@ -343,6 +347,81 @@ export function HygienePage({ user }: { user: AuthUser }) {
     void loadRequestsForUser()
     return () => { active = false }
   }, [user.id])
+
+  useEffect(() => {
+    let active = true
+    const checkForNewRequests = async () => {
+      try {
+        const data = await readApiResponse<{ requests?: HygieneRequest[] }>(
+          await fetch('/api/v1/hygiene/requests'),
+        )
+        if (!active) return
+        const requests = data.requests ?? []
+        const newRequests = requests.filter((request) => request.status === 'open' && !seenRequestIds.current.has(request.id))
+        setRequests(requests)
+        if (hasNotificationBaseline.current && alertsEnabled && newRequests.length) {
+          setNotice(`${newRequests.length} nova(s) solicitação(ões) de higienização aguardam atendimento.`)
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification('Nova solicitação de higienização', {
+                body: 'Há uma nova solicitação aguardando a equipe.',
+                icon: '/scpo-connect-icon.png',
+              })
+            } catch (notificationError) {
+              setError(notificationError instanceof Error ? `Aviso do navegador indisponível: ${notificationError.message}` : 'Aviso do navegador indisponível.')
+            }
+          }
+          try {
+            const audio = audioContextRef.current
+            if (!audio || audio.state !== 'running') throw new Error('Reative o áudio do navegador nesta tela.')
+            const oscillator = audio.createOscillator()
+            const gain = audio.createGain()
+            oscillator.frequency.value = 880
+            gain.gain.setValueAtTime(0.15, audio.currentTime)
+            gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.35)
+            oscillator.connect(gain)
+            gain.connect(audio.destination)
+            oscillator.start()
+            oscillator.stop(audio.currentTime + 0.35)
+          } catch (audioError) {
+            setError(audioError instanceof Error ? `Alerta sonoro indisponível: ${audioError.message}` : 'Alerta sonoro indisponível.')
+          }
+        }
+        for (const request of requests) seenRequestIds.current.add(request.id)
+        hasNotificationBaseline.current = true
+      } catch (pollError) {
+        if (active) setError(pollError instanceof Error ? `Não foi possível verificar novas solicitações: ${pollError.message}` : 'Não foi possível verificar novas solicitações.')
+      }
+    }
+    void checkForNewRequests()
+    const interval = window.setInterval(() => void checkForNewRequests(), 20_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [alertsEnabled])
+
+  useEffect(() => () => {
+    if (audioContextRef.current) void audioContextRef.current.close()
+  }, [])
+
+  async function enableAlerts() {
+    setError('')
+    try {
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission()
+      }
+      if (typeof AudioContext !== 'undefined') {
+        const audio = new AudioContext()
+        await audio.resume()
+        audioContextRef.current = audio
+      }
+      setAlertsEnabled(true)
+      setNotice('Avisos ativos enquanto esta tela estiver aberta. Novas solicitações serão verificadas a cada 20 segundos.')
+    } catch (permissionError) {
+      setError(permissionError instanceof Error ? `Não foi possível ativar os avisos: ${permissionError.message}` : 'Não foi possível ativar os avisos.')
+    }
+  }
 
   const visibleRequests = requests.filter((request) => {
     const matchesStatus = filter === 'all' || (filter === 'active'
@@ -428,7 +507,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
     <section className="work-order-list-panel">
-      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{visibleRequests.length}</span></h2></div><div className="maintenance-actions"><button className="button button-secondary" type="button" onClick={printHygieneRequests} disabled={loading || !visibleRequests.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
+      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{visibleRequests.length}</span></h2></div><div className="maintenance-actions"><button className={`button ${alertsEnabled ? 'button-primary' : 'button-secondary'}`} type="button" onClick={() => void enableAlerts()} disabled={alertsEnabled}>{alertsEnabled ? <><CheckCircle2 size={16} /> Avisos ativos</> : 'Ativar avisos'}</button><button className="button button-secondary" type="button" onClick={printHygieneRequests} disabled={loading || !visibleRequests.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
       <div className="maintenance-filters hygiene-queue-filters"><label className="field"><span className="field-label">De</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label><div className="maintenance-filter-actions"><button className="button button-secondary" type="button" onClick={() => { setFromDate(''); setToDate(''); setFilter('active'); setQuery('') }}>Limpar filtros</button></div></div>
       <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{visibleRequests.length} solicitações</strong>{Object.entries(hygieneStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status as HygieneStatus]}</b></span>)}<span>Ativas: <b>{activeCount}</b></span></div>
       {loading ? <div className="history-empty">Carregando fila…</div> : visibleRequests.length ? <div className="hygiene-request-list">{visibleRequests.map((request) => {

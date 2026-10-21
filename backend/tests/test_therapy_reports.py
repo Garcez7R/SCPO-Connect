@@ -5,6 +5,7 @@ from alembic import command
 from alembic.config import Config
 from scpo_services import therapy
 from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
+from scpo_services.nursing import Patient
 from sqlalchemy.orm import Session
 
 
@@ -53,3 +54,52 @@ def test_therapy_staff_can_save_a_report_for_management(therapy_database: Sessio
     assert updated["status"] == "completed"
     assert updated["report_updated_by"] == "Profissional da oficina"
     assert report["activities"][0]["activity_report"] == "Seis participantes concluíram a atividade."
+
+
+def test_therapy_activity_tracks_and_reconciles_participant_attendance(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    therapist = DemoPrincipal(
+        "therapist-id", "therapist", "Profissional da oficina",
+        "therapy", ["therapy"], {"therapy": ["consultar", "criar", "alterar"]},
+    )
+    patients = [
+        Patient(reference=f"patient-{index}", name=f"Paciente {index}", room=f"room-{index}", bed="1")
+        for index in (1, 2)
+    ]
+    therapy_database.add_all(patients)
+    therapy_database.commit()
+
+    created = therapy.create_activity(
+        therapy.ActivityPayload(
+            title="Oficina de pintura",
+            activity_type="arte",
+            location="Sala de atividades",
+            starts_at="2026-10-14T14:00:00-03:00",
+            patient_reference="patient-1",
+            participant_references=["patient-1", "patient-2"],
+        ),
+        therapist,
+        therapy_database,
+    )
+    assert {item["patient_reference"] for item in created["participants"]} == {"patient-1", "patient-2"}
+
+    updated = therapy.update_activity_participants(
+        created["id"],
+        therapy.ActivityParticipantsPayload(
+            participants=[
+                therapy.ActivityParticipantPayload(
+                    patient_reference="patient-2", attendance="attended"
+                )
+            ]
+        ),
+        therapist,
+        therapy_database,
+    )
+    assert updated["participants"] == [
+        {"patient_reference": "patient-2", "attendance": "attended"}
+    ]
+    assert therapy.list_activities(
+        therapist, therapy_database, from_date=None, to_date=None, limit=100
+    )["activities"][0]["participants"] == updated["participants"]

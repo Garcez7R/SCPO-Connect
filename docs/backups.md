@@ -13,6 +13,8 @@ export SCPO_BACKUP_GPG_RECIPIENT=ID_DA_CHAVE_PUBLICA
 bash scripts/backup-rgs.sh
 ```
 
+O botão **Gerar backup** em Administração do Sistema exporta os mesmos sete bancos usando AES-GCM e a senha informada pelo superadministrador. A interface não importa nem aplica backups aos bancos ativos. Para validar um arquivo exportado pela interface, use a restauração isolada abaixo; o script solicitará a senha sem expô-la na linha de comando.
+
 Para validar/importar o pacote sem trocar os bancos ativos, restaure em um conjunto novo e isolado:
 
 ```sh

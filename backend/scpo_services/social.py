@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import JSON, DateTime, Integer, String, Text, and_, or_, select
+from sqlalchemy import JSON, Date, DateTime, Integer, String, Text, and_, or_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -26,6 +26,10 @@ class Referral(Base):
     patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     referral_type: Mapped[str] = mapped_column(String(80), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="routine")
+    assignee: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    follow_up_due: Mapped[date | None] = mapped_column(Date, nullable=True)
+    next_step: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -94,19 +98,39 @@ class ReferralPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     patient_reference: str = Field(min_length=1, max_length=36)
     referral_type: str = Field(min_length=1, max_length=80)
+    priority: Literal["routine", "priority"] = "routine"
+    assignee: str = Field(default="", max_length=120)
+    follow_up_due: date | None = None
+    next_step: str = Field(default="", max_length=300)
+
+    @field_validator("referral_type", "assignee", "next_step", mode="before")
+    @classmethod
+    def trim_referral_text(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        return value
 
     @field_validator("referral_type")
     @classmethod
-    def trim_referral_type(cls, value: str) -> str:
-        value = value.strip()
-        if len(value) < 2:
+    def require_referral_type(cls, value: str) -> str:
+        if len(value.strip()) < 2:
             raise ValueError("Informe o tipo de encaminhamento")
-        return value
+        return value.strip()
 
 
 class ReferralUpdatePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["open", "scheduled", "in_progress", "completed", "cancelled"]
+    status: Literal["open", "scheduled", "in_progress", "completed", "cancelled"] | None = None
+    priority: Literal["routine", "priority"] | None = None
+    assignee: str | None = Field(default=None, max_length=120)
+    follow_up_due: date | None = None
+    next_step: str | None = Field(default=None, max_length=300)
+
+    @field_validator("assignee", "next_step", mode="before")
+    @classmethod
+    def trim_update_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 class PsychologyReferralPayload(BaseModel):
@@ -220,14 +244,22 @@ def update_referral(
     principal: Annotated[DemoPrincipal, Depends(SOCIAL_ROLE)],
     db: Annotated[Session, Depends(get_social_db)],
 ) -> dict[str, object]:
+    changes = {
+        field: value
+        for field, value in payload.model_dump(exclude_unset=True).items()
+        if value is not None or field == "follow_up_due"
+    }
+    if not changes:
+        raise HTTPException(status_code=422, detail="Informe uma alteração para o encaminhamento")
     referral = db.get(Referral, referral_id)
     if referral is None:
         raise HTTPException(status_code=404, detail="Encaminhamento não encontrado")
-    if referral.status in {"completed", "cancelled"}:
+    if referral.status in {"completed", "cancelled"} and changes.get("status", referral.status) != referral.status:
         raise HTTPException(status_code=409, detail="O encaminhamento já foi encerrado")
-    referral.status = payload.status
+    for field, value in changes.items():
+        setattr(referral, field, value)
     emit_audit_event(
-        principal, "social", "social_referral_status_updated", str(referral.id), db=db
+        principal, "social", "social_referral_updated", str(referral.id), db=db
     )
     db.commit()
     db.refresh(referral)
@@ -495,5 +527,9 @@ def serialize_referral(referral: Referral) -> dict[str, object]:
         "patient_reference": referral.patient_reference,
         "referral_type": referral.referral_type,
         "status": referral.status,
+        "priority": referral.priority,
+        "assignee": referral.assignee,
+        "follow_up_due": referral.follow_up_due.isoformat() if referral.follow_up_due else None,
+        "next_step": referral.next_step,
         "created_at": referral.created_at.isoformat(),
     }
