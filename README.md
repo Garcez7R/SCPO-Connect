@@ -29,9 +29,11 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
-- Raio X: solicitação vinculada ao cadastro do paciente e fila com situação de solicitado, agendado, em execução, concluído ou cancelado.
+- Central de Exames: abas de Raio X e exames laboratoriais, requisições vinculadas ao paciente, fila por situação e formulário de solicitação para impressão.
+- Médico: consulta de alergias e sinais vitais com gráficos, perfil CRM/UF, prescrição interna integrada à Farmácia e Enfermagem e receita simples para impressão (sem assinatura digital e sem medicamentos controlados).
 - Serviço Social: encaminhamentos ligados ao paciente, com busca, filtros e atualização de situação até o encerramento.
 - Farmácia: inventário normalizado por produto, lote e local; movimentações com autoria e saldo resultante; leitura GS1, sugestões de identificação pelo catálogo público Anvisa/CMED e indicação informativa do lote válido com vencimento mais próximo (FEFO), sem seleção automática.
+- Farmácia: consulta alfabética consolidada do estoque de medicamentos e fila de prescrições médicas pendentes para conferência e dispensação.
 - Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado com busca no servidor e filtro por paciente.
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
 - Cadastro do paciente: status explícito de alergia (não verificado, sem alergia conhecida ou alergia conhecida), alerta visual nos fluxos clínicos e opção de responsável não aplicável ou autorreferência do paciente.
@@ -48,7 +50,7 @@ Na Farmácia, a atualização do catálogo Anvisa/CMED é manual e consulta a li
 
 ### Áreas de trabalho
 
-Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Psicologia / Psiquiatria, Nutrição, Recepção, Oficina Terapêutica, Manutenção, Higienização e Gestão Hospitalar.
+Cadastro de pacientes, Enfermagem, Farmácia, Central de Exames, Médico, Serviço Social, Psicologia / Psiquiatria, Nutrição, Recepção, Oficina Terapêutica, Manutenção, Higienização e Gestão Hospitalar.
 
 ## Arquitetura
 
@@ -60,7 +62,7 @@ Cadastro de pacientes, Enfermagem, Farmácia, Raio X, Serviço Social, Psicologi
 | Instalação com containers | Docker Compose e PostgreSQL 17 |
 | HTTPS interno | Caddy com autoridade certificadora local |
 
-As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem e cadastro central de pacientes (incluindo Recepção), Farmácia, Oficina Terapêutica, Raio X, Serviço Social e Psicologia/Psiquiatria, Manutenção e Higienização, além do serviço de Backup. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
+As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem e cadastro central de pacientes (incluindo Recepção e prescrições médicas), Farmácia, Oficina Terapêutica, Central de Exames, Serviço Social e Psicologia/Psiquiatria, Manutenção e Higienização, além do serviço de Backup. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
 
 ## Executar para desenvolvimento
 

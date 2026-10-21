@@ -388,6 +388,44 @@ class MedicationAdministration(Base):
     administered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class PhysicianProfile(Base):
+    __tablename__ = "physician_profiles"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    crm: Mapped[str] = mapped_column(String(24), nullable=False)
+    crm_state: Mapped[str] = mapped_column(String(2), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PhysicianPrescription(Base):
+    __tablename__ = "physician_prescriptions"
+    __table_args__ = (
+        Index("ix_physician_prescriptions_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    medication_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    active_ingredient: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    presentation: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    dose: Mapped[str] = mapped_column(String(120), nullable=False)
+    route: Mapped[str] = mapped_column(String(80), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(160), nullable=False)
+    duration: Mapped[str] = mapped_column(String(120), nullable=False)
+    quantity: Mapped[str] = mapped_column(String(40), nullable=False)
+    unit: Mapped[str] = mapped_column(String(40), nullable=False)
+    instructions: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    is_controlled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    prescriber_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    prescriber_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    crm: Mapped[str] = mapped_column(String(24), nullable=False)
+    crm_state: Mapped[str] = mapped_column(String(2), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class EmergencyArrivalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     patient_reference: str | None = Field(default=None, max_length=36)
@@ -726,6 +764,78 @@ class MedicationAdministrationPayload(BaseModel):
     @classmethod
     def trim_reason(cls, value: str) -> str:
         return value.strip()
+
+
+class PhysicianProfilePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=120)
+    crm: str = Field(min_length=3, max_length=24)
+    crm_state: str = Field(pattern=r"^[A-Za-z]{2}$")
+
+    @field_validator("name", "crm")
+    @classmethod
+    def trim_profile_fields(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("crm_state")
+    @classmethod
+    def normalize_crm_state(cls, value: str) -> str:
+        return value.upper()
+
+    @model_validator(mode="after")
+    def validate_trimmed_identity(self) -> "PhysicianProfilePayload":
+        if len(self.name) < 2:
+            raise ValueError("Informe o nome profissional")
+        if len(self.crm) < 3:
+            raise ValueError("Informe o CRM")
+        return self
+
+
+class PhysicianPrescriptionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str = Field(min_length=1, max_length=36)
+    medication_name: str = Field(min_length=2, max_length=160)
+    active_ingredient: str = Field(default="", max_length=160)
+    presentation: str = Field(default="", max_length=160)
+    dose: str = Field(min_length=1, max_length=120)
+    route: str = Field(min_length=2, max_length=80)
+    frequency: str = Field(min_length=2, max_length=160)
+    duration: str = Field(min_length=1, max_length=120)
+    quantity: str = Field(min_length=1, max_length=40)
+    unit: str = Field(min_length=1, max_length=40)
+    instructions: str = Field(default="", max_length=1000)
+    is_controlled: bool = False
+
+    @field_validator(
+        "medication_name",
+        "active_ingredient",
+        "presentation",
+        "dose",
+        "route",
+        "frequency",
+        "duration",
+        "quantity",
+        "unit",
+        "instructions",
+    )
+    @classmethod
+    def trim_prescription_fields(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_trimmed_required_fields(self) -> "PhysicianPrescriptionPayload":
+        if len(self.medication_name) < 2:
+            raise ValueError("Informe o medicamento")
+        if len(self.route) < 2 or len(self.frequency) < 2:
+            raise ValueError("Informe a via e a frequência")
+        if any(not getattr(self, field).strip() for field in ("dose", "duration", "quantity", "unit")):
+            raise ValueError("Complete dose, duração, quantidade e unidade")
+        return self
+
+
+class PhysicianPrescriptionStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["fulfilled", "cancelled"]
 
 
 def get_nursing_db():
@@ -1148,6 +1258,7 @@ def reconcile_legacy_patient_bed(
         "bed": _serialize_hospital_bed(bed, unit, _active_assignment_for_bed(db, bed.id)),
     }
 NURSING_ROLE = require_demo_role("nursing")
+NURSING_VITALS_READ = require_demo_role("nursing", "physician", "management")
 NUTRITION_ROLE = require_demo_role("nutrition")
 VALUE_FIELDS = {
     "saturation",
@@ -1396,7 +1507,7 @@ class VoidPayload(BaseModel):
         return value
 
 
-PATIENT_MODULES = ("patients", "nursing", "pharmacy", "reception", "therapy", "nutrition", "social", "xray", "maintenance", "psychology", "management")
+PATIENT_MODULES = ("patients", "nursing", "pharmacy", "reception", "therapy", "nutrition", "social", "xray", "physician", "maintenance", "psychology", "management")
 
 
 async def authorize_patient_module(request: Request) -> DemoPrincipal:
@@ -1410,8 +1521,10 @@ async def authorize_patient_module(request: Request) -> DemoPrincipal:
 
 
 PATIENT_ACCESS = Depends(authorize_patient_module)
-PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "management"))
-CLINICAL_RISK_ACCESS = Depends(require_demo_role("nursing", "nutrition", "pharmacy", "management"))
+PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "physician", "management"))
+CLINICAL_RISK_ACCESS = Depends(require_demo_role("nursing", "nutrition", "pharmacy", "physician", "management"))
+PHYSICIAN_ACCESS = require_demo_role("physician", "management")
+PRESCRIPTION_READ_ACCESS = require_demo_role("physician", "pharmacy", "nursing", "management")
 
 
 def record_patient_allergy_change(
@@ -2103,6 +2216,127 @@ def list_medication_administrations(
     return {"administrations": [serialize_medication_administration(record) for record in records]}
 
 
+@app.get("/api/v1/physicians/profile")
+def get_physician_profile(
+    principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_ACCESS)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    profile = db.get(PhysicianProfile, principal.user_id)
+    return {"profile": serialize_physician_profile(profile) if profile else None}
+
+
+@app.put("/api/v1/physicians/profile")
+def save_physician_profile(
+    payload: PhysicianProfilePayload,
+    principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_ACCESS)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    profile = db.get(PhysicianProfile, principal.user_id)
+    now = datetime.now(UTC)
+    if profile is None:
+        profile = PhysicianProfile(user_id=principal.user_id, updated_at=now, **payload.model_dump())
+        db.add(profile)
+    else:
+        for field, value in payload.model_dump().items():
+            setattr(profile, field, value)
+        profile.updated_at = now
+    emit_audit_event(principal, "physician", "physician_profile_updated", principal.user_id, db=db)
+    db.commit()
+    db.refresh(profile)
+    return serialize_physician_profile(profile)
+
+
+@app.get("/api/v1/physicians/prescriptions")
+def list_physician_prescriptions(
+    principal: Annotated[DemoPrincipal, Depends(PRESCRIPTION_READ_ACCESS)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    patient_reference: str | None = None,
+    status: Literal["pending", "fulfilled", "cancelled"] | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    query = select(PhysicianPrescription)
+    if patient_reference:
+        query = query.where(PhysicianPrescription.patient_reference == patient_reference)
+    if status:
+        query = query.where(PhysicianPrescription.status == status)
+    records = db.scalars(
+        query.order_by(PhysicianPrescription.created_at.desc()).limit(500)
+    ).all()
+    emit_audit_event(principal, "physician", "physician_prescriptions_read", patient_reference or "all")
+    return {"prescriptions": [serialize_physician_prescription(record) for record in records]}
+
+
+@app.post("/api/v1/physicians/prescriptions", status_code=201)
+def create_physician_prescription(
+    payload: PhysicianPrescriptionPayload,
+    principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_ACCESS)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, payload.patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente ativo não encontrado")
+    profile = db.get(PhysicianProfile, principal.user_id)
+    if profile is None:
+        raise HTTPException(status_code=409, detail="Cadastre e valide os dados profissionais antes de prescrever")
+    now = datetime.now(UTC)
+    prescription = PhysicianPrescription(
+        id=str(uuid.uuid4()),
+        **payload.model_dump(),
+        prescriber_id=principal.user_id,
+        prescriber_name=profile.name,
+        crm=profile.crm,
+        crm_state=profile.crm_state,
+        status="pending",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(prescription)
+    emit_audit_event(
+        principal,
+        "physician",
+        "physician_prescription_created",
+        prescription.patient_reference,
+        db=db,
+    )
+    db.commit()
+    db.refresh(prescription)
+    return serialize_physician_prescription(prescription)
+
+
+@app.patch("/api/v1/physicians/prescriptions/{prescription_id}")
+def update_physician_prescription(
+    prescription_id: str,
+    payload: PhysicianPrescriptionStatusPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("physician", "pharmacy", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    prescription = db.get(PhysicianPrescription, prescription_id)
+    if prescription is None:
+        raise HTTPException(status_code=404, detail="Prescrição interna não encontrada")
+    modules = set(principal.modules)
+    if payload.status == "fulfilled" and not principal.is_superuser and not {"pharmacy", "management"} & modules:
+        raise HTTPException(status_code=403, detail="Somente Farmácia pode confirmar o atendimento da prescrição")
+    if payload.status == "cancelled" and not (
+        principal.is_superuser
+        or "management" in modules
+        or prescription.prescriber_id == principal.user_id
+    ):
+        raise HTTPException(status_code=403, detail="Somente o prescritor pode cancelar esta prescrição")
+    if prescription.status != "pending":
+        raise HTTPException(status_code=409, detail="A prescrição já foi atendida ou cancelada")
+    prescription.status = payload.status
+    prescription.updated_at = datetime.now(UTC)
+    emit_audit_event(
+        principal,
+        "physician",
+        f"physician_prescription_{payload.status}",
+        prescription.patient_reference,
+        db=db,
+    )
+    db.commit()
+    db.refresh(prescription)
+    return serialize_physician_prescription(prescription)
+
+
 @app.post("/api/v1/nursing/medication-administrations", status_code=201)
 def create_medication_administration(
     payload: MedicationAdministrationPayload,
@@ -2330,6 +2564,41 @@ def serialize_medication_administration(record: MedicationAdministration) -> dic
         "reason": record.reason,
         "actor_name": record.actor_name,
         "administered_at": record.administered_at.isoformat(),
+    }
+
+
+def serialize_physician_profile(profile: PhysicianProfile) -> dict[str, object]:
+    return {
+        "user_id": profile.user_id,
+        "name": profile.name,
+        "crm": profile.crm,
+        "crm_state": profile.crm_state,
+        "updated_at": profile.updated_at.isoformat(),
+    }
+
+
+def serialize_physician_prescription(prescription: PhysicianPrescription) -> dict[str, object]:
+    return {
+        "id": prescription.id,
+        "patient_reference": prescription.patient_reference,
+        "medication_name": prescription.medication_name,
+        "active_ingredient": prescription.active_ingredient,
+        "presentation": prescription.presentation,
+        "dose": prescription.dose,
+        "route": prescription.route,
+        "frequency": prescription.frequency,
+        "duration": prescription.duration,
+        "quantity": prescription.quantity,
+        "unit": prescription.unit,
+        "instructions": prescription.instructions,
+        "is_controlled": prescription.is_controlled,
+        "prescriber_id": prescription.prescriber_id,
+        "prescriber_name": prescription.prescriber_name,
+        "crm": prescription.crm,
+        "crm_state": prescription.crm_state,
+        "status": prescription.status,
+        "created_at": prescription.created_at.isoformat(),
+        "updated_at": prescription.updated_at.isoformat(),
     }
 
 
@@ -3210,7 +3479,7 @@ def can_view_full_patient_profile(principal: DemoPrincipal) -> bool:
 def can_view_patient_allergies(principal: DemoPrincipal) -> bool:
     return any(
         module in principal.modules and "consultar" in principal.permissions.get(module, [])
-        for module in ("nursing", "nutrition", "pharmacy", "therapy", "xray", "psychology", "management")
+        for module in ("nursing", "nutrition", "pharmacy", "therapy", "xray", "physician", "psychology", "management")
     )
 
 
@@ -3248,7 +3517,7 @@ def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profil
 
 @app.get("/api/v1/nursing/vitals")
 def list_vital_records(
-    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(NURSING_VITALS_READ)],
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,

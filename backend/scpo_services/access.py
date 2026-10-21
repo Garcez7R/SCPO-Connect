@@ -35,7 +35,7 @@ from .security import (
 )
 
 MODULES = {
-    "patients", "nursing", "pharmacy", "xray", "social", "nutrition", "hygiene",
+    "patients", "nursing", "pharmacy", "xray", "physician", "social", "nutrition", "hygiene",
     "reception", "therapy", "psychology", "maintenance", "management", "admin",
 }
 ACTIONS = {"consultar", "criar", "alterar", "excluir", "administrar"}

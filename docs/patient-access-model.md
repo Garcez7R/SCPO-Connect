@@ -10,7 +10,7 @@ O cadastro do paciente será compartilhado entre módulos. A autorização será
 - Foto de identificação, opcional e com acesso rastreado.
 - Quarto e leito atuais, com histórico de movimentações.
 - Datas de admissão/alta e dados administrativos estritamente necessários.
-- Dados de saúde separados por domínio (Enfermagem, Nutrição, Farmácia, Raio X, Serviço Social e Oficina Terapêutica), sem replicar prontuário clínico completo em todos os módulos.
+- Dados de saúde separados por domínio (Enfermagem, Médico, Nutrição, Farmácia, Central de Exames, Serviço Social e Oficina Terapêutica), sem replicar prontuário clínico completo em todos os módulos.
 
 Os campos demográficos exatos (ex.: data de nascimento, documento, contato e responsável) e a finalidade de cada um precisam ser aprovados pela Santa Casa antes da implementação. Não coletar por conveniência.
 
@@ -22,7 +22,8 @@ Os campos demográficos exatos (ex.: data de nascimento, documento, contato e re
 | Enfermagem | Identificação e localização | Consultar para conferência | Enfermagem e informações assistenciais necessárias | Registros de Enfermagem |
 | Nutrição | Identificação | Conforme necessidade aprovada | Avaliação, dieta, restrições e dados necessários ao cuidado nutricional | Registros de Nutrição |
 | Farmácia | Identificação | Não por padrão | Dados necessários a dispensação segura | Registros de Farmácia |
-| Raio X | Identificação, localização e solicitação | Conforme necessidade de identificação aprovada | Pedido, preparo, alergias/restrições necessárias ao exame | Fluxo de exames |
+| Médico | Identificação e localização | Conforme necessidade aprovada | Alergias, sinais vitais, prescrições e dados necessários à consulta | Prescrições internas e pedidos de exame conforme autorização |
+| Central de Exames | Identificação, localização e solicitação | Conforme necessidade de identificação aprovada | Pedido, preparo, alergias/restrições necessárias ao exame | Fluxo de exames |
 | Serviço Social | Identificação | Não por padrão | Apenas registros sociais sob responsabilidade do serviço | Registros do Serviço Social |
 | Higienização | Identificador operacional, quarto/leito e status do ambiente | Não | Não | Status e rotinas de higienização |
 | Oficina Terapêutica | Identificação mínima e agenda | Não por padrão | Apenas informação necessária à participação segura | Presença e evolução da atividade |

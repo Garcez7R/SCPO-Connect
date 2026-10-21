@@ -1566,6 +1566,42 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
 html[data-theme="dark"] .waiting-room-card { border-color: var(--line); background: var(--surface); }
 .status-called { background: #e8f1f7; color: #205777; }
 html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
+.pharmacy-alphabetic-inventory, .physician-page { display: grid; gap: 16px; }
+.pharmacy-alphabetic-list, .patient-list { display: grid; gap: 10px; }
+.pharmacy-alphabetic-item, .physician-page .patient-list-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.pharmacy-alphabetic-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 100%; }
+.pharmacy-alphabetic-heading h3 { margin: 0; color: var(--ink); font-size: 14px; }
+.pharmacy-alphabetic-heading p, .physician-page .patient-list-row p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.pharmacy-alphabetic-heading > strong { color: var(--blue-dark); text-align: right; white-space: nowrap; }
+.pharmacy-alphabetic-lots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.pharmacy-alphabetic-lots span { padding: 5px 8px; border-radius: 5px; background: var(--page); color: var(--muted); font-size: 10px; }
+.physician-page { max-width: 1120px; margin-inline: auto; }
+.physician-page .page-title-row > svg { color: var(--blue); }
+.physician-page .patient-list-panel { display: grid; gap: 16px; }
+.physician-page .section-heading { margin: 0; }
+.physician-page .patient-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.physician-page .patient-list-row > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.physician-page .patient-list-row small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.physician-patient-picker { margin: 2px 0; }
+.physician-status { display: inline-flex; padding: 5px 9px; border-radius: 999px; background: var(--page); color: var(--muted); font-size: 11px; font-weight: 700; }
+.physician-status-pending { background: #fff4d7; color: #73500c; }
+.physician-status-fulfilled { background: #e3f3e9; color: #28633e; }
+.physician-status-cancelled { background: #f0f1f2; color: #65727c; }
+html[data-theme="dark"] .physician-status-pending { background: #3b321d; color: #f2cf85; }
+html[data-theme="dark"] .physician-status-fulfilled { background: #243a2d; color: #a8dbb6; }
+html[data-theme="dark"] .physician-status-cancelled { background: #30353a; color: #c0c6cb; }
+.xray-page .laboratory-exam-fieldset { min-width: 0; }
+.xray-page .laboratory-print-preview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.xray-page .laboratory-print-preview span { flex: 1 1 300px; color: var(--muted); font-size: 12px; }
+html[data-theme="dark"] .pharmacy-alphabetic-item,
+html[data-theme="dark"] .physician-page .patient-list-row,
+html[data-theme="dark"] .xray-page .laboratory-print-preview { border-color: var(--line); background: var(--surface); }
+@media (max-width: 640px) {
+  .pharmacy-alphabetic-item, .physician-page .patient-list-row { flex-direction: column; }
+  .pharmacy-alphabetic-heading { flex-direction: column; }
+  .pharmacy-alphabetic-heading > strong { text-align: left; }
+  .physician-page .patient-row-actions { justify-content: flex-start; }
+}
 @media (max-width: 520px) {
   .waiting-room-actions { width: 100%; }
   .waiting-room-actions .button { flex: 1; justify-content: center; }

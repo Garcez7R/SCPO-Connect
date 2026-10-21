@@ -25,6 +25,8 @@ class ExamRequest(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     exam_label: Mapped[str] = mapped_column(String(80), nullable=False)
+    exam_type: Mapped[str] = mapped_column(String(16), nullable=False, default="xray")
+    observations: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="requested")
     result: Mapped[str] = mapped_column(String(4000), nullable=False, default="")
     result_recorded_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
@@ -46,15 +48,48 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="SCPO Connect · Serviço de Raio X", version="1.0.0", lifespan=lifespan
+    title="SCPO Connect · Central de Exames", version="1.0.0", lifespan=lifespan
 )
-XRAY_ROLE = require_demo_role("xray")
+XRAY_ROLE = require_demo_role("xray", "physician")
+LABORATORY_EXAMS = frozenset(
+    {
+        "TGO",
+        "TGP",
+        "Gama GT",
+        "EQU (urina)",
+        "HIV",
+        "Sífilis",
+        "TSH",
+        "T3",
+        "T4",
+        "Vitamina B12",
+        "Vitamina D",
+        "HCV",
+        "Anti-HBs",
+        "Hemograma",
+        "VHS",
+        "PCR",
+        "PSA",
+        "Colesterol total",
+        "Colesterol fracionado",
+        "Triglicerídeos",
+        "Ureia",
+        "Creatinina",
+        "Bilirrubina direta",
+        "Bilirrubina indireta",
+        "Bilirrubina total",
+        "Amilase",
+        "Lipase",
+    }
+)
 
 
 class ExamRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     patient_reference: str = Field(min_length=1, max_length=36)
     exam_label: str = Field(min_length=1, max_length=80)
+    exam_type: Literal["xray", "laboratory"] = "xray"
+    observations: str = Field(default="", max_length=1000)
 
 
 class ExamRequestUpdate(BaseModel):
@@ -76,6 +111,35 @@ class ExamRequestUpdate(BaseModel):
     def require_change(self) -> "ExamRequestUpdate":
         if self.status is None and self.result is None:
             raise ValueError("Informe a situação ou o resultado")
+        return self
+
+
+class LaboratoryRequestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    patient_reference: str = Field(min_length=1, max_length=36)
+    exams: list[str] = Field(default_factory=list, max_length=40)
+    other_exam: str = Field(default="", max_length=72)
+    observations: str = Field(default="", max_length=1000)
+
+    @field_validator("exams")
+    @classmethod
+    def validate_exams(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("Selecione exames válidos sem duplicação")
+        invalid = set(value) - LABORATORY_EXAMS
+        if invalid:
+            raise ValueError("A lista contém exames laboratoriais não reconhecidos")
+        return value
+
+    @field_validator("other_exam", "observations")
+    @classmethod
+    def trim_text(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_exam(self) -> "LaboratoryRequestPayload":
+        if not self.exams and not self.other_exam:
+            raise ValueError("Selecione ao menos um exame ou informe outro exame")
         return self
 
 
@@ -111,6 +175,41 @@ def create_request(
     db.commit()
     db.refresh(request)
     return serialize_request(request)
+
+
+@app.post("/api/v1/xray/laboratory-requests", status_code=201)
+def create_laboratory_requests(
+    payload: LaboratoryRequestPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("physician", "xray"))],
+    db: Annotated[Session, Depends(get_xray_db)],
+) -> dict[str, list[dict[str, object]]]:
+    verify_patient_reference(payload.patient_reference)
+    labels = list(payload.exams)
+    if payload.other_exam:
+        labels.append(f"Outros: {payload.other_exam}")
+    requests = [
+        ExamRequest(
+            patient_reference=payload.patient_reference,
+            exam_label=label,
+            exam_type="laboratory",
+            observations=payload.observations,
+            status="requested",
+            created_at=datetime.now(UTC),
+        )
+        for label in labels
+    ]
+    db.add_all(requests)
+    emit_audit_event(
+        principal,
+        "xray",
+        "laboratory_requests_created",
+        payload.patient_reference,
+        db=db,
+    )
+    db.commit()
+    for request in requests:
+        db.refresh(request)
+    return {"requests": [serialize_request(request) for request in requests]}
 
 
 @app.patch("/api/v1/xray/requests/{request_id}")
@@ -151,6 +250,8 @@ def serialize_request(request: ExamRequest) -> dict[str, object]:
         "id": request.id,
         "patient_reference": request.patient_reference,
         "exam_label": request.exam_label,
+        "exam_type": request.exam_type,
+        "observations": request.observations,
         "status": request.status,
         "result": request.result,
         "result_recorded_by": request.result_recorded_by,

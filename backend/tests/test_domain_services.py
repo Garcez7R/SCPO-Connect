@@ -845,6 +845,115 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     assert closed_request.value.status_code == 409
 
 
+def test_laboratory_requests_create_one_record_per_selected_exam(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    reference = "123e4567-e89b-12d3-a456-426614174000"
+    monkeypatch.setattr(xray, "verify_patient_reference", lambda value: {"reference": value})
+    monkeypatch.setattr(xray, "emit_audit_event", lambda *args, **kwargs: None)
+    physician = DemoPrincipal(
+        "physician-1", "doctor", "Médico de teste", "physician",
+        ["physician"], {"physician": ["consultar", "criar", "alterar"]},
+    )
+
+    result = xray.create_laboratory_requests(
+        xray.LaboratoryRequestPayload(
+            patient_reference=reference,
+            exams=["TGO", "Hemograma"],
+            other_exam="Teste adicional",
+            observations="Coleta pela manhã",
+        ),
+        physician,
+        domain_database["xray"],
+    )
+
+    assert [request["exam_label"] for request in result["requests"]] == [
+        "TGO",
+        "Hemograma",
+        "Outros: Teste adicional",
+    ]
+    assert all(request["exam_type"] == "laboratory" for request in result["requests"])
+    assert all(request["observations"] == "Coleta pela manhã" for request in result["requests"])
+    other_only = xray.create_laboratory_requests(
+        xray.LaboratoryRequestPayload(
+            patient_reference=reference,
+            other_exam="Teste independente",
+        ),
+        physician,
+        domain_database["xray"],
+    )
+    assert [request["exam_label"] for request in other_only["requests"]] == [
+        "Outros: Teste independente",
+    ]
+    with pytest.raises(ValidationError):
+        xray.LaboratoryRequestPayload(patient_reference=reference, exams=["Exame inválido"])
+    with pytest.raises(ValidationError):
+        xray.LaboratoryRequestPayload(patient_reference=reference)
+
+
+def test_physician_profile_and_internal_prescription_flow(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    db = domain_database["nursing"]
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    patient_reference = "123e4567-e89b-12d3-a456-426614174000"
+    db.add(nursing.Patient(reference=patient_reference, name="Paciente de teste", room="2", bed="A"))
+    db.commit()
+    physician = DemoPrincipal(
+        "physician-1", "doctor", "Médico de teste", "physician",
+        ["physician"], {"physician": ["consultar", "criar", "alterar"]},
+    )
+    pharmacist = DemoPrincipal(
+        "pharmacy-1", "pharmacist", "Farmacêutica de teste", "pharmacy",
+        ["pharmacy"], {"pharmacy": ["consultar", "criar", "alterar"]},
+    )
+
+    with pytest.raises(ValidationError):
+        nursing.PhysicianProfilePayload(name="D ", crm="123", crm_state="RS")
+    profile = nursing.save_physician_profile(
+        nursing.PhysicianProfilePayload(name="Dra. Teste", crm="12345", crm_state="rs"),
+        physician,
+        db,
+    )
+    assert nursing.get_physician_profile(physician, db) == {"profile": profile}
+    prescription = nursing.create_physician_prescription(
+        nursing.PhysicianPrescriptionPayload(
+            patient_reference=patient_reference,
+            medication_name="Medicamento teste",
+            dose="1 comprimido",
+            route="oral",
+            frequency="a cada 8 horas",
+            duration="5 dias",
+            quantity="15",
+            unit="comprimidos",
+            is_controlled=True,
+        ),
+        physician,
+        db,
+    )
+
+    assert profile["crm_state"] == "RS"
+    assert prescription["prescriber_name"] == "Dra. Teste"
+    assert prescription["is_controlled"] is True
+    with pytest.raises(ValidationError):
+        nursing.PhysicianPrescriptionPayload(
+            patient_reference=patient_reference,
+            medication_name="  ",
+            dose="1",
+            route="oral",
+            frequency="diária",
+            duration="2 dias",
+            quantity="2",
+            unit="comprimidos",
+        )
+    assert nursing.update_physician_prescription(
+        str(prescription["id"]),
+        nursing.PhysicianPrescriptionStatusPayload(status="fulfilled"),
+        pharmacist,
+        db,
+    )["status"] == "fulfilled"
+
+
 def test_social_referrals_support_operational_follow_up_and_clearing_due_date(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:

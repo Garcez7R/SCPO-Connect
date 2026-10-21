@@ -185,7 +185,7 @@ app = FastAPI(
 )
 PHARMACY_ROLE = require_demo_role("pharmacy")
 INVENTORY_READ_ROLE = require_demo_role("pharmacy", "management")
-DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "management")
+DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "physician", "management")
 ANVISA_CMED_CATALOG_URL = "https://dados.anvisa.gov.br/dados/TA_PRECO_MEDICAMENTO.csv"
 MAX_ANVISA_CATALOG_BYTES = 32 * 1024 * 1024
 

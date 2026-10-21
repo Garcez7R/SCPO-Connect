@@ -14,6 +14,7 @@ type AnvisaCatalogStatus = { source: string; source_url: string; entry_count: nu
 type PharmacyBarcodeLookup = { gtin: string; lot: string | null; expiry_date: string | null; serial: string | null; matches: PharmacyItem[]; catalog_suggestions: AnvisaCatalogSuggestion[]; catalog_imported_at: string | null }
 type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_balance' | 'entry' | 'issue' | 'adjustment'; quantity: string; balance_after: string; reason: string; actor_name: string; created_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
+type InternalPrescription = { id: string; patient_reference: string; medication_name: string; active_ingredient: string; presentation: string; dose: string; route: string; frequency: string; duration: string; quantity: string; unit: string; instructions: string; is_controlled: boolean; prescriber_name: string; crm: string; crm_state: string; status: 'pending' | 'fulfilled' | 'cancelled'; created_at: string }
 type PurchaseRequest = { id: string; product_id: number | null; item_name: string; category: string; active_ingredient: string; presentation: string; base_unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; received_quantity: string; supplier: string; quoted_unit_price: string; justification: string; status: 'requested' | 'quoted' | 'approved' | 'ordered' | 'received' | 'rejected'; requested_by: string; approved_by: string; received_by: string; created_at: string; updated_at: string }
 function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
   return patient.room.trim() && patient.bed.trim() ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem quarto/leito atribuído'
@@ -46,10 +47,11 @@ function playBarcodeTone(audioContext: AudioContext | null) {
 }
 
 function PharmacyPage({ user }: { user: AuthUser }) {
-  const [pharmacyTab, setPharmacyTab] = useState<'stock' | 'dispensation' | 'purchases'>('stock')
+  const [pharmacyTab, setPharmacyTab] = useState<'stock' | 'inventory' | 'dispensation' | 'prescriptions' | 'purchases'>('stock')
   const [items, setItems] = useState<PharmacyItem[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
+  const [prescriptions, setPrescriptions] = useState<InternalPrescription[]>([])
   const [dispenseForm, setDispenseForm] = useState({ patient_reference: '', item_id: '', quantity: '', instructions: '', prescription_reference: '', prescriber_name: '', allergy_reviewed: false })
   const [dispensing, setDispensing] = useState(false)
   const [movements, setMovements] = useState<PharmacyMovement[]>([])
@@ -369,17 +371,20 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     let current = true
     const loadRelatedData = async () => {
       try {
-        const [patientResponse, dispenseResponse] = await Promise.all([
+        const [patientResponse, dispenseResponse, prescriptionResponse] = await Promise.all([
           fetch('/api/v1/nursing/patients'),
           fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
+          fetch('/api/v1/physicians/prescriptions?status=pending'),
         ])
-        const [patientData, dispenseData] = await Promise.all([
+        const [patientData, dispenseData, prescriptionData] = await Promise.all([
           readApiResponse<{ patients?: Patient[] }>(patientResponse),
           readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
+          readApiResponse<{ prescriptions?: InternalPrescription[] }>(prescriptionResponse),
         ])
         if (!current) return
         setPatients(patientData.patients ?? [])
         setDispensations(dispenseData.dispensations ?? [])
+        setPrescriptions(prescriptionData.prescriptions ?? [])
       } catch (loadError) {
         if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes e dispensações.')
       }
@@ -436,11 +441,21 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       })
       const data = await readApiResponse<MedicationDispensation>(response)
       setDispensations((current) => [data, ...current])
+      const prescriptionReference = dispenseForm.prescription_reference
       setDispenseForm({ patient_reference: '', item_id: '', quantity: '', instructions: '', prescription_reference: '', prescriber_name: '', allergy_reviewed: false })
+      if (prescriptionReference) {
+        const prescriptionResponse = await fetch(`/api/v1/physicians/prescriptions/${encodeURIComponent(prescriptionReference)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'fulfilled' }),
+        })
+        const fulfilled = await readApiResponse<InternalPrescription>(prescriptionResponse)
+        setPrescriptions((current) => current.filter((prescription) => prescription.id !== fulfilled.id))
+      }
       setNotice('Dispensação registrada, vinculada ao paciente e debitada do lote.')
       await loadItems(0)
     } catch (dispenseError) {
-      setError(dispenseError instanceof Error ? dispenseError.message : 'Não foi possível registrar a dispensação.')
+      setError(dispenseError instanceof Error ? `${dispenseError.message} Se a dispensação foi registrada, confira a fila de prescrições antes de tentar novamente.` : 'Não foi possível concluir a dispensação e atualizar a prescrição.')
     } finally { setDispensing(false) }
   }
 
@@ -478,16 +493,34 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       || (stockFilter === 'attention' && level === 'attention')
     return matchesSearch && matchesFilter
   }).sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.item_name.localeCompare(b.item_name, 'pt-BR'))
+  const alphabeticMedicationStock = Array.from(
+    items.filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento')
+      .reduce((grouped, item) => {
+        const group = grouped.get(item.product_id) ?? { product_id: item.product_id, item_name: item.item_name, active_ingredient: item.active_ingredient, presentation: item.presentation, unit: item.unit, balance: 0, lots: [] as PharmacyItem[] }
+        const itemBalance = Number(item.balance.replace(',', '.'))
+        group.balance += Number.isFinite(itemBalance) ? itemBalance : 0
+        group.lots.push(item)
+        grouped.set(item.product_id, group)
+        return grouped
+      }, new Map<number, { product_id: number; item_name: string; active_ingredient: string; presentation: string; unit: string; balance: number; lots: PharmacyItem[] }>())
+      .values(),
+  ).sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR'))
+  const visibleAlphabeticMedicationStock = alphabeticMedicationStock.filter((item) =>
+    `${item.item_name} ${item.active_ingredient} ${item.presentation} ${item.lots.map((lot) => `${lot.lot} ${lot.storage_location}`).join(' ')}`
+      .toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')),
+  )
   const pharmacyPrintRows: PrintRow[] = filteredItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Entrada original', `${item.purchase_quantity} ${item.purchase_unit} × ${item.units_per_purchase_unit} ${item.unit}`], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
   const requestedPackages = Number(form.purchase_quantity.replace(',', '.'))
   const unitsPerPackage = Number(form.units_per_purchase_unit.replace(',', '.'))
   const convertedBalance = requestedPackages * unitsPerPackage
 
   return <section className="pharmacy-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Cadastre lotes com conversão explícita para a unidade de controle.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{pharmacyTab === 'stock' && <button className="button button-primary" type="button" onClick={() => { setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Cadastre lotes com conversão explícita para a unidade de controle.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
     <div className="admin-tabs module-tabs pharmacy-tabs" role="tablist" aria-label="Seções da Farmácia">
       <button className={`button ${pharmacyTab === 'stock' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'stock'} onClick={() => setPharmacyTab('stock')}><Package size={16} /> Estoque e lotes</button>
+      <button className={`button ${pharmacyTab === 'inventory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'inventory'} onClick={() => setPharmacyTab('inventory')}><Package size={16} /> Estoque geral A–Z</button>
       <button className={`button ${pharmacyTab === 'dispensation' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'dispensation'} onClick={() => setPharmacyTab('dispensation')}><ArrowRight size={16} /> Dispensação</button>
+      <button className={`button ${pharmacyTab === 'prescriptions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'prescriptions'} onClick={() => setPharmacyTab('prescriptions')}><ArrowRight size={16} /> Prescrições médicas <span>{prescriptions.length}</span></button>
       {canManagePurchases && <button className={`button ${pharmacyTab === 'purchases' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'purchases'} onClick={() => setPharmacyTab('purchases')}><Package size={16} /> Compras e suprimentos</button>}
     </div>
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
@@ -504,6 +537,35 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     </div>
     <PharmacyStockOverview items={items} onSaved={(updated) => setItems((current) => current.map((item) => item.id === updated.id ? updated : item))} counts={{ critical: criticalCount, attention: attentionCount, healthy: healthyCount, unconfigured: unconfiguredCount }} />
     </>}
+    {pharmacyTab === 'inventory' && <section className="patient-list-panel pharmacy-alphabetic-inventory">
+      <div className="section-heading"><div><p className="eyebrow">CATÁLOGO COM SALDO</p><h2>Medicamentos cadastrados por ordem alfabética</h2><p className="welcome-copy">Cada medicamento aparece uma vez; o saldo total e os lotes são consolidados por produto.</p></div><span className="module-total">{visibleAlphabeticMedicationStock.length} medicamento(s)</span></div>
+      <label className="field"><span className="field-label">Buscar medicamento, princípio ativo, apresentação ou lote</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar no estoque" /></span></label>
+      {loading ? <div className="history-empty">Carregando estoque…</div> : visibleAlphabeticMedicationStock.length ? <div className="pharmacy-alphabetic-list">{visibleAlphabeticMedicationStock.map((item) => <article className="pharmacy-alphabetic-item" key={item.product_id}><div className="pharmacy-alphabetic-heading"><div><h3>{item.item_name}</h3><p>{item.active_ingredient || 'Princípio ativo não informado'}{item.presentation ? ` · ${item.presentation}` : ''}</p></div><strong>{item.balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {item.unit}</strong></div><div className="pharmacy-alphabetic-lots">{[...item.lots].sort((a, b) => a.expiry_date.localeCompare(b.expiry_date, 'pt-BR') || a.lot.localeCompare(b.lot, 'pt-BR')).map((lot) => <span key={lot.id}>Lote {lot.lot || '—'} · {lot.balance} {lot.unit} · validade {new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${lot.expiry_date}T12:00:00Z`))}{lot.storage_location ? ` · ${lot.storage_location}` : ''}</span>)}</div></article>)}</div> : <div className="history-empty"><Package size={20} /><span>{items.some((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento') ? 'Nenhum medicamento corresponde à busca.' : 'Nenhum medicamento foi cadastrado no estoque.'}</span></div>}
+    </section>}
+    {pharmacyTab === 'prescriptions' && <section className="patient-list-panel">
+      <div className="section-heading"><div><p className="eyebrow">FILA DA FARMÁCIA</p><h2>Prescrições internas pendentes</h2><p className="welcome-copy">A prescrição só é marcada como atendida após registrar a dispensação e debitar o lote.</p></div><span className="module-total">{prescriptions.length} pendente(s)</span></div>
+      {prescriptions.length ? <div className="patient-list">{prescriptions.map((prescription) => {
+        const patient = patients.find((candidate) => candidate.reference === prescription.patient_reference)
+        const matchingLot = eligibleMedicationLots.find((item) => item.item_name.trim().toLocaleLowerCase('pt-BR') === prescription.medication_name.trim().toLocaleLowerCase('pt-BR'))
+        return <article className="patient-list-row" key={prescription.id}>
+          <div><strong>{prescription.medication_name}{prescription.presentation ? ` · ${prescription.presentation}` : ''}</strong><p>{patient?.name ?? 'Paciente não localizado'} · {patient ? patientLocationLabel(patient) : ''}</p><p>{prescription.dose} · {prescription.route} · {prescription.frequency} · {prescription.duration} · {prescription.quantity} {prescription.unit}</p><small>{prescription.prescriber_name} · CRM {prescription.crm}/{prescription.crm_state}{prescription.is_controlled ? ' · medicamento controlado' : ''}</small>{prescription.instructions && <small>{prescription.instructions}</small>}</div>
+          <button className="button button-primary" type="button" disabled={!patient} onClick={() => {
+            setPharmacyTab('dispensation')
+            setDispenseForm({
+              patient_reference: prescription.patient_reference,
+              item_id: matchingLot ? String(matchingLot.id) : '',
+              quantity: prescription.quantity,
+              instructions: `${prescription.dose} · ${prescription.route} · ${prescription.frequency} · ${prescription.duration}${prescription.instructions ? ` · ${prescription.instructions}` : ''}`.slice(0, 500),
+              prescription_reference: prescription.id,
+              prescriber_name: prescription.prescriber_name,
+              allergy_reviewed: false,
+            })
+            setNotice(matchingLot ? 'Confira dose, quantidade, lote e alergias antes de dispensar.' : 'Não há lote válido com o mesmo nome. Escolha o medicamento/lote compatível antes de dispensar.')
+            setError('')
+          }}>Preparar dispensação</button>
+        </article>
+      })}</div> : <div className="history-empty">Não há prescrições pendentes no momento.</div>}
+    </section>}
     {pharmacyTab === 'dispensation' && <section className="pharmacy-dispensation-panel">
       <div className="section-heading"><div><p className="eyebrow">SAÍDA ASSISTENCIAL</p><h2>Dispensar para paciente</h2><p className="welcome-copy">Registre a prescrição, confirme as alergias e selecione o lote dispensado. A Enfermagem receberá a quantidade e poderá registrar administrações parciais vinculadas à mesma dispensação.</p></div></div>
       <form className="field-grid field-grid-two" onSubmit={(event) => void submitDispensation(event)}>

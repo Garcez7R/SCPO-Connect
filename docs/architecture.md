@@ -8,14 +8,17 @@ O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada dom
 | Auditoria | `scpo_services.audit` | `scpo_audit` | `/api/v1/audit` |
 | Enfermagem | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/nursing` |
 | Recepção | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/reception` |
+| Médico | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/physicians` |
 | Farmácia | `scpo_services.pharmacy` | `scpo_pharmacy` | `/api/v1/pharmacy` |
 | Serviço Social e Psicologia/Psiquiatria | `scpo_services.social` | `scpo_social` | `/api/v1/social`, `/api/v1/psychology` |
-| Raio X | `scpo_services.xray` | `scpo_xray` | `/api/v1/xray` |
+| Central de Exames | `scpo_services.xray` | `scpo_xray` | `/api/v1/xray` |
 | Manutenção e Higienização | `scpo_services.maintenance` | `scpo_maintenance` | `/api/v1/maintenance`, `/api/v1/hygiene` |
 | Oficina Terapêutica | `scpo_services.therapy` | `scpo_nursing` (compartilhado) | `/api/v1/therapy` |
 | Backup | `scpo_services.backup` | Bancos dos serviços | `/api/v1/backup` |
 
-A agenda da Recepção é persistida no banco Nursing e usa o cadastro central de pacientes. O endpoint valida conflitos de horário por paciente, profissional e local; alterações de situação seguem transições controladas e são auditadas sem registrar a finalidade do agendamento.
+A agenda da Recepção e as prescrições médicas são persistidas no banco Nursing e usam o cadastro central de pacientes. O serviço Médico também expõe os gráficos de sinais vitais e dados cadastrais clínicos autorizados. O proxy encaminha `/api/v1/physicians` ao serviço Nursing.
+
+A agenda da Recepção usa o cadastro central de pacientes. O endpoint valida conflitos de horário por paciente, profissional e local; alterações de situação seguem transições controladas e são auditadas sem registrar a finalidade do agendamento.
 
 Solicitações de Higienização podem vincular um leito físico entre os bancos Maintenance e Nursing. O serviço Nursing mantém o leito bloqueado enquanto o pedido estiver ativo; somente após a conclusão registrada pela Higienização o serviço pode liberar o leito. Falhas na chamada entre serviços deixam a liberação pendente e permitem nova tentativa, sem liberar automaticamente um leito não confirmado como limpo.
 
@@ -31,4 +34,4 @@ Para extrair um domínio, mantenha seu pacote, migrações e banco como unidade,
 
 ## Limites
 
-O cabeçalho `X-Demo-Role` é deliberadamente falsificável: demonstra autorização de rotas, não autentica pessoas. Serviços, critérios, retenção, HTTPS interno, backup, políticas de menor privilégio e requisitos legais necessitam de revisão técnica e institucional antes de uso real. A prioridade da emergência é registrada manualmente e não substitui protocolo institucional de triagem; os indicadores e registros de risco não fazem classificação, alerta ou recomendação clínica automatizada. Não há integração clínica.
+O cabeçalho `X-Demo-Role` é deliberadamente falsificável: demonstra autorização de rotas, não autentica pessoas. Serviços, critérios, retenção, HTTPS interno, backup, políticas de menor privilégio e requisitos legais necessitam de revisão técnica e institucional antes de uso real. A prioridade da emergência é registrada manualmente e não substitui protocolo institucional de triagem; os indicadores e registros de risco não fazem classificação, alerta ou recomendação clínica automatizada. As prescrições e solicitações de exames são fluxos internos de demonstração, sem validação institucional de CRM, integração com prontuário ou certificação de conformidade legal.

@@ -105,7 +105,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0040_permanent_shares"
+    expected_revision = "0041_medical_orders_lab_exams"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."
@@ -132,6 +132,7 @@ def _outbox_database_service(service: str | None = None) -> str | None:
     module_services = {
         "patients": "nursing",
         "nursing": "nursing",
+        "physician": "nursing",
         "reception": "nursing",
         "nutrition": "nursing",
         "therapy": "nursing",

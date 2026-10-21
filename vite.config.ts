@@ -11,6 +11,7 @@ export default defineConfig({
       '/api/v1/system-admin': 'http://127.0.0.1:8002',
       '/api/v1/audit': 'http://127.0.0.1:8006',
       '/api/v1/nursing': 'http://127.0.0.1:8001',
+      '/api/v1/physicians': 'http://127.0.0.1:8001',
       '/api/v1/reception': 'http://127.0.0.1:8001',
       '/api/v1/pharmacy': 'http://127.0.0.1:8003',
       '/api/v1/social': 'http://127.0.0.1:8005',

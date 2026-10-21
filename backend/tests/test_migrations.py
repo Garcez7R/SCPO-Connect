@@ -42,9 +42,17 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0040_permanent_shares"
+    assert revision == "0041_medical_orders_lab_exams"
     if service == "nursing":
-        assert len(tables) == 20
+        assert len(tables) == 22
+        assert {"physician_profiles", "physician_prescriptions"} <= tables
+        assert {
+            "ix_physician_prescriptions_patient_reference",
+            "ix_physician_prescriptions_status_created",
+        } <= {
+            index["name"]
+            for index in inspect(get_engine(service)).get_indexes("physician_prescriptions")
+        }
         assert "reception_appointments" in tables
         assert "therapy_activity_attendance" in tables
         assert "same_number" in {
@@ -157,9 +165,10 @@ def test_each_service_migration_creates_only_its_owned_table(
     elif service == "xray":
         assert len(tables) == 3
         assert "audit_outbox" in tables
-        assert {"result", "result_recorded_by", "result_recorded_at"} <= {
+        exam_columns = {
             column["name"] for column in inspect(get_engine(service)).get_columns("exam_requests")
         }
+        assert {"result", "result_recorded_by", "result_recorded_at", "exam_type", "observations"} <= exam_columns
     elif service == "audit":
         assert len(tables) == 3
         assert "audit_chain_heads" in tables

@@ -57,8 +57,8 @@ import { printRows, type PrintRow } from './printReport'
 import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 import { squareImageFile, squareVideoFrame } from './patientPhoto'
 
-type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'system-admin' | 'about'
-type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
+type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'system-admin' | 'about'
+type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 type Patient = {
   reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; same_number?: string; mother_name?: string; health_plan?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
@@ -110,6 +110,7 @@ type VitalRecordData = { id: number; patient_reference: string; actor_name: stri
 type PatientObservation = { id: number; attention_level: 'green' | 'yellow' | 'red'; observation: string; treatment_status: 'in_progress' | 'completed' | 'discharged'; actor_name: string; created_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type MedicationAdministration = { id: number; dispensation_id: string; patient_reference: string; medication_name: string; dose: string; unit: string; status: 'administered' | 'refused' | 'held'; reason: string; actor_name: string; administered_at: string }
+type PhysicianPrescription = { id: string; patient_reference: string; medication_name: string; active_ingredient: string; presentation: string; dose: string; route: string; frequency: string; duration: string; quantity: string; unit: string; instructions: string; is_controlled: boolean; prescriber_name: string; crm: string; crm_state: string; status: 'pending' | 'fulfilled' | 'cancelled'; created_at: string }
 function remainingDispensedQuantity(dispensation: MedicationDispensation, administrations: MedicationAdministration[]) {
   const dispensed = Number(dispensation.quantity.replace(',', '.'))
   const administered = administrations
@@ -133,6 +134,7 @@ type NutritionPlan = { allergies: string; assessment_date: string | null; diet_t
 const ReceptionPage = lazy(() => import('./pages/ReceptionPage'))
 const PharmacyPage = lazy(() => import('./pages/PharmacyPage'))
 const XrayModulePage = lazy(() => import('./pages/XrayPage'))
+const PhysicianPage = lazy(() => import('./pages/PhysicianPage'))
 const PatientOperationsPage = lazy(() =>
   import('./pages/PatientOperationsPages').then((module) => ({
     default: module.PatientOperationsPage,
@@ -160,7 +162,7 @@ type Profile = {
 type AuthUser = { id: string; username: string; name: string; role: ProfileId; modules: ModuleId[]; permissions: Record<string, string[]>; mfa_enabled: boolean; is_superuser: boolean }
 
 const roleLabels: Record<ProfileId, string> = {
-  patients: 'Cadastro de pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Raio X', social: 'Serviço Social',
+  patients: 'Cadastro de pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
   nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica',
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção',
   management: 'Gestão Hospitalar',
@@ -169,7 +171,8 @@ const roleLabels: Record<ProfileId, string> = {
 const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; description: string }[] = [
   { id: 'nursing', label: 'Enfermagem', short: 'Enfermagem', icon: HeartPulse, description: 'Coleta e acompanhamento de sinais vitais.' },
   { id: 'pharmacy', label: 'Farmácia', short: 'Farmácia', icon: Pill, description: 'Controle de estoque, lotes e validade.' },
-  { id: 'xray', label: 'Raio X', short: 'Raio X', icon: ScanLine, description: 'Solicitações e acompanhamento de exames.' },
+  { id: 'xray', label: 'Central de Exames', short: 'Exames', icon: ScanLine, description: 'Solicitações e acompanhamento de exames de imagem e laboratoriais.' },
+  { id: 'physician', label: 'Médico', short: 'Médico', icon: Stethoscope, description: 'Consulta clínica, sinais vitais e prescrições integradas.' },
   { id: 'social', label: 'Serviço Social', short: 'Serviço social', icon: Handshake, description: 'Acompanhamentos e encaminhamentos.' },
   { id: 'nutrition', label: 'Nutrição', short: 'Nutrição', icon: UtensilsCrossed, description: 'Acompanhamento nutricional e necessidades alimentares.' },
   { id: 'reception', label: 'Recepção', short: 'Recepção', icon: ContactRound, description: 'Identificação, chegada e direcionamento de pacientes.' },
@@ -458,6 +461,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
           {activeModule === 'pharmacy' && <Suspense fallback={<div className="history-empty" role="status">Carregando Farmácia…</div>}><PharmacyPage user={user} /></Suspense>}
+          {activeModule === 'physician' && <Suspense fallback={<div className="history-empty" role="status">Carregando módulo Médico…</div>}><PhysicianPage /></Suspense>}
           {activeModule === 'work-orders' && <Suspense fallback={<div className="history-empty" role="status">Carregando ordens de serviço…</div>}><WorkOrdersPage user={user} /></Suspense>}
           {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage /></Suspense>}
           {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
@@ -471,7 +475,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage />}
-          {activeModule === 'xray' && <Suspense fallback={<div className="history-empty" role="status">Carregando Raio X…</div>}><XrayModulePage user={user} /></Suspense>}
+          {activeModule === 'xray' && <Suspense fallback={<div className="history-empty" role="status">Carregando Central de Exames…</div>}><XrayModulePage user={user} /></Suspense>}
           {activeModule === 'social' && <Suspense fallback={<div className="history-empty" role="status">Carregando Serviço Social…</div>}><PatientOperationsPage moduleId="social" user={user} /></Suspense>}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
@@ -1271,6 +1275,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   const [newPatient, setNewPatient] = useState({ name: '', room: '', bed: '' })
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null)
   const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
+  const [physicianPrescriptions, setPhysicianPrescriptions] = useState<PhysicianPrescription[]>([])
   const [administrations, setAdministrations] = useState<MedicationAdministration[]>([])
   const [medicationStatus, setMedicationStatus] = useState<MedicationAdministration['status']>('administered')
   const [medicationReason, setMedicationReason] = useState('')
@@ -1296,14 +1301,17 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
     Promise.all([
       fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
       fetch('/api/v1/nursing/medication-administrations'),
-    ]).then(async ([dispenseResponse, administrationResponse]) => {
-      const [dispenseData, administrationData] = await Promise.all([
+      fetch('/api/v1/physicians/prescriptions'),
+    ]).then(async ([dispenseResponse, administrationResponse, prescriptionResponse]) => {
+      const [dispenseData, administrationData, prescriptionData] = await Promise.all([
         readApiResponse<{ dispensations?: MedicationDispensation[] }>(dispenseResponse),
         readApiResponse<{ administrations?: MedicationAdministration[] }>(administrationResponse),
+        readApiResponse<{ prescriptions?: PhysicianPrescription[] }>(prescriptionResponse),
       ])
       if (!current) return
       setDispensations(dispenseData.dispensations ?? [])
       setAdministrations(administrationData.administrations ?? [])
+      setPhysicianPrescriptions(prescriptionData.prescriptions ?? [])
       setMedicationError('')
       setMedicationLoading(false)
     }).catch((loadError) => {
@@ -1425,6 +1433,10 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
         <button className={`button ${nursingTab === 'safety' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'safety'} onClick={() => setNursingTab('safety')}>Fila e segurança</button>
       </div>
       {nursingTab === 'medications' && <>
+      <section className="nursing-medication-panel">
+        <div className="section-heading"><div><p className="eyebrow">PRESCRIÇÃO MÉDICA → FARMÁCIA → ENFERMAGEM</p><h2>Prescrições deste paciente</h2><p className="welcome-copy">A Farmácia confere e registra a dispensação; a Enfermagem registra a administração somente após a dispensação.</p></div></div>
+        {medicationLoading ? <p className="history-empty">Carregando prescrições…</p> : medicationError ? <div className="form-message form-message-error" role="alert">{medicationError}</div> : physicianPrescriptions.filter((prescription) => prescription.patient_reference === patientRef).length ? <div className="nursing-medication-history">{physicianPrescriptions.filter((prescription) => prescription.patient_reference === patientRef).map((prescription) => <article key={prescription.id}><strong>{prescription.medication_name}{prescription.presentation ? ` · ${prescription.presentation}` : ''}</strong><span>{prescription.dose} · {prescription.route} · {prescription.frequency} · {prescription.duration} · {prescription.quantity} {prescription.unit}</span><span>{prescription.status === 'pending' ? 'Aguardando Farmácia' : prescription.status === 'fulfilled' ? 'Dispensada · confira o registro abaixo para administrar' : 'Cancelada'} · {prescription.prescriber_name} · CRM {prescription.crm}/{prescription.crm_state}</span>{prescription.instructions && <small>{prescription.instructions}</small>}</article>)}</div> : <p className="history-empty">Não há prescrições médicas para o paciente selecionado.</p>}
+      </section>
       <section className="nursing-medication-panel">
         <div className="section-heading"><div><p className="eyebrow">FARMÁCIA → ENFERMAGEM</p><h2>Dispensações deste paciente</h2><p className="welcome-copy">A Farmácia registra lote, prescrição e baixa de estoque; a Enfermagem registra administração, recusa ou suspensão.</p></div></div>
         {medicationError && <div className="form-message form-message-error" role="alert">{medicationError}</div>}
@@ -1889,7 +1901,7 @@ function SavedConfirmation({ savedAt, actorName, patient, onReset }: { savedAt: 
 type Account = { id: string; username: string; name: string; modules: string[]; permissions: Record<string, string[]>; active: boolean; must_change_password: boolean; mfa_enabled: boolean; is_superuser: boolean }
 
 const moduleLabels: Record<string, string> = {
-  patients: 'Pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Raio X', social: 'Serviço Social',
+  patients: 'Pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
   nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica',
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção',
   management: 'Gestão Hospitalar', admin: 'Administração',
