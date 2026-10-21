@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, ShieldCheck, Wrench } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, SprayCan, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
 import { printRows, type PrintRow } from '../printReport'
@@ -503,7 +503,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
   }
 
   return <section className="work-orders-page maintenance-queue-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><span className="module-icon module-icon-hygiene"><ShieldCheck size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><span className="module-icon module-icon-hygiene"><SprayCan size={23} /></span></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
     <section className="work-order-list-panel">

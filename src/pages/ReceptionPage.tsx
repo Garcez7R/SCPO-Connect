@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ComponentType, FormEvent } from 'react'
-import { ArrowRight, Building2, Search, AlertTriangle, BadgeCheck, Info } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeCheck, ContactRound, Info, Search } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { formatCpf, formatPhone, formatPostalCode } from '../inputFormatting'
 import AllergyFields from '../components/AllergyFields'
@@ -291,7 +291,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
 
   return <section className="reception-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : tab === 'appointments' ? 'Organize consultas, exames e procedimentos em uma agenda compartilhada.' : tab === 'calls' ? 'Chame pacientes na sala de espera com painel visual e anúncio por voz opcional.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon"><Building2 size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : tab === 'appointments' ? 'Organize consultas, exames e procedimentos em uma agenda compartilhada.' : tab === 'calls' ? 'Chame pacientes na sala de espera com painel visual e anúncio por voz opcional.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon module-icon-reception"><ContactRound size={23} /></span></div>
     <div className="admin-tabs module-tabs reception-primary-tabs" role="tablist" aria-label="Fluxos da Recepção">
       <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
       <button className={`button ${tab === 'outpatient' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'outpatient'} onClick={() => setTab('outpatient')}>Ficha ambulatorial</button>

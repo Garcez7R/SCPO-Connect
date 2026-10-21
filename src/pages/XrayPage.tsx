@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Info,
   Search,
+  ScanLine,
 } from 'lucide-react'
 import { readApiResponse } from '../api'
 
@@ -214,7 +215,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   }
 
   return <section className="xray-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">ROTINA OPERACIONAL · RAIO X</p><h1>Fila de exames</h1><p className="welcome-copy">Registre solicitações e acompanhe cada exame até sua conclusão.</p></div><span className="module-icon module-icon-xray"><Activity size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">ROTINA OPERACIONAL · RAIO X</p><h1>Fila de exames</h1><p className="welcome-copy">Registre solicitações e acompanhe cada exame até sua conclusão.</p></div><span className="module-icon module-icon-xray"><ScanLine size={23} /></span></div>
     <div className="hygiene-summary" aria-label="Resumo da fila de Raio X"><article><strong>{requests.length}</strong><span>Total de solicitações</span></article><article><strong>{activeCount}</strong><span>Exames ativos</span></article><article><strong>{requests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
     {notice && <div className="form-message form-message-success" role="status">{notice}</div>}

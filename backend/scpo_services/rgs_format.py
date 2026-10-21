@@ -13,19 +13,22 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 MAGIC = b"SCPO-RGS\x01"
 DATABASES = ("access", "audit", "nursing", "pharmacy", "social", "xray", "maintenance")
+MAX_ARCHIVE_UNCOMPRESSED_BYTES = 20 * 1024**3
 
 
-def decrypt_and_extract(source: Path, destination: Path) -> None:
+def decrypt_and_extract(
+    source: Path, destination: Path, *, password: str | None = None
+) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     archive_path = destination.parent / ".rgs-bundle.tar.gz"
     with source.open("rb") as encrypted:
         is_password_bundle = encrypted.read(len(MAGIC)) == MAGIC
     try:
         if is_password_bundle:
-            password = os.getenv("SCPO_RGS_PASSWORD") or getpass.getpass(
+            supplied_password = password or os.getenv("SCPO_RGS_PASSWORD") or getpass.getpass(
                 "Senha do backup .rgs: "
             )
-            _decrypt_password_bundle(source, archive_path, password)
+            _decrypt_password_bundle(source, archive_path, supplied_password)
         else:
             with archive_path.open("wb") as output:
                 subprocess.run(
@@ -76,8 +79,11 @@ def _decrypt_password_bundle(source: Path, destination: Path, password: str) -> 
 def _extract_validated_archive(archive_path: Path, destination: Path, *, modern: bool) -> None:
     with tarfile.open(name=str(archive_path), mode="r:gz") as archive:
         members = archive.getmembers()
+        if len(members) > len(DATABASES) + 2:
+            raise ValueError("O pacote contém itens demais")
         names: set[str] = set()
         files: dict[str, tarfile.TarInfo] = {}
+        total_size = 0
         for member in members:
             path = PurePosixPath(member.name)
             if path.is_absolute() or ".." in path.parts or member.name in names:
@@ -87,6 +93,9 @@ def _extract_validated_archive(archive_path: Path, destination: Path, *, modern:
                 if member.name != "dumps" or modern:
                     raise ValueError("O pacote contém diretório inesperado")
             elif member.isfile():
+                total_size += member.size
+                if total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+                    raise ValueError("O conteúdo do pacote excede o limite permitido")
                 files[member.name] = member
             else:
                 raise ValueError("O pacote contém um tipo de arquivo não permitido")

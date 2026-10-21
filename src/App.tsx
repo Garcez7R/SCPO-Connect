@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  Brain,
   Building2,
   CalendarDays,
   Camera,
@@ -24,8 +25,10 @@ import {
   ClipboardList,
   ClipboardPlus,
   Clock3,
+  ContactRound,
   Eye,
   EyeOff,
+  Handshake,
   HeartPulse,
   Home,
   Info,
@@ -34,13 +37,16 @@ import {
   Menu,
   Moon,
   Package,
+  Pill,
   Pencil,
   Printer,
+  SprayCan,
   ShieldCheck,
   Sun,
   Search,
   ScanLine,
   Stethoscope,
+  UtensilsCrossed,
   UsersRound,
   UserRound,
   X,
@@ -163,14 +169,14 @@ const roleLabels: Record<ProfileId, string> = {
 
 const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; description: string }[] = [
   { id: 'nursing', label: 'Enfermagem', short: 'Enfermagem', icon: HeartPulse, description: 'Coleta e acompanhamento de sinais vitais.' },
-  { id: 'pharmacy', label: 'Farmácia', short: 'Farmácia', icon: Package, description: 'Controle de estoque, lotes e validade.' },
+  { id: 'pharmacy', label: 'Farmácia', short: 'Farmácia', icon: Pill, description: 'Controle de estoque, lotes e validade.' },
   { id: 'xray', label: 'Raio X', short: 'Raio X', icon: ScanLine, description: 'Solicitações e acompanhamento de exames.' },
-  { id: 'social', label: 'Serviço Social', short: 'Serviço social', icon: UsersRound, description: 'Acompanhamentos e encaminhamentos.' },
-  { id: 'nutrition', label: 'Nutrição', short: 'Nutrição', icon: HeartPulse, description: 'Acompanhamento nutricional e necessidades alimentares.' },
-  { id: 'reception', label: 'Recepção', short: 'Recepção', icon: UsersRound, description: 'Identificação, chegada e direcionamento de pacientes.' },
+  { id: 'social', label: 'Serviço Social', short: 'Serviço social', icon: Handshake, description: 'Acompanhamentos e encaminhamentos.' },
+  { id: 'nutrition', label: 'Nutrição', short: 'Nutrição', icon: UtensilsCrossed, description: 'Acompanhamento nutricional e necessidades alimentares.' },
+  { id: 'reception', label: 'Recepção', short: 'Recepção', icon: ContactRound, description: 'Identificação, chegada e direcionamento de pacientes.' },
   { id: 'therapy', label: 'Oficina Terapêutica', short: 'Oficina terapêutica', icon: CalendarDays, description: 'Agenda, participação e acompanhamento das atividades.' },
-  { id: 'psychology', label: 'Psicologia / Psiquiatria', short: 'Psicologia', icon: HeartPulse, description: 'Encaminhamentos e acompanhamento da fila de atendimento.' },
-  { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: ShieldCheck, description: 'Pedidos de limpeza por área e acompanhamento da equipe.' },
+  { id: 'psychology', label: 'Psicologia / Psiquiatria', short: 'Psicologia', icon: Brain, description: 'Encaminhamentos e acompanhamento da fila de atendimento.' },
+  { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: SprayCan, description: 'Pedidos de limpeza por área e acompanhamento da equipe.' },
   { id: 'maintenance', label: 'Manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
   { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Indicadores operacionais agregados e acompanhamento da instituição.' },
   { id: 'admin', label: 'Administração', short: 'Administração', icon: ShieldCheck, description: 'Usuários, funções e permissões.' },
@@ -2068,7 +2074,7 @@ function NutritionPage() {
   const patientName = (reference: string) => { const patient = patients.find((item) => item.reference === reference); return patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente' }
   const nutritionPrintRows: PrintRow[] = records.map((record) => ({ id: String(record.id), date: record.assessment_date, title: patientName(record.patient_reference), fields: [['Peso', record.weight_kg ? `${record.weight_kg} kg` : ''], ['Altura', record.height_cm ? `${record.height_cm} cm` : ''], ['Dieta', record.diet_type], ['Alergias', record.allergies], ['Restrições', record.restrictions], ['Jejum', record.fasting_at ? `${dateTime(record.fasting_at)} · ${record.fasting_reason || ''}` : ''], ['Aceitação', record.appetite], ['Hidratação', record.hydration], ['Observações', record.notes], ['Profissional', record.actor_name]] }))
   return <section className="nutrition-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliação, dieta prescrita, alergias, restrições e aceitação alimentar.</p></div><span className="module-icon module-icon-nutrition"><HeartPulse size={24} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliação, dieta prescrita, alergias, restrições e aceitação alimentar.</p></div><span className="module-icon module-icon-nutrition"><UtensilsCrossed size={24} /></span></div>
     {message && <div className="form-message form-message-success" role="status">{message}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
     <PrintSelectionPanel title="Avaliações nutricionais" rows={nutritionPrintRows} />
     <form className="nutrition-form" onSubmit={(event) => void submit(event)}>
@@ -2360,7 +2366,7 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
   ]
   const visibleShortcuts = shortcuts.filter(({ id }) => allowedModules.includes(id))
   return <section className="management-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon"><Building2 size={20} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon module-icon-management"><Building2 size={20} /></span></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas da Gestão Hospitalar">
       <button className={`button ${tab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}><Activity size={16} /> Visão geral</button>
       <button className={`button ${tab === 'tasks' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}><ClipboardList size={16} /> Pendências</button>
@@ -2381,6 +2387,12 @@ function BackupExportPanel() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [restorePassword, setRestorePassword] = useState('')
+  const [restoreFile, setRestoreFile] = useState<File | null>(null)
+  const [restoreConfirmation, setRestoreConfirmation] = useState('')
+  const [restoring, setRestoring] = useState(false)
+  const [restoreMessage, setRestoreMessage] = useState('')
+  const [restoreError, setRestoreError] = useState('')
   async function exportBackup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('')
     try {
@@ -2393,7 +2405,62 @@ function BackupExportPanel() {
     } catch (exportError) { setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar backup.') }
     finally { setBusy(false) }
   }
-  return <section className="patient-list-panel backup-panel"><div className="section-heading"><div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos protegidos por senha.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div><form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}><label className="field"><span className="field-label">Senha de criptografia</span><input required minLength={12} maxLength={128} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label><button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar backup'}</button></form>{message && <div className="form-message form-message-success" role="status">{message}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}<section className="admin-warning backup-restore-guidance"><ShieldCheck size={18} /><div><strong>Restauração disponível em cópia isolada</strong><span>Para restaurar, use o procedimento administrativo `scripts/restore-rgs-isolated.sh`. Ele cria novos bancos sem substituir os bancos ativos; a validação e eventual retorno à operação devem ser conduzidos pela administração técnica.</span></div></section></section>
+  async function restoreBackup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!restoreFile || restoreConfirmation !== 'SUBSTITUIR TODOS OS DADOS') return
+    setRestoring(true); setRestoreError(''); setRestoreMessage('')
+    try {
+      const encodedPassword = btoa(String.fromCharCode(...new TextEncoder().encode(restorePassword)))
+      const response = await fetch('/api/v1/backup/restore', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/vnd.scpo.rgs',
+          'X-RGS-Password': encodedPassword,
+          'X-Restore-Confirmation': restoreConfirmation,
+        },
+        body: restoreFile,
+      })
+      const data = await readApiResponse<{ message?: string }>(response)
+      setRestoreMessage(data.message ?? 'Os bancos foram restaurados.')
+      setRestoreFile(null)
+      setRestoreConfirmation('')
+      setRestorePassword('')
+      const input = document.getElementById('backup-restore-file')
+      if (input instanceof HTMLInputElement) input.value = ''
+    } catch (restoreFailure) {
+      setRestoreError(restoreFailure instanceof Error ? restoreFailure.message : 'Falha ao restaurar o backup.')
+    } finally {
+      setRestoring(false)
+    }
+  }
+  const restoreReady = Boolean(restoreFile)
+    && restorePassword.length >= 12
+    && restorePassword.length <= 128
+    && restoreConfirmation === 'SUBSTITUIR TODOS OS DADOS'
+  return <section className="patient-list-panel backup-panel">
+    <div className="section-heading">
+      <div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos protegidos por senha.</p></div>
+      <span className="module-icon module-icon-admin"><ShieldCheck size={20} /></span>
+    </div>
+    <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
+      <label className="field"><span className="field-label">Senha de criptografia</span><input required minLength={12} maxLength={128} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
+      <button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar backup'}</button>
+    </form>
+    {message && <div className="form-message form-message-success" role="status">{message}</div>}
+    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    <section className="backup-restore-section">
+      <div className="section-heading"><div><p className="eyebrow">RESTAURAÇÃO DE BACKUP</p><h3>Substituir dados atuais</h3><p className="welcome-copy">Restaura os sete bancos do sistema a partir de um arquivo protegido por senha.</p></div></div>
+      <div className="admin-warning backup-restore-guidance" role="alert"><ShieldCheck size={18} /><div><strong>Operação destrutiva e com indisponibilidade</strong><span>Esta ação substituirá todos os dados atuais. Agende uma janela de manutenção, avise os usuários e confirme que escolheu o arquivo correto. Antes da substituição, o sistema valida o arquivo e cria cópias temporárias dos bancos atuais para recuperação automática se a operação falhar. A substituição dos sete bancos não é atômica: mantenha o serviço sem uso durante todo o processo.</span></div></div>
+      <form className="backup-restore-form" onSubmit={(event) => void restoreBackup(event)}>
+        <label className="field"><span className="field-label">Arquivo de backup</span><input id="backup-restore-file" required type="file" accept=".rgs,application/vnd.scpo.rgs" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} /><span className="field-hint">Somente pacotes .rgs exportados com senha pela Administração do Sistema.</span></label>
+        <label className="field"><span className="field-label">Senha do backup</span><input required minLength={12} maxLength={128} type="password" autoComplete="current-password" value={restorePassword} onChange={(event) => setRestorePassword(event.target.value)} /></label>
+        <label className="field"><span className="field-label">Confirmação obrigatória</span><input required value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value)} placeholder="SUBSTITUIR TODOS OS DADOS" autoComplete="off" /><span className="field-hint">Digite exatamente SUBSTITUIR TODOS OS DADOS para habilitar a restauração.</span></label>
+        <button className="button button-danger" type="submit" disabled={!restoreReady || restoring || busy}>{restoring ? 'Validando e restaurando…' : 'Restaurar backup e substituir dados'}</button>
+      </form>
+      {restoreMessage && <div className="form-message form-message-success" role="status">{restoreMessage}</div>}
+      {restoreError && <div className="form-message form-message-error" role="alert">{restoreError}</div>}
+    </section>
+  </section>
 }
 
 function AuditLogPanel() {

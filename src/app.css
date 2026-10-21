@@ -165,7 +165,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-card-available { cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
 .module-card-available:hover { transform: translateY(-2px); border-color: #a9c6d3; box-shadow: var(--shadow); }
 .module-card:disabled { opacity: 1; }
-.module-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; }
+.module-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: #eaf3f7; color: #246b8e; }
 .module-card .module-icon { width: 52px; height: 52px; border-radius: 10px; }
 .module-icon-nursing { background: #eaf3f7; color: #246b8e; }
 .module-icon-pharmacy { background: #edf5ee; color: #39734f; }
@@ -179,6 +179,8 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-icon-management { background: #e7f1f4; color: #456875; }
 .module-icon-psychology { background: #faedf1; color: #984d67; }
 .module-icon-maintenance { background: #edf3f5; color: #426a7a; }
+.module-icon-patients { background: #eef1f6; color: #4e6481; }
+.module-icon-work-orders { background: #e9f1f6; color: #3f6b88; }
 .module-card-title { margin-top: 12px; color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.35; }
 .module-card-description { max-width: 34ch; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .module-card-status { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 13px; color: var(--muted); font-size: 11px; }
@@ -198,6 +200,15 @@ html[data-theme="dark"] .module-icon-admin { background: #2b3540; color: #c1d2df
 html[data-theme="dark"] .module-icon-management { background: #28363a; color: #a9d1d9; }
 html[data-theme="dark"] .module-icon-psychology { background: #402b35; color: #f0b6c9; }
 html[data-theme="dark"] .module-icon-maintenance { background: #263744; color: #acd2e7; }
+html[data-theme="dark"] .module-icon-patients { background: #2b3341; color: #c2d0eb; }
+html[data-theme="dark"] .module-icon-work-orders { background: #263743; color: #acd2e7; }
+html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: #203743; color: #a8ddf3; }
+.backup-restore-section { margin-top: 26px; padding-top: 8px; border-top: 1px solid var(--line); }
+.backup-restore-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: end; }
+.backup-restore-form .field:first-child { grid-column: 1 / -1; }
+.backup-restore-form .button { justify-self: start; min-height: 42px; }
+.backup-restore-guidance { margin-top: 8px; }
+@media (max-width: 700px) { .backup-restore-form { grid-template-columns: 1fr; } .backup-restore-form .field:first-child { grid-column: auto; } .backup-restore-form .button { width: 100%; justify-content: center; } }
 .dashboard-lower { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, .9fr); gap: 13px; margin-top: 17px; }
 .activity-panel, .next-step-panel, .users-panel, .permission-map { border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .activity-panel { padding: 17px 18px 5px; }

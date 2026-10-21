@@ -5,11 +5,14 @@ import {
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
+  Brain,
   CheckCircle2,
+  Handshake,
   HeartPulse,
   Info,
   LockKeyhole,
   Search,
+  ScanLine,
   UsersRound,
 } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
@@ -114,7 +117,7 @@ export function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOpe
   }
   const visibleItems = isXray ? items : items.filter((item) => (socialStatus === 'all' || item.status === socialStatus) && `${patientName(item.patient_reference)} ${item.referral_type} ${item.assignee ?? ''} ${item.next_step ?? ''}`.toLocaleLowerCase('pt-BR').includes(socialQuery.trim().toLocaleLowerCase('pt-BR')))
   const canUpdateSocial = user?.permissions.social?.includes('alterar') ?? false
-  return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">{isXray ? 'Registros vinculados ao cadastro compartilhado de pacientes.' : 'Este fluxo acompanha demandas do Serviço Social. Para compartilhar dados com Psicologia/Psiquiatria, use a aba de compartilhamento; isso não cria um encaminhamento na fila psicológica.'}</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <Activity size={23} /> : <UsersRound size={23} />}</span></div>
+  return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">{isXray ? 'Registros vinculados ao cadastro compartilhado de pacientes.' : 'Este fluxo acompanha demandas do Serviço Social. Para compartilhar dados com Psicologia/Psiquiatria, use a aba de compartilhamento; isso não cria um encaminhamento na fila psicológica.'}</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <ScanLine size={23} /> : <Handshake size={23} />}</span></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}{notice && <div className="form-message form-message-success" role="status">{notice}</div>}
     {!isXray && <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do Serviço Social"><button className={`button ${socialTab === 'referrals' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={socialTab === 'referrals'} onClick={() => setSocialTab('referrals')}>Encaminhamentos</button><button className={`button ${socialTab === 'sharing' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={socialTab === 'sharing'} onClick={() => setSocialTab('sharing')}>Compartilhamento seletivo</button></div>}
     {(isXray || socialTab === 'referrals') && <>
@@ -317,7 +320,7 @@ export function PsychologyPage() {
   return <section className="psychology-page page-enter">
     <div className="page-title-row">
       <div><p className="eyebrow">MÓDULO · PSICOLOGIA / PSIQUIATRIA</p><h1>Acompanhamento psicológico e psiquiátrico</h1><p className="welcome-copy">Organize encaminhamentos, atendimentos e registros clínicos. Resumos compartilhados são consultados em outra aba e não entram automaticamente na fila.</p></div>
-      <span className="module-icon module-icon-psychology"><HeartPulse size={23} /></span>
+      <span className="module-icon module-icon-psychology"><Brain size={23} /></span>
     </div>
     <div className="psychology-privacy" role="note"><LockKeyhole size={18} /><span>Informações clínicas confidenciais: acesso restrito a contas autorizadas neste módulo. Registre apenas dados necessários ao atendimento.</span></div>
     {error && <div className="form-message form-message-error" role="alert">{error}</div>}
