@@ -7,13 +7,15 @@ import {
   Brain,
   CheckCircle2,
   Handshake,
+  Microscope,
   Info,
   LockKeyhole,
   Search,
-  ScanLine,
 } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import InterprofessionalSharePanel from '../components/InterprofessionalSharePanel'
+import { usePersistentTab } from '../components/PageNavigationContext'
+import ToastMessage from '../components/ToastMessage'
 
 type Patient = {
   reference: string
@@ -23,7 +25,7 @@ type Patient = {
   allergies?: string
   allergies_status?: 'unknown' | 'none_known' | 'known'
 }
-type AuthUser = { permissions: Record<string, string[]> }
+type AuthUser = { id: string; permissions: Record<string, string[]> }
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -43,6 +45,8 @@ function PatientAllergyAlert({ patient }: { patient?: Patient }) {
 type PatientOperationModule = 'xray' | 'social'
 type PatientOperation = { id: number; patient_reference: string; exam_label?: string; referral_type?: string; status: string; priority?: 'routine' | 'priority'; assignee?: string; follow_up_due?: string | null; next_step?: string; created_at: string }
 type SocialReferralDraft = { priority: 'routine' | 'priority'; assignee: string; follow_up_due: string; next_step: string }
+const socialTabs = ['referrals', 'sharing'] as const
+const socialTabLabels: Record<(typeof socialTabs)[number], string> = { referrals: 'Encaminhamentos', sharing: 'Compartilhamento' }
 
 const socialReferralCategories = ['Acompanhamento familiar', 'Benefícios e documentação', 'Alta e continuidade do cuidado', 'Moradia e rede de apoio', 'Acesso a serviços', 'Outro']
 
@@ -66,7 +70,7 @@ export function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOpe
   const [socialDrafts, setSocialDrafts] = useState<Record<number, SocialReferralDraft>>({})
   const [socialQuery, setSocialQuery] = useState('')
   const [socialStatus, setSocialStatus] = useState<'all' | keyof typeof socialReferralStatuses>('all')
-  const [socialTab, setSocialTab] = useState<'referrals' | 'sharing'>('referrals')
+  const [socialTab, setSocialTab] = usePersistentTab(`scpo-tab-social-${user?.id ?? 'anonymous'}`, 'referrals', socialTabs, socialTabLabels)
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -114,8 +118,8 @@ export function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOpe
   }
   const visibleItems = isXray ? items : items.filter((item) => (socialStatus === 'all' || item.status === socialStatus) && `${patientName(item.patient_reference)} ${item.referral_type} ${item.assignee ?? ''} ${item.next_step ?? ''}`.toLocaleLowerCase('pt-BR').includes(socialQuery.trim().toLocaleLowerCase('pt-BR')))
   const canUpdateSocial = user?.permissions.social?.includes('alterar') ?? false
-  return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">{isXray ? 'Registros vinculados ao cadastro compartilhado de pacientes.' : 'Este fluxo acompanha demandas do Serviço Social. Para compartilhar dados com Psicologia/Psiquiatria, use a aba de compartilhamento; isso não cria um encaminhamento na fila psicológica.'}</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <ScanLine size={23} /> : <Handshake size={23} />}</span></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}{notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+  return <section className="module-page page-enter"><div className="page-title-row"><div><p className="eyebrow">MÓDULO · {isXray ? 'RAIO X' : 'SERVIÇO SOCIAL'}</p><h1>{isXray ? 'Solicitações de exame' : 'Encaminhamentos sociais'}</h1><p className="welcome-copy">{isXray ? 'Registros vinculados ao cadastro compartilhado de pacientes.' : 'Este fluxo acompanha demandas do Serviço Social. Para compartilhar dados com Psicologia/Psiquiatria, use a aba de compartilhamento; isso não cria um encaminhamento na fila psicológica.'}</p></div><span className={`module-icon module-icon-${moduleId}`}>{isXray ? <Microscope size={23} /> : <Handshake size={23} />}</span></div>
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}{notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {!isXray && <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do Serviço Social"><button className={`button ${socialTab === 'referrals' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={socialTab === 'referrals'} onClick={() => setSocialTab('referrals')}>Encaminhamentos</button><button className={`button ${socialTab === 'sharing' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={socialTab === 'sharing'} onClick={() => setSocialTab('sharing')}>Compartilhamento seletivo</button></div>}
     {(isXray || socialTab === 'referrals') && <>
     <form className="work-order-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVO REGISTRO</p><h2>{isXray ? 'Solicitar exame' : 'Registrar encaminhamento'}</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Paciente · quarto · leito</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione um paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}</option>)}</select></label>{isXray ? <label className="field"><span className="field-label">Exame solicitado</span><input required minLength={2} maxLength={80} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Ex.: radiografia de tórax" /></label> : <label className="field"><span className="field-label">Categoria da demanda</span><select value={socialCategory} onChange={(event) => setSocialCategory(event.target.value)}>{socialReferralCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>}</div>{!isXray && <div className="field-grid field-grid-two"><label className="field"><span className="field-label">Responsável pelo acompanhamento</span><input maxLength={120} value={socialNewReferral.assignee} onChange={(event) => setSocialNewReferral((current) => ({ ...current, assignee: event.target.value }))} placeholder="Nome ou função" /></label><label className="field"><span className="field-label">Prioridade</span><select value={socialNewReferral.priority} onChange={(event) => setSocialNewReferral((current) => ({ ...current, priority: event.target.value as SocialReferralDraft['priority'] }))}><option value="routine">Rotina</option><option value="priority">Prioritária</option></select></label><label className="field"><span className="field-label">Prazo para retorno</span><input type="date" value={socialNewReferral.follow_up_due} onChange={(event) => setSocialNewReferral((current) => ({ ...current, follow_up_due: event.target.value }))} /></label><label className="field"><span className="field-label">Próxima ação (sem dados clínicos)</span><input maxLength={300} value={socialNewReferral.next_step} onChange={(event) => setSocialNewReferral((current) => ({ ...current, next_step: event.target.value }))} placeholder="Ex.: confirmar contato com a rede de apoio" /></label></div>}{isXray && <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientReference)} />}<button className="button button-primary" type="submit" disabled={saving || !patients.length}>{saving ? 'Salvando…' : 'Registrar'}</button></form>
@@ -126,6 +130,8 @@ export function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOpe
 }
 
 type PsychologyTab = 'triage' | 'encounters' | 'sharing'
+const psychologyTabs: PsychologyTab[] = ['triage', 'encounters', 'sharing']
+const psychologyTabLabels: Record<PsychologyTab, string> = { triage: 'Acolhimento', encounters: 'Evoluções', sharing: 'Compartilhamento' }
 type PsychologyReferral = { id: number; patient_reference: string; referral_type: string; status: string; priority: 'routine' | 'priority'; created_at: string }
 type PsychologyEncounter = { id: number; patient_reference: string; encounter_type: 'intake' | 'follow_up' | 'psychiatry'; objective: string; evolution: string; plan: string; actor_name: string; created_at: string }
 
@@ -143,8 +149,8 @@ const psychologyEncounterTypes: Record<PsychologyEncounter['encounter_type'], st
   psychiatry: 'Atendimento psiquiátrico',
 }
 
-export function PsychologyPage() {
-  const [tab, setTab] = useState<PsychologyTab>('triage')
+export function PsychologyPage({ userId }: { userId: string }) {
+  const [tab, setTab] = usePersistentTab(`scpo-tab-psychology-${userId}`, 'triage', psychologyTabs, psychologyTabLabels)
   const [patients, setPatients] = useState<Patient[]>([])
   const [referrals, setReferrals] = useState<PsychologyReferral[]>([])
   const [encounters, setEncounters] = useState<PsychologyEncounter[]>([])
@@ -320,8 +326,8 @@ export function PsychologyPage() {
       <span className="module-icon module-icon-psychology"><Brain size={23} /></span>
     </div>
     <div className="psychology-privacy" role="note"><LockKeyhole size={18} /><span>Informações clínicas confidenciais: acesso restrito a contas autorizadas neste módulo. Registre apenas dados necessários ao atendimento.</span></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do módulo de Psicologia e Psiquiatria">
       <button type="button" role="tab" aria-selected={tab === 'triage'} className={`button ${tab === 'triage' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('triage')}>Fila e triagem <span>{referrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
       <button type="button" role="tab" aria-selected={tab === 'encounters'} className={`button ${tab === 'encounters' ? 'button-primary' : 'button-secondary'}`} onClick={() => { setEncountersPatient(''); setEncounterLoadError(''); setTab('encounters') }}>Atendimentos e registros</button>
@@ -370,7 +376,7 @@ export function PsychologyPage() {
       </form>
       <section className="psychology-panel">
         <div className="section-heading"><div><p className="eyebrow">HISTÓRICO INDIVIDUAL</p><h2>Registros de atendimento</h2></div><span className="module-total">{encounters.length}</span></div>
-        {!recordPatient ? <div className="history-empty">Selecione um paciente acima para consultar apenas o histórico individual autorizado.</div> : encounterLoadError ? <div className="form-message form-message-error" role="alert">{encounterLoadError}</div> : encountersLoading ? <div className="history-empty">Carregando histórico confidencial…</div> : encounters.length ? <div className="psychology-encounter-list">{encounters.map((encounter) => <article className="psychology-encounter-card" key={encounter.id}>
+        {!recordPatient ? <div className="history-empty">Selecione um paciente acima para consultar apenas o histórico individual autorizado.</div> : encounterLoadError ? <ToastMessage variant="error">{encounterLoadError}</ToastMessage> : encountersLoading ? <div className="history-empty">Carregando histórico confidencial…</div> : encounters.length ? <div className="psychology-encounter-list">{encounters.map((encounter) => <article className="psychology-encounter-card" key={encounter.id}>
           <div className="psychology-encounter-heading"><div><h3>{psychologyEncounterTypes[encounter.encounter_type]}</h3><p>{patientName(encounter.patient_reference)}</p></div><div><time>{dateTime(encounter.created_at)}</time><small>{encounter.actor_name}</small></div></div>
           <div className="psychology-encounter-field"><strong>Objetivo</strong><p>{encounter.objective}</p></div>
           <div className="psychology-encounter-field"><strong>Evolução</strong><p>{encounter.evolution}</p></div>

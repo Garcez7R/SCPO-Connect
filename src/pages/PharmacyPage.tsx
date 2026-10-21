@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Pill, Search, X } from 'lucide-react'
 import { readApiResponse } from '../api'
+import { usePersistentTab } from '../components/PageNavigationContext'
+import ToastMessage from '../components/ToastMessage'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
 import type { PrintRow } from '../printReport'
 import { formatDecimalInput } from '../inputFormatting'
@@ -19,6 +21,16 @@ type PurchaseRequest = { id: string; product_id: number | null; item_name: strin
 function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
   return patient.room.trim() && patient.bed.trim() ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem quarto/leito atribuído'
 }
+
+const pharmacyTabs = ['stock', 'inventory', 'dispensation', 'prescriptions', 'purchases'] as const
+const pharmacyTabLabels: Record<(typeof pharmacyTabs)[number], string> = {
+  stock: 'Movimentações',
+  inventory: 'Estoque geral A–Z',
+  dispensation: 'Dispensação',
+  prescriptions: 'Prescrições médicas',
+  purchases: 'Compras e suprimentos',
+}
+const pharmacyTabsWithoutPurchases = ['stock', 'inventory', 'dispensation', 'prescriptions'] as const
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -47,7 +59,9 @@ function playBarcodeTone(audioContext: AudioContext | null) {
 }
 
 function PharmacyPage({ user }: { user: AuthUser }) {
-  const [pharmacyTab, setPharmacyTab] = useState<'stock' | 'inventory' | 'dispensation' | 'prescriptions' | 'purchases'>('stock')
+  const canManagePurchases = (user.modules.includes('pharmacy') && Boolean(user.permissions.pharmacy?.includes('criar') || user.permissions.pharmacy?.includes('alterar'))) || (user.modules.includes('management') && Boolean(user.permissions.management?.includes('consultar')))
+  const availablePharmacyTabs = canManagePurchases ? pharmacyTabs : pharmacyTabsWithoutPurchases
+  const [pharmacyTab, setPharmacyTab] = usePersistentTab(`scpo-tab-pharmacy-${user.id}`, 'stock', availablePharmacyTabs, pharmacyTabLabels)
   const [items, setItems] = useState<PharmacyItem[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
@@ -63,7 +77,6 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     setMovementFormState({ ...value, quantity: formatDecimalInput(value.quantity) })
   const [movementSaving, setMovementSaving] = useState(false)
   const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
-  const canManagePurchases = (user.modules.includes('pharmacy') && Boolean(user.permissions.pharmacy?.includes('criar') || user.permissions.pharmacy?.includes('alterar'))) || (user.modules.includes('management') && Boolean(user.permissions.management?.includes('consultar')))
   const [query, setQuery] = useState('')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
@@ -515,7 +528,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
   const convertedBalance = requestedPackages * unitsPerPackage
 
   return <section className="pharmacy-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Cadastre lotes com conversão explícita para a unidade de controle.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Cadastre lotes com conversão explícita para a unidade de controle.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div><div className="page-title-actions"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span>{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div></div>
     <div className="admin-tabs module-tabs pharmacy-tabs" role="tablist" aria-label="Seções da Farmácia">
       <button className={`button ${pharmacyTab === 'stock' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'stock'} onClick={() => setPharmacyTab('stock')}><Package size={16} /> Estoque e lotes</button>
       <button className={`button ${pharmacyTab === 'inventory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'inventory'} onClick={() => setPharmacyTab('inventory')}><Package size={16} /> Estoque geral A–Z</button>
@@ -523,7 +536,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
       <button className={`button ${pharmacyTab === 'prescriptions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'prescriptions'} onClick={() => setPharmacyTab('prescriptions')}><ArrowRight size={16} /> Prescrições médicas <span>{prescriptions.length}</span></button>
       {canManagePurchases && <button className={`button ${pharmacyTab === 'purchases' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'purchases'} onClick={() => setPharmacyTab('purchases')}><Package size={16} /> Compras e suprimentos</button>}
     </div>
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {pharmacyTab === 'stock' && <>
     <div className="pharmacy-summary"><article><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article><article className={expiringCount ? 'pharmacy-summary-warning' : ''}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article><article className={expiredCount ? 'pharmacy-summary-danger' : ''}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article><article className={criticalCount ? 'pharmacy-summary-danger' : ''}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No limite mínimo ou abaixo</small></article></div>
     <div className="pharmacy-quick-filters" role="group" aria-label="Filtrar estoque">
@@ -738,8 +751,8 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
 
   return <section className="patient-list-panel">
     <div className="section-heading"><div><p className="eyebrow">SUPRIMENTOS → FARMÁCIA</p><h2>Solicitações e pedidos de compra</h2><p className="welcome-copy">O recebimento converte a quantidade da embalagem para a unidade base e cria saldo por lote e validade.</p></div><span className="module-total">{requests.length}</span></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {canCreate && <form className="account-create-panel" onSubmit={(event) => void createRequest(event)}>
       <h3>Nova solicitação</h3>
       <div className="field-grid field-grid-two">
@@ -808,6 +821,7 @@ function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem
   const setAverage = (value: string) => setAverageState(formatDecimalInput(value))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [messageVariant, setMessageVariant] = useState<'success' | 'error'>('success')
   const label: Record<StockLevel, string> = { critical: 'Crítico', attention: 'Atenção', healthy: 'Adequado', unconfigured: 'Defina a meta' }
   const rows = [...items].sort((a, b) => {
     const order: Record<StockLevel, number> = { critical: 0, attention: 1, unconfigured: 2, healthy: 3 }
@@ -818,8 +832,8 @@ function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem
     try {
       const response = await fetch(`/api/v1/pharmacy/items/${item.id}/stock-thresholds`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minimum_balance: minimum.replace(',', '.'), average_balance: average.replace(',', '.') }) })
       const data = await readApiResponse<PharmacyItem>(response)
-      onSaved(data); setEditing(null); setMessage(`Metas atualizadas para ${item.item_name}.`)
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Falha ao salvar metas.') }
+      onSaved(data); setEditing(null); setMessageVariant('success'); setMessage(`Metas atualizadas para ${item.item_name}.`)
+    } catch (error) { setMessageVariant('error'); setMessage(error instanceof Error ? error.message : 'Falha ao salvar metas.') }
     finally { setSaving(false) }
   }
   return <section className="pharmacy-stock-overview" aria-label="Níveis do estoque">
@@ -828,7 +842,7 @@ function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem
     </div>
     <details className="pharmacy-stock-details"><summary>Ver níveis e configurar metas por lote</summary>
       <p>Crítico: saldo no mínimo ou abaixo. Atenção: saldo entre o mínimo e a meta média. Adequado: acima da meta média. Defina a meta média para ativar o acompanhamento do lote.</p>
-      {message && <div className="form-message form-message-success" role="status">{message}</div>}
+      {message && <ToastMessage variant={messageVariant}>{message}</ToastMessage>}
       <div className="pharmacy-stock-level-list">{rows.map((item) => { const level = stockLevel(item); const isEditing = editing === item.id; return <article className="pharmacy-stock-level-row" key={item.id}><div className="pharmacy-stock-level-name"><span className={`pharmacy-level-dot level-${level}`} /><div><strong>{item.item_name}</strong><small>Lote {item.lot} · Saldo {item.balance} {item.unit}</small></div></div><span className={`pharmacy-stock-badge level-${level}`}>{label[level]}</span>{isEditing ? <div className="pharmacy-threshold-editor"><label className="field"><span className="field-label">Mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label className="field"><span className="field-label">Meta média</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={average} onChange={(event) => setAverage(event.target.value)} /></label><button className="button button-primary" type="button" disabled={saving || !average} onClick={() => void save(item)}>{saving ? 'Salvando…' : 'Salvar metas'}</button><button className="button button-secondary" type="button" disabled={saving} onClick={() => setEditing(null)}>Cancelar</button></div> : <button className="button button-secondary pharmacy-threshold-button" type="button" onClick={() => { setEditing(item.id); setMinimum(item.minimum_balance || '0'); setAverage(item.average_balance && Number(item.average_balance) > 0 ? item.average_balance : '') }}>Configurar</button>}</article> })}</div>
     </details>
   </section>

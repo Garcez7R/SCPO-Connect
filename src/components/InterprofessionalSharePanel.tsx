@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight, LockKeyhole } from 'lucide-react'
 import { readApiResponse } from '../api'
+import ToastMessage from './ToastMessage'
 
 type ShareModule = 'social' | 'psychology'
 type ShareCategory = 'care_needs' | 'family_support' | 'social_context' | 'safety_followup' | 'contact_plan' | 'other'
@@ -154,8 +155,8 @@ export default function InterprofessionalSharePanel({
         <label className="field"><span className="field-label">Acesso do destinatário</span><select value={expiresInDays ?? 'never'} onChange={(event) => setExpiresInDays(event.target.value === 'never' ? null : Number(event.target.value) as 7 | 14 | 30)}><option value={7}>Expira em 7 dias</option><option value={14}>Expira em 14 dias</option><option value={30}>Expira em 30 dias</option><option value="never">Sem expiração automática</option></select></label>
       </div>
       <p className="psychology-help">Confirme que o compartilhamento segue a finalidade assistencial e as regras institucionais. O sistema mantém autoria e auditoria. Sem expiração automática, o acesso permanece ativo até ser revogado pelo autor.</p>
-      {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-      {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+      {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <button className="button button-primary" type="submit" disabled={saving || !patients.length || !categories.length}>{saving ? 'Compartilhando…' : 'Compartilhar resumo'} <ArrowRight size={16} /></button>
     </form>
     <section className="psychology-panel interprofessional-share-list">

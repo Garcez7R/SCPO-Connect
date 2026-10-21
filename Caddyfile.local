@@ -23,6 +23,9 @@
 	handle /api/v1/nursing/* {
 		reverse_proxy 127.0.0.1:8001
 	}
+	handle /api/v1/physicians/* {
+		reverse_proxy 127.0.0.1:8001
+	}
 	handle /api/v1/pharmacy/* {
 		reverse_proxy 127.0.0.1:8003
 	}
@@ -30,6 +33,9 @@
 		reverse_proxy 127.0.0.1:8004
 	}
 	handle /api/v1/social/* {
+		reverse_proxy 127.0.0.1:8005
+	}
+	handle /api/v1/interprofessional/* {
 		reverse_proxy 127.0.0.1:8005
 	}
 	handle /api/v1/psychology/* {

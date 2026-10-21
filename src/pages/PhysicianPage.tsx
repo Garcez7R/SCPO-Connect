@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ClipboardPlus, Printer, Save, Stethoscope } from 'lucide-react'
+import { AlertTriangle, ClipboardPlus, Printer, Stethoscope } from 'lucide-react'
 import { readApiResponse } from '../api'
+import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
 import { printExternalPrescription } from '../printClinicalForm'
 
@@ -56,12 +57,10 @@ const emptyForm: PrescriptionForm = {
 function PhysicianPage() {
   const [patients, setPatients] = useState<Patient[]>([])
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [profileForm, setProfileForm] = useState({ name: '', crm: '', crm_state: '' })
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [patientReference, setPatientReference] = useState('')
   const [form, setForm] = useState<PrescriptionForm>(emptyForm)
   const [loading, setLoading] = useState(true)
-  const [savingProfile, setSavingProfile] = useState(false)
   const [savingPrescription, setSavingPrescription] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -89,11 +88,6 @@ function PhysicianPage() {
         if (!active) return
         setPatients(patientData.patients.filter((patient) => patient.active !== false))
         setProfile(profileData.profile)
-        setProfileForm({
-          name: profileData.profile?.name ?? '',
-          crm: profileData.profile?.crm ?? '',
-          crm_state: profileData.profile?.crm_state ?? '',
-        })
         setPrescriptions(prescriptionData.prescriptions)
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o módulo Médico.')
@@ -104,27 +98,6 @@ function PhysicianPage() {
     void load()
     return () => { active = false }
   }, [])
-
-  async function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setSavingProfile(true)
-    setError('')
-    setNotice('')
-    try {
-      const response = await fetch('/api/v1/physicians/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...profileForm, crm_state: profileForm.crm_state.toUpperCase() }),
-      })
-      const saved = await readApiResponse<Profile>(response)
-      setProfile(saved)
-      setNotice('Identificação profissional salva.')
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar a identificação profissional.')
-    } finally {
-      setSavingProfile(false)
-    }
-  }
 
   async function createPrescription(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -178,18 +151,13 @@ function PhysicianPage() {
   }
 
   return <section className="page-enter physician-page">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ASSISTÊNCIA MÉDICA</p><h1>Médico</h1><p className="welcome-copy">Consulta clínica, evolução de sinais vitais e prescrições internas integradas.</p></div><Stethoscope size={28} /></div>
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ASSISTÊNCIA MÉDICA</p><h1>Médico</h1><p className="welcome-copy">Consulta clínica, evolução de sinais vitais e prescrições internas integradas.</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span></div>
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {loading ? <div className="history-empty" role="status">Carregando dados clínicos…</div> : <>
       <section className="patient-list-panel">
-        <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfil do prescritor</h2><p className="welcome-copy">Nome e CRM/UF são vinculados às prescrições e à receita impressa.</p></div></div>
-        <form className="form-grid" onSubmit={(event) => void saveProfile(event)}>
-          <label className="field"><span className="field-label">Nome profissional</span><input required minLength={2} maxLength={120} value={profileForm.name} onChange={(event) => setProfileForm((current) => ({ ...current, name: event.target.value }))} /></label>
-          <label className="field"><span className="field-label">CRM</span><input required minLength={3} maxLength={24} value={profileForm.crm} onChange={(event) => setProfileForm((current) => ({ ...current, crm: event.target.value }))} /></label>
-          <label className="field"><span className="field-label">UF do CRM</span><input required pattern="[A-Za-z]{2}" maxLength={2} value={profileForm.crm_state} onChange={(event) => setProfileForm((current) => ({ ...current, crm_state: event.target.value.toUpperCase() }))} /></label>
-          <div className="form-actions"><button className="button button-primary" type="submit" disabled={savingProfile}><Save size={16} />{savingProfile ? 'Salvando…' : profile ? 'Atualizar perfil' : 'Salvar perfil'}</button></div>
-        </form>
+        <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfil do prescritor</h2><p className="welcome-copy">Nome e CRM/UF vinculados às prescrições e à receita impressa.</p></div></div>
+        {profile ? <div className="physician-profile-summary"><strong>{profile.name}</strong><span>CRM {profile.crm}/{profile.crm_state}</span></div> : <div className="admin-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira seu nome e CRM/UF antes de registrar prescrições.</span></div></div>}
       </section>
       <div className="form-grid physician-patient-picker">
         <label className="field"><span className="field-label">Paciente para consulta</span><select value={patientReference} onChange={(event) => { setPatientReference(event.target.value); setForm((current) => ({ ...current, patient_reference: event.target.value })) }}><option value="">Selecione um paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · quarto {patient.room || '—'} · leito {patient.bed || '—'}</option>)}</select></label>
@@ -204,7 +172,7 @@ function PhysicianPage() {
         </section>
         <section className="patient-list-panel">
           <div className="section-heading"><div><p className="eyebrow">PRESCRIÇÃO INTERNA</p><h2>Nova prescrição</h2><p className="welcome-copy">A prescrição fica visível à Farmácia e à Enfermagem. Medicamentos controlados são permitidos no fluxo interno.</p></div></div>
-          {!profile && <div className="form-message form-message-error" role="alert">Salve o perfil profissional acima antes de prescrever.</div>}
+          {!profile && <ToastMessage variant="error">Salve o perfil profissional acima antes de prescrever.</ToastMessage>}
           <form className="form-grid" onSubmit={(event) => void createPrescription(event)}>
             <label className="field"><span className="field-label">Medicamento</span><input required minLength={2} maxLength={160} value={form.medication_name} onChange={(event) => setForm((current) => ({ ...current, medication_name: event.target.value }))} /></label>
             <label className="field"><span className="field-label">Princípio ativo</span><input maxLength={160} value={form.active_ingredient} onChange={(event) => setForm((current) => ({ ...current, active_ingredient: event.target.value }))} /></label>

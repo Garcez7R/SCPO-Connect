@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CalendarClock, Clock3 } from 'lucide-react'
 import { readApiResponse } from '../api'
+import ToastMessage from '../components/ToastMessage'
 
 type Patient = { reference: string; name: string; active?: boolean }
 type AppointmentType = 'consultation' | 'exam' | 'procedure' | 'return'
@@ -194,8 +195,8 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
   const activePatients = patients.filter((patient) => patient.active !== false)
 
   return <div className="reception-appointments">
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="hygiene-summary" aria-label="Resumo da agenda">
       <article><strong>{appointments.filter((item) => item.status === 'scheduled').length}</strong><span>Agendados</span></article>
       <article><strong>{appointments.filter((item) => item.status === 'confirmed').length}</strong><span>Confirmados</span></article>

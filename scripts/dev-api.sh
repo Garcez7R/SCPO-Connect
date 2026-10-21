@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-LOCAL_DATA_DIR="${SCPO_LOCAL_DATA_DIR:-$PWD/data/local}"
+LOCAL_DATA_DIR="${SCPO_LOCAL_DATA_DIR:-$PWD/data/demo}"
 if [[ "$LOCAL_DATA_DIR" != /* ]]; then
   LOCAL_DATA_DIR="$PWD/$LOCAL_DATA_DIR"
 fi

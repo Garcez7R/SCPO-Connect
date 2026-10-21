@@ -4,11 +4,13 @@ O conjunto demonstrativo contém sete pacientes com nomes prefixados por `DEMO -
 
 ## Ambiente isolado
 
-Use um diretório local separado dos bancos existentes. O lançador de APIs aceita `SCPO_LOCAL_DATA_DIR` e, por padrão, usa `data/local`; não aponte esse diretório para produção.
+O lançador de APIs usa `data/demo` por padrão, onde o conjunto demonstrativo já está carregado. Os bancos preexistentes em `data/local` não são alterados. Para selecionar outro diretório, configure `SCPO_LOCAL_DATA_DIR`; nunca aponte esse diretório para produção.
 
 ```sh
-SCPO_LOCAL_DATA_DIR=data/demo bash scripts/dev-api.sh
+bash scripts/dev-api.sh
 ```
+
+Este lançador é exclusivo para desenvolvimento. Antes de validar com dados reais, selecione um diretório/banco novo e aprovado, confirme a configuração de ambiente e não reutilize `data/demo`.
 
 Depois que as migrações locais forem concluídas, em outro terminal:
 

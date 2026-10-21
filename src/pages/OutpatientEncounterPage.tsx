@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, Printer, Save, Trash2 } from 'lucide-react'
 import { readApiResponse } from '../api'
+import ToastMessage from '../components/ToastMessage'
 import { formatCpf } from '../inputFormatting'
 
 type Patient = {
@@ -281,8 +282,8 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
   const printEncounter = printingEncounter
 
   return <section className="outpatient-encounter-page">
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="outpatient-encounter-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">FICHA AMBULATORIAL · SIA/SUS-RS</p><h2>Novo atendimento</h2><p className="welcome-copy">O registro fica associado ao cadastro central e pode ser consultado e impresso depois.</p></div></div>
       <div className="outpatient-patient-choice">

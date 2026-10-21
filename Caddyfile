@@ -64,6 +64,11 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 		reverse_proxy social:8000
 	}
 
+	@interprofessional path /api/v1/interprofessional/*
+	handle @interprofessional {
+		reverse_proxy social:8000
+	}
+
 	@psychology path /api/v1/psychology/*
 	handle @psychology {
 		reverse_proxy social:8000

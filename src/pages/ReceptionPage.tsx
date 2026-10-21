@@ -6,6 +6,8 @@ import { formatCpf, formatPhone, formatPostalCode } from '../inputFormatting'
 import AllergyFields from '../components/AllergyFields'
 import OutpatientEncounterPage from './OutpatientEncounterPage'
 import ReceptionAppointmentsPage from './ReceptionAppointmentsPage'
+import { usePersistentTab } from '../components/PageNavigationContext'
+import ToastMessage from '../components/ToastMessage'
 
 type Patient = {
   reference: string
@@ -57,6 +59,14 @@ type EmergencyArrival = {
 type EmergencyArrivalCounts = Record<EmergencyArrivalStatus, number>
 type ReceptionTab = 'emergency' | 'outpatient' | 'appointments' | 'admissions' | 'calls'
 type HospitalBed = { id: string; unit_name: string; room: string; label: string; status: string; occupied: boolean }
+const receptionTabs: ReceptionTab[] = ['emergency', 'outpatient', 'appointments', 'admissions', 'calls']
+const receptionTabLabels: Record<ReceptionTab, string> = {
+  emergency: 'Fila de emergência',
+  outpatient: 'Atendimento ambulatorial',
+  appointments: 'Agendamentos',
+  admissions: 'Internações',
+  calls: 'Chamadas',
+}
 
 const emergencyArrivalStatuses: Record<EmergencyArrivalStatus, string> = {
   waiting: 'Aguardando',
@@ -124,7 +134,7 @@ function ReceptionAllergyAlert({ status }: { status?: Patient['allergies_status'
 }
 
 function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean }> }) {
-  const [tab, setTab] = useState<ReceptionTab>('emergency')
+  const [tab, setTab] = usePersistentTab(`scpo-tab-reception-${user.id}`, 'emergency', receptionTabs, receptionTabLabels)
   const [patients, setPatients] = useState<Patient[]>([])
   const [beds, setBeds] = useState<HospitalBed[]>([])
   const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
@@ -301,15 +311,15 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
     {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} /> : <>
-      {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-      {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+      {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
       <div className="reception-arrival-action"><button className="button button-primary" type="button" aria-expanded={arrivalFormOpen} aria-controls="reception-arrival-form" onClick={() => setArrivalFormOpen((open) => !open)} disabled={!canCreate}>{arrivalFormOpen ? 'Fechar formulário' : 'Registrar chegada'}</button></div>
       {arrivalFormOpen && <form id="reception-arrival-form" className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
         <div className="section-heading"><div><p className="eyebrow">CHEGADA À EMERGÊNCIA</p><h2>Registrar atendimento</h2></div></div>
         <div className="field-grid field-grid-two">
           {!createCentralPatient && <><label className="field"><span className="field-label">Buscar paciente cadastrado (opcional)</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, quarto, leito ou identificador" /></label>
-          <label className="field"><span className="field-label">Vincular ao cadastro existente</span><select value={patientReference} onChange={(event) => { const reference = event.target.value; const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? ''); if (patient) setPatientSearch(`${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}`) }}><option value="">Sem vínculo cadastral</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}{patient.cpf ? ` · CPF ${patient.cpf}` : ''}</option>)}</select></label>{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}{patientSearch.trim() && !filteredPatients.length && <p className="form-message" role="status">Nenhum cadastro correspondente. Você pode registrar a chegada sem vínculo ou criar um cadastro central.</p>}</>}
+          <label className="field"><span className="field-label">Vincular ao cadastro existente</span><select value={patientReference} onChange={(event) => { const reference = event.target.value; const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? ''); if (patient) setPatientSearch(`${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}`) }}><option value="">Sem vínculo cadastral</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}{patient.cpf ? ` · CPF ${patient.cpf}` : ''}</option>)}</select></label>{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}{patientSearch.trim() && !filteredPatients.length && <ToastMessage variant="info">Nenhum cadastro correspondente. Você pode registrar a chegada sem vínculo ou criar um cadastro central.</ToastMessage>}</>}
           <label className="field"><span className="field-label">{createCentralPatient ? 'Nome completo para novo cadastro' : 'Nome da pessoa atendida'}</span><input required minLength={2} maxLength={120} value={patientName} onChange={(event) => { setPatientName(event.target.value); if (patientReference) setPatientReference('') }} placeholder="Nome informado na recepção" /></label>
           <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setPatientSearch(''); setEmergencyPatient(emptyEmergencyPatient()) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
           {createCentralPatient && <>
@@ -503,8 +513,8 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
 
   return <section className="waiting-room-board patient-list-panel">
     <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. Exibe somente código e nome, sem motivo ou informação clínica.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={() => { void document.documentElement.requestFullscreen().catch((fullscreenError: unknown) => setError(fullscreenError instanceof Error ? fullscreenError.message : 'Não foi possível ativar a tela cheia.')) }}>Tela cheia</button></div></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {!canUpdate && <div className="form-message form-message-warning" role="note">Seu perfil pode acompanhar as chamadas, mas não pode iniciar uma chamada.</div>}
     <div className="waiting-room-counts"><article><strong>{waiting.length}</strong><span>Aguardando chamada</span></article><article><strong>{called.length}</strong><span>Chamados</span></article></div>
     {loading ? <div className="history-empty">Carregando fila de chamadas…</div> : !items.length ? <div className="history-empty">Não há pacientes aguardando ou chamados neste momento.</div> : <div className="waiting-room-lists" aria-live="polite">

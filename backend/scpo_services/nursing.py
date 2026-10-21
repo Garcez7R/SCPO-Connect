@@ -2225,25 +2225,52 @@ def get_physician_profile(
     return {"profile": serialize_physician_profile(profile) if profile else None}
 
 
+@app.get("/api/v1/physicians/profiles")
+def list_physician_profiles(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    profiles = db.scalars(
+        select(PhysicianProfile).order_by(PhysicianProfile.name, PhysicianProfile.user_id)
+    ).all()
+    emit_audit_event(principal, "physician", "physician_profiles_read", "all", db=db)
+    return {"profiles": [serialize_physician_profile(profile) for profile in profiles]}
+
+
+@app.put("/api/v1/physicians/profiles/{user_id}")
+def save_physician_profile_as_management(
+    user_id: str,
+    payload: PhysicianProfilePayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    if not user_id.strip() or len(user_id) > 36:
+        raise HTTPException(status_code=422, detail="Identificador de usuário inválido")
+    profile = db.get(PhysicianProfile, user_id)
+    now = datetime.now(UTC)
+    if profile is None:
+        profile = PhysicianProfile(user_id=user_id, updated_at=now, **payload.model_dump())
+        db.add(profile)
+    else:
+        for field, value in payload.model_dump().items():
+            setattr(profile, field, value)
+        profile.updated_at = now
+    emit_audit_event(principal, "physician", "physician_profile_admin_updated", user_id, db=db)
+    db.commit()
+    db.refresh(profile)
+    return serialize_physician_profile(profile)
+
+
 @app.put("/api/v1/physicians/profile")
 def save_physician_profile(
     payload: PhysicianProfilePayload,
     principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_ACCESS)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    profile = db.get(PhysicianProfile, principal.user_id)
-    now = datetime.now(UTC)
-    if profile is None:
-        profile = PhysicianProfile(user_id=principal.user_id, updated_at=now, **payload.model_dump())
-        db.add(profile)
-    else:
-        for field, value in payload.model_dump().items():
-            setattr(profile, field, value)
-        profile.updated_at = now
-    emit_audit_event(principal, "physician", "physician_profile_updated", principal.user_id, db=db)
-    db.commit()
-    db.refresh(profile)
-    return serialize_physician_profile(profile)
+    raise HTTPException(
+        status_code=403,
+        detail="O perfil profissional deve ser cadastrado pela Administração.",
+    )
 
 
 @app.get("/api/v1/physicians/prescriptions")

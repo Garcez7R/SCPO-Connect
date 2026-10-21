@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, ClipboardList, RefreshCw } from 'lucide-react'
 import { readApiResponse } from '../api'
+import ToastMessage from './ToastMessage'
 
 type ModuleId = 'reception' | 'nursing' | 'pharmacy' | 'maintenance' | 'hygiene'
 type TaskFilter = 'all' | 'urgent'
@@ -224,7 +225,7 @@ export default function OperationalTaskCenter({
       <span className="module-total">{loading ? '…' : visibleCount} pendência(s)</span>
     </div>
     {preferenceError && <p className="field-hint" role="status">{preferenceError}</p>}
-    {errors.map((message) => <div className="form-message form-message-error" role="alert" key={message}>{message}</div>)}
+    {errors.map((message) => <ToastMessage variant="error" key={message}>{message}</ToastMessage>)}
     {loading && !cards.length ? <div className="history-empty">Carregando filas autorizadas…</div>
       : visibleCards.length ? <div className="task-center-grid">{visibleCards.map((card) => <article className="task-center-card" key={card.module}>
         <div className="task-center-card-heading"><div><p className="eyebrow">{card.label}</p><strong>{filter === 'urgent' ? card.tasks.length : card.count} pendência(s)</strong></div><button className="button button-secondary" type="button" onClick={() => onNavigate(card.module)}>Abrir fila <ArrowRight size={15} /></button></div>

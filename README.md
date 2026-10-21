@@ -58,7 +58,7 @@ Cadastro de pacientes, Enfermagem, Farmácia, Central de Exames, Médico, Servi�
 | --- | --- |
 | Interface e PWA | React, TypeScript e Vite |
 | APIs | Python, FastAPI, SQLAlchemy e Alembic |
-| Desenvolvimento local | SQLite em `data/local/`; cadastro de pacientes, sinais vitais e agenda terapêutica compartilham o banco clínico |
+| Desenvolvimento local | SQLite em `data/demo/` por padrão; pode ser configurado por `SCPO_LOCAL_DATA_DIR`, preservando `data/local/` |
 | Instalação com containers | Docker Compose e PostgreSQL 17 |
 | HTTPS interno | Caddy com autoridade certificadora local |
 
@@ -97,7 +97,11 @@ caddy run --config Caddyfile.local --adapter caddyfile
 
 Abra `https://<IP-ou-DNS-da-VM>:8444` em um dispositivo da rede local, substituindo o marcador pelo endereço informado. O Caddy local usa uma CA própria; para o navegador considerar a conexão confiável, instale a raiz pública `data/local/scpo-local-root.crt` em cada dispositivo e confira a impressão digital por um canal independente.
 
-Na primeira abertura, crie a conta inicial usando o token armazenado em `data/local/bootstrap-admin.token`; defina para ela o login `rgarcez` para habilitar o perfil exclusivo de Superadministrador do Sistema (ou configure `SCPO_SUPERADMIN_USERNAME` antes da migração). A senha de bootstrap exige troca e ativação de MFA. Contas criadas posteriormente recebem senhas temporárias aleatórias de uso único. Mantenha o token e os arquivos de `data/local/` fora do Git.
+O lançador de desenvolvimento usa `data/demo/` por padrão, onde já estão os sete pacientes fictícios e suas 210 aferições de 30 dias. Os bancos antigos em `data/local/` permanecem intactos. Na primeira abertura, crie a conta inicial usando o token em `data/demo/bootstrap-admin.token`; defina o login `rgarcez` para habilitar o perfil exclusivo de Superadministrador do Sistema (ou configure `SCPO_SUPERADMIN_USERNAME` antes da migração). A senha de bootstrap exige troca e ativação de MFA. Contas criadas posteriormente recebem senhas temporárias aleatórias de uso único. Mantenha tokens e bancos locais fora do Git. Não use o ambiente demo para dados reais.
+
+### Contas e perfis
+
+O usuário com acesso à Gestão Hospitalar administra as contas operacionais e concede os módulos necessários, incluindo Médico. Após criar uma conta com o módulo Médico, a Administração cadastra o nome profissional e o CRM/UF em **Perfis médicos**; o próprio médico consulta esses dados, mas não pode criá-los nem alterá-los. Confira as informações antes da emissão de prescrições. O login `rgarcez` é reservado ao Superadministrador do Sistema; esse acesso é distinto da Gestão Hospitalar e não aparece na lista de contas dos demais administradores. As funções de backup e restauração são exclusivas do Superadministrador do Sistema. Nunca compartilhe sua conta ou credenciais.
 
 Para desenvolver a interface com atualização instantânea no computador, use `npm run dev -- --host 127.0.0.1`. Os logs locais são gravados em `.logs/`.
 

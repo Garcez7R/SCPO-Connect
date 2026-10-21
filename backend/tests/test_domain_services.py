@@ -910,12 +910,25 @@ def test_physician_profile_and_internal_prescription_flow(
 
     with pytest.raises(ValidationError):
         nursing.PhysicianProfilePayload(name="D ", crm="123", crm_state="RS")
-    profile = nursing.save_physician_profile(
+    management = DemoPrincipal(
+        "management-1", "manager", "Gestão de teste", "management",
+        ["management"], {"management": ["consultar", "criar", "alterar", "administrar"]},
+    )
+    with pytest.raises(HTTPException) as physician_profile_error:
+        nursing.save_physician_profile(
+            nursing.PhysicianProfilePayload(name="Dra. Teste", crm="12345", crm_state="rs"),
+            physician,
+            db,
+        )
+    assert physician_profile_error.value.status_code == 403
+    profile = nursing.save_physician_profile_as_management(
+        "physician-1",
         nursing.PhysicianProfilePayload(name="Dra. Teste", crm="12345", crm_state="rs"),
-        physician,
+        management,
         db,
     )
     assert nursing.get_physician_profile(physician, db) == {"profile": profile}
+    assert nursing.list_physician_profiles(management, db) == {"profiles": [profile]}
     prescription = nursing.create_physician_prescription(
         nursing.PhysicianPrescriptionPayload(
             patient_reference=patient_reference,

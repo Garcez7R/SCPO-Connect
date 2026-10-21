@@ -5,14 +5,17 @@ import {
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
-  ClipboardList,
+  Bone,
+  FlaskConical,
+  Microscope,
   Info,
   Printer,
   Search,
-  ScanLine,
 } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { printLaboratoryRequest } from '../printClinicalForm'
+import { usePersistentTab } from '../components/PageNavigationContext'
+import ToastMessage from '../components/ToastMessage'
 
 type Patient = {
   reference: string
@@ -51,7 +54,9 @@ const laboratoryExamOptions = [
   'Vitamina B12', 'Vitamina D', 'HCV', 'Anti-HBs', 'Hemograma', 'VHS', 'PCR', 'PSA',
   'Colesterol total', 'Colesterol fracionado', 'Triglicerídeos', 'Ureia', 'Creatinina',
   'Bilirrubina direta', 'Bilirrubina indireta', 'Bilirrubina total', 'Amilase', 'Lipase',
-]
+].sort((left, right) => left.localeCompare(right, 'pt-BR'))
+const xraySections = ['xray', 'laboratory'] as const
+const xraySectionLabels: Record<(typeof xraySections)[number], string> = { xray: 'Raio X', laboratory: 'Exames' }
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -75,7 +80,7 @@ function PatientAllergyAlert({ patient }: { patient?: Patient }) {
 }
 
 export default function XrayPage({ user }: { user: AuthUser }) {
-  const [section, setSection] = useState<'xray' | 'laboratory'>('xray')
+  const [section, setSection] = usePersistentTab(`scpo-tab-xray-${user.id}`, 'xray', xraySections, xraySectionLabels)
   const [patients, setPatients] = useState<Patient[]>([])
   const [requests, setRequests] = useState<XrayRequest[]>([])
   const [patientSearch, setPatientSearch] = useState('')
@@ -263,14 +268,14 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   }
 
   return <section className="xray-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · CENTRAL DE EXAMES</p><h1>Central de Exames</h1><p className="welcome-copy">Solicite exames laboratoriais e acompanhe a fila de Raio X e exames.</p></div><span className="module-icon module-icon-xray"><ScanLine size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · CENTRAL DE EXAMES</p><h1>Central de Exames</h1><p className="welcome-copy">Solicite exames laboratoriais e acompanhe a fila de Raio X e exames.</p></div><span className="module-icon module-icon-xray"><Microscope size={23} /></span></div>
     <div className="admin-tabs module-tabs xray-tabs" role="tablist" aria-label="Seções da Central de Exames">
-      <button className={`button ${section === 'xray' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={section === 'xray'} onClick={() => setSection('xray')}><ScanLine size={16} /> Raio X</button>
-      <button className={`button ${section === 'laboratory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={section === 'laboratory'} onClick={() => setSection('laboratory')}><ClipboardList size={16} /> Exames</button>
+      <button className={`button ${section === 'xray' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={section === 'xray'} onClick={() => setSection('xray')}><Bone size={16} /> Raio X</button>
+      <button className={`button ${section === 'laboratory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={section === 'laboratory'} onClick={() => setSection('laboratory')}><FlaskConical size={16} /> Exames</button>
     </div>
     <div className="hygiene-summary" aria-label={`Resumo ${section === 'xray' ? 'da fila de Raio X' : 'da fila laboratorial'}`}><article><strong>{sectionRequests.length}</strong><span>Total de solicitações</span></article><article><strong>{activeCount}</strong><span>Exames ativos</span></article><article><strong>{sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="hygiene-panel" onSubmit={(event) => void (section === 'xray' ? submit(event) : submitLaboratory(event))}>
       <div className="section-heading"><div><p className="eyebrow">{section === 'xray' ? 'NOVO EXAME' : 'REQUISIÇÃO LABORATORIAL'}</p><h2>{section === 'xray' ? 'Adicionar à fila de Raio X' : 'Solicitar exames'}</h2></div></div>
       <div className="field-grid field-grid-two">

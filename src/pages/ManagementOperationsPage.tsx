@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, BadgeCheck, Building2, FileText, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
+import { usePersistentTab } from '../components/PageNavigationContext'
+import ToastMessage from '../components/ToastMessage'
 
 type Asset = { id: string; asset_tag: string; name: string; category: string; unit: string; location: string; manufacturer: string; model: string; serial_number: string; status: string }
 type PreventivePlan = { id: string; asset_id: string; asset_tag: string; asset_name: string; procedure: string; interval_days: number; due_date: string; responsible: string; status: string; last_completed_at: string | null }
@@ -9,6 +11,11 @@ type SafetyIncident = { id: string; incident_type: string; severity: string; occ
 type PatientReference = { reference: string; name: string; room: string; bed: string }
 type InstitutionalDocument = { id: string; title: string; document_type: string; version: string; content: string; status: 'draft' | 'in_review' | 'approved' | 'archived'; valid_until: string | null; created_by: string; approved_by: string; approved_at: string | null }
 type PanelTab = 'safety' | 'documents'
+const roadmapTabs: PanelTab[] = ['safety', 'documents']
+const roadmapTabLabels: Record<PanelTab, string> = { safety: 'Segurança do paciente', documents: 'Documentos e aprovações' }
+type AssetTab = 'assets' | 'preventive' | 'inventory' | 'calendar'
+const assetTabs: AssetTab[] = ['assets', 'preventive', 'inventory', 'calendar']
+const assetTabLabels: Record<AssetTab, string> = { assets: 'Patrimônio', preventive: 'Manutenção preventiva', inventory: 'Inventário', calendar: 'Calendário' }
 
 function localDateTime() {
   const now = new Date()
@@ -20,8 +27,8 @@ function dateLabel(value: string | null) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(`${value.slice(0, 10)}T00:00:00`))
 }
 
-export function AdministrativeRoadmapPanel() {
-  const [tab, setTab] = useState<PanelTab>('safety')
+export function AdministrativeRoadmapPanel({ userId }: { userId: string }) {
+  const [tab, setTab] = usePersistentTab(`scpo-tab-administrative-roadmap-${userId}`, 'safety', roadmapTabs, roadmapTabLabels, false)
   return <section className="patient-list-panel">
     <div className="section-heading"><div><p className="eyebrow">ROADMAP ADMINISTRATIVO · MVP</p><h2>Operações e governança</h2><p className="welcome-copy">Compras estão integradas ao módulo Farmácia; esta área reúne patrimônio, segurança e documentos institucionais.</p></div></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Frentes administrativas">
@@ -33,11 +40,10 @@ export function AdministrativeRoadmapPanel() {
   </section>
 }
 
-export function AssetMaintenancePanel() {
-  type AssetTab = 'assets' | 'preventive' | 'inventory' | 'calendar'
+export function AssetMaintenancePanel({ userId }: { userId: string }) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [plans, setPlans] = useState<PreventivePlan[]>([])
-  const [tab, setTab] = useState<AssetTab>('assets')
+  const [tab, setTab] = usePersistentTab(`scpo-tab-asset-maintenance-${userId}`, 'assets', assetTabs, assetTabLabels, false)
   const [assetForm, setAssetForm] = useState({ asset_tag: '', name: '', category: '', unit: '', location: '', manufacturer: '', model: '', serial_number: '' })
   const [planForm, setPlanForm] = useState({ asset_id: '', procedure: '', interval_days: '90', due_date: '', responsible: '' })
   const [saving, setSaving] = useState(false)
@@ -108,8 +114,8 @@ export function AssetMaintenancePanel() {
   const activePlans = plans.filter((plan) => plan.status !== 'completed')
 
   return <div className="management-operations-grid">
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Gestão de manutenção">
       <button className={`button ${tab === 'assets' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'assets'} onClick={() => setTab('assets')}><Building2 size={16} /> Bens e equipamentos</button>
       <button className={`button ${tab === 'preventive' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'preventive'} onClick={() => setTab('preventive')}><Wrench size={16} /> Manutenção preventiva</button>
@@ -215,8 +221,8 @@ function SafetyIncidentPanel() {
 
   return <div className="management-operations-grid">
     <div className="form-message form-message-warning" role="note">Acesso restrito à Gestão e Enfermagem. Não registre dados pessoais desnecessários; o identificador do paciente é opcional. O sistema não substitui o fluxo regulatório oficial de notificação.</div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="account-create-panel" onSubmit={(event) => void createIncident(event)}>
       <h3>Notificar evento, incidente ou quase falha</h3>
       <div className="field-grid field-grid-two">
@@ -293,8 +299,8 @@ function InstitutionalDocumentsPanel() {
 
   return <div className="management-operations-grid">
     <div className="form-message form-message-warning" role="note">Este cadastro mantém conteúdo textual, versão, validade e aprovação. Não faz assinatura digital certificada nem armazena anexos.</div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="account-create-panel" onSubmit={(event) => void createDocument(event)}>
       <h3>Criar rascunho institucional</h3>
       <div className="field-grid field-grid-two">

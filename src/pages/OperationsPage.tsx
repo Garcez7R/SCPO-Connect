@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, ShieldCheck, SprayCan, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
+import { usePersistentTab } from '../components/PageNavigationContext'
+import ToastMessage from '../components/ToastMessage'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
 import { printRows, type PrintRow } from '../printReport'
 import { AssetMaintenancePanel } from './ManagementOperationsPage'
@@ -32,11 +34,15 @@ const workOrderStatuses: Record<WorkOrderStatus, string> = {
 const workOrderPriorities: Record<WorkOrderPriority, string> = {
   normal: 'Normal', high: 'Alta', urgent: 'Urgente',
 }
+const serviceTabs = ['maintenance', 'hygiene'] as const
+const serviceTabLabels: Record<(typeof serviceTabs)[number], string> = { maintenance: 'Manutenção', hygiene: 'Higienização' }
+const maintenanceQueueTabs = ['requests', 'assets'] as const
+const maintenanceQueueTabLabels: Record<(typeof maintenanceQueueTabs)[number], string> = { requests: 'Solicitações', assets: 'Patrimônio' }
 
 export function WorkOrdersPage({ user }: { user: AuthUser }) {
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
-  const [serviceTab, setServiceTab] = useState<'maintenance' | 'hygiene'>('maintenance')
+  const [serviceTab, setServiceTab] = usePersistentTab(`scpo-tab-work-orders-${user.id}`, 'maintenance', serviceTabs, serviceTabLabels)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -154,8 +160,8 @@ export function WorkOrdersPage({ user }: { user: AuthUser }) {
         <label className="field"><span className="field-label">Descrição do serviço</span><textarea required minLength={5} maxLength={1450} rows={5} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descreva o problema observado, quando começou e o resultado esperado." /><span className="field-hint">{form.description.length}/1.450 caracteres</span></label>
         <p className="work-order-privacy">Não inclua nome, diagnóstico ou outros dados de pacientes na descrição da ordem.</p>
       </> : <div className="work-order-review"><div><small>Categoria</small><strong>{form.category}</strong></div><div><small>Assunto</small><strong>{form.title}</strong></div><div><small>Setor solicitante</small><strong>{form.department === 'Outro' ? form.customDepartment : form.department}</strong></div><div><small>Localização</small><strong>{[form.unit && `Unidade: ${form.unit}`, form.location && `Local: ${form.location}`, form.assetCode && `Patrimônio: ${form.assetCode}`].filter(Boolean).join(' · ') || 'Não informado'}</strong></div>{form.patientReference && <div><small>Paciente</small><strong>{patients.find((patient) => patient.reference === form.patientReference)?.name ?? 'Paciente selecionado'}</strong></div>}<div><small>Prioridade</small><strong>{workOrderPriorities[form.priority]}</strong></div><div className="work-order-review-description"><small>Descrição</small><p>{form.description}</p></div></div>}
-      {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
-      {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+      {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
       <div className="work-order-form-actions">{reviewing && <button className="button button-secondary" type="button" onClick={() => setReviewing(false)} disabled={saving}><ArrowLeft size={16} /> Editar solicitação</button>}<button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : reviewing ? 'Confirmar abertura' : 'Revisar solicitação'} {reviewing ? <BadgeCheck size={16} /> : <ArrowRight size={16} />}</button></div>
     </form>
     <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO</p><h2>Minhas solicitações</h2></div><button className="button button-secondary" type="button" onClick={() => void loadOrders()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div>
@@ -292,8 +298,8 @@ function HygieneRequestForm() {
         {form.request_type === 'other' && <label className="field"><span className="field-label">Tipo de solicitação</span><input required minLength={3} maxLength={80} value={form.custom_type} onChange={(event) => setForm({ ...form, custom_type: event.target.value })} placeholder="Descreva o serviço necessário" /></label>}
         <label className="field hygiene-field-wide"><span className="field-label">{form.request_type === 'restock' ? 'Material e quantidade' : 'Detalhes operacionais (opcional)'}</span><textarea maxLength={1000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder={form.request_type === 'restock' ? 'Informe o material e a quantidade necessária' : 'Descreva o serviço e condições relevantes do local'} /></label>
       </div> : <div className="work-order-review"><div><small>Tipo de solicitação</small><strong>{form.request_type === 'other' ? form.custom_type : hygieneRequestTypes[form.request_type]}</strong></div><div><small>Unidade e local</small><strong>{form.unit} · {form.location}</strong></div>{selectedBed && <div><small>Leito vinculado</small><strong>{selectedBed.unit_name} · Quarto {selectedBed.room} · Leito {selectedBed.label}</strong></div>}<div><small>Área e prioridade</small><strong>{hygieneAreas[form.area as HygieneArea]} · {workOrderPriorities[form.priority]}</strong></div><div className="work-order-review-description"><small>Detalhes</small><p>{form.description || 'Sem detalhes adicionais.'}</p></div></div>}
-      {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-      {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+      {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <p className="work-order-privacy">Não inclua nomes, diagnósticos ou outros dados de pacientes na descrição.</p>
       <div className="work-order-form-actions">{reviewing && <button className="button button-secondary" type="button" onClick={() => setReviewing(false)} disabled={saving}><ArrowLeft size={16} /> Editar solicitação</button>}<button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Enviando…' : reviewing ? 'Confirmar envio' : 'Revisar solicitação'} {reviewing ? <BadgeCheck size={16} /> : <ArrowRight size={16} />}</button></div>
   </form>
@@ -417,7 +423,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
         audioContextRef.current = audio
       }
       setAlertsEnabled(true)
-      setNotice('Avisos ativos enquanto esta tela estiver aberta. Novas solicitações serão verificadas a cada 20 segundos.')
+      setNotice('Alertas ativos enquanto esta tela estiver aberta; a fila é verificada a cada 20 segundos. Som e notificações podem depender do suporte, das permissões e das configurações do dispositivo.')
     } catch (permissionError) {
       setError(permissionError instanceof Error ? `Não foi possível ativar os avisos: ${permissionError.message}` : 'Não foi possível ativar os avisos.')
     }
@@ -504,10 +510,10 @@ export function HygienePage({ user }: { user: AuthUser }) {
 
   return <section className="work-orders-page maintenance-queue-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><span className="module-icon module-icon-hygiene"><SprayCan size={23} /></span></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <section className="work-order-list-panel">
-      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{visibleRequests.length}</span></h2></div><div className="maintenance-actions"><button className={`button ${alertsEnabled ? 'button-primary' : 'button-secondary'}`} type="button" onClick={() => void enableAlerts()} disabled={alertsEnabled}>{alertsEnabled ? <><CheckCircle2 size={16} /> Avisos ativos</> : 'Ativar avisos'}</button><button className="button button-secondary" type="button" onClick={printHygieneRequests} disabled={loading || !visibleRequests.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
+      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{visibleRequests.length}</span></h2></div><div className="maintenance-actions"><button className={`button ${alertsEnabled ? 'button-primary' : 'button-secondary'}`} type="button" onClick={() => void enableAlerts()} disabled={alertsEnabled}>{alertsEnabled ? <><CheckCircle2 size={16} /> Alertas ativos</> : 'Ativar alertas'}</button><button className="button button-secondary" type="button" onClick={printHygieneRequests} disabled={loading || !visibleRequests.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadRequests()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
       <div className="maintenance-filters hygiene-queue-filters"><label className="field"><span className="field-label">De</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label><div className="maintenance-filter-actions"><button className="button button-secondary" type="button" onClick={() => { setFromDate(''); setToDate(''); setFilter('active'); setQuery('') }}>Limpar filtros</button></div></div>
       <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{visibleRequests.length} solicitações</strong>{Object.entries(hygieneStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status as HygieneStatus]}</b></span>)}<span>Ativas: <b>{activeCount}</b></span></div>
       {loading ? <div className="history-empty">Carregando fila…</div> : visibleRequests.length ? <div className="hygiene-request-list">{visibleRequests.map((request) => {
@@ -526,8 +532,8 @@ export function HygienePage({ user }: { user: AuthUser }) {
   </section>
 }
 
-export function MaintenanceQueuePage() {
-  const [tab, setTab] = useState<'requests' | 'assets'>('requests')
+export function MaintenanceQueuePage({ userId }: { userId: string }) {
+  const [tab, setTab] = usePersistentTab(`scpo-tab-maintenance-queue-${userId}`, 'requests', maintenanceQueueTabs, maintenanceQueueTabLabels)
   const [orders, setOrders] = useState<WorkOrder[]>([])
   const [filters, setFilters] = useState({ from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' })
   const [loading, setLoading] = useState(true)
@@ -641,7 +647,7 @@ export function MaintenanceQueuePage() {
       await audio.resume()
       audioContextRef.current = audio
       setAlertsEnabled(true)
-      setNotice('Avisos ativos enquanto esta tela estiver aberta. Novos chamados serão sinalizados visualmente e por som.')
+      setNotice('Alertas ativos enquanto esta tela estiver aberta; a fila é verificada a cada 20 segundos. Som e notificações podem depender do suporte, das permissões e das configurações do dispositivo.')
     } catch (permissionError) {
       setError(permissionError instanceof Error ? `Não foi possível ativar os avisos de áudio/navegador: ${permissionError.message}` : 'Não foi possível ativar os avisos de áudio/navegador.')
     }
@@ -680,15 +686,15 @@ export function MaintenanceQueuePage() {
       <button className={`button ${tab === 'requests' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'requests'} onClick={() => setTab('requests')}><ClipboardList size={16} /> Solicitações recebidas <span>{orders.filter((order) => order.status === 'open' || order.status === 'in_progress').length}</span></button>
       <button className={`button ${tab === 'assets' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'assets'} onClick={() => setTab('assets')}><Wrench size={16} /> Patrimônio e preventivas</button>
     </div>
-    {notice && <div className="form-message form-message-success" role="status">{notice}</div>}{error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {tab === 'requests' ? <>
-    <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions">{alertsEnabled ? <span className="field-hint" role="status">Avisos ativos</span> : <button className="button button-secondary" type="button" onClick={() => void enableAlerts()}>Ativar alertas sonoros</button>}<button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
+    <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions">{alertsEnabled ? <span className="field-hint" role="status">Alertas ativos</span> : <button className="button button-secondary" type="button" onClick={() => void enableAlerts()}>Ativar alertas</button>}<button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
       <form className="maintenance-filters" onSubmit={(event) => { event.preventDefault(); void loadQueue(filters) }}><label className="field"><span className="field-label">De</span><input type="date" value={filters.from_date} onChange={(event) => setFilters({ ...filters, from_date: event.target.value })} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={filters.to_date} onChange={(event) => setFilters({ ...filters, to_date: event.target.value })} /></label><label className="field"><span className="field-label">Tipo de serviço</span><select value={filters.service_type} onChange={(event) => setFilters({ ...filters, service_type: event.target.value })}><option value="">Todos</option>{['Elétrica', 'Hidráulica', 'Climatização', 'Higienização', 'Equipamento', 'Estrutura e mobiliário', 'Rede e telefonia', 'Outro serviço'].map((type) => <option key={type}>{type}</option>)}</select></label><label className="field"><span className="field-label">Setor solicitante</span><input value={filters.department} onChange={(event) => setFilters({ ...filters, department: event.target.value })} placeholder="Todos os setores" /></label><label className="field"><span className="field-label">Status</span><select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}><option value="">Todos</option>{Object.entries(workOrderStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select value={filters.priority} onChange={(event) => setFilters({ ...filters, priority: event.target.value })}><option value="">Todas</option>{Object.entries(workOrderPriorities).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Assunto, local ou solicitante" /></label><div className="maintenance-filter-actions"><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Filtrar</button><button className="button button-secondary" type="button" onClick={() => { const empty = { from_date: '', to_date: '', service_type: '', department: '', status: '', priority: '', q: '' }; setFilters(empty); void loadQueue(empty) }}>Limpar</button></div></form>
       <div className="maintenance-report-summary" aria-label="Resumo dos resultados"><strong>{orders.length} ordens</strong>{Object.entries(workOrderStatuses).map(([status, label]) => <span key={status}>{label}: <b>{statusSummary[status] ?? 0}</b></span>)}</div>
       {loading ? <div className="history-empty">Carregando fila…</div> : orders.length ? <div className="work-order-list">{orders.map((order) => <WorkOrderCard key={order.id} order={order} editable onStatusChange={(status) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status, note: '' }), status } }))} status={changes[order.id]?.status ?? order.status} note={changes[order.id]?.note ?? ''} onNoteChange={(note) => setChanges((current) => ({ ...current, [order.id]: { ...(current[order.id] ?? { status: order.status }), note } }))} onSave={() => void saveStatus(order)} saving={false} />)}</div> : <div className="history-empty"><CheckCircle2 size={20} /><span>Nenhuma ordem de serviço corresponde aos filtros.</span></div>}
     </section>
     <PrintSelectionPanel title="Relatório de Manutenção" rows={maintenancePrintRows} />
-    </> : <AssetMaintenancePanel />}
+    </> : <AssetMaintenancePanel userId={userId} />}
   </section>
 }
 

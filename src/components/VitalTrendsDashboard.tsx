@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity } from 'lucide-react'
 import { readApiResponse } from '../api'
+import ToastMessage from './ToastMessage'
 
 type VitalRecord = {
   id: number
@@ -168,7 +169,7 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
 
   return <section className="vital-trends-dashboard" aria-label="Painel longitudinal de sinais vitais">
     <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>Visualização dos registros no tempo; não interpreta os valores nem recomenda condutas.</p></div><label className="field"><span className="field-label">Período</span><select value={hours} onChange={(event) => setHours(Number(event.target.value) as 6 | 24 | 168 | 720)}><option value={6}>Últimas 6 horas</option><option value={24}>Últimas 24 horas</option><option value={168}>Últimos 7 dias</option><option value={720}>Últimos 30 dias</option></select></label></div>
-    {error && <div className="form-message form-message-error" role="alert">{error}</div>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {loading ? <div className="history-empty">Carregando evolução…</div> : <>
       <div className="vital-trends-meta"><span>{recordCount} {recordCount === 1 ? 'coleta' : 'coletas'} no período</span><span>Atualizado em {data ? dateTime(data.generated_at) : '—'}</span></div>
       {recordCount === 0 ? <div className="history-empty"><Activity size={20} /><span>Não há sinais registrados neste período.</span></div> : <>
