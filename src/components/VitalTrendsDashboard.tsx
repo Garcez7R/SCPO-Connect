@@ -25,6 +25,7 @@ type TrendSeries = {
   color: string
   read: (record: VitalRecord) => number | null
 }
+type PressureView = 'both' | 'systolic' | 'diastolic'
 
 function numberValue(value: string | undefined) {
   if (!value) return null
@@ -49,6 +50,8 @@ function TrendChart({
   end,
   selectedRecordId,
   onSelectRecord,
+  pressureView,
+  onPressureView,
 }: {
   title: string
   unit: string
@@ -58,6 +61,8 @@ function TrendChart({
   end: number
   selectedRecordId: number | null
   onSelectRecord: (id: number) => void
+  pressureView?: PressureView
+  onPressureView?: (view: PressureView) => void
 }) {
   const entries = series.flatMap((item) => records.flatMap((record) => {
     const value = item.read(record)
@@ -74,20 +79,26 @@ function TrendChart({
   const low = minimum - padding
   const high = maximum + padding
   const timeSpan = Math.max(end - start, 1)
-  const yFor = (value: number) => 76 - ((value - low) / (high - low)) * 60
-  const xFor = (record: VitalRecord) => 17 + ((new Date(record.measured_at).getTime() - start) / timeSpan) * 78
+  const yFor = (value: number) => 168 - ((value - low) / (high - low)) * 132
+  const xFor = (record: VitalRecord) => 82 + ((new Date(record.measured_at).getTime() - start) / timeSpan) * 378
   const selected = records.find((record) => record.id === selectedRecordId)
   const tickValues = Array.from({ length: 4 }, (_, index) => high - ((high - low) * index) / 3)
 
   return <section className="vital-trend-card">
-    <div className="vital-trend-card-heading"><h3>{title}</h3><span>{unit}</span></div>
+    <div className="vital-trend-card-heading"><h3>{title}</h3><span>{unit}</span>{pressureView && onPressureView && <div className="vital-pressure-view" role="group" aria-label="Exibição da pressão arterial">
+      {([
+        ['both', 'Sistólica + diastólica'],
+        ['systolic', 'Sistólica'],
+        ['diastolic', 'Diastólica'],
+      ] as const).map(([view, label]) => <button key={view} type="button" aria-pressed={pressureView === view} onClick={() => onPressureView(view)}>{label}</button>)}
+    </div>}</div>
     <div className="vital-trend-chart">
-      <svg viewBox="0 0 100 100" role="img" aria-label={`Evolução de ${title} com ${entries.length} medições`} preserveAspectRatio="none">
+      <svg viewBox="0 0 480 220" role="img" aria-label={`Evolução de ${title} com ${entries.length} medições`}>
         {tickValues.map((value, index) => {
-          const y = 16 + index * 20
-          return <g key={index}><line x1="17" y1={y} x2="95" y2={y} className="vital-trend-gridline" /><text x="14" y={y + 1.5} textAnchor="end" className="vital-trend-axis-label">{value.toFixed(1).replace(/\.0$/, '')}</text></g>
+          const y = 36 + index * 44
+          return <g key={index}><line x1="82" y1={y} x2="460" y2={y} className="vital-trend-gridline" /><text x="72" y={y + 4} textAnchor="end" className="vital-trend-axis-label">{value.toFixed(1).replace(/\.0$/, '')}</text></g>
         })}
-        <line x1="17" y1="76" x2="95" y2="76" className="vital-trend-axis" />
+        <line x1="82" y1="168" x2="460" y2="168" className="vital-trend-axis" />
         {series.map((item) => {
           const points = entries.filter((entry) => entry.series.key === item.key).sort((a, b) => a.record.measured_at.localeCompare(b.record.measured_at))
           return <g key={item.key}>
@@ -96,7 +107,7 @@ function TrendChart({
               key={`${record.id}-${item.key}`}
               cx={xFor(record)}
               cy={yFor(value)}
-              r={selectedRecordId === record.id ? '3' : '2.2'}
+              r={selectedRecordId === record.id ? '6' : '4.2'}
               fill={item.color}
               stroke="var(--surface)"
               strokeWidth="1"
@@ -109,8 +120,8 @@ function TrendChart({
             ><title>{item.label}: {value} {unit} · {dateTime(record.measured_at)}</title></circle>)}
           </g>
         })}
-        <text x="17" y="91" textAnchor="start" className="vital-trend-axis-label">{localDateTime(start)}</text>
-        <text x="95" y="91" textAnchor="end" className="vital-trend-axis-label">{localDateTime(end)}</text>
+        <text x="82" y="202" textAnchor="start" className="vital-trend-axis-label">{localDateTime(start)}</text>
+        <text x="460" y="202" textAnchor="end" className="vital-trend-axis-label">{localDateTime(end)}</text>
       </svg>
     </div>
     <div className="vital-trend-legend">{series.map((item) => <span key={item.key}><i style={{ backgroundColor: item.color }} />{item.label}</span>)}<span>{entries.length} {entries.length === 1 ? 'medição' : 'medições'}</span></div>
@@ -124,6 +135,7 @@ function TrendChart({
 
 export default function VitalTrendsDashboard({ patientReference }: { patientReference: string }) {
   const [hours, setHours] = useState<6 | 24 | 168 | 720>(168)
+  const [pressureView, setPressureView] = useState<PressureView>('both')
   const [data, setData] = useState<TrendResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -158,14 +170,17 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
   const end = data ? new Date(data.generated_at).getTime() : 0
   const recordCount = records.length
   const series = {
-    systolic: { key: 'systolic', label: 'Sistólica', color: '#287da0', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[0]) },
-    diastolic: { key: 'diastolic', label: 'Diastólica', color: '#a45b9d', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[1]) },
-    heartRate: { key: 'heartRate', label: 'Frequência cardíaca', color: '#287da0', read: (record: VitalRecord) => numberValue(record.values.heartRate) },
-    respiratoryRate: { key: 'respiratoryRate', label: 'Frequência respiratória', color: '#287da0', read: (record: VitalRecord) => numberValue(record.values.respiratoryRate) },
-    saturation: { key: 'saturation', label: 'Saturação', color: '#287da0', read: (record: VitalRecord) => numberValue(record.values.saturation) },
-    temperature: { key: 'temperature', label: 'Temperatura', color: '#287da0', read: (record: VitalRecord) => numberValue(record.values.temperature) },
-    glucose: (unit: string): TrendSeries => ({ key: `glucose-${unit}`, label: `Glicose · ${unit}`, color: '#287da0', read: (record) => record.glucose_unit === unit ? numberValue(record.values.glucose) : null }),
+    systolic: { key: 'systolic', label: 'Sistólica', color: '#147d92', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[0]) },
+    diastolic: { key: 'diastolic', label: 'Diastólica', color: '#a44b72', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[1]) },
+    heartRate: { key: 'heartRate', label: 'Frequência cardíaca', color: '#c05c35', read: (record: VitalRecord) => numberValue(record.values.heartRate) },
+    respiratoryRate: { key: 'respiratoryRate', label: 'Frequência respiratória', color: '#6476b8', read: (record: VitalRecord) => numberValue(record.values.respiratoryRate) },
+    saturation: { key: 'saturation', label: 'Saturação', color: '#32825a', read: (record: VitalRecord) => numberValue(record.values.saturation) },
+    temperature: { key: 'temperature', label: 'Temperatura', color: '#b17b22', read: (record: VitalRecord) => numberValue(record.values.temperature) },
+    glucose: (unit: string): TrendSeries => ({ key: `glucose-${unit}`, label: `Glicose · ${unit}`, color: '#7255a1', read: (record) => record.glucose_unit === unit ? numberValue(record.values.glucose) : null }),
   }
+  const pressureSeries = pressureView === 'both'
+    ? [series.systolic, series.diastolic]
+    : [pressureView === 'systolic' ? series.systolic : series.diastolic]
 
   return <section className="vital-trends-dashboard" aria-label="Painel longitudinal de sinais vitais">
     <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>Visualização dos registros no tempo; não interpreta os valores nem recomenda condutas.</p></div><label className="field"><span className="field-label">Período</span><select value={hours} onChange={(event) => setHours(Number(event.target.value) as 6 | 24 | 168 | 720)}><option value={6}>Últimas 6 horas</option><option value={24}>Últimas 24 horas</option><option value={168}>Últimos 7 dias</option><option value={720}>Últimos 30 dias</option></select></label></div>
@@ -175,7 +190,7 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
       {recordCount === 0 ? <div className="history-empty"><Activity size={20} /><span>Não há sinais registrados neste período.</span></div> : <>
         <p className="vital-trends-gap-note">Os pontos são posicionados pelo horário de aferição. Os intervalos entre eles representam tempo sem coleta registrada e não indicam estabilidade.</p>
         <div className="vital-trends-grid">
-          <TrendChart title="Pressão arterial" unit="mmHg" records={records} series={[series.systolic, series.diastolic]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
+          <TrendChart title="Pressão arterial" unit="mmHg" records={records} series={pressureSeries} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} pressureView={pressureView} onPressureView={setPressureView} />
           <TrendChart title="Frequência cardíaca" unit="bpm" records={records} series={[series.heartRate]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
           <TrendChart title="Frequência respiratória" unit="rpm" records={records} series={[series.respiratoryRate]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
           <TrendChart title="Saturação" unit="%" records={records} series={[series.saturation]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
