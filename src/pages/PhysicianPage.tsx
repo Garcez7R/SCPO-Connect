@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ClipboardPlus, Printer, Stethoscope } from 'lucide-react'
+import { AlertTriangle, ClipboardPlus, Printer, RefreshCw, Stethoscope } from 'lucide-react'
 import { readApiResponse } from '../api'
 import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
@@ -61,6 +61,7 @@ function PhysicianPage() {
   const [patientReference, setPatientReference] = useState('')
   const [form, setForm] = useState<PrescriptionForm>(emptyForm)
   const [loading, setLoading] = useState(true)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [savingPrescription, setSavingPrescription] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -90,14 +91,16 @@ function PhysicianPage() {
         setProfile(profileData.profile)
         setPrescriptions(prescriptionData.prescriptions)
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o módulo Médico.')
+        if (active) setError(loadError instanceof TypeError
+          ? 'Não foi possível conectar às APIs do módulo Médico. Verifique a conexão e se o serviço de Enfermagem está atualizado e acessível.'
+          : loadError instanceof Error ? loadError.message : 'Falha ao carregar o módulo Médico.')
       } finally {
         if (active) setLoading(false)
       }
     }
     void load()
     return () => { active = false }
-  }, [])
+  }, [loadAttempt])
 
   async function createPrescription(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -154,6 +157,7 @@ function PhysicianPage() {
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ASSISTÊNCIA MÉDICA</p><h1>Médico</h1><p className="welcome-copy">Consulta clínica, evolução de sinais vitais e prescrições internas integradas.</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span></div>
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {error && !loading && <button className="button button-secondary physician-retry" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><RefreshCw size={15} /> Tentar carregar novamente</button>}
     {loading ? <div className="history-empty" role="status">Carregando dados clínicos…</div> : <>
       <section className="patient-list-panel">
         <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfil do prescritor</h2><p className="welcome-copy">Nome e CRM/UF vinculados às prescrições e à receita impressa.</p></div></div>
@@ -168,6 +172,7 @@ function PhysicianPage() {
           {selectedPatient.allergies_status === 'known' && selectedPatient.allergies
             ? <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alergia registrada</strong><span>{selectedPatient.allergies}</span></div></div>
             : <div className={`clinical-alert ${selectedPatient.allergies_status === 'none_known' ? 'clinical-alert-clear' : 'clinical-alert-unknown'}`} role="status"><AlertTriangle size={18} /><div><strong>{selectedPatient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Alergias não verificadas'}</strong><span>Confirme as informações clínicas antes de prescrever.</span></div></div>}
+          <p className="physician-vitals-help">A pressão é registrada em um único campo no formato sistólica/diastólica (por exemplo, 120/80 mmHg). O gráfico separa o valor antes e depois da barra em duas linhas para facilitar a leitura da evolução.</p>
           <VitalTrendsDashboard patientReference={patientReference} />
         </section>
         <section className="patient-list-panel">
