@@ -151,9 +151,6 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
 
   useEffect(() => {
     if (period === 'custom' && (incompleteRange || invalidRange)) {
-      setLoading(false)
-      setData(null)
-      setError('')
       return
     }
     const controller = new AbortController()
@@ -207,7 +204,7 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
     <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>O eixo horizontal representa data e horário da aferição; o vertical representa o valor medido. A visualização não interpreta valores nem recomenda condutas.</p></div><div className="vital-trends-period"><label className="field"><span className="field-label">Período</span><select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option value="6">Últimas 6 horas</option><option value="24">Últimas 24 horas</option><option value="168">Últimos 7 dias</option><option value="720">Últimos 30 dias</option><option value="custom">Selecionar datas</option></select></label>{period === 'custom' && <><label className="field"><span className="field-label">De</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label></>}</div></div>
     {incompleteRange && <p className="field-hint">Informe as datas inicial e final para consultar o período.</p>}
     {invalidRange && <ToastMessage variant="error">A data inicial deve ser anterior ou igual à data final.</ToastMessage>}
-    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {!incompleteRange && !invalidRange && error && <ToastMessage variant="error">{error}</ToastMessage>}
     {incompleteRange ? <div className="history-empty">Selecione o período completo para consultar as medições.</div> : invalidRange ? null : loading ? <div className="history-empty">Carregando evolução…</div> : <>
       <div className="vital-trends-meta"><span>{recordCount} {recordCount === 1 ? 'coleta' : 'coletas'} no período</span><span>Atualizado em {data ? dateTime(data.generated_at) : '—'}</span></div>
       {recordCount === 0 ? <div className="history-empty"><Activity size={20} /><span>Não há sinais registrados neste período.</span></div> : <>

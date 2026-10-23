@@ -177,7 +177,9 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
         body: JSON.stringify({ status }),
       })
       await readApiResponse<Appointment>(response)
-      setNotice('Situação do agendamento atualizada.')
+      setNotice(status === 'arrived'
+        ? `Chegada registrada. Informe à pessoa o código A-${appointment.id} para identificar a chamada no painel.`
+        : 'Situação do agendamento atualizada.')
       await loadAppointments()
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Não foi possível atualizar a situação.')

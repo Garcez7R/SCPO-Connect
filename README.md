@@ -36,6 +36,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Farmácia: consulta alfabética consolidada do estoque de medicamentos e fila de prescrições médicas pendentes para conferência e dispensação.
 - Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado com busca no servidor e filtro por paciente.
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
+- Recepção: painel de chamadas com atualização automática e modo de exibição para sala de espera usando somente códigos; as chegadas/agendamentos informam o código para a pessoa atendida.
 - Cadastro do paciente: status explícito de alergia (não verificado, sem alergia conhecida ou alergia conhecida), alerta visual nos fluxos clínicos e opção de responsável não aplicável ou autorreferência do paciente.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
@@ -43,7 +44,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.
-- Oficina terapêutica com agenda mensal, filtros por situação/paciente/local e alertas de alergia nos atendimentos individuais.
+- Oficina terapêutica com abas de atividades/calendário, lista de presença e relatórios; resultados salvos ficam disponíveis digitalmente na aba Relatórios da Gestão Hospitalar, com impressão opcional.
 - Saudação de bom dia, boa tarde ou boa noite conforme o horário de Brasília.
 
 Na Farmácia, a atualização do catálogo Anvisa/CMED é manual e consulta a lista pública de preços de medicamentos apenas para sugerir GTIN, nome, princípio ativo, apresentação, fabricante e referência de registro. A sugestão só preenche o rascunho após ação do usuário; não cria produto/lote nem movimenta saldo. A base não confirma autenticidade, registro ativo ou adequação clínica e não substitui a conferência da equipe.

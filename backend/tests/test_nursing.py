@@ -584,6 +584,52 @@ def test_emergency_arrival_can_create_central_patient_without_admission(
     assert clinical_profile["allergies_status"] == "known"
 
 
+def test_emergency_arrival_queue_can_be_filtered_by_creation_period(
+    nursing_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    receptionist = DemoPrincipal(
+        "reception-id", "reception", "Recepcionista", "reception",
+        ["reception"], {"reception": ["consultar", "criar", "alterar"]},
+    )
+    old_arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_name="Pessoa de ontem",
+            reason="Atendimento de emergência",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    current_arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_name="Pessoa de hoje",
+            reason="Atendimento de emergência",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    old_record = nursing_db.get(nursing.EmergencyArrival, old_arrival["id"])
+    assert old_record is not None
+    old_record.created_at = datetime.now(UTC) - timedelta(days=1)
+    nursing_db.commit()
+
+    now = datetime.now(UTC)
+    start = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
+    end = start + timedelta(days=1)
+    queue = nursing.list_emergency_arrivals(
+        receptionist,
+        nursing_db,
+        100,
+        0,
+        None,
+        "",
+        start,
+        end,
+    )
+
+    assert [arrival["id"] for arrival in queue["arrivals"]] == [current_arrival["id"]]
+
+
 def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
     nursing_db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

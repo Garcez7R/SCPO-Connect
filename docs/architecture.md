@@ -7,6 +7,7 @@ O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada dom
 | Identidade e acesso | `scpo_services.access` | `scpo_access` | `/api/v1/access`, `/api/v1/system-admin` |
 | Auditoria | `scpo_services.audit` | `scpo_audit` | `/api/v1/audit` |
 | Enfermagem | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/nursing` |
+| Gestão Hospitalar | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/management` |
 | Recepção | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/reception` |
 | Médico | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/physicians` |
 | Farmácia | `scpo_services.pharmacy` | `scpo_pharmacy` | `/api/v1/pharmacy` |
@@ -16,9 +17,11 @@ O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada dom
 | Oficina Terapêutica | `scpo_services.therapy` | `scpo_nursing` (compartilhado) | `/api/v1/therapy` |
 | Backup | `scpo_services.backup` | Bancos dos serviços | `/api/v1/backup` |
 
-A agenda da Recepção e as prescrições médicas são persistidas no banco Nursing e usam o cadastro central de pacientes. O serviço Médico também expõe os gráficos de sinais vitais e dados cadastrais clínicos autorizados. O proxy encaminha `/api/v1/physicians` ao serviço Nursing.
+A agenda da Recepção, as prescrições médicas e os endpoints de Gestão Hospitalar são persistidos no banco Nursing e usam o cadastro central de pacientes. O serviço Médico também expõe os gráficos de sinais vitais e dados cadastrais clínicos autorizados. Os proxies de produção e desenvolvimento encaminham `/api/v1/physicians` e `/api/v1/management` ao serviço Nursing. A Oficina Terapêutica é encaminhada ao seu próprio serviço (`/api/v1/therapy`); os três proxies (`Caddyfile`, `Caddyfile.local` e Vite) devem manter esses prefixos alinhados às rotas registradas.
 
 A agenda da Recepção usa o cadastro central de pacientes. O endpoint valida conflitos de horário por paciente, profissional e local; alterações de situação seguem transições controladas e são auditadas sem registrar a finalidade do agendamento.
+
+A Oficina Terapêutica mantém abas separadas para calendário/atividades, presença e relatórios. Relatos salvos podem ser consultados digitalmente na aba Relatórios da Gestão Hospitalar; a impressão continua opcional. O painel de chamadas da Recepção atualiza a fila periodicamente. Seu modo de exibição para a sala de espera mostra apenas códigos de chamada, exige sessão autorizada e não publica uma rota anônima.
 
 Solicitações de Higienização podem vincular um leito físico entre os bancos Maintenance e Nursing. O serviço Nursing mantém o leito bloqueado enquanto o pedido estiver ativo; somente após a conclusão registrada pela Higienização o serviço pode liberar o leito. Falhas na chamada entre serviços deixam a liberação pendente e permitem nova tentativa, sem liberar automaticamente um leito não confirmado como limpo.
 

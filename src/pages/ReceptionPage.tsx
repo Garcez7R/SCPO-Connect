@@ -228,14 +228,14 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
           reported_allergies: reportedAllergies.trim(),
         }),
       })
-      await readApiResponse<EmergencyArrival>(response)
+      const arrival = await readApiResponse<EmergencyArrival>(response)
       setPatientReference(''); setPatientName(''); setPatientSearch('')
       setCreateCentralPatient(false)
       setEmergencyPatient(emptyEmergencyPatient())
       setArrivalMode('walk_in'); setReason('')
       setAllergyReportStatus('not_asked'); setReportedAllergies('')
       setArrivalFormOpen(false)
-      setNotice('Chegada registrada na fila de emergência.')
+      setNotice(`Chegada registrada. Informe à pessoa o código E-${arrival.id.slice(0, 6).toUpperCase()} para identificar a chamada no painel.`)
       await loadArrivals(statusFilter, query, 0)
       if (createCentralPatient) {
         try {
@@ -408,6 +408,8 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
   const [items, setItems] = useState<WaitingRoomItem[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState('')
+  const [displayMode, setDisplayMode] = useState(false)
+  const [displayError, setDisplayError] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -419,7 +421,7 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
       const params = new URLSearchParams({ from_at: start.toISOString(), to_at: end.toISOString() })
       const [appointmentsResponse, arrivalsResponse] = await Promise.all([
         fetch(`/api/v1/reception/appointments?${params}&limit=100&offset=0`),
-        fetch('/api/v1/reception/arrivals?limit=100&offset=0'),
+        fetch(`/api/v1/reception/arrivals?limit=100&offset=0&${params}`),
       ])
       const [appointmentData, arrivalData] = await Promise.all([
         readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; status: string }> }>(appointmentsResponse),
@@ -437,7 +439,12 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
           clinical_priority: 'routine',
         }))
       const arrivals = (arrivalData.arrivals ?? [])
-        .filter((item) => item.status === 'waiting' || item.status === 'called')
+        .filter((item) => {
+          const arrivalTime = new Date(item.created_at).getTime()
+          return (item.status === 'waiting' || item.status === 'called')
+            && arrivalTime >= start.getTime()
+            && arrivalTime < end.getTime()
+        })
         .map((item): WaitingRoomItem => ({
           id: item.id,
           patient_name: item.patient_name,
@@ -460,6 +467,14 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) setDisplayMode(false)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadQueue(), 0)
@@ -511,8 +526,33 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
   const waiting = items.filter((item) => item.status === 'waiting')
   const called = items.filter((item) => item.status === 'called')
 
-  return <section className="waiting-room-board patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. Exibe somente código e nome, sem motivo ou informação clínica.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={() => { void document.documentElement.requestFullscreen().catch((fullscreenError: unknown) => setError(fullscreenError instanceof Error ? fullscreenError.message : 'Não foi possível ativar a tela cheia.')) }}>Tela cheia</button></div></div>
+  async function openDisplayMode() {
+    setDisplayMode(true)
+    setDisplayError('')
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      try {
+        await document.documentElement.requestFullscreen()
+      } catch (fullscreenError) {
+        setDisplayError(fullscreenError instanceof Error ? fullscreenError.message : 'Não foi possível ativar a tela cheia.')
+      }
+    }
+  }
+
+  async function closeDisplayMode() {
+    setDisplayMode(false)
+    setDisplayError('')
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen()
+      } catch (fullscreenError) {
+        setError(fullscreenError instanceof Error ? fullscreenError.message : 'Não foi possível sair da tela cheia.')
+      }
+    }
+  }
+
+  return <>
+  <section className="waiting-room-board patient-list-panel">
+    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. O painel público exibe apenas códigos de chamada, sem nome, motivo ou informação clínica.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={() => void openDisplayMode()}>Abrir painel da sala de espera</button></div></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {!canUpdate && <div className="form-message form-message-warning" role="note">Seu perfil pode acompanhar as chamadas, mas não pode iniciar uma chamada.</div>}
@@ -522,6 +562,13 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
       {called.length > 0 && <section><h3>Chamados</h3><div className="waiting-room-cards">{called.map((item) => <article className="waiting-room-card waiting-room-card-called" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>Chamado · {dateTime(item.starts_at)}</small>{'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar por voz</button>}</article>)}</div></section>}
     </div>}
   </section>
+  {displayMode && <main className="waiting-room-display" role="dialog" aria-label="Painel de chamadas da sala de espera" aria-live="polite">
+    <header><div><p className="eyebrow">SCPO CONNECT</p><h1>Chamadas</h1></div><button className="button button-secondary" type="button" onClick={() => void closeDisplayMode()}>Sair do painel</button></header>
+    {displayError && <ToastMessage variant="error">{displayError}</ToastMessage>}
+    {loading ? <p className="waiting-room-display-empty">Atualizando chamadas…</p> : items.length ? <div className="waiting-room-display-grid">{items.map((item) => <article className={`waiting-room-display-card waiting-room-display-card-${item.status}`} key={`${item.type}-${item.id}`}><span>{item.code}</span><strong>{item.status === 'called' ? 'DIRIJA-SE À RECEPÇÃO' : 'AGUARDANDO CHAMADA'}</strong></article>)}</div> : <p className="waiting-room-display-empty">Não há chamadas pendentes.</p>}
+    <footer>O painel atualiza automaticamente. Para atendimento, dirija-se à recepção.</footer>
+  </main>}
+  </>
 }
 
 export default ReceptionPage

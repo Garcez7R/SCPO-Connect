@@ -2004,10 +2004,18 @@ def list_emergency_arrivals(
     offset: Annotated[int, Query(ge=0)] = 0,
     status: Literal["waiting", "called", "in_service", "completed", "cancelled", "admitted"] | None = None,
     q: Annotated[str, Query(max_length=120)] = "",
+    from_at: datetime | None = None,
+    to_at: datetime | None = None,
 ) -> dict[str, object]:
     filters = []
+    if from_at and to_at and to_at <= from_at:
+        raise HTTPException(status_code=422, detail="O fim do período deve ser posterior ao início")
     if status:
         filters.append(EmergencyArrival.status == status)
+    if from_at:
+        filters.append(EmergencyArrival.created_at >= from_at)
+    if to_at:
+        filters.append(EmergencyArrival.created_at < to_at)
     search_term = q.strip()
     if search_term:
         search_pattern = f"%{search_term}%"

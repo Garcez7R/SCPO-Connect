@@ -23,6 +23,9 @@
 	handle /api/v1/nursing/* {
 		reverse_proxy 127.0.0.1:8001
 	}
+	handle /api/v1/management/* {
+		reverse_proxy 127.0.0.1:8001
+	}
 	handle /api/v1/physicians/* {
 		reverse_proxy 127.0.0.1:8001
 	}

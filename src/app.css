@@ -1634,7 +1634,18 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
 .waiting-room-card > strong { color: var(--ink); font-size: clamp(18px, 2.4vw, 26px); overflow-wrap: anywhere; }
 .waiting-room-card > small { color: var(--muted); font-size: 12px; }
 .waiting-room-card .waiting-room-actions .button { flex: 1; justify-content: center; }
+.waiting-room-display { position: fixed; z-index: 20000; inset: 0; display: grid; grid-template-rows: auto 1fr auto; gap: clamp(16px, 3vh, 30px); overflow: auto; padding: clamp(20px, 4vw, 56px); background: var(--page); color: var(--ink); }
+.waiting-room-display > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.waiting-room-display > header h1 { margin: 4px 0 0; font-size: clamp(28px, 4vw, 48px); }
+.waiting-room-display-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); align-content: center; gap: clamp(14px, 2vw, 24px); }
+.waiting-room-display-card { display: grid; min-height: 170px; align-content: center; justify-items: center; gap: 14px; padding: 22px; border: 2px solid var(--line); border-left: 10px solid var(--amber); border-radius: 12px; background: var(--surface); text-align: center; }
+.waiting-room-display-card-called { border-left-color: var(--green); }
+.waiting-room-display-card > span { color: var(--blue-dark); font-size: clamp(32px, 6vw, 68px); font-weight: 700; letter-spacing: .08em; }
+.waiting-room-display-card > strong { font-size: clamp(16px, 2vw, 24px); letter-spacing: .04em; }
+.waiting-room-display-empty { align-self: center; justify-self: center; margin: 0; color: var(--muted); font-size: clamp(22px, 3vw, 38px); text-align: center; }
+.waiting-room-display > footer { color: var(--muted); font-size: clamp(13px, 1.5vw, 18px); text-align: center; }
 html[data-theme="dark"] .waiting-room-card { border-color: var(--line); background: var(--surface); }
+html[data-theme="dark"] .waiting-room-display-card { border-color: var(--line); background: var(--surface); }
 .status-called { background: #e8f1f7; color: #205777; }
 html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
 .pharmacy-alphabetic-inventory, .physician-page { display: grid; gap: 16px; }

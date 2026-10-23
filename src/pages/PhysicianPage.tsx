@@ -92,7 +92,7 @@ function PhysicianPage() {
         setPrescriptions(prescriptionData.prescriptions)
       } catch (loadError) {
         if (active) setError(loadError instanceof TypeError
-          ? 'Não foi possível conectar às APIs do módulo Médico. Verifique a conexão e se o serviço de Enfermagem está atualizado e acessível.'
+          ? 'Não foi possível conectar ao serviço clínico compartilhado que fornece cadastro, perfil e consultas médicas. Verifique a API (serviço Enfermagem) e o proxy; isso não significa que o módulo Enfermagem precise estar habilitado no seu perfil.'
           : loadError instanceof Error ? loadError.message : 'Falha ao carregar o módulo Médico.')
       } finally {
         if (active) setLoading(false)

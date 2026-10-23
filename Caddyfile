@@ -44,6 +44,11 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 		reverse_proxy nursing:8000
 	}
 
+	@management path /api/v1/management/*
+	handle @management {
+		reverse_proxy nursing:8000
+	}
+
 	@physicians path /api/v1/physicians/*
 	handle @physicians {
 		reverse_proxy nursing:8000
