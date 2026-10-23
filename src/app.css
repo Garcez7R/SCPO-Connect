@@ -181,6 +181,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-icon-therapy { background: #f2e9f8; color: #6a5597; }
 .module-icon-hygiene { background: #e3f3eb; color: #39724f; }
 .module-icon-admin { background: #eef0f2; color: #516778; }
+.module-icon-about { background: #eaf3f7; color: #246b8e; }
 .module-icon-management { background: #e3f1ed; color: #456875; }
 .module-icon-psychology { background: #f8e7ee; color: #984d67; }
 .module-icon-maintenance { background: #e7edf0; color: #426a7a; }
@@ -203,6 +204,7 @@ html[data-theme="dark"] .module-icon-reception { background: #1d3b3a; color: #92
 html[data-theme="dark"] .module-icon-therapy { background: #3a304a; color: #c4b4ef; }
 html[data-theme="dark"] .module-icon-hygiene { background: #243d30; color: #a2dfbb; }
 html[data-theme="dark"] .module-icon-admin { background: #303943; color: #c1d2df; }
+html[data-theme="dark"] .module-icon-about { background: #203743; color: #a8ddf3; }
 html[data-theme="dark"] .module-icon-management { background: #263d38; color: #a9d1d9; }
 html[data-theme="dark"] .module-icon-psychology { background: #492c38; color: #f0b6c9; }
 html[data-theme="dark"] .module-icon-maintenance { background: #293b46; color: #acd2e7; }
@@ -236,6 +238,10 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .next-step-panel > p:last-child { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 
 .page-title-row { align-items: flex-start; margin-bottom: 21px; }
+.page-title-row > div:first-of-type { flex: 1 1 auto; min-width: 0; }
+.page-title-row .module-icon { order: -1; transform: translateY(19px); }
+.welcome-row > div:first-child { flex: 1 1 auto; min-width: 0; }
+.welcome-row > .module-icon { align-self: flex-start; order: -1; transform: translateY(19px); }
 .page-title-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
 .page-title-row .welcome-copy { margin-top: 1px; }
 .entry-status { display: inline-flex; min-height: 30px; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--muted); font-size: 10px; font-weight: 600; white-space: nowrap; }
@@ -525,6 +531,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .nursing-title-actions .button { min-height: 42px; white-space: nowrap; }
 .nursing-history-page, .pharmacy-page { display: grid; max-width: 1120px; gap: 18px; margin-inline: auto; }
 .nursing-history-page .page-title-row, .pharmacy-page .page-title-row { align-items: center; }
+.pharmacy-page .page-title-row .module-icon { transform: none; }
 .history-filter-panel, .pharmacy-form, .pharmacy-inventory { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .history-filter-panel .section-heading, .pharmacy-form .section-heading, .pharmacy-inventory .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .history-filter-panel .section-heading h2, .pharmacy-form .section-heading h2, .pharmacy-inventory .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
