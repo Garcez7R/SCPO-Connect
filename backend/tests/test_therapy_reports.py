@@ -103,3 +103,30 @@ def test_therapy_activity_tracks_and_reconciles_participant_attendance(
     assert therapy.list_activities(
         therapist, therapy_database, from_date=None, to_date=None, limit=100
     )["activities"][0]["participants"] == updated["participants"]
+
+
+def test_therapy_roster_returns_only_operational_identity(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    therapist = DemoPrincipal(
+        "therapist-id", "therapist", "Profissional da oficina",
+        "therapy", ["therapy"], {"therapy": ["consultar"]},
+    )
+    patient = Patient(
+        reference="patient-private",
+        name="Paciente Oficina",
+        room="Quarto reservado",
+        bed="Leito reservado",
+        birth_date=therapy.datetime(1980, 1, 2).date(),
+        allergies="Alergia confidencial",
+        allergies_status="known",
+    )
+    therapy_database.add(patient)
+    therapy_database.commit()
+
+    roster = therapy.list_therapy_participants(therapist, therapy_database)
+
+    assert roster["participants"] == [
+        {"reference": "patient-private", "name": "Paciente Oficina", "birth_date": "1980-01-02"}
+    ]

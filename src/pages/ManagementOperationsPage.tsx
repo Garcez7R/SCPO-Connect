@@ -4,6 +4,7 @@ import { AlertTriangle, BadgeCheck, Building2, FileText, Wrench } from 'lucide-r
 import { readApiResponse } from '../api'
 import { usePersistentTab } from '../components/PageNavigationContext'
 import ToastMessage from '../components/ToastMessage'
+import { triggerMobileFeedback } from '../mobileFeedback'
 
 type Asset = { id: string; asset_tag: string; name: string; category: string; unit: string; location: string; manufacturer: string; model: string; serial_number: string; status: string }
 type PreventivePlan = { id: string; asset_id: string; asset_tag: string; asset_name: string; procedure: string; interval_days: number; due_date: string; responsible: string; status: string; last_completed_at: string | null }
@@ -78,6 +79,7 @@ export function AssetMaintenancePanel({ userId }: { userId: string }) {
       setAssets((current) => [...current, asset].sort((a, b) => a.asset_tag.localeCompare(b.asset_tag)))
       setAssetForm({ asset_tag: '', name: '', category: '', unit: '', location: '', manufacturer: '', model: '', serial_number: '' })
       setNotice('Ativo patrimonial cadastrado.')
+      triggerMobileFeedback()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível cadastrar o ativo.')
     } finally { setSaving(false) }
@@ -93,6 +95,7 @@ export function AssetMaintenancePanel({ userId }: { userId: string }) {
       setPlans((current) => [...current, plan].sort((a, b) => a.due_date.localeCompare(b.due_date)))
       setPlanForm({ asset_id: '', procedure: '', interval_days: '90', due_date: '', responsible: '' })
       setNotice('Plano preventivo agendado.')
+      triggerMobileFeedback()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível agendar a manutenção.')
     } finally { setSaving(false) }
@@ -106,6 +109,7 @@ export function AssetMaintenancePanel({ userId }: { userId: string }) {
       }))
       setPlans((current) => current.map((item) => item.id === updated.id ? updated : item).sort((a, b) => a.due_date.localeCompare(b.due_date)))
       setNotice(`Manutenção concluída. Próxima revisão em ${dateLabel(updated.due_date)}.`)
+      triggerMobileFeedback()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível concluir a rotina preventiva.')
     } finally { setSaving(false) }

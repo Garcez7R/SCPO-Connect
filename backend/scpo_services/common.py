@@ -105,7 +105,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0042_nursing_hourly_rounds"
+    expected_revision = "0043_presc_admin_times"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."

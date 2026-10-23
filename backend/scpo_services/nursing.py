@@ -486,6 +486,7 @@ class PhysicianPrescription(Base):
     dose: Mapped[str] = mapped_column(String(120), nullable=False)
     route: Mapped[str] = mapped_column(String(80), nullable=False)
     frequency: Mapped[str] = mapped_column(String(160), nullable=False)
+    administration_times: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     duration: Mapped[str] = mapped_column(String(120), nullable=False)
     quantity: Mapped[str] = mapped_column(String(40), nullable=False)
     unit: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -874,6 +875,7 @@ class PhysicianPrescriptionPayload(BaseModel):
     dose: str = Field(min_length=1, max_length=120)
     route: str = Field(min_length=2, max_length=80)
     frequency: str = Field(min_length=2, max_length=160)
+    administration_times: list[str] = Field(default_factory=list, max_length=24)
     duration: str = Field(min_length=1, max_length=120)
     quantity: str = Field(min_length=1, max_length=40)
     unit: str = Field(min_length=1, max_length=40)
@@ -895,6 +897,15 @@ class PhysicianPrescriptionPayload(BaseModel):
     @classmethod
     def trim_prescription_fields(cls, value: str) -> str:
         return value.strip()
+
+    @field_validator("administration_times")
+    @classmethod
+    def validate_administration_times(cls, values: list[str]) -> list[str]:
+        if any(not isinstance(value, str) or re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value) is None for value in values):
+            raise ValueError("Informe os horários no formato HH:MM")
+        if len(set(values)) != len(values):
+            raise ValueError("Não repita horários de administração")
+        return sorted(values)
 
     @model_validator(mode="after")
     def validate_trimmed_required_fields(self) -> "PhysicianPrescriptionPayload":
@@ -1595,7 +1606,7 @@ async def authorize_patient_module(request: Request) -> DemoPrincipal:
 
 
 PATIENT_ACCESS = Depends(authorize_patient_module)
-PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "physician", "management"))
+PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "physician", "management", "admin"))
 CLINICAL_RISK_ACCESS = Depends(require_demo_role("nursing", "nutrition", "pharmacy", "physician", "management"))
 PHYSICIAN_ACCESS = require_demo_role("physician", "management")
 PRESCRIPTION_READ_ACCESS = require_demo_role("physician", "pharmacy", "nursing", "management")
@@ -1790,6 +1801,9 @@ def serialize_nursing_hourly_round(db: Session, round_record: NursingHourlyRound
         "completed_by_id": round_record.completed_by_id,
         "completed_by_name": round_record.completed_by_name,
         "completed_at": round_record.completed_at.isoformat() if round_record.completed_at else None,
+        "patient_count": len(patients),
+        "checked_count": sum(item.status == "checked" for item in patients),
+        "exception_count": sum(item.status == "exception" for item in patients),
         "patients": [
             {
                 "patient_reference": item.patient_reference,
@@ -1861,7 +1875,7 @@ def get_current_nursing_hourly_round(
 
 @app.get("/api/v1/nursing/hourly-rounds")
 def list_nursing_hourly_rounds(
-    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management", "admin", "oversight"))],
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ) -> dict[str, list[dict[str, object]]]:
@@ -2934,6 +2948,7 @@ def serialize_physician_prescription(prescription: PhysicianPrescription) -> dic
         "dose": prescription.dose,
         "route": prescription.route,
         "frequency": prescription.frequency,
+        "administration_times": prescription.administration_times or [],
         "duration": prescription.duration,
         "quantity": prescription.quantity,
         "unit": prescription.unit,
@@ -3812,6 +3827,77 @@ def create_patient_observation(
     db.commit()
     db.refresh(row)
     return {"id": row.id, "attention_level": row.attention_level, "observation": row.observation, "treatment_status": row.treatment_status, "actor_name": row.actor_name, "created_at": row.created_at.isoformat()}
+
+
+@app.get("/api/v1/management/patient-status")
+def list_management_patient_status(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management", "admin", "oversight"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    patients = db.scalars(
+        select(Patient).where(Patient.deleted_at.is_(None)).order_by(Patient.active.desc(), Patient.room, Patient.bed)
+    ).all()
+    references = [patient.reference for patient in patients]
+    latest: dict[str, PatientObservation] = {}
+    if references:
+        observations = db.scalars(
+            select(PatientObservation)
+            .where(PatientObservation.patient_reference.in_(references))
+            .order_by(PatientObservation.created_at.desc(), PatientObservation.id.desc())
+        ).all()
+        for observation in observations:
+            latest.setdefault(observation.patient_reference, observation)
+    emit_audit_event(principal, "management", "patient_status_report_read", "all")
+    return {
+        "statuses": [
+            {
+                "patient_reference": patient.reference,
+                "patient_name": patient.name,
+                "room": patient.room,
+                "bed": patient.bed,
+                "active": patient.active,
+                "attention_level": latest[patient.reference].attention_level if patient.reference in latest else None,
+                "treatment_status": latest[patient.reference].treatment_status if patient.reference in latest else None,
+                "observation": latest[patient.reference].observation if patient.reference in latest else "",
+                "actor_name": latest[patient.reference].actor_name if patient.reference in latest else "",
+                "updated_at": latest[patient.reference].created_at.isoformat() if patient.reference in latest else None,
+            }
+            for patient in patients
+        ]
+    }
+
+
+@app.post("/api/v1/management/patients/{patient_reference}/observations", status_code=201)
+def create_management_patient_observation(
+    patient_reference: str,
+    payload: PatientObservationPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management", "admin"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None or patient.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    row = PatientObservation(
+        patient_reference=patient_reference,
+        attention_level=payload.attention_level,
+        observation=payload.observation.strip(),
+        treatment_status=payload.treatment_status,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        created_at=datetime.now(UTC),
+    )
+    db.add(row)
+    emit_audit_event(principal, "management", "patient_status_updated", patient_reference, db=db)
+    db.commit()
+    db.refresh(row)
+    return {
+        "patient_reference": patient_reference,
+        "attention_level": row.attention_level,
+        "treatment_status": row.treatment_status,
+        "observation": row.observation,
+        "actor_name": row.actor_name,
+        "updated_at": row.created_at.isoformat(),
+    }
 
 
 @app.delete("/api/v1/nursing/vitals/{record_id}")

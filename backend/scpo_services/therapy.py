@@ -147,6 +147,29 @@ def list_activities(
     return {"activities": [serialize_activity(activity, attendance.get(activity.id, [])) for activity in activities]}
 
 
+@app.get("/api/v1/therapy/participants")
+def list_therapy_participants(
+    principal: Annotated[DemoPrincipal, THERAPY_REPORT_ACCESS],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, list[dict[str, object]]]:
+    patients = db.scalars(
+        select(Patient)
+        .where(Patient.active.is_(True), Patient.deleted_at.is_(None))
+        .order_by(Patient.name)
+    ).all()
+    emit_audit_event(principal, "therapy", "therapy_participant_roster_read", "active_patients")
+    return {
+        "participants": [
+            {
+                "reference": patient.reference,
+                "name": patient.name,
+                "birth_date": patient.birth_date.isoformat() if patient.birth_date else None,
+            }
+            for patient in patients
+        ]
+    }
+
+
 @app.patch("/api/v1/therapy/activities/{activity_id}/report")
 def update_activity_report(
     activity_id: str,

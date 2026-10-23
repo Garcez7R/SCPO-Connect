@@ -7,12 +7,13 @@ import ToastMessage from '../components/ToastMessage'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
 import { printRows, type PrintRow } from '../printReport'
 import { AssetMaintenancePanel } from './ManagementOperationsPage'
+import { triggerMobileFeedback } from '../mobileFeedback'
 
 type AuthUser = { id: string; username: string; name: string; modules: string[]; permissions: Record<string, string[]> }
 type Patient = { reference: string; name: string; room: string; bed: string }
 type WorkOrderStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
 type WorkOrderPriority = 'normal' | 'high' | 'urgent'
-type WorkOrder = { id: string; title: string; description: string; service_type: string; department: string; location: string; patient_reference?: string | null; asset_id?: string | null; priority: WorkOrderPriority; status: WorkOrderStatus; requester_id: string; requester_name: string; updated_by: string; created_at: string; updated_at: string }
+type WorkOrder = { id: string; order_number?: string; title: string; description: string; service_type: string; department: string; location: string; patient_reference?: string | null; asset_id?: string | null; priority: WorkOrderPriority; status: WorkOrderStatus; requester_id: string; requester_name: string; updated_by: string; created_at: string; updated_at: string }
 
 function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
   return patient.room.trim() && patient.bed.trim() ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem quarto/leito atribuído'
@@ -101,7 +102,7 @@ export function WorkOrdersPage({ user }: { user: AuthUser }) {
     void loadPatients()
     return () => { active = false }
   }, [canLookupPatients, user.id])
-  const orderPrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: order.title, fields: [['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
+  const orderPrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: `${order.order_number ?? order.id} · ${order.title}`, fields: [['Número da OS', order.order_number ?? order.id], ['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -129,6 +130,7 @@ export function WorkOrdersPage({ user }: { user: AuthUser }) {
       setForm({ title: '', category: '', description: '', department: '', customDepartment: '', unit: '', location: '', assetCode: '', patientReference: '', priority: 'normal' })
       setReviewing(false)
       setNotice('Ordem de serviço aberta. A equipe de manutenção poderá acompanhar a solicitação.')
+      triggerMobileFeedback()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Falha ao abrir a ordem de serviço.')
     } finally {
@@ -178,6 +180,7 @@ type HygieneRequestType = 'routine' | 'spot' | 'after_procedure' | 'restock' | '
 type HygieneArea = 'room' | 'bathroom' | 'shared' | 'clinical' | 'circulation' | 'other'
 type HygieneRequest = {
   id: string
+  request_number?: string
   request_type: HygieneRequestType
   custom_type: string | null
   unit: string
@@ -279,6 +282,7 @@ function HygieneRequestForm() {
       setNotice(created.bed_id
         ? 'Solicitação enviada; o leito foi bloqueado para higienização.'
         : 'Solicitação enviada à equipe de Higienização.')
+      triggerMobileFeedback()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Falha ao registrar a solicitação.')
     } finally {
@@ -446,8 +450,9 @@ export function HygienePage({ user }: { user: AuthUser }) {
   const hygienePrintRows: PrintRow[] = visibleRequests.map((request) => ({
     id: request.id,
     date: localDateKey(request.created_at),
-    title: request.request_type === 'other' ? request.custom_type ?? hygieneRequestTypes.other : hygieneRequestTypes[request.request_type],
+    title: `${request.request_number ?? request.id} · ${request.request_type === 'other' ? request.custom_type ?? hygieneRequestTypes.other : hygieneRequestTypes[request.request_type]}`,
     fields: [
+      ['Número da solicitação', request.request_number ?? request.id],
       ['Status', hygieneStatuses[request.status]],
       ['Prioridade', workOrderPriorities[request.priority]],
       ['Unidade', request.unit],
@@ -485,6 +490,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
       } else {
         setNotice('Solicitação atualizada.')
       }
+      triggerMobileFeedback()
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Falha ao atualizar a solicitação.')
     } finally {
@@ -519,7 +525,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
       {loading ? <div className="history-empty">Carregando fila…</div> : visibleRequests.length ? <div className="hygiene-request-list">{visibleRequests.map((request) => {
         const draft = drafts[request.id] ?? { status: request.status, assignee: request.assignee }
         return <article className="hygiene-request-card" key={request.id}>
-          <div className="hygiene-request-heading"><div><span className={`work-order-priority priority-${request.priority}`}>{workOrderPriorities[request.priority]}</span><h3>{request.request_type === 'other' ? request.custom_type : hygieneRequestTypes[request.request_type]}</h3><p>{request.unit} · {hygieneAreas[request.area]} · {request.location}</p></div><span className={`work-order-status status-${request.status}`}>{hygieneStatuses[request.status]}</span></div>
+          <div className="hygiene-request-heading"><div><span className={`work-order-priority priority-${request.priority}`}>{workOrderPriorities[request.priority]}</span><small className="service-request-number">{request.request_number ?? request.id}</small><h3>{request.request_type === 'other' ? request.custom_type : hygieneRequestTypes[request.request_type]}</h3><p>{request.unit} · {hygieneAreas[request.area]} · {request.location}</p></div><span className={`work-order-status status-${request.status}`}>{hygieneStatuses[request.status]}</span></div>
           {request.bed_id && <div className={`hygiene-bed-link hygiene-bed-link-${request.bed_status}`}><strong>{request.bed_status === 'available' ? 'Leito liberado' : request.bed_status === 'release_pending' ? 'Higienização concluída · liberação pendente' : 'Leito bloqueado para higienização'}</strong>{request.bed_status !== 'available' && <span>O leito não pode receber nova internação até a liberação confirmada.</span>}</div>}
           {request.description && <p className="hygiene-request-description">{request.description}</p>}
           <div className="hygiene-request-meta"><span>Solicitado por <strong>{request.requester_name}</strong></span><time>{dateTime(request.created_at)}</time></div>
@@ -659,7 +665,7 @@ export function MaintenanceQueuePage({ userId }: { userId: string }) {
     window.setTimeout(() => document.body.classList.remove('print-maintenance-queue'), 500)
   }
 
-  const maintenancePrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: order.title, fields: [['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor solicitante', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
+  const maintenancePrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: `${order.order_number ?? order.id} · ${order.title}`, fields: [['Número da OS', order.order_number ?? order.id], ['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor solicitante', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
   const statusSummary = orders.reduce<Record<string, number>>((summary, order) => ({ ...summary, [order.status]: (summary[order.status] ?? 0) + 1 }), {})
 
   async function saveStatus(order: WorkOrder) {
@@ -675,6 +681,7 @@ export function MaintenanceQueuePage({ userId }: { userId: string }) {
       setOrders((current) => current.map((item) => item.id === data.id ? data : item))
       setChanges((current) => { const next = { ...current }; delete next[order.id]; return next })
       setNotice(`Ordem atualizada para “${workOrderStatuses[data.status]}”.`)
+      triggerMobileFeedback()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Falha ao atualizar a ordem.')
     }
@@ -707,7 +714,7 @@ function WorkOrderCard({ order, editable = false, status, note, onStatusChange, 
     window.print()
     window.setTimeout(() => { document.body.classList.remove('print-maintenance-order'); cards.forEach((card) => card.classList.remove('print-away')) }, 500)
   }
-  return <article className="work-order-card" data-order-id={order.id}><div className="work-order-card-heading"><div><span className={`work-order-priority priority-${order.priority}`}>{workOrderPriorities[order.priority]}</span><h3>{order.title}</h3></div><span className={`work-order-status status-${order.status}`}>{workOrderStatuses[order.status]}</span></div>
+  return <article className="work-order-card" data-order-id={order.id}><div className="work-order-card-heading"><div><span className={`work-order-priority priority-${order.priority}`}>{workOrderPriorities[order.priority]}</span><small className="service-request-number">{order.order_number ?? order.id}</small><h3>{order.title}</h3></div><span className={`work-order-status status-${order.status}`}>{workOrderStatuses[order.status]}</span></div>
     <div className="work-order-meta"><span><strong>Tipo de serviço</strong>{order.service_type || 'Outro serviço'}</span><span><strong>Setor</strong>{order.department}</span>{order.location && <span><strong>Local</strong>{order.location}</span>}<span><strong>Solicitante</strong>{order.requester_name}</span><span><strong>Aberta em</strong>{dateTime(order.created_at)}</span><span><strong>Atualizada por</strong>{order.updated_by} · {dateTime(order.updated_at)}</span></div><p className="work-order-description">{order.description}</p>
     <div className="work-order-print-action"><button data-print-order={order.id} className="button button-secondary" type="button" onClick={printOrder}><Printer size={15} /> Imprimir OS</button></div>
     {editable && <div className="work-order-actions"><label className="field"><span className="field-label">Status</span><select value={status ?? order.status} onChange={(event) => onStatusChange?.(event.target.value as WorkOrderStatus)}><option value="open">Aberta</option><option value="in_progress">Em curso</option><option value="completed">Finalizada</option><option value="cancelled">Cancelada</option></select></label><label className="field"><span className="field-label">Nota da atualização (opcional)</span><input maxLength={500} value={note ?? ''} onChange={(event) => onNoteChange?.(event.target.value)} placeholder="Ex.: peça solicitada" /></label><button className="button button-primary" type="button" disabled={saving} onClick={onSave}>{saving ? 'Salvando…' : 'Salvar andamento'}</button></div>}

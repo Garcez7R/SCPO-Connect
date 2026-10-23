@@ -182,6 +182,7 @@ class HygieneRequestUpdate(BaseModel):
 def _serialize_hygiene_request(request: HygieneRequest) -> dict[str, object]:
     return {
         "id": request.id,
+        "request_number": _service_request_number("HIG", request.id, request.created_at),
         "request_type": request.request_type,
         "custom_type": request.custom_type,
         "unit": request.unit,
@@ -456,6 +457,7 @@ def _require_maintenance(principal: DemoPrincipal, action: str) -> None:
 def _serialize_order(order: WorkOrder) -> dict[str, object]:
     return {
         "id": order.id,
+        "order_number": _service_request_number("OS", order.id, order.created_at),
         "title": order.title,
         "description": order.description,
         "service_type": order.service_type,
@@ -471,6 +473,11 @@ def _serialize_order(order: WorkOrder) -> dict[str, object]:
         "created_at": order.created_at.isoformat(),
         "updated_at": order.updated_at.isoformat(),
     }
+
+
+def _service_request_number(prefix: str, request_id: str, created_at: datetime) -> str:
+    created_at_utc = created_at.replace(tzinfo=UTC) if created_at.tzinfo is None else created_at.astimezone(UTC)
+    return f"{prefix}-{created_at_utc:%Y%m%d}-{request_id.replace('-', '').upper()[:12]}"
 
 
 @app.get("/health")

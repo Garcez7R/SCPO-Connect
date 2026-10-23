@@ -4,7 +4,7 @@ import { AlertTriangle, ClipboardPlus, Printer, RefreshCw, Stethoscope } from 'l
 import { readApiResponse } from '../api'
 import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
-import { printExternalPrescription } from '../printClinicalForm'
+import { printExternalPrescription, printMedicationAdministrationLabels } from '../printClinicalForm'
 
 type Patient = {
   reference: string
@@ -26,6 +26,7 @@ type Prescription = {
   dose: string
   route: string
   frequency: string
+  administration_times: string[]
   duration: string
   quantity: string
   unit: string
@@ -47,6 +48,7 @@ const emptyForm: PrescriptionForm = {
   dose: '',
   route: '',
   frequency: '',
+  administration_times: [],
   duration: '',
   quantity: '',
   unit: 'unidades',
@@ -75,27 +77,26 @@ function PhysicianPage() {
     let active = true
     async function load() {
       setLoading(true)
-      try {
-        const [patientsResponse, profileResponse, prescriptionsResponse] = await Promise.all([
-          fetch('/api/v1/nursing/patients'),
-          fetch('/api/v1/physicians/profile'),
-          fetch('/api/v1/physicians/prescriptions'),
-        ])
-        const [patientData, profileData, prescriptionData] = await Promise.all([
-          readApiResponse<{ patients: Patient[] }>(patientsResponse),
-          readApiResponse<{ profile: Profile | null }>(profileResponse),
-          readApiResponse<{ prescriptions: Prescription[] }>(prescriptionsResponse),
-        ])
-        if (!active) return
-        setPatients(patientData.patients.filter((patient) => patient.active !== false))
-        setProfile(profileData.profile)
-        setPrescriptions(prescriptionData.prescriptions)
-      } catch (loadError) {
-        if (active) setError(loadError instanceof TypeError
-          ? 'Não foi possível conectar ao serviço clínico compartilhado que fornece cadastro, perfil e consultas médicas. Verifique a API (serviço Enfermagem) e o proxy; isso não significa que o módulo Enfermagem precise estar habilitado no seu perfil.'
-          : loadError instanceof Error ? loadError.message : 'Falha ao carregar o módulo Médico.')
-      } finally {
-        if (active) setLoading(false)
+      setError('')
+      const failures: string[] = []
+      const loadResource = async <T,>(path: string, label: string, apply: (data: T) => void) => {
+        try {
+          const data = await readApiResponse<T>(await fetch(path))
+          if (active) apply(data)
+        } catch (loadError) {
+          failures.push(`${label}: ${loadError instanceof Error ? loadError.message : 'falha inesperada na requisição'}`)
+        }
+      }
+      await Promise.all([
+        loadResource<{ patients: Patient[] }>('/api/v1/nursing/patients', 'Cadastro de pacientes', (data) => setPatients(data.patients.filter((patient) => patient.active !== false))),
+        loadResource<{ profile: Profile | null }>('/api/v1/physicians/profile', 'Perfil profissional', (data) => setProfile(data.profile)),
+        loadResource<{ prescriptions: Prescription[] }>('/api/v1/physicians/prescriptions', 'Prescrições', (data) => setPrescriptions(data.prescriptions)),
+      ])
+      if (active) {
+        setError(failures.length
+          ? `Falha ao carregar ${failures.join(' · ')}. Verifique se a API clínica está disponível e se o perfil tem acesso ao módulo Médico. O acesso ao cadastro compartilhado não exige habilitar Enfermagem no perfil.`
+          : '')
+        setLoading(false)
       }
     }
     void load()
@@ -115,7 +116,7 @@ function PhysicianPage() {
       const response = await fetch('/api/v1/physicians/prescriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, patient_reference: selectedPatient.reference }),
+        body: JSON.stringify({ ...form, administration_times: form.administration_times.filter(Boolean), patient_reference: selectedPatient.reference }),
       })
       const prescription = await readApiResponse<Prescription>(response)
       setPrescriptions((current) => [prescription, ...current])
@@ -185,6 +186,7 @@ function PhysicianPage() {
             <label className="field"><span className="field-label">Dose</span><input required value={form.dose} onChange={(event) => setForm((current) => ({ ...current, dose: event.target.value }))} /></label>
             <label className="field"><span className="field-label">Via</span><input required value={form.route} onChange={(event) => setForm((current) => ({ ...current, route: event.target.value }))} placeholder="Oral, IV, IM…" /></label>
             <label className="field"><span className="field-label">Frequência</span><input required value={form.frequency} onChange={(event) => setForm((current) => ({ ...current, frequency: event.target.value }))} placeholder="Ex.: a cada 8 horas" /></label>
+            <fieldset className="field field-full prescription-times"><legend className="field-label">Horários de administração prescritos (opcional)</legend><p className="field-hint">Informe apenas os horários definidos pelo prescritor. O sistema não calcula horários a partir da frequência.</p>{form.administration_times.map((time, index) => <div className="prescription-time-row" key={`administration-time-${index}`}><input aria-label={`Horário de administração ${index + 1}`} type="time" value={time} onChange={(event) => setForm((current) => ({ ...current, administration_times: current.administration_times.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} /><button className="button button-secondary" type="button" onClick={() => setForm((current) => ({ ...current, administration_times: current.administration_times.filter((_, itemIndex) => itemIndex !== index) }))}>Remover horário</button></div>)}<button className="button button-secondary" type="button" onClick={() => setForm((current) => ({ ...current, administration_times: [...current.administration_times, ''] }))}>Adicionar horário</button></fieldset>
             <label className="field"><span className="field-label">Duração</span><input required value={form.duration} onChange={(event) => setForm((current) => ({ ...current, duration: event.target.value }))} /></label>
             <label className="field"><span className="field-label">Quantidade</span><input required value={form.quantity} onChange={(event) => setForm((current) => ({ ...current, quantity: event.target.value }))} /></label>
             <label className="field"><span className="field-label">Unidade</span><input required value={form.unit} onChange={(event) => setForm((current) => ({ ...current, unit: event.target.value }))} /></label>
@@ -196,14 +198,15 @@ function PhysicianPage() {
         <section className="patient-list-panel">
           <div className="section-heading"><div><p className="eyebrow">HISTÓRICO DE PRESCRIÇÕES</p><h2>Prescrições deste paciente</h2></div></div>
           {patientPrescriptions.length ? <div className="patient-list">{patientPrescriptions.map((prescription) => <article className="patient-list-row" key={prescription.id}>
-            <div><strong>{prescription.medication_name}</strong><p>{prescription.dose} · {prescription.route} · {prescription.frequency} · {prescription.duration}</p><small>{prescription.prescriber_name} · CRM {prescription.crm}/{prescription.crm_state} · {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(prescription.created_at))}</small></div>
+            <div><strong>{prescription.medication_name}</strong><p>{prescription.dose} · {prescription.route} · {prescription.frequency} · {prescription.duration}</p>{prescription.administration_times.length > 0 && <p>Horários prescritos: {prescription.administration_times.join(' · ')}</p>}<small>{prescription.prescriber_name} · CRM {prescription.crm}/{prescription.crm_state} · {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(prescription.created_at))}</small></div>
             <div className="patient-row-actions"><span className={`physician-status physician-status-${prescription.status}`}>{prescription.status === 'pending' ? 'Pendente' : prescription.status === 'fulfilled' ? 'Atendida' : 'Cancelada'}</span>
               {prescription.status === 'pending' && <button className="button button-secondary" type="button" onClick={() => void cancelPrescription(prescription)}>Cancelar</button>}
               {!prescription.is_controlled && selectedPatientForm && <button className="button button-secondary" type="button" onClick={() => {
-                if (!printExternalPrescription({ patient: selectedPatientForm, prescriberName: prescription.prescriber_name, crm: prescription.crm, crmState: prescription.crm_state, medicationName: prescription.medication_name, activeIngredient: prescription.active_ingredient, presentation: prescription.presentation, dose: prescription.dose, route: prescription.route, frequency: prescription.frequency, duration: prescription.duration, quantity: prescription.quantity, unit: prescription.unit, instructions: prescription.instructions })) {
+                if (!printExternalPrescription({ patient: selectedPatientForm, prescriberName: prescription.prescriber_name, crm: prescription.crm, crmState: prescription.crm_state, medicationName: prescription.medication_name, activeIngredient: prescription.active_ingredient, presentation: prescription.presentation, dose: prescription.dose, route: prescription.route, frequency: prescription.frequency, administrationTimes: prescription.administration_times, duration: prescription.duration, quantity: prescription.quantity, unit: prescription.unit, instructions: prescription.instructions })) {
                   setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.')
                 }
               }}><Printer size={15} /> Receita simples</button>}
+              {prescription.administration_times.length > 0 && selectedPatientForm && <button className="button button-secondary" type="button" onClick={() => { if (!printMedicationAdministrationLabels({ patient: selectedPatientForm, medicationName: prescription.medication_name, dose: prescription.dose, route: prescription.route, times: prescription.administration_times, prescriberName: prescription.prescriber_name })) setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.') }}><Printer size={15} /> Etiquetas de horários</button>}
               {prescription.is_controlled && <small>Controle especial · receita externa indisponível</small>}
             </div>
           </article>)}</div> : <div className="history-empty">Nenhuma prescrição registrada para este paciente.</div>}

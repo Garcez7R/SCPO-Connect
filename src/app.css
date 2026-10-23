@@ -88,7 +88,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .nav-link > svg { flex: 0 0 22px; color: currentColor; transition: transform 180ms ease; }
 .nav-link:hover > svg { transform: rotate(-5deg) scale(1.07); }
-.nav-link > span:not(.nav-count) { font-size: 14px; font-weight: 700; }
+.nav-link > span:not(.nav-count) { font-size: 15px; font-weight: 700; }
 .nav-link:hover { background: #f4f7f9; color: var(--ink); }
 .nav-link-active { background: var(--blue-pale); color: var(--blue-dark); font-weight: 700; }
 .nav-link-active::before { position: absolute; inset: 8px auto 8px 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--blue); content: ''; }
@@ -170,6 +170,8 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-card:disabled { opacity: 1; }
 .module-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: #eaf3f7; color: #246b8e; }
 .module-card .module-icon { width: 52px; height: 52px; border-radius: 10px; }
+.module-card .module-icon > svg { transition: transform 220ms ease; }
+.module-card-available:hover .module-icon > svg { transform: translateY(-2px) rotate(-7deg) scale(1.1); }
 .module-icon-nursing { background: #e3f1f8; color: #246b8e; }
 .module-icon-pharmacy { background: #e5f3e9; color: #39734f; }
 .module-icon-xray { background: #efe9fa; color: #65549b; }
@@ -838,6 +840,20 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .patient-observation-card > div { display: flex; justify-content: space-between; gap: 12px; }
 .patient-observation-card p { margin: 0; white-space: pre-wrap; }
 .patient-observation-card small,.patient-observation-card span { color: var(--muted); }
+.admin-patient-status-row { display: grid; gap: 11px; padding: 14px; border: 1px solid var(--line); border-left: 5px solid #188553; border-radius: 8px; background: var(--surface); color: var(--ink); }
+.admin-patient-status-row.attention-yellow { border-left-color: #d39a18; }
+.admin-patient-status-row.attention-red { border-left-color: #c43f46; }
+.admin-patient-status-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.admin-patient-status-heading > div:first-child { display: grid; gap: 4px; }
+.admin-patient-status-heading > div:first-child span, .admin-patient-status-row > small { color: var(--muted); font-size: 11px; }
+.admin-patient-status-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-patient-status-badges span { padding: 5px 8px; border-radius: 999px; background: #eaf3f7; color: #285d74; font-size: 10px; font-weight: 700; }
+.admin-patient-status-row.attention-yellow .admin-patient-status-badges span:first-child { background: #fff4df; color: #81560a; }
+.admin-patient-status-row.attention-red .admin-patient-status-badges span:first-child { background: #fff0f0; color: #8b4141; }
+.admin-patient-status-row > p { margin: 0; color: var(--muted); white-space: pre-wrap; }
+.admin-patient-status-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 10px; }
+.admin-patient-status-form .field:nth-child(3) { grid-column: 1 / -1; }
+.admin-patient-status-form > .button { justify-self: start; min-height: 42px; }
 .patient-archive-dialog { display: grid; align-self: center; justify-self: center; width: min(520px, calc(100% - 32px)); gap: 16px; padding: 24px; border-radius: 12px; background: var(--surface); box-shadow: 0 24px 80px rgb(0 0 0 / 25%); }
 .patient-archive-dialog h2,.patient-archive-dialog p { margin: 0; }
 .patient-archive-dialog p { color: var(--muted); line-height: 1.6; }
@@ -953,17 +969,21 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-calendar-day { display: flex; min-width: 0; min-height: 90px; flex-direction: column; gap: 4px; overflow: hidden; padding: 6px; border: 1px solid var(--line); background: var(--page); }
 .therapy-calendar-day > strong { color: var(--ink); font-size: 11px; }
 .therapy-calendar-empty { background: var(--surface); }
-.therapy-calendar-day.has-birthday { background: var(--amber-pale); }
-.therapy-calendar-day.has-activity { box-shadow: inset 0 2px #84b7cd; }
+.therapy-calendar-day.has-birthday { background: #e5f3e9; }
+.therapy-calendar-day.has-activity { box-shadow: inset 0 2px #d3a237; }
+.therapy-calendar-day.has-activity:not(.has-birthday) { background: #fff1d5; }
+.therapy-calendar-day.has-birthday:not(.has-activity) { background: #e5f3e9; }
+.therapy-calendar-day.has-birthday.has-activity { background: linear-gradient(to bottom, #fff1d5 0 50%, #e5f3e9 50% 100%); }
+.appearance-button.feedback-enabled { border-color: #78a98b; background: #e8f5ec; color: #286044; }
 .therapy-calendar-tag { display: block; overflow: hidden; padding: 3px 4px; border-radius: 3px; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.birthday-tag { background: #fff0d0; color: #81560a; }
-.activity-tag { background: #eaf3f7; color: #285d74; }
+.birthday-tag { background: #e5f3e9; color: #286044; }
+.activity-tag { background: #fff0d0; color: #81560a; }
 .therapy-calendar-day > small { color: var(--muted); font-size: 9px; }
 .therapy-calendar-legend { display: flex; gap: 18px; color: var(--muted); font-size: 10px; }
 .therapy-calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .therapy-calendar-legend i { width: 9px; height: 9px; border-radius: 2px; }
-.legend-birthday { background: #f2d79e; }
-.legend-activity { background: #84b7cd; }
+.legend-birthday { background: #78a98b; }
+.legend-activity { background: #d3a237; }
 .therapy-birthday-list { display: grid; gap: 10px; }
 .therapy-birthday-list article { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--page); }
 .birthday-date { min-width: 48px; color: #8b5c08; font-size: 12px; font-weight: 700; text-transform: capitalize; }
@@ -978,6 +998,16 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-activity-date strong { font-size: 18px; line-height: 1.1; }
 .therapy-activity-date small { font-size: 10px; text-transform: capitalize; }
 .therapy-activity-card > div { min-width: 0; }
+.therapy-attendance-panel { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.therapy-attendance-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.therapy-attendance-list { display: grid; gap: 9px; }
+.therapy-attendance-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 190px) auto; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.therapy-attendance-row > span { font-size: 13px; font-weight: 600; }
+.therapy-attendance-toggle { min-height: 42px; justify-content: center; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 700; }
+.therapy-attendance-toggle.attendance-attended, .therapy-attendance-status.attendance-attended { border-color: #78a98b; background: #e8f5ec; color: #286044; }
+.therapy-attendance-toggle.attendance-absent, .therapy-attendance-status.attendance-absent { border-color: #c99898; background: #fff0f0; color: #8b4141; }
+.therapy-attendance-toggle.attendance-pending { background: var(--page); color: var(--muted); }
+.therapy-attendance-status { display: inline-flex; justify-content: center; padding: 7px 10px; border: 1px solid transparent; border-radius: 6px; font-size: 12px; }
 .therapy-activity-card .eyebrow { margin: 0 0 3px; font-size: 9px; text-transform: capitalize; }
 .therapy-activity-card h3 { margin: 0 0 3px; font-size: 13px; }
 .therapy-activity-card p, .therapy-activity-card > div > small { display: block; margin: 2px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
@@ -1011,6 +1041,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .beta-dialog-close { position: absolute; top: 12px; right: 12px; }
 .beta-dialog-icon { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 14px; background: #eaf3f7; color: var(--blue-dark); }
 .beta-dialog-icon img { display: block; width: 48px; height: 48px; object-fit: contain; }
+.beta-dialog-icon img { animation: beta-icon-rise .9s cubic-bezier(.16, 1, .3, 1) both; }
 .beta-dialog .eyebrow { margin-top: 7px; }
 .beta-dialog h2 { margin: 0; color: var(--ink); font-size: 21px; }
 .beta-dialog p:not(.eyebrow) { margin: 0; color: var(--blue-dark); font-size: 15px; font-weight: 600; }
@@ -1019,11 +1050,16 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 @keyframes beta-confetti-fall { 0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(0deg); } 8% { opacity: 1; } 100% { opacity: .92; transform: translate3d(18px, 112vh, 0) rotate(680deg); } }
 @keyframes beta-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes beta-dialog-in { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes beta-icon-rise { from { clip-path: inset(100% 0 0); opacity: .35; transform: translateY(12px); } to { clip-path: inset(0); opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .beta-confetti-piece { animation-duration: .01ms !important; animation-delay: 0s !important; } .beta-dialog, .beta-celebration-backdrop { animation-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) { .beta-dialog-icon img, .module-card .module-icon > svg { animation: none !important; transition: none !important; } }
 @media (prefers-reduced-motion: reduce) { .brand-image { transition: none; } .brand-trigger:hover .brand-image { transform: none; } }
 
 .about-page { max-width: 1120px; margin-inline: auto; }
 .about-legal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
+.about-version { margin: 16px 0; }
+.about-version h2 { margin: 2px 0 6px; font-size: 18px; }
+.about-version .welcome-copy { margin: 0; }
 .about-legal-card { display: flex; min-height: 220px; flex-direction: column; align-items: flex-start; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .about-legal-card .eyebrow { margin-bottom: 9px; }
 .about-legal-card h2 { margin-bottom: 9px; }
@@ -1049,6 +1085,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .work-order-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 .work-order-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .work-order-card-heading h3 { margin: 6px 0 0; font-size: 15px; line-height: 1.35; }
+.service-request-number { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
 .maintenance-filters { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafb; }
 .maintenance-query { grid-column: span 2; }
 .maintenance-filter-actions, .maintenance-actions { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
@@ -1161,6 +1198,15 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
   .patient-history-summary { grid-template-columns: auto 1fr; }
   .patient-history-summary .module-total { grid-column: 1 / -1; justify-self: start; }
   .therapy-layout { grid-template-columns: 1fr; }
+  .therapy-attendance-panel { gap: 13px; padding: 15px; }
+  .therapy-attendance-add { grid-template-columns: 1fr; }
+  .therapy-attendance-add > .button, .therapy-attendance-row > .button { width: 100%; justify-content: center; }
+  .therapy-attendance-row { grid-template-columns: 1fr; gap: 8px; }
+  .admin-patient-status-heading { flex-direction: column; }
+  .admin-patient-status-form { grid-template-columns: 1fr; }
+  .admin-patient-status-form .field:nth-child(3) { grid-column: auto; }
+  .admin-patient-status-form > .button { width: 100%; }
+  .management-operations-grid .account-create-panel > .button { width: 100%; justify-content: center; }
   .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .therapy-calendar-day { min-height: 66px; padding: 4px; }
   .therapy-calendar-tag { font-size: 8px; }
@@ -1316,9 +1362,28 @@ html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, 
 html[data-theme="dark"] .brand-image { background: #fff; }
 html[data-theme="dark"] .unit-label { border-color: var(--line); background: #263944; color: var(--ink); }
 html[data-theme="dark"] .therapy-calendar-empty { border-color: var(--line); background: #17232b; }
-html[data-theme="dark"] .therapy-calendar-day.has-birthday { background: #332d20; }
-html[data-theme="dark"] .therapy-calendar-tag.birthday-tag { background: #44371f; color: #f1ce86; }
-html[data-theme="dark"] .therapy-calendar-tag.activity-tag { background: #243d49; color: #b5e3f5; }
+html[data-theme="dark"] .therapy-calendar-day.has-birthday { background: #21372d; }
+html[data-theme="dark"] .therapy-calendar-day.has-activity:not(.has-birthday) { background: #44371f; }
+html[data-theme="dark"] .therapy-calendar-day.has-birthday:not(.has-activity) { background: #21372d; }
+html[data-theme="dark"] .therapy-calendar-day.has-birthday.has-activity { background: linear-gradient(to bottom, #44371f 0 50%, #21372d 50% 100%); }
+html[data-theme="dark"] .appearance-button.feedback-enabled { border-color: #315744; background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .patient-observation-card { border-color: #315744; background: #21372d; }
+html[data-theme="dark"] .patient-observation-card.attention-yellow { border-color: #705b31; background: #332d20; }
+html[data-theme="dark"] .patient-observation-card.attention-red { border-color: #693b40; background: #352528; }
+html[data-theme="dark"] .admin-patient-status-row { border-color: var(--line); border-left-color: #5b9a73; background: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .admin-patient-status-row.attention-yellow { border-left-color: #d39a18; }
+html[data-theme="dark"] .admin-patient-status-row.attention-red { border-left-color: #c43f46; }
+html[data-theme="dark"] .admin-patient-status-badges span { background: #243d49; color: #b5e3f5; }
+html[data-theme="dark"] .admin-patient-status-row.attention-yellow .admin-patient-status-badges span:first-child { background: #44371f; color: #f1ce86; }
+html[data-theme="dark"] .admin-patient-status-row.attention-red .admin-patient-status-badges span:first-child { background: #44292c; color: #f1b4b4; }
+html[data-theme="dark"] :is(.therapy-attendance-panel, .therapy-attendance-row) { border-color: var(--line); background: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .therapy-attendance-row { background: #17232b; }
+html[data-theme="dark"] :is(.therapy-attendance-toggle, .therapy-attendance-status) { border-color: var(--line); }
+html[data-theme="dark"] :is(.therapy-attendance-toggle, .therapy-attendance-status).attendance-attended { background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] :is(.therapy-attendance-toggle, .therapy-attendance-status).attendance-absent { background: #352528; color: #f1b4b4; }
+html[data-theme="dark"] .therapy-attendance-toggle.attendance-pending { background: #17232b; color: var(--muted); }
+html[data-theme="dark"] .therapy-calendar-tag.birthday-tag { background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .therapy-calendar-tag.activity-tag { background: #44371f; color: #f1ce86; }
 html[data-theme="dark"] :is(.therapy-birthday-list article, .therapy-activity-card) { border-color: var(--line); background: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .therapy-activity-date { background: #263944; color: var(--blue-dark); }
 html[data-theme="dark"] .maintenance-filters,

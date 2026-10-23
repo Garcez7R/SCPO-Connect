@@ -1050,6 +1050,7 @@ def test_physician_profile_and_internal_prescription_flow(
             dose="1 comprimido",
             route="oral",
             frequency="a cada 8 horas",
+            administration_times=["20:00", "08:00"],
             duration="5 dias",
             quantity="15",
             unit="comprimidos",
@@ -1062,6 +1063,19 @@ def test_physician_profile_and_internal_prescription_flow(
     assert profile["crm_state"] == "RS"
     assert prescription["prescriber_name"] == "Dra. Teste"
     assert prescription["is_controlled"] is True
+    assert prescription["administration_times"] == ["08:00", "20:00"]
+    with pytest.raises(ValidationError):
+        nursing.PhysicianPrescriptionPayload(
+            patient_reference=patient_reference,
+            medication_name="Medicamento teste",
+            dose="1 comprimido",
+            route="oral",
+            frequency="a cada 8 horas",
+            administration_times=["25:99"],
+            duration="5 dias",
+            quantity="15",
+            unit="comprimidos",
+        )
     with pytest.raises(ValidationError):
         nursing.PhysicianPrescriptionPayload(
             patient_reference=patient_reference,
@@ -1079,6 +1093,54 @@ def test_physician_profile_and_internal_prescription_flow(
         pharmacist,
         db,
     )["status"] == "fulfilled"
+
+
+def test_admin_patient_status_updates_are_append_only(
+    domain_database: dict[str, Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = domain_database["nursing"]
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    admin = DemoPrincipal(
+        "admin-id", "admin", "Administração", "admin", ["admin"],
+        {"admin": ["administrar"]},
+    )
+    patient = nursing.Patient(
+        reference="admin-status-patient",
+        name="Paciente de teste",
+        room="1",
+        bed="2",
+    )
+    db.add(patient)
+    db.add(nursing.PatientObservation(
+        patient_reference=patient.reference,
+        attention_level="green",
+        treatment_status="in_progress",
+        observation="Registro anterior preservado.",
+        actor_id="nurse-id",
+        actor_name="Enfermagem",
+        created_at=nursing.datetime.now(nursing.UTC),
+    ))
+    db.commit()
+
+    nursing.create_management_patient_observation(
+        patient.reference,
+        nursing.PatientObservationPayload(
+            attention_level="yellow",
+            treatment_status="completed",
+            observation="Atualização administrativa autorizada.",
+        ),
+        admin,
+        db,
+    )
+    history = nursing.list_patient_observations(patient.reference, admin, db)
+    report = nursing.list_management_patient_status(admin, db)
+
+    assert len(history["observations"]) == 2
+    assert history["observations"][0]["observation"] == "Atualização administrativa autorizada."
+    assert history["observations"][1]["observation"] == "Registro anterior preservado."
+    current_status = next(item for item in report["statuses"] if item["patient_reference"] == patient.reference)
+    assert current_status["attention_level"] == "yellow"
+    assert current_status["treatment_status"] == "completed"
 
 
 def test_social_referrals_support_operational_follow_up_and_clearing_due_date(
@@ -1374,6 +1436,7 @@ def test_hygiene_requests_have_a_dedicated_assignable_queue(
     assert request["location"] == "Quarto 3"
     assert request["status"] == "open"
     assert request["requester_name"] == "Equipe de Higienização"
+    assert request["request_number"].startswith("HIG-")
 
     updated = maintenance.update_hygiene_request(
         request["id"],
@@ -1534,6 +1597,7 @@ def test_work_order_links_registered_asset_by_tag(
         db,
     )
     assert order["asset_id"] == asset["id"]
+    assert order["order_number"].startswith("OS-")
 
 
 def test_pharmacy_converts_purchase_packages_and_receives_orders_by_lot(
