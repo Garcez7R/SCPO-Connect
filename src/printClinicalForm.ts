@@ -57,7 +57,7 @@ export function printLaboratoryRequest(patient: ExamPrintPatient, exams: string[
     <section><h3>Identificação do paciente</h3><dl>${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl></section>
     <section><h3>Exames solicitados</h3><ul>${[...exams, ...(other.trim() ? [`Outros: ${other.trim()}`] : [])].map((exam) => `<li>${escapeHtml(exam)}</li>`).join('')}</ul></section>
     <section><h3>Observações</h3><div class="observations">${escapeHtml(observations || ' ')}</div></section>
-    <style>.exam-print-header{display:grid;grid-template-columns:1fr;justify-items:center;gap:3mm;padding:0 0 5mm;border:0;text-align:center}.exam-print-header img{width:22mm;height:22mm;object-fit:contain}.exam-print-header h1,.exam-print-header h2{text-align:center}</style>`
+    <style>.exam-print-header{display:grid;grid-template-columns:24mm 1fr;justify-items:stretch;gap:8mm;padding:0 0 5mm;border:0;text-align:center}.exam-print-header img{width:22mm;height:22mm;object-fit:contain}.exam-print-header h1,.exam-print-header h2{text-align:center}</style>`
   return openPrintDocument('Solicitação de Exames', body)
 }
 

@@ -1300,6 +1300,48 @@ def test_patient_vital_trends_accepts_custom_calendar_range(
         nursing.app.dependency_overrides.clear()
 
 
+def test_patient_vital_trends_accepts_custom_datetime_range(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    for measured_at, temperature in (
+        (datetime(2025, 2, 10, 9, 15, tzinfo=UTC), "36.5"),
+        (datetime(2025, 2, 10, 10, 15, tzinfo=UTC), "37.0"),
+        (datetime(2025, 2, 10, 11, 15, tzinfo=UTC), "37.5"),
+    ):
+        nursing.create_vital_record(
+            nursing.VitalPayload(
+                patient_reference=reference,
+                values={"temperature": temperature},
+                measured_at=measured_at,
+            ),
+            nurse,
+            nursing_db,
+        )
+
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    nursing.app.dependency_overrides[nursing.PATIENT_HISTORY_ACCESS.dependency] = lambda: nurse
+    try:
+        with TestClient(nursing.app) as client:
+            response = client.get(
+                f"/api/v1/nursing/patients/{reference}/vital-trends",
+                params={
+                    "from_at": "2025-02-10T10:00:00+00:00",
+                    "to_at": "2025-02-10T10:30:00+00:00",
+                },
+            )
+        assert response.status_code == 200
+        assert [item["values"]["temperature"] for item in response.json()["records"]] == ["37.0"]
+        assert response.json()["range_start"] == "2025-02-10T10:00:00+00:00"
+        assert response.json()["range_end"] == "2025-02-10T10:30:00+00:00"
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
 def test_vital_elimination_and_venous_access_choices_are_restricted() -> None:
     nursing.VitalPayload(
         patient_reference="123e4567-e89b-12d3-a456-426614174000",

@@ -756,7 +756,7 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
   }
 
   return <section className="patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">SUPRIMENTOS → FARMÁCIA</p><h2>Solicitações e pedidos de compra</h2><p className="welcome-copy">O recebimento converte a quantidade da embalagem para a unidade base e cria saldo por lote e validade.</p></div><span className="module-total">{requests.length}</span></div>
+    <div className="section-heading"><div><p className="eyebrow">FARMÁCIA · ABA COMPRAS E SUPRIMENTOS</p><h2>Solicitações e pedidos de compra</h2><p className="welcome-copy">Os pedidos enviados ficam nesta fila. A Gestão registra fornecedor e preço cotado, aprova ou rejeita a compra; após o pedido ao fornecedor, a Farmácia registra o recebimento por lote e validade.</p></div><span className="module-total">{requests.length}</span></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {canCreate && <form className="account-create-panel" onSubmit={(event) => void createRequest(event)}>

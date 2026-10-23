@@ -3911,17 +3911,30 @@ def list_patient_vital_trends(
     hours: VitalTrendPeriod = VitalTrendPeriod.ONE_DAY,
     from_date: date | None = None,
     to_date: date | None = None,
+    from_at: datetime | None = None,
+    to_at: datetime | None = None,
 ) -> dict[str, object]:
     if db.get(Patient, patient_reference) is None:
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
     now = datetime.now(UTC)
     if (from_date is None) != (to_date is None):
         raise HTTPException(status_code=422, detail="Informe as duas datas para consultar um período personalizado")
+    if (from_at or to_at) and (from_date or to_date):
+        raise HTTPException(status_code=422, detail="Use datas ou data e hora, não ambos os formatos")
+    if any(value and (value.tzinfo is None or value.utcoffset() is None) for value in (from_at, to_at)):
+        raise HTTPException(status_code=422, detail="Informe data e hora com fuso horário")
+    if from_at and to_at and to_at <= from_at:
+        raise HTTPException(status_code=422, detail="A data e hora inicial devem ser anteriores à final")
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="A data inicial deve ser anterior à data final")
     if from_date and from_date > now.date():
         raise HTTPException(status_code=422, detail="A data inicial não pode ser futura")
-    if from_date and to_date:
+    if from_at and to_at:
+        start = from_at.astimezone(UTC)
+        end = min(to_at.astimezone(UTC), now)
+        if start > now:
+            raise HTTPException(status_code=422, detail="A data inicial não pode ser futura")
+    elif from_date and to_date:
         start = datetime.combine(from_date, time.min, tzinfo=UTC)
         end = min(datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC) - timedelta(microseconds=1), now)
     else:
@@ -4129,7 +4142,15 @@ def list_vital_records(
     bed: str | None = None,
     from_date: date | None = None,
     to_date: date | None = None,
+    from_at: datetime | None = None,
+    to_at: datetime | None = None,
 ) -> dict[str, object]:
+    if (from_at or to_at) and (from_date or to_date):
+        raise HTTPException(status_code=422, detail="Use datas ou data e hora, não ambos os formatos")
+    if any(value and (value.tzinfo is None or value.utcoffset() is None) for value in (from_at, to_at)):
+        raise HTTPException(status_code=422, detail="Informe data e hora com fuso horário")
+    if from_at and to_at and to_at < from_at:
+        raise HTTPException(status_code=422, detail="A data e hora inicial deve ser anterior ou igual à final")
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="A data inicial deve ser anterior ou igual à data final")
 
@@ -4140,9 +4161,13 @@ def list_vital_records(
         filters.append(Patient.room == room)
     if bed:
         filters.append(Patient.bed == bed)
-    if from_date:
+    if from_at:
+        filters.append(VitalRecord.recorded_at >= from_at.astimezone(UTC))
+    elif from_date:
         filters.append(VitalRecord.recorded_at >= datetime.combine(from_date, time.min, UTC))
-    if to_date:
+    if to_at:
+        filters.append(VitalRecord.recorded_at <= to_at.astimezone(UTC))
+    elif to_date:
         filters.append(VitalRecord.recorded_at < datetime.combine(to_date + timedelta(days=1), time.min, UTC))
 
     records_query = select(VitalRecord)

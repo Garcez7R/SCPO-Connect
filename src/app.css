@@ -934,9 +934,18 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .nursing-medication-history { display: grid; gap: 9px; }
 .nursing-medication-history > article { display: grid; min-width: 0; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); color: var(--ink); }
 .nursing-medication-history > article > span, .nursing-medication-history > article > small { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.hourly-round-details { margin-top: 4px; }
+.hourly-round-details summary { color: var(--blue-dark); cursor: pointer; font-size: 11px; font-weight: 600; }
+.hourly-round-details > div { display: grid; gap: 7px; margin-top: 9px; }
+.hourly-round-details section { display: grid; gap: 4px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.hourly-round-details section > span, .hourly-round-details section > small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 html[data-theme="dark"] .nursing-medication-panel { border-color: var(--line); background: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .nursing-medication-history > article { border-color: var(--line); background: var(--page); color: var(--ink); }
 html[data-theme="dark"] .nursing-medication-history > article > span, html[data-theme="dark"] .nursing-medication-history > article > small { color: var(--muted); }
+html[data-theme="dark"] .nursing-medication-panel > .form-actions { border-color: var(--line); background: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .collection-row { border-color: var(--line); background: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .collection-values span { background: #263944; }
+html[data-theme="dark"] .collection-values strong { color: var(--ink); }
 html[data-theme="dark"] .patient-history-page .vital-history { background: var(--surface); }
 html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .patient-registry-identity .entry-status { width: fit-content; margin: 0 0 3px; }

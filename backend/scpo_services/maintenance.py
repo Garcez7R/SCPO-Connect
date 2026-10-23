@@ -567,6 +567,8 @@ def maintenance_queue(
     db: Annotated[Session, Depends(get_maintenance_db)],
     from_date: Annotated[date | None, Query()] = None,
     to_date: Annotated[date | None, Query()] = None,
+    from_at: datetime | None = None,
+    to_at: datetime | None = None,
     service_type: str | None = Query(default=None, max_length=80),
     department: str | None = Query(default=None, max_length=100),
     status: Literal["open", "in_progress", "completed", "cancelled"] | None = None,
@@ -578,12 +580,22 @@ def maintenance_queue(
         for module in ("maintenance", "management", "admin", "oversight")
     ):
         raise HTTPException(status_code=403, detail="Acesso de consulta à fila de manutenção não autorizado")
+    if (from_at or to_at) and (from_date or to_date):
+        raise HTTPException(status_code=422, detail="Use datas ou data e hora, não ambos os formatos")
+    if any(value and (value.tzinfo is None or value.utcoffset() is None) for value in (from_at, to_at)):
+        raise HTTPException(status_code=422, detail="Informe data e hora com fuso horário")
+    if from_at and to_at and to_at < from_at:
+        raise HTTPException(status_code=422, detail="A data e hora inicial deve ser anterior ou igual à final")
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="A data inicial deve ser anterior à data final")
     query = select(WorkOrder)
-    if from_date:
+    if from_at:
+        query = query.where(WorkOrder.created_at >= from_at.astimezone(UTC))
+    elif from_date:
         query = query.where(WorkOrder.created_at >= datetime.combine(from_date, time.min, tzinfo=UTC))
-    if to_date:
+    if to_at:
+        query = query.where(WorkOrder.created_at <= to_at.astimezone(UTC))
+    elif to_date:
         query = query.where(WorkOrder.created_at < datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC))
     if service_type:
         query = query.where(WorkOrder.service_type == service_type)

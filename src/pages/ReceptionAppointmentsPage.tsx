@@ -47,24 +47,15 @@ function nextAppointmentSlot() {
   return new Date((Math.floor(Date.now() / 1_800_000) + 1) * 1_800_000)
 }
 
-function offsetDateInput(days: number) {
+function offsetDateTimeInput(days: number, endOfDay = false) {
   const date = new Date()
   date.setDate(date.getDate() + days)
-  return localDateTimeValue(date).slice(0, 10)
+  if (endOfDay) date.setHours(23, 59, 0, 0)
+  return localDateTimeValue(date)
 }
 
-const initialFromDate = offsetDateInput(-30)
-const initialToDate = offsetDateInput(90)
-
-function localDateStartIso(value: string) {
-  return new Date(`${value}T00:00:00`).toISOString()
-}
-
-function localDateEndExclusiveIso(value: string) {
-  const date = new Date(`${value}T00:00:00`)
-  date.setDate(date.getDate() + 1)
-  return date.toISOString()
-}
+const initialFromDate = offsetDateTimeInput(-30)
+const initialToDate = offsetDateTimeInput(90, true)
 
 function displayDateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -100,8 +91,8 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
         throw new Error('Informe um período válido para consultar a agenda.')
       }
       const params = new URLSearchParams({
-        from_at: localDateStartIso(startDate),
-        to_at: localDateEndExclusiveIso(endDate),
+        from_at: new Date(startDate).toISOString(),
+        to_at: new Date(new Date(endDate).getTime() + 60_000).toISOString(),
       })
       const response = await fetch(`/api/v1/reception/appointments?${params}`)
       const data = await readApiResponse<{ appointments?: Appointment[] }>(response)
@@ -117,8 +108,8 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
   useEffect(() => {
     let current = true
     const params = new URLSearchParams({
-      from_at: localDateStartIso(initialFromDate),
-      to_at: localDateEndExclusiveIso(initialToDate),
+      from_at: new Date(initialFromDate).toISOString(),
+      to_at: new Date(new Date(initialToDate).getTime() + 60_000).toISOString(),
     })
     void fetch(`/api/v1/reception/appointments?${params}`)
       .then(readApiResponse<{ appointments?: Appointment[] }>)
@@ -208,8 +199,8 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
     </div>
 
     <div className="reception-appointment-toolbar">
-      <label className="field"><span className="field-label">De</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label>
-      <label className="field"><span className="field-label">Até</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label>
+      <label className="field"><span className="field-label">De (data e hora)</span><input type="datetime-local" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label>
+      <label className="field"><span className="field-label">Até (data e hora)</span><input type="datetime-local" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label>
       <label className="field"><span className="field-label">Buscar na agenda</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Paciente, profissional ou local" /></label>
       <label className="field"><span className="field-label">Situação</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | AppointmentStatus)}><option value="all">Todas</option>{Object.entries(appointmentStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <button className="button button-primary" type="button" aria-expanded={formOpen} onClick={() => setFormOpen((open) => !open)} disabled={!canCreate}>{formOpen ? 'Fechar formulário' : 'Novo agendamento'}</button>
