@@ -59,15 +59,15 @@ import { printRows, type PrintRow } from './printReport'
 import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 import { squareImageFile, squareVideoFrame } from './patientPhoto'
 
-type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'system-admin' | 'about'
-type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management'
+type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
+type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds'] as const
 const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Ronda horária' }
-const adminTabValues = ['users', 'audit'] as const
-const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Usuários e permissões', audit: 'Logs de auditoria' }
-const managementTabValues = ['overview', 'tasks', 'beds', 'governance', 'reports', 'shortcuts'] as const
-const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', governance: 'Governança', reports: 'Relatórios', shortcuts: 'Acesso rápido' }
+const adminTabValues = ['users', 'reports', 'audit'] as const
+const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Administração do aplicativo', reports: 'Relatórios', audit: 'Auditoria de ações' }
+const managementTabValues = ['overview', 'tasks', 'beds', 'governance', 'shortcuts'] as const
+const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios' }
 const systemAdminTabValues = ['backup', 'recovery'] as const
@@ -198,6 +198,8 @@ const roleLabels: Record<ProfileId, string> = {
   nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica',
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção',
   management: 'Gestão Hospitalar',
+  admin: 'Administração do aplicativo',
+  oversight: 'Relatórios e auditoria',
 }
 
 const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; description: string }[] = [
@@ -213,7 +215,7 @@ const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; d
   { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: SprayCan, description: 'Pedidos de limpeza por área e acompanhamento da equipe.' },
   { id: 'maintenance', label: 'Manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
   { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Indicadores operacionais agregados e acompanhamento da instituição.' },
-  { id: 'admin', label: 'Administração', short: 'Administração', icon: ShieldCheck, description: 'Usuários, funções e permissões.' },
+  { id: 'admin', label: 'Administração Hospitalar', short: 'Administração', icon: ShieldCheck, description: 'Administração do aplicativo, relatórios e auditoria.' },
 ]
 
 const navigation: { id: ModuleId; label: string; icon: LucideIcon }[] = [
@@ -373,6 +375,10 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const id = saved.id
       return id === 'home' || id === 'about' || id === 'work-orders'
         || (id === 'system-admin' && user.is_superuser)
+        || (id === 'admin' && (
+          (user.modules.includes('admin') && Boolean(user.permissions.admin?.includes('administrar')))
+          || (user.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar')))
+        ))
         || (id === 'therapy' && user.modules.includes('management'))
         || user.modules.includes(id)
         ? id
@@ -437,13 +443,16 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
     modules: ['home', ...user.modules, 'about'],
   }
   const canReviewTherapyReports = profile.modules.includes('management')
-  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || (item.id === 'system-admin' && user.is_superuser) || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports))
+  const hasAppAdmin = profile.modules.includes('admin') && Boolean(user.permissions.admin?.includes('administrar'))
+  const hasOversight = profile.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar'))
+  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || (item.id === 'system-admin' && user.is_superuser) || (item.id === 'admin' && (hasAppAdmin || hasOversight)) || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports))
 
   function navigate(id: ModuleId) {
     if (id === 'nursing-history' && !profile.modules.includes('nursing')) return
     if (id === 'patient-history' && !profile.modules.includes('patients')) return
     if (id === 'system-admin' && !user.is_superuser) return
-    if (id !== 'about' && id !== 'work-orders' && id !== 'system-admin' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
+    if (id !== 'about' && id !== 'work-orders' && id !== 'system-admin' && id !== 'admin' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
+    if (id === 'admin' && !hasAppAdmin && !hasOversight) return
     setActiveTabLabel(null)
     setActiveModule(id)
     window.scrollTo(0, 0)
@@ -535,7 +544,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'reception' && <Suspense fallback={<div className="history-empty" role="status">Carregando Recepção…</div>}><ReceptionPage user={user} PatientRegistryPage={PatientRegistryPage} /></Suspense>}
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
-          {activeModule === 'admin' && <AdminPage userId={user.id} />}
+          {activeModule === 'admin' && <AdminPage user={user} />}
           {activeModule === 'management' && <ManagementPage user={user} onNavigate={navigate} allowedModules={profile.modules} />}
           {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage userId={user.id} />}
           {activeModule === 'about' && <AboutPage />}
@@ -2165,15 +2174,20 @@ const moduleLabels: Record<string, string> = {
   patients: 'Pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
   nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica',
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção',
-  management: 'Gestão Hospitalar', admin: 'Administração',
+  management: 'Gestão Hospitalar', admin: 'Administração do aplicativo', oversight: 'Relatórios e auditoria',
 }
-const accessModules = Object.entries(moduleLabels).filter(([module]) => module !== 'admin')
+const accessModules = Object.entries(moduleLabels)
 
-function AdminPage({ userId }: { userId: string }) {
-  const [tab, setTab] = usePersistentTab(`scpo-tab-admin-${userId}`, 'users', adminTabValues, adminTabLabels)
+function AdminPage({ user }: { user: AuthUser }) {
+  const canManageApp = user.modules.includes('admin') && Boolean(user.permissions.admin?.includes('administrar'))
+  const canReviewData = user.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar'))
+  const availableTabs = adminTabValues.filter((value) => value === 'users' ? canManageApp : canReviewData)
+  const assignableModules = accessModules.filter(([module]) => module !== 'management' || user.modules.includes('management'))
+  const [tab, setTab] = usePersistentTab(`scpo-tab-admin-${user.id}`, canManageApp ? 'users' : 'reports', adminTabValues, adminTabLabels)
+  const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'reports'
   const [users, setUsers] = useState<Account[]>([])
   const [physicianProfiles, setPhysicianProfiles] = useState<PhysicianProfileData[]>([])
-  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>(canManageApp ? 'loading' : 'ready')
   const [notice, setNotice] = useState('')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
@@ -2184,6 +2198,10 @@ function AdminPage({ userId }: { userId: string }) {
   const [saving, setSaving] = useState(false)
   const physicianAccounts = users.filter((user) => user.active && user.modules.includes('physician'))
   const selectedPhysicianProfile = physicianProfiles.find((profile) => profile.user_id === physicianUserId)
+
+  useEffect(() => {
+    if (!availableTabs.includes(tab)) setTab(availableTabs[0] ?? 'reports')
+  }, [availableTabs, setTab, tab])
 
   function selectPhysician(userId: string) {
     const user = physicianAccounts.find((item) => item.id === userId)
@@ -2197,6 +2215,7 @@ function AdminPage({ userId }: { userId: string }) {
   }
 
   async function loadUsers() {
+    if (!canManageApp) return
     setStatus('loading')
     try {
       const [usersResponse, profilesResponse] = await Promise.all([
@@ -2216,6 +2235,7 @@ function AdminPage({ userId }: { userId: string }) {
   }
 
   useEffect(() => {
+    if (!canManageApp) return
     let active = true
     const loadInitialUsers = async () => {
       try {
@@ -2238,7 +2258,7 @@ function AdminPage({ userId }: { userId: string }) {
     }
     void loadInitialUsers()
     return () => { active = false }
-  }, [])
+  }, [canManageApp])
 
   function toggleModule(module: string) {
     setSelectedModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])
@@ -2248,7 +2268,14 @@ function AdminPage({ userId }: { userId: string }) {
     event.preventDefault()
     setSaving(true)
     setNotice('')
-    const permissions = Object.fromEntries(selectedModules.map((module) => [module, module === 'management' ? ['consultar', 'criar', 'alterar', 'administrar'] : ['consultar', 'criar', 'alterar']]))
+    const permissions = Object.fromEntries(selectedModules.map((module) => [
+      module,
+      module === 'management' || module === 'admin'
+        ? ['consultar', 'criar', 'alterar', 'administrar']
+        : module === 'oversight'
+          ? ['consultar']
+          : ['consultar', 'criar', 'alterar'],
+    ]))
     try {
       const response = await fetch('/api/v1/access/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2303,14 +2330,14 @@ function AdminPage({ userId }: { userId: string }) {
   }
 
   return <section className="admin-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">ADMINISTRAÇÃO</p><h1>{tab === 'users' ? 'Usuários e permissões' : 'Logs de auditoria'}</h1><p className="welcome-copy">{tab === 'users' ? 'Crie contas individuais e conceda acesso aos módulos.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div><div className="page-title-actions"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span></div></div>
-    <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções de Administração"><button className={`button ${tab === 'users' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'users'} onClick={() => setTab('users')}>Usuários e permissões</button><button className={`button ${tab === 'audit' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'audit'} onClick={() => setTab('audit')}>Logs de auditoria</button></div>
-    {tab === 'users' && <>
+    <div className="page-title-row"><div><p className="eyebrow">ADMINISTRAÇÃO HOSPITALAR</p><h1>{adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div><div className="page-title-actions"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span>{canManageApp && <span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span>}</div></div>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções de Administração">{availableTabs.map((value) => <button className={`button ${activeTab === value ? 'button-primary' : 'button-secondary'}`} key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setTab(value)}>{adminTabLabels[value]}</button>)}</div>
+    {activeTab === 'users' && canManageApp && <>
     <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Senha temporária exclusiva, troca obrigatória e MFA.</strong><span>Uma senha aleatória de uso único é gerada para cada conta. Entregue-a ao titular por um canal seguro.</span></div></div>
     {status === 'unavailable' && <ToastMessage variant="error">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-    <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos permitidos</legend><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset>{selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações no backend, além da administração de contas. Conceda somente após aprovação institucional.</span></div></div>}<div className="form-actions"><span className="draft-hint">Selecione módulos operacionais para conceder consultar, criar e alterar. Permissões serão registradas na auditoria.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
-    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((user) => <AccountRow key={user.id} user={user} onUpdate={updateAccount} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
+    <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos e escopos permitidos</legend><p className="field-hint">Administração do aplicativo controla contas; Relatórios e auditoria concede somente consulta. São permissões independentes.</p><div className="module-permission-grid">{assignableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset>{selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações no backend, além da administração de contas. Conceda somente após aprovação institucional.</span></div></div>}<div className="form-actions"><span className="draft-hint">As permissões serão registradas na auditoria. Gestão Hospitalar concede acesso amplo e não é somente leitura.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
+    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((user) => <AccountRow key={user.id} user={user} onUpdate={updateAccount} availableModules={assignableModules} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
     <section className="patient-list-panel physician-profile-admin">
       <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfis médicos</h2><p className="welcome-copy">A Administração cadastra e mantém o nome profissional e o CRM/UF usados nas prescrições.</p></div></div>
       {physicianAccounts.length ? <form className="form-grid" onSubmit={(event) => void savePhysicianProfile(event)}>
@@ -2321,15 +2348,16 @@ function AdminPage({ userId }: { userId: string }) {
     </section>
     <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia para todos os módulos e ações, incluindo administração de contas</span><span><strong>Superadministrador</strong> privilégio de sistema separado e reservado</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
     </>}
-    {tab === 'audit' && <AuditLogPanel />}
+    {activeTab === 'reports' && canReviewData && <TherapyReportsCenter />}
+    {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
   </section>
 }
 
-function AccountRow({ user, onUpdate }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void> }) {
-  const [editModules, setEditModules] = useState(user.modules.filter((module) => module !== 'admin'))
+function AccountRow({ user, onUpdate, availableModules }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void>; availableModules: [string, string][] }) {
+  const [editModules, setEditModules] = useState(user.modules)
   const [editPermissions, setEditPermissions] = useState(user.permissions)
   const [expanded, setExpanded] = useState(false)
-  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => { setEditModules(user.modules.filter((module) => module !== 'admin')); setEditPermissions(user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{accessModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? ['consultar', 'criar', 'alterar']])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
+  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => { setEditModules(user.modules); setEditPermissions(user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{availableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? (module === 'admin' ? ['consultar', 'criar', 'alterar', 'administrar'] : module === 'oversight' ? ['consultar'] : ['consultar', 'criar', 'alterar'])])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
 }
 
 function NutritionPage() {
@@ -2763,7 +2791,7 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
     { id: 'nursing', label: 'Enfermagem' },
     { id: 'pharmacy', label: 'Farmácia e estoque' },
     { id: 'maintenance', label: 'Manutenção' },
-    { id: 'admin', label: 'Administração e auditoria' },
+    { id: 'admin', label: 'Administração Hospitalar' },
   ]
   const visibleShortcuts = shortcuts.filter(({ id }) => allowedModules.includes(id))
   return <section className="management-page page-enter">
@@ -2773,14 +2801,12 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
       <button className={`button ${tab === 'tasks' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}><ClipboardList size={16} /> Pendências</button>
       <button className={`button ${tab === 'beds' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}><Building2 size={16} /> Unidades e leitos</button>
       <button className={`button ${tab === 'governance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'governance'} onClick={() => setTab('governance')}><ShieldCheck size={16} /> Governança</button>
-      <button className={`button ${tab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}><ClipboardList size={16} /> Relatórios</button>
       <button className={`button ${tab === 'shortcuts' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'shortcuts'} onClick={() => setTab('shortcuts')}><ArrowRight size={16} /> Acesso rápido</button>
     </div>
     {tab === 'overview' && <ExecutiveDashboard />}
     {tab === 'tasks' && <Suspense fallback={<div className="history-empty" role="status">Carregando pendências operacionais…</div>}><OperationalTaskCenter user={user} onNavigate={onNavigate} /></Suspense>}
     {tab === 'beds' && <HospitalBedManagement />}
     {tab === 'governance' && <Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel userId={user.id} /></Suspense>}
-    {tab === 'reports' && <TherapyReportsCenter />}
     {tab === 'shortcuts' && <section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section>}
   </section>
 }

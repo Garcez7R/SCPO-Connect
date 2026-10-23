@@ -61,7 +61,7 @@ app = FastAPI(
     description="Registra eventos administrativos mínimos, sem conteúdo clínico.",
     lifespan=lifespan,
 )
-ADMIN_ROLE = require_demo_role("management")
+ADMIN_ROLE = require_demo_role("management", "oversight")
 
 
 class AuditEventPayload(BaseModel):

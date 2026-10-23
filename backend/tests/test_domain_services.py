@@ -15,6 +15,7 @@ from scpo_services import (
     nursing,
     pharmacy,
     social,
+    therapy,
     xray,
 )
 from scpo_services.common import (
@@ -60,6 +61,90 @@ def test_superadmin_is_explicit_and_reserved() -> None:
     with pytest.raises(HTTPException) as error:
         access._prevent_superuser_changes(user)
     assert error.value.status_code == 403
+
+
+def test_administration_scopes_are_independent() -> None:
+    permissions = access._validate_permissions(["admin", "oversight"], None)
+    assert permissions["admin"] == ["consultar", "criar", "alterar", "administrar"]
+    assert permissions["oversight"] == ["consultar"]
+
+
+def test_only_oversight_scope_reads_reports_and_audit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reviewer = DemoPrincipal(
+        "reviewer",
+        "reviewer",
+        "Revisor",
+        "oversight",
+        {"oversight"},
+        {"oversight": ["consultar"]},
+    )
+    app_admin = DemoPrincipal(
+        "app-admin",
+        "app-admin",
+        "Administrador do aplicativo",
+        "admin",
+        {"admin"},
+        {"admin": ["consultar", "criar", "alterar", "administrar"]},
+    )
+    principal = reviewer
+
+    async def current_principal(_request: Request) -> DemoPrincipal:
+        return principal
+
+    monkeypatch.setattr("scpo_services.common.authenticated_principal", current_principal)
+    request = Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b""})
+    assert asyncio.run(audit.ADMIN_ROLE(request)) == reviewer
+    assert asyncio.run(therapy.THERAPY_REPORT_ACCESS(request)) == reviewer
+
+    principal = app_admin
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(audit.ADMIN_ROLE(request))
+    assert error.value.status_code == 403
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(therapy.THERAPY_REPORT_ACCESS(request))
+    assert error.value.status_code == 403
+
+
+def test_app_admin_cannot_assign_broad_management_access(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    app_admin = access._new_user(
+        "appadmin",
+        "Administração do aplicativo",
+        ["admin"],
+        {"admin": ["consultar", "criar", "alterar", "administrar"]},
+    )
+    manager = access._new_user("manager", "Gestor", ["management"], access._all_permissions())
+    db.add_all([app_admin, manager])
+    db.commit()
+    token = issue_session(app_admin.id, "active", app_admin.session_version)
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            access.create_user(
+                access.UserCreatePayload(
+                    username="newmanager",
+                    name="Novo gestor",
+                    modules=["management"],
+                ),
+                request,
+                Response(),
+                db,
+            )
+        )
+    assert error.value.status_code == 403
+    assert [user["username"] for user in access.list_users(request, db)["users"]] == ["appadmin"]
 
 
 def test_management_cannot_recover_credentials_or_change_superadmin(

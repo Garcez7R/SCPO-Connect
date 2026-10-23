@@ -36,7 +36,7 @@ from .security import (
 
 MODULES = {
     "patients", "nursing", "pharmacy", "xray", "physician", "social", "nutrition", "hygiene",
-    "reception", "therapy", "psychology", "maintenance", "management", "admin",
+    "reception", "therapy", "psychology", "maintenance", "management", "admin", "oversight",
 }
 ACTIONS = {"consultar", "criar", "alterar", "excluir", "administrar"}
 INITIAL_PASSWORD = "0000"
@@ -170,10 +170,17 @@ def _all_permissions() -> dict[str, list[str]]:
 def _validate_permissions(modules: list[str], permissions: dict[str, list[str]] | None) -> dict[str, list[str]]:
     if "management" in modules:
         return _all_permissions()
-    if "admin" in modules:
-        raise HTTPException(status_code=422, detail="O módulo de administração exige o perfil Gestão Hospitalar")
     if permissions is None:
-        return {module: ["consultar", "criar", "alterar"] for module in modules}
+        return {
+            module: (
+                ["consultar", "criar", "alterar", "administrar"]
+                if module == "admin"
+                else ["consultar"]
+                if module == "oversight"
+                else ["consultar", "criar", "alterar"]
+            )
+            for module in modules
+        }
     if set(permissions) - set(modules):
         raise HTTPException(status_code=422, detail="Permissão configurada para módulo sem acesso")
     clean: dict[str, list[str]] = {}
@@ -217,6 +224,24 @@ def _require_management(request: Request, db: Session) -> tuple[AppUser, DemoPri
         user.username,
         user.name,
         "system_admin" if user.is_superuser else "management",
+        user.modules,
+        user.permissions,
+        is_superuser=user.is_superuser,
+    )
+    return user, principal
+
+
+def _require_account_admin(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
+    user, _ = _current_user(request, db)
+    is_management = "management" in user.modules and "administrar" in user.permissions.get("management", [])
+    is_app_admin = "admin" in user.modules and "administrar" in user.permissions.get("admin", [])
+    if not user.is_superuser and not is_management and not is_app_admin:
+        raise HTTPException(status_code=403, detail="Acesso restrito à Administração do aplicativo")
+    principal = DemoPrincipal(
+        user.id,
+        user.username,
+        user.name,
+        "system_admin" if user.is_superuser else "management" if is_management else "admin",
         user.modules,
         user.permissions,
         is_superuser=user.is_superuser,
@@ -496,10 +521,12 @@ def list_users(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    actor, _ = _require_management(request, db)
+    actor, _ = _require_account_admin(request, db)
     users = db.scalars(select(AppUser).order_by(AppUser.name)).all()
     if not actor.is_superuser:
         users = [user for user in users if not user.is_superuser]
+    if "management" not in actor.modules:
+        users = [user for user in users if "management" not in user.modules]
     return {"users": [_user_response(user) for user in users]}
 
 
@@ -562,7 +589,16 @@ async def create_user(
     response: Response,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    _, principal = _require_management(request, db)
+    actor, principal = _require_account_admin(request, db)
+    can_grant_management = (
+        actor.is_superuser
+        or (
+            "management" in actor.modules
+            and "administrar" in actor.permissions.get("management", [])
+        )
+    )
+    if not can_grant_management and "management" in payload.modules:
+        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode conceder esse acesso amplo")
     username = payload.username.strip().lower()
     if db.scalar(select(AppUser.id).where(AppUser.username == username)):
         raise HTTPException(status_code=409, detail="Este usuário já existe")
@@ -587,7 +623,7 @@ async def update_user(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    actor, principal = _require_management(request, db)
+    actor, principal = _require_account_admin(request, db)
     user = db.get(AppUser, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
@@ -598,6 +634,17 @@ async def update_user(
     modules = changes.get("modules", user.modules)
     if len(set(modules)) != len(modules) or set(modules) - MODULES:
         raise HTTPException(status_code=422, detail="Módulo inválido ou repetido")
+    can_grant_management = (
+        actor.is_superuser
+        or (
+            "management" in actor.modules
+            and "administrar" in actor.permissions.get("management", [])
+        )
+    )
+    if not can_grant_management and (
+        "management" in modules or "management" in user.modules
+    ):
+        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode alterar esse acesso amplo")
     if "management" in modules:
         modules = sorted(MODULES)
     if "management" in user.modules and (changes.get("active") is False or "management" not in modules):
@@ -606,7 +653,10 @@ async def update_user(
             raise HTTPException(status_code=409, detail="Mantenha ao menos uma conta de Gestão Hospitalar ativa")
     submitted_permissions = changes.get("permissions")
     if submitted_permissions is None:
-        submitted_permissions = {module: user.permissions.get(module, ["consultar", "criar", "alterar"]) for module in modules}
+        defaults = _validate_permissions(modules, None)
+        submitted_permissions = {
+            module: user.permissions.get(module, defaults[module]) for module in modules
+        }
     permissions = _validate_permissions(modules, submitted_permissions)
     await record_audit_event(principal, user.id, "user_access_changed", db)
     if "name" in changes:

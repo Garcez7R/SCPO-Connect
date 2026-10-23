@@ -76,7 +76,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="SCPO Connect · Oficina Terapêutica", version="1.0.0", lifespan=lifespan)
 THERAPY_ROLE = require_demo_role("therapy")
-THERAPY_REPORT_ACCESS = require_demo_role("therapy", "management")
+THERAPY_REPORT_ACCESS = require_demo_role("therapy", "management", "oversight")
 
 
 class ActivityPayload(BaseModel):

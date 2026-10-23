@@ -2547,7 +2547,7 @@ def get_physician_profile(
 
 @app.get("/api/v1/physicians/profiles")
 def list_physician_profiles(
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management", "admin"))],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, list[dict[str, object]]]:
     profiles = db.scalars(
@@ -2561,7 +2561,7 @@ def list_physician_profiles(
 def save_physician_profile_as_management(
     user_id: str,
     payload: PhysicianProfilePayload,
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("management", "admin"))],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     if not user_id.strip() or len(user_id) > 36:
