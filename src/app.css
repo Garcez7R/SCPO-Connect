@@ -1816,6 +1816,16 @@ html[data-theme="dark"] .xray-page .laboratory-print-preview { border-color: var
 .vital-trends-period .field { min-width: 150px; }
 .vital-trends-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; color: var(--muted); font-size: 11px; }
 .vital-trends-gap-note { margin: 0; padding: 10px 12px; border-left: 3px solid #6e87b3; border-radius: 4px; background: var(--page); color: var(--muted); font-size: 11px; line-height: 1.5; }
+.vital-trends-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vital-trends-view-controls button[aria-pressed="true"] { border-color: var(--blue); background: var(--blue-pale); color: var(--blue-dark); font-weight: 700; }
+.vital-trends-print { margin-left: auto; }
+.vital-trends-table-wrap { max-width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.vital-trends-table { width: 100%; min-width: 980px; border-collapse: collapse; color: var(--ink); font-size: 11px; text-align: left; }
+.vital-trends-table caption { padding: 12px; color: var(--muted); font-size: 11px; text-align: left; }
+.vital-trends-table th, .vital-trends-table td { padding: 9px 10px; border-top: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+.vital-trends-table th { background: var(--surface); color: var(--muted); font-size: 10px; font-weight: 700; }
+.vital-trends-table tbody tr:nth-child(even) { background: var(--surface); }
+.vital-trends-table-wrap:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .vital-trends-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .vital-trend-card { display: grid; min-width: 0; gap: 10px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
 .vital-trend-card-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 10px; min-width: 0; }
@@ -1843,10 +1853,14 @@ html[data-theme="dark"] .xray-page .laboratory-print-preview { border-color: var
 .vital-pressure-view button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 html[data-theme="dark"] .vital-trends-dashboard,
 html[data-theme="dark"] .vital-trend-card,
+html[data-theme="dark"] .vital-trends-table-wrap,
 html[data-theme="dark"] .vital-trend-selected { border-color: var(--line); background: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .vital-trends-gap-note { background: #1b2a34; color: var(--muted); }
 html[data-theme="dark"] .vital-pressure-view { border-color: var(--line); background: #17232b; }
 html[data-theme="dark"] .vital-pressure-view button[aria-pressed="true"] { background: #287da0; color: #fff; }
+html[data-theme="dark"] .vital-trends-view-controls button[aria-pressed="true"] { border-color: #287da0; background: #1d3744; color: #b5e3f5; }
+html[data-theme="dark"] .vital-trends-table th,
+html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { background: #1b2a34; }
 @media (max-width: 700px) {
   .vital-trends-heading { align-items: stretch; flex-direction: column; }
   .vital-trends-heading > .field { flex-basis: auto; width: 100%; }
@@ -1854,6 +1868,7 @@ html[data-theme="dark"] .vital-pressure-view button[aria-pressed="true"] { backg
   .vital-trends-period .field:first-child { grid-column: 1 / -1; }
   .vital-trends-grid { grid-template-columns: 1fr; }
   .vital-trends-dashboard { padding: 15px; }
+  .vital-trends-print { margin-left: 0; }
 }
 @media (max-width: 420px) {
   .vital-trends-meta { flex-direction: column; }

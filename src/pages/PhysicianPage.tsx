@@ -174,7 +174,7 @@ function PhysicianPage() {
             ? <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alergia registrada</strong><span>{selectedPatient.allergies}</span></div></div>
             : <div className={`clinical-alert ${selectedPatient.allergies_status === 'none_known' ? 'clinical-alert-clear' : 'clinical-alert-unknown'}`} role="status"><AlertTriangle size={18} /><div><strong>{selectedPatient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Alergias não verificadas'}</strong><span>Confirme as informações clínicas antes de prescrever.</span></div></div>}
           <p className="physician-vitals-help">A pressão é registrada em um único campo no formato sistólica/diastólica (por exemplo, 120/80 mmHg). O gráfico separa o valor antes e depois da barra em duas linhas para facilitar a leitura da evolução.</p>
-          <VitalTrendsDashboard patientReference={patientReference} />
+          <VitalTrendsDashboard patientReference={patientReference} patientName={selectedPatient.name} />
         </section>
         <section className="patient-list-panel">
           <div className="section-heading"><div><p className="eyebrow">PRESCRIÇÃO INTERNA</p><h2>Nova prescrição</h2><p className="welcome-copy">A prescrição fica visível à Farmácia e à Enfermagem. Medicamentos controlados são permitidos no fluxo interno.</p></div></div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity } from 'lucide-react'
+import { Activity, Printer } from 'lucide-react'
 import { readApiResponse } from '../api'
 import ToastMessage from './ToastMessage'
 
@@ -28,6 +28,7 @@ type TrendSeries = {
   read: (record: VitalRecord) => number | null
 }
 type PressureView = 'both' | 'systolic' | 'diastolic'
+type TrendsView = 'charts' | 'table'
 
 function numberValue(value: string | undefined) {
   if (!value) return null
@@ -137,11 +138,12 @@ function TrendChart({
   </section>
 }
 
-export default function VitalTrendsDashboard({ patientReference }: { patientReference: string }) {
+export default function VitalTrendsDashboard({ patientReference, patientName }: { patientReference: string; patientName?: string }) {
   const [period, setPeriod] = useState<'6' | '24' | '168' | '720' | 'custom'>('168')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [pressureView, setPressureView] = useState<PressureView>('both')
+  const [trendsView, setTrendsView] = useState<TrendsView>('charts')
   const [data, setData] = useState<TrendResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -187,6 +189,10 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
   const start = data ? new Date(data.range_start).getTime() : 0
   const end = data ? new Date(data.range_end).getTime() : 0
   const recordCount = records.length
+  const orderedRecords = useMemo(
+    () => records.slice().sort((first, second) => first.measured_at.localeCompare(second.measured_at)),
+    [records],
+  )
   const series = {
     systolic: { key: 'systolic', label: 'Sistólica', color: '#147d92', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[0]) },
     diastolic: { key: 'diastolic', label: 'Diastólica', color: '#a44b72', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[1]) },
@@ -199,6 +205,55 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
   const pressureSeries = pressureView === 'both'
     ? [series.systolic, series.diastolic]
     : [pressureView === 'systolic' ? series.systolic : series.diastolic]
+  const periodLabel = data
+    ? `${dateTime(data.range_start)} a ${dateTime(data.range_end)}`
+    : 'Período selecionado'
+
+  function printTable() {
+    const popup = window.open('', '_blank', 'width=1100,height=800')
+    if (!popup) {
+      setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.')
+      return
+    }
+    const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    } satisfies Record<string, string>)[character] ?? character)
+    const cell = (value: string | undefined, unit = '') => value ? `${escapeHtml(value)}${unit}` : '—'
+    const rows = orderedRecords.map((record) => `<tr>
+      <td>${escapeHtml(dateTime(record.measured_at))}</td>
+      <td>${cell(record.values.pressure, ' mmHg')}</td>
+      <td>${cell(record.values.heartRate, ' bpm')}</td>
+      <td>${cell(record.values.respiratoryRate, ' rpm')}</td>
+      <td>${cell(record.values.saturation, '%')}</td>
+      <td>${cell(record.values.temperature, ' °C')}</td>
+      <td>${cell(record.values.glucose, record.glucose_unit ? ` ${escapeHtml(record.glucose_unit)}` : '')}</td>
+      <td>${escapeHtml(dateTime(record.recorded_at))}</td>
+      <td>${escapeHtml(record.actor_name || 'Não informado')}</td>
+    </tr>`).join('')
+    const patientLabel = patientName ? escapeHtml(patientName) : escapeHtml(patientReference)
+    popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Evolução de sinais vitais</title>
+      <style>
+        @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#172b3b;font:10pt Arial,sans-serif}
+        h1{margin:0 0 5px;font-size:18pt}.meta{margin:0 0 14px;color:#526579}
+        table{width:100%;border-collapse:collapse;font-size:8.5pt}thead{display:table-header-group}
+        th,td{padding:6px 5px;border:1px solid #ccd7df;text-align:left;vertical-align:top}
+        th{background:#eaf3f7;color:#285d74;font-weight:700}tbody tr:nth-child(even){background:#f5f8fa}
+        @media print{tr{break-inside:avoid}}
+      </style></head><body><h1>Evolução de sinais vitais</h1>
+      <p class="meta">Paciente: ${patientLabel} · ${recordCount} ${recordCount === 1 ? 'medição' : 'medições'} · Período: ${escapeHtml(periodLabel)}</p>
+      <table><thead><tr><th>Aferido em</th><th>Pressão arterial</th><th>FC</th><th>FR</th><th>Saturação</th><th>Temperatura</th><th>Glicose</th><th>Registrado em</th><th>Profissional</th></tr></thead><tbody>${rows}</tbody></table>
+      </body></html>`)
+    popup.document.close()
+    popup.focus()
+    window.setTimeout(() => {
+      if (!popup.closed) popup.print()
+    }, 250)
+    setError('')
+  }
 
   return <section className="vital-trends-dashboard" aria-label="Painel longitudinal de sinais vitais">
     <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>O eixo horizontal representa data e horário da aferição; o vertical representa o valor medido. A visualização não interpreta valores nem recomenda condutas.</p></div><div className="vital-trends-period"><label className="field"><span className="field-label">Período</span><select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option value="6">Últimas 6 horas</option><option value="24">Últimas 24 horas</option><option value="168">Últimos 7 dias</option><option value="720">Últimos 30 dias</option><option value="custom">Selecionar datas</option></select></label>{period === 'custom' && <><label className="field"><span className="field-label">De</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label></>}</div></div>
@@ -209,7 +264,12 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
       <div className="vital-trends-meta"><span>{recordCount} {recordCount === 1 ? 'coleta' : 'coletas'} no período</span><span>Atualizado em {data ? dateTime(data.generated_at) : '—'}</span></div>
       {recordCount === 0 ? <div className="history-empty"><Activity size={20} /><span>Não há sinais registrados neste período.</span></div> : <>
         <p className="vital-trends-gap-note">Os pontos são posicionados pelo horário de aferição. Os intervalos entre eles representam tempo sem coleta registrada e não indicam estabilidade.</p>
-        <div className="vital-trends-grid">
+        <div className="vital-trends-view-controls" role="group" aria-label="Forma de visualizar as medições">
+          <button className="button button-secondary" type="button" aria-pressed={trendsView === 'charts'} onClick={() => setTrendsView('charts')}>Gráficos</button>
+          <button className="button button-secondary" type="button" aria-pressed={trendsView === 'table'} onClick={() => setTrendsView('table')}>Tabela acessível</button>
+          <button className="button button-secondary vital-trends-print" type="button" onClick={printTable}><Printer size={16} /> Imprimir tabela</button>
+        </div>
+        {trendsView === 'charts' ? <div className="vital-trends-grid">
           <TrendChart title="Pressão arterial" unit="mmHg" records={records} series={pressureSeries} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} pressureView={pressureView} onPressureView={setPressureView} />
           <TrendChart title="Frequência cardíaca" unit="bpm" records={records} series={[series.heartRate]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
           <TrendChart title="Frequência respiratória" unit="rpm" records={records} series={[series.respiratoryRate]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
@@ -217,7 +277,23 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
           <TrendChart title="Temperatura" unit="°C" records={records} series={[series.temperature]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
           <TrendChart title="Glicose · mg/dL" unit="mg/dL" records={records} series={[series.glucose('mg/dL')]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
           <TrendChart title="Glicose · mmol/L" unit="mmol/L" records={records} series={[series.glucose('mmol/L')]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
-        </div>
+        </div> : <div className="vital-trends-table-wrap" role="region" aria-label="Tabela de medições de sinais vitais" tabIndex={0}>
+          <table className="vital-trends-table">
+            <caption>{patientName ? `Paciente: ${patientName}` : 'Medições de sinais vitais'} · {recordCount} {recordCount === 1 ? 'registro' : 'registros'} · {periodLabel}</caption>
+            <thead><tr><th scope="col">Aferido em</th><th scope="col">Pressão (mmHg)</th><th scope="col">FC (bpm)</th><th scope="col">FR (rpm)</th><th scope="col">Saturação (%)</th><th scope="col">Temperatura (°C)</th><th scope="col">Glicose</th><th scope="col">Registrado em</th><th scope="col">Profissional</th></tr></thead>
+            <tbody>{orderedRecords.map((record) => <tr key={record.id}>
+              <td>{dateTime(record.measured_at)}</td>
+              <td>{record.values.pressure || '—'}</td>
+              <td>{record.values.heartRate || '—'}</td>
+              <td>{record.values.respiratoryRate || '—'}</td>
+              <td>{record.values.saturation ? `${record.values.saturation}%` : '—'}</td>
+              <td>{record.values.temperature ? `${record.values.temperature} °C` : '—'}</td>
+              <td>{record.values.glucose ? `${record.values.glucose} ${record.glucose_unit}` : '—'}</td>
+              <td>{dateTime(record.recorded_at)}</td>
+              <td>{record.actor_name || 'Não informado'}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
       </>}
     </>}
   </section>
