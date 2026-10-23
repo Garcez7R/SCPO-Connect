@@ -1336,6 +1336,100 @@ def test_vital_filters_and_discharge_preserve_history(nursing_db: Session, nurse
     assert archived["patients"][0]["active"] is False
 
 
+def test_patient_registry_supports_server_side_search_filters_and_pagination(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    first = create_patient(nursing_db, nurse)
+    second = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Zelda Paciente",
+            room="20",
+            bed="B",
+            cpf="529.982.247-25",
+        ),
+        nurse,
+        nursing_db,
+    )
+    nursing.create_patient(
+        nursing.PatientPayload(name="Aline Paciente", room="3", bed="A"),
+        nurse,
+        nursing_db,
+    )
+    nursing.update_patient_status(str(first["reference"]), {"active": False}, nurse, nursing_db)
+
+    first_page = nursing.list_patients(
+        nurse, nursing_db, include_inactive=True, limit=1, offset=0
+    )
+    second_page = nursing.list_patients(
+        nurse, nursing_db, include_inactive=True, limit=1, offset=1
+    )
+    assert first_page["total"] == 3
+    assert len(first_page["patients"]) == 1
+    assert len(second_page["patients"]) == 1
+    assert first_page["patients"][0]["reference"] != second_page["patients"][0]["reference"]
+
+    searched = nursing.list_patients(
+        nurse,
+        nursing_db,
+        include_inactive=True,
+        full_profile=True,
+        search="52998224725",
+        status="all",
+    )
+    assert searched["total"] == 1
+    assert searched["patients"][0]["reference"] == second["reference"]
+    private_search = nursing.list_patients(
+        nurse,
+        nursing_db,
+        include_inactive=True,
+        search="52998224725",
+        status="all",
+    )
+    assert private_search["total"] == 0
+    assert first["reference"] != second["reference"]
+
+    by_location = nursing.list_patients(
+        nurse, nursing_db, include_inactive=True, room="3", bed="A", status="all"
+    )
+    assert by_location["total"] == 1
+    assert by_location["patients"][0]["name"] == "Aline Paciente"
+    assert by_location["active_count"] == 2
+    assert by_location["inactive_count"] == 1
+    assert by_location["active_assigned_count"] == 2
+    assert by_location["active_unassigned_count"] == 0
+    assert by_location["rooms"] == ["20", "3"]
+    inactive = nursing.list_patients(
+        nurse, nursing_db, include_inactive=True, status="inactive"
+    )
+    assert inactive["total"] == 1
+    assert inactive["patients"][0]["reference"] == first["reference"]
+
+
+def test_patient_registry_route_accepts_pagination_and_search_parameters(
+    nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    create_patient(nursing_db, nurse)
+    nursing.create_patient(
+        nursing.PatientPayload(name="Zelda Paciente", room="20", bed="B"),
+        nurse,
+        nursing_db,
+    )
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    nursing.app.dependency_overrides[nursing.authorize_patient_module] = lambda: nurse
+    try:
+        with TestClient(nursing.app) as client:
+            response = client.get(
+                "/api/v1/nursing/patients",
+                params={"limit": 1, "offset": 0, "search": "Zelda", "status": "all"},
+            )
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert response.json()["patients"][0]["name"] == "Zelda Paciente"
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
 def test_hourly_nursing_round_records_patient_checks_and_completion(
     nursing_db: Session, nurse: DemoPrincipal
 ) -> None:

@@ -1756,17 +1756,124 @@ def list_patients(
     full_profile: bool = False,
     include_inactive: bool = False,
     include_archived: bool = False,
-) -> dict[str, list[dict[str, object]]]:
+    limit: Annotated[int | None, Query(ge=1, le=200)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    search: Annotated[str | None, Query(max_length=120)] = None,
+    room: Annotated[str | None, Query(max_length=20)] = None,
+    bed: Annotated[str | None, Query(max_length=20)] = None,
+    status: Literal["all", "active", "inactive"] | None = None,
+    sort: Literal["location", "name"] = "location",
+) -> dict[str, object]:
     if full_profile and not can_view_full_patient_profile(principal):
         raise HTTPException(status_code=403, detail="Acesso aos dados cadastrais completos não autorizado")
-    query = select(Patient).order_by(Patient.active.desc(), Patient.room, Patient.bed)
-    if not include_inactive:
-        query = query.where(Patient.active.is_(True))
-    elif not include_archived:
+    query = select(Patient)
+    if not include_archived:
         query = query.where(Patient.deleted_at.is_(None))
+    if status == "active":
+        query = query.where(Patient.active.is_(True))
+    elif status == "inactive":
+        query = query.where(Patient.active.is_(False))
+    elif status != "all" and not include_inactive:
+        query = query.where(Patient.active.is_(True))
+
+    if room:
+        query = query.where(Patient.room == room)
+    if bed:
+        query = query.where(Patient.bed == bed)
+
+    query_terms = (search or "").strip().casefold().split()
+    searchable_fields = [Patient.name, Patient.room, Patient.bed]
+    if full_profile:
+        searchable_fields.extend(
+            [Patient.responsible_name, Patient.cpf, Patient.sus_card]
+        )
+    for term in query_terms:
+        matching_fields = [
+            field.ilike(f"%{term}%")
+            for field in searchable_fields
+        ]
+        digits = re.sub(r"\D", "", term)
+        if digits and full_profile:
+            normalized_cpf = func.replace(func.replace(Patient.cpf, ".", ""), "-", "")
+            normalized_sus_card = func.replace(
+                func.replace(Patient.sus_card, ".", ""), "-", ""
+            )
+            matching_fields.extend(
+                [
+                    normalized_cpf.contains(digits),
+                    normalized_sus_card.contains(digits),
+                ]
+            )
+        query = query.where(or_(*matching_fields))
+
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    if sort == "name":
+        query = query.order_by(func.lower(Patient.name), Patient.reference)
+    else:
+        query = query.order_by(
+            func.lower(Patient.room),
+            func.lower(Patient.bed),
+            func.lower(Patient.name),
+            Patient.reference,
+        )
+    if limit is not None:
+        query = query.offset(offset).limit(limit)
     patients = db.scalars(query).all()
+
+    room_facet_query = select(Patient.room)
+    if not include_archived:
+        room_facet_query = room_facet_query.where(Patient.deleted_at.is_(None))
+    if status == "active" or (status is None and not include_inactive):
+        room_facet_query = room_facet_query.where(Patient.active.is_(True))
+    elif status == "inactive":
+        room_facet_query = room_facet_query.where(Patient.active.is_(False))
+    rooms = sorted(
+        {
+            patient_room
+            for patient_room in db.scalars(room_facet_query.distinct()).all()
+            if patient_room.strip()
+        }
+    )
+
+    bed_facet_query = select(Patient.room, Patient.bed)
+    if not include_archived:
+        bed_facet_query = bed_facet_query.where(Patient.deleted_at.is_(None))
+    if status == "active" or (status is None and not include_inactive):
+        bed_facet_query = bed_facet_query.where(Patient.active.is_(True))
+    elif status == "inactive":
+        bed_facet_query = bed_facet_query.where(Patient.active.is_(False))
+    if room:
+        bed_facet_query = bed_facet_query.where(Patient.room == room)
+    facets = db.execute(bed_facet_query.distinct()).all()
+    beds = sorted({patient_bed for patient_room, patient_bed in facets if patient_bed.strip()})
+    count_query = select(Patient.active, func.count()).where(Patient.deleted_at.is_(None)).group_by(Patient.active)
+    patient_counts = {active: count for active, count in db.execute(count_query).all()}
+    active_assigned_count = db.scalar(
+        select(func.count())
+        .select_from(Patient)
+        .where(
+            Patient.active.is_(True),
+            Patient.deleted_at.is_(None),
+            Patient.room != "",
+            Patient.bed != "",
+        )
+    ) or 0
     emit_audit_event(principal, "patients", "patient_list_read", "patient_registry")
-    return {"patients": [serialize_patient(patient, principal=principal, full_profile=full_profile) for patient in patients]}
+    return {
+        "patients": [
+            serialize_patient(patient, principal=principal, full_profile=full_profile)
+            for patient in patients
+        ],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "rooms": rooms,
+        "beds": beds,
+        "active_count": patient_counts.get(True, 0),
+        "inactive_count": patient_counts.get(False, 0),
+        "active_assigned_count": active_assigned_count,
+        "active_unassigned_count": max(patient_counts.get(True, 0) - active_assigned_count, 0),
+    }
 
 
 def _active_round_patients(db: Session) -> list[Patient]:

@@ -723,6 +723,15 @@ function AddressFields({ form, patients, prefix, onChange }: { form: PatientForm
 function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean }) {
   const patientPageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
+  const [patientTotal, setPatientTotal] = useState(0)
+  const [roomOptions, setRoomOptions] = useState<string[]>([])
+  const [bedOptions, setBedOptions] = useState<string[]>([])
+  const [inactivePatientCount, setInactivePatientCount] = useState(0)
+  const [activeAssignedCount, setActiveAssignedCount] = useState(0)
+  const [activeUnassignedCount, setActiveUnassignedCount] = useState(0)
+  const [reportPatients, setReportPatients] = useState<Patient[]>([])
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState('')
   const [registryTab, setRegistryTab] = useState<'registry' | 'list' | 'reports'>('registry')
   const [patientPage, setPatientPage] = useState(0)
   const [form, setForm] = useState({ ...emptyPatientForm })
@@ -752,6 +761,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [duplicateCandidates, setDuplicateCandidates] = useState<{ reference: string; name: string; room: string; bed: string; reasons: string }[]>([])
   const [duplicateOverride, setDuplicateOverride] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [patientReload, setPatientReload] = useState(0)
 
   useEffect(() => {
     if (!cameraOpen) return
@@ -781,25 +791,114 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
 
   useEffect(() => {
     let active = true
+    const controller = new AbortController()
     const loadPatients = async () => {
       try {
-        const response = await fetch('/api/v1/nursing/patients?full_profile=true&include_inactive=true')
-        const data = await response.json() as { patients?: Patient[]; detail?: string }
+        setLoading(true)
+        const params = new URLSearchParams({
+          full_profile: 'true',
+          include_inactive: 'true',
+          limit: String(patientPageSize),
+          offset: String(patientPage * patientPageSize),
+          status: patientStatusFilter,
+          sort: patientSort,
+        })
+        if (query.trim()) params.set('search', query.trim())
+        if (roomFilter) params.set('room', roomFilter)
+        if (bedFilter) params.set('bed', bedFilter)
+        const response = await fetch(`/api/v1/nursing/patients?${params.toString()}`, { signal: controller.signal })
+        const data = await response.json() as {
+          patients?: Patient[]
+          total?: number
+          rooms?: string[]
+          beds?: string[]
+          active_count?: number
+          inactive_count?: number
+          active_assigned_count?: number
+          active_unassigned_count?: number
+          detail?: string
+        }
         if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os pacientes.')
         if (active) {
+          const total = data.total ?? 0
+          if (patientPage > 0 && patientPage * patientPageSize >= total) {
+            setPatientPage(Math.max(0, Math.ceil(total / patientPageSize) - 1))
+            return
+          }
           setPatients(data.patients ?? [])
+          setPatientTotal(total)
+          setRoomOptions((data.rooms ?? []).sort((left, right) => left.localeCompare(right, 'pt-BR', { numeric: true })))
+          setBedOptions((data.beds ?? []).sort((left, right) => left.localeCompare(right, 'pt-BR', { numeric: true })))
+          setInactivePatientCount(data.inactive_count ?? 0)
+          setActiveAssignedCount(data.active_assigned_count ?? 0)
+          setActiveUnassignedCount(data.active_unassigned_count ?? 0)
           setError('')
         }
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os pacientes.')
+        if (active && !(loadError instanceof DOMException && loadError.name === 'AbortError')) {
+          setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os pacientes.')
+        }
       } finally {
         if (active) setLoading(false)
       }
     }
 
-    void loadPatients()
-    return () => { active = false }
-  }, [])
+    const timer = window.setTimeout(() => void loadPatients(), query.trim() ? 250 : 0)
+    return () => {
+      active = false
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [patientPage, patientPageSize, patientReload, patientSort, patientStatusFilter, query, roomFilter, bedFilter])
+
+  useEffect(() => {
+    if (registryTab !== 'reports') return
+    let active = true
+    const controller = new AbortController()
+    const loadAllReportPatients = async () => {
+      setReportLoading(true)
+      setReportError('')
+      try {
+        const rows: Patient[] = []
+        let offset = 0
+        let total = 0
+        do {
+          const params = new URLSearchParams({
+            full_profile: 'true',
+            include_inactive: 'true',
+            limit: '200',
+            offset: String(offset),
+            status: patientStatusFilter,
+            sort: patientSort,
+          })
+          if (query.trim()) params.set('search', query.trim())
+          if (roomFilter) params.set('room', roomFilter)
+          if (bedFilter) params.set('bed', bedFilter)
+          const response = await fetch(`/api/v1/nursing/patients?${params.toString()}`, { signal: controller.signal })
+          const data = await response.json() as { patients?: Patient[]; total?: number; detail?: string }
+          if (!response.ok) throw new Error(data.detail ?? 'Não foi possível carregar os pacientes para o relatório.')
+          const page = data.patients ?? []
+          if (!page.length && offset < (data.total ?? 0)) throw new Error('A consulta do relatório retornou uma página vazia antes do fim dos registros.')
+          rows.push(...page)
+          total = data.total ?? rows.length
+          offset += page.length
+        } while (active && offset < total)
+        if (active) setReportPatients(rows)
+      } catch (loadError) {
+        if (active && !(loadError instanceof DOMException && loadError.name === 'AbortError')) {
+          setReportPatients([])
+          setReportError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o relatório de pacientes.')
+        }
+      } finally {
+        if (active) setReportLoading(false)
+      }
+    }
+    void loadAllReportPatients()
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [registryTab, patientReload, patientSort, patientStatusFilter, query, roomFilter, bedFilter])
 
   useEffect(() => {
     if (!viewingPatient) return
@@ -869,6 +968,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       const data = await response.json() as Patient & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar o cadastro.')
       setPatients((current) => editingReference ? current.map((item) => item.reference === data.reference ? data : item) : [...current, data].sort((a, b) => a.room.localeCompare(b.room, 'pt-BR', { numeric: true }) || a.bed.localeCompare(b.bed, 'pt-BR', { numeric: true })))
+      setPatientPage(0)
+      setPatientReload((current) => current + 1)
       setForm({ ...emptyPatientForm }); setEditingReference(''); setShowForm(false); setCameraOpen(false)
       setDuplicateCandidates([]); setDuplicateOverride(false)
       setRegistryTab('list')
@@ -890,48 +991,22 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       const data = await response.json() as { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível arquivar o cadastro.')
       setPatients((current) => current.filter((item) => item.reference !== archivingPatient.reference))
+      setPatientPage(0)
+      setPatientReload((current) => current + 1)
       setNotice('Cadastro arquivado; os dados e o motivo permanecem registrados na auditoria.')
       setArchivingPatient(null); setArchiveReason('')
     } catch (archiveError) { setError(archiveError instanceof Error ? archiveError.message : 'Falha ao arquivar cadastro.') }
   }
 
-  const queryDigits = query.replace(/\D/g, '')
-  const roomOptions = [...new Set(patients.map((patient) => patient.room.trim()).filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right, 'pt-BR', { numeric: true }))
-  const bedOptions = [...new Set(patients
-    .filter((patient) => !roomFilter || patient.room === roomFilter)
-    .map((patient) => patient.bed.trim())
-    .filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right, 'pt-BR', { numeric: true }))
-  const queryTerms = query.trim().toLocaleLowerCase('pt-BR').split(/\s+/).filter(Boolean)
   const filteredPatients = patients
-    .filter((patient) => {
-      const matchesQuery = queryTerms.every((term) =>
-        `${patient.name} ${patient.room} ${patient.bed} ${patient.responsible_name ?? ''} ${patient.cpf ?? ''} ${patient.sus_card ?? ''}`
-          .toLocaleLowerCase('pt-BR')
-          .includes(term),
-      ) || (queryDigits.length > 0 && `${patient.cpf ?? ''}${patient.sus_card ?? ''}`.includes(queryDigits))
-      const matchesStatus = patientStatusFilter === 'all'
-        || (patientStatusFilter === 'active' && patient.active !== false)
-        || (patientStatusFilter === 'inactive' && patient.active === false)
-      return matchesQuery
-        && matchesStatus
-        && (!roomFilter || patient.room === roomFilter)
-        && (!bedFilter || patient.bed === bedFilter)
-    })
-    .sort((left, right) => patientSort === 'name'
-      ? left.name.localeCompare(right.name, 'pt-BR')
-      : left.room.localeCompare(right.room, 'pt-BR', { numeric: true })
-        || left.bed.localeCompare(right.bed, 'pt-BR', { numeric: true })
-        || left.name.localeCompare(right.name, 'pt-BR'))
-  const patientPageCount = Math.max(1, Math.ceil(filteredPatients.length / patientPageSize))
+  const patientPageCount = Math.max(1, Math.ceil(patientTotal / patientPageSize))
   const currentPatientPage = Math.min(patientPage, patientPageCount - 1)
-  const visiblePatients = filteredPatients.slice(currentPatientPage * patientPageSize, (currentPatientPage + 1) * patientPageSize)
+  const visiblePatients = patients
   const patientGroups: [string, Patient[]][] = groupPatientsByRoom
     ? [...new Set(visiblePatients.map((patient) => patient.room.trim() || 'Sem quarto'))]
       .map((room) => [room === 'Sem quarto' ? room : `Quarto ${room}`, visiblePatients.filter((patient) => (patient.room.trim() || 'Sem quarto') === room)])
     : [['Pacientes', visiblePatients]]
-  const patientPrintRows: PrintRow[] = filteredPatients.map((patient) => ({ id: patient.reference, date: patient.updated_at || patient.created_at || '', title: patient.name, fields: [['Quarto e leito', patient.room && patient.bed ? `${patient.room} · ${patient.bed}` : 'Sem acomodação atribuída'], ['Situação', patient.active === false ? 'Alta / inativo' : 'Ativo'], ['Tratamento', treatmentTrackLabel(patient.treatment_track ?? 'unclassified')], ['Alergias e alertas', patient.allergies_status === 'known' ? patient.allergies || 'Detalhes não informados' : patient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Não verificadas'], ['Responsável', patient.responsible_status === 'not_applicable' ? 'Não se aplica' : patient.responsible_name || 'Não informado']] }))
+  const patientPrintRows: PrintRow[] = reportPatients.map((patient) => ({ id: patient.reference, date: patient.updated_at || patient.created_at || '', title: patient.name, fields: [['Quarto e leito', patient.room && patient.bed ? `${patient.room} · ${patient.bed}` : 'Sem acomodação atribuída'], ['Situação', patient.active === false ? 'Alta / inativo' : 'Ativo'], ['Tratamento', treatmentTrackLabel(patient.treatment_track ?? 'unclassified')], ['Alergias e alertas', patient.allergies_status === 'known' ? patient.allergies || 'Detalhes não informados' : patient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Não verificadas'], ['Responsável', patient.responsible_status === 'not_applicable' ? 'Não se aplica' : patient.responsible_name || 'Não informado']] }))
   const patientAddress = (patient: Patient) => [patient.address, patient.address_number, patient.address_complement, patient.neighborhood, patient.city, patient.state, patient.postal_code].filter(Boolean).join(', ')
   const responsibleAddress = (patient: Patient) => [patient.responsible_address, patient.responsible_address_number, patient.responsible_address_complement, patient.responsible_neighborhood, patient.responsible_city, patient.responsible_state, patient.responsible_postal_code].filter(Boolean).join(', ')
 
@@ -969,7 +1044,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       <button className={`button ${registryTab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'reports'} onClick={() => setRegistryTab('reports')}><Printer size={16} /> Relatórios</button>
     </div>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
-    {receptionMode && <div className="hygiene-summary reception-admission-summary" aria-label="Resumo de internações"><article><strong>{patients.filter((patient) => patient.active !== false && Boolean(patient.room && patient.bed)).length}</strong><span>Pacientes acomodados</span></article><article><strong>{patients.filter((patient) => patient.active !== false && !(patient.room && patient.bed)).length}</strong><span>Sem acomodação</span></article><article><strong>{patients.filter((patient) => patient.active === false).length}</strong><span>Cadastros inativos</span></article></div>}
+    {receptionMode && <div className="hygiene-summary reception-admission-summary" aria-label="Resumo de internações"><article><strong>{activeAssignedCount}</strong><span>Pacientes acomodados</span></article><article><strong>{activeUnassignedCount}</strong><span>Sem acomodação</span></article><article><strong>{inactivePatientCount}</strong><span>Cadastros inativos</span></article></div>}
     {showForm && (receptionMode || registryTab === 'registry') && <form className={`patient-registry-form${receptionMode ? ' hygiene-panel' : ''}`} onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : receptionMode ? 'Identificação e internação' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
       <div className="patient-form-grid">
@@ -996,24 +1071,28 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
     </form>}
     {!receptionMode && registryTab === 'registry' && !showForm && <div className="history-empty">Use “Cadastrar paciente” para iniciar um novo cadastro ou acesse a lista para consultar pacientes existentes.</div>}
     {(receptionMode || registryTab === 'list') && <section className="patient-list-panel">
-      <div className="section-heading"><div><p className="eyebrow">REGISTROS COMPARTILHADOS</p><h2>{receptionMode ? 'Pacientes e admissões' : 'Pacientes cadastrados'}</h2></div><span className="module-total">{filteredPatients.length} / {patients.length}</span></div>
-      <label className="field patient-search"><span className="field-label">Buscar paciente, documento, responsável, quarto ou leito</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite um ou mais termos" /></span></label>
+      <div className="section-heading"><div><p className="eyebrow">REGISTROS COMPARTILHADOS</p><h2>{receptionMode ? 'Pacientes e admissões' : 'Pacientes cadastrados'}</h2></div><span className="module-total">{patientTotal} paciente(s)</span></div>
+      <label className="field patient-search"><span className="field-label">Buscar paciente, documento, responsável, quarto ou leito</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPatientPage(0) }} placeholder="Digite um ou mais termos" /></span></label>
       <div className="patient-registry-filters" aria-label="Filtros de pacientes">
-        <label className="field"><span className="field-label">Quarto</span><select value={roomFilter} onChange={(event) => { setRoomFilter(event.target.value); setBedFilter('') }}><option value="">Todos os quartos</option>{roomOptions.map((room) => <option key={room} value={room}>{room}</option>)}</select></label>
-        <label className="field"><span className="field-label">Leito</span><select value={bedFilter} onChange={(event) => setBedFilter(event.target.value)} disabled={!bedOptions.length}><option value="">Todos os leitos</option>{bedOptions.map((bed) => <option key={bed} value={bed}>{bed}</option>)}</select></label>
-        <label className="field"><span className="field-label">Situação</span><select value={patientStatusFilter} onChange={(event) => setPatientStatusFilter(event.target.value as typeof patientStatusFilter)}><option value="all">Todos</option><option value="active">Ativos / internados</option><option value="inactive">Alta / inativos</option></select></label>
-        <label className="field"><span className="field-label">Ordenar por</span><select value={patientSort} onChange={(event) => setPatientSort(event.target.value as typeof patientSort)}><option value="location">Quarto e leito</option><option value="name">Nome (A–Z)</option></select></label>
+        <label className="field"><span className="field-label">Quarto</span><select value={roomFilter} onChange={(event) => { setRoomFilter(event.target.value); setBedFilter(''); setPatientPage(0) }}><option value="">Todos os quartos</option>{roomOptions.map((room) => <option key={room} value={room}>{room}</option>)}</select></label>
+        <label className="field"><span className="field-label">Leito</span><select value={bedFilter} onChange={(event) => { setBedFilter(event.target.value); setPatientPage(0) }} disabled={!bedOptions.length}><option value="">Todos os leitos</option>{bedOptions.map((bed) => <option key={bed} value={bed}>{bed}</option>)}</select></label>
+        <label className="field"><span className="field-label">Situação</span><select value={patientStatusFilter} onChange={(event) => { setPatientStatusFilter(event.target.value as typeof patientStatusFilter); setPatientPage(0) }}><option value="all">Todos</option><option value="active">Ativos / internados</option><option value="inactive">Alta / inativos</option></select></label>
+        <label className="field"><span className="field-label">Ordenar por</span><select value={patientSort} onChange={(event) => { setPatientSort(event.target.value as typeof patientSort); setPatientPage(0) }}><option value="location">Quarto e leito</option><option value="name">Nome (A–Z)</option></select></label>
         <label className="patient-group-toggle"><input type="checkbox" checked={groupPatientsByRoom} onChange={(event) => setGroupPatientsByRoom(event.target.checked)} /><span>Agrupar por quarto</span></label>
-        <button className="button button-secondary patient-filter-clear" type="button" onClick={() => { setQuery(''); setRoomFilter(''); setBedFilter(''); setPatientStatusFilter('all'); setPatientSort('location'); setGroupPatientsByRoom(false) }}>Limpar filtros</button>
+        <button className="button button-secondary patient-filter-clear" type="button" onClick={() => { setQuery(''); setRoomFilter(''); setBedFilter(''); setPatientStatusFilter('all'); setPatientSort('location'); setGroupPatientsByRoom(false); setPatientPage(0) }}>Limpar filtros</button>
       </div>
       {loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? patientGroups.map(([groupLabel, groupPatients]) => <section className="patient-registry-group" key={groupLabel}>
         {groupPatientsByRoom && <h3>{groupLabel}<span>{groupPatients.length}</span></h3>}
         <div className="patient-registry-list">{groupPatients.map((patient) => <article className="patient-registry-card" key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><small>{treatmentTrackLabel(patient.treatment_track ?? 'unclassified')}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => setViewingPatient(patient)}><Eye size={15} /> Ver ficha</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}><ClipboardList size={15} /> Histórico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button><button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button></div></article>)}</div>
       </section>) : <div className="history-empty"><UsersRound size={20} /><span>{query || roomFilter || bedFilter || patientStatusFilter !== 'all' ? 'Nenhum paciente corresponde aos filtros selecionados.' : 'Nenhum paciente cadastrado.'}</span></div>}
-      {!loading && filteredPatients.length > patientPageSize && <nav className="history-pagination" aria-label="Paginação da lista de pacientes"><span>Exibindo {currentPatientPage * patientPageSize + 1}–{Math.min((currentPatientPage + 1) * patientPageSize, filteredPatients.length)} de {filteredPatients.length}</span><div><button className="button button-secondary" type="button" disabled={currentPatientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentPatientPage + 1 >= patientPageCount} onClick={() => setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}
+      {!loading && patientTotal > 0 && <nav className="history-pagination" aria-label="Paginação da lista de pacientes"><span>Exibindo {currentPatientPage * patientPageSize + 1}–{Math.min((currentPatientPage + 1) * patientPageSize, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={currentPatientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentPatientPage + 1 >= patientPageCount} onClick={() => setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}
     </section>}
     {viewingPatient && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewingPatient(null) }}><section className="patient-detail-modal" role="dialog" aria-modal="true" aria-labelledby="patient-detail-title"><div className="patient-detail-header"><div className="patient-detail-identity">{viewingPatient.photo_data ? <img src={viewingPatient.photo_data} alt={`Foto de ${viewingPatient.name}`} /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}<div><p className="eyebrow">FICHA DO PACIENTE</p><h2 id="patient-detail-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room} · Leito {viewingPatient.bed} · {viewingPatient.active === false ? 'Cadastro inativo' : 'Internado'}</p></div></div><button className="button button-secondary" type="button" onClick={() => setViewingPatient(null)}>Fechar</button></div><div className="patient-detail-sections"><section><h3>Identificação e contato</h3><div className="patient-detail-grid"><span><small>Nome da mãe</small><strong>{viewingPatient.mother_name || 'Não informado'}</strong></span><span><small>CPF</small><strong>{viewingPatient.cpf || 'Não informado'}</strong></span><span><small>Cartão Nacional de Saúde (SUS)</small><strong>{viewingPatient.sus_card || 'Não informado'}</strong></span><span><small>Nascimento</small><strong>{viewingPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${viewingPatient.birth_date}T00:00:00Z`)) : 'Não informado'}</strong></span><span><small>Sexo</small><strong>{viewingPatient.sex || 'Não informado'}</strong></span><span><small>Telefone</small><strong>{viewingPatient.phone || 'Não informado'}</strong></span><span><small>E-mail</small><strong>{viewingPatient.email || 'Não informado'}</strong></span></div></section><section><h3>Endereço do paciente</h3><p>{patientAddress(viewingPatient) || 'Não informado'}</p></section><section><h3>Responsável pela internação</h3><div className="patient-detail-grid"><span><small>Nome</small><strong>{viewingPatient.responsible_name || 'Não informado'}</strong></span><span><small>Vínculo</small><strong>{viewingPatient.responsible_relationship || 'Não informado'}</strong></span><span><small>Telefone</small><strong>{viewingPatient.responsible_phone || 'Não informado'}</strong></span><span><small>Endereço</small><strong>{responsibleAddress(viewingPatient) || 'Não informado'}</strong></span></div></section><section className={viewingPatient.allergies ? 'patient-detail-alert' : ''}><h3>Alergias e alertas</h3><p>{viewingPatient.allergies || 'Nenhum alerta cadastrado'}</p></section><section><h3>Registro cadastral</h3><div className="patient-detail-grid"><span><small>Cadastrado em</small><strong>{viewingPatient.created_at ? dateTime(viewingPatient.created_at) : 'Não informado'}</strong></span><span><small>Última atualização</small><strong>{viewingPatient.updated_at ? dateTime(viewingPatient.updated_at) : 'Não informado'}</strong></span><span><small>Atualizado por</small><strong>{viewingPatient.updated_by || 'Não informado'}</strong></span></div></section></div><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => { startEdit(viewingPatient); setViewingPatient(null) }}><Pencil size={15} /> Editar cadastro</button>{onHistory && <button className="button button-primary" type="button" onClick={() => { onHistory(viewingPatient.reference); setViewingPatient(null) }}><ClipboardList size={15} /> Histórico assistencial</button>}</div></section></div>}
-    {receptionMode || registryTab === 'reports' ? <PrintSelectionPanel title="Relação de pacientes" rows={patientPrintRows} /> : null}
+    {receptionMode ? <PrintSelectionPanel title="Relação de pacientes · página atual" rows={patients.map((patient) => ({ id: patient.reference, date: patient.updated_at || patient.created_at || '', title: patient.name, fields: [['Quarto e leito', patient.room && patient.bed ? `${patient.room} · ${patient.bed}` : 'Sem acomodação atribuída'], ['Situação', patient.active === false ? 'Alta / inativo' : 'Ativo'], ['Tratamento', treatmentTrackLabel(patient.treatment_track ?? 'unclassified')], ['Alergias e alertas', patient.allergies_status === 'known' ? patient.allergies || 'Detalhes não informados' : patient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Não verificadas'], ['Responsável', patient.responsible_status === 'not_applicable' ? 'Não se aplica' : patient.responsible_name || 'Não informado']] }))} /> : null}
+    {registryTab === 'reports' && <>
+      {reportError && <ToastMessage variant="error">{reportError}</ToastMessage>}
+      {reportLoading ? <div className="history-empty">Carregando todos os pacientes para o relatório…</div> : <PrintSelectionPanel title="Relação de pacientes" rows={patientPrintRows} />}
+    </>}
     {viewingPatient && <div className="patient-detail-toolbar"><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(true)}><ClipboardList size={15} /> Histórico</button><button className="button button-primary" type="button" onClick={() => { document.body.classList.add('print-patient-detail'); window.addEventListener('afterprint', () => document.body.classList.remove('print-patient-detail'), { once: true }); window.print() }}><Printer size={16} /> Imprimir ficha</button></div>}
     {archivingPatient && <div className="patient-modal-backdrop" role="presentation"><section className="patient-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-archive-title"><h2 id="patient-archive-title">Arquivar cadastro de paciente</h2><p><strong>{archivingPatient.name}</strong> deixará de aparecer nos cadastros ativos. Os dados assistenciais serão preservados, e a exclusão lógica, o motivo e o responsável ficarão registrados na auditoria.</p><label className="field"><span className="field-label">Motivo do arquivamento</span><textarea required minLength={5} maxLength={500} value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} /></label><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => setArchivingPatient(null)}>Cancelar</button><button className="button button-danger" type="button" onClick={() => void confirmArchivePatient()} disabled={archiveReason.trim().length < 5}>Arquivar paciente</button></div></section></div>}
     {viewingPatient && showPatientFollowUp && <div className="patient-modal-backdrop" role="presentation"><section className="patient-follow-up-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-follow-up-title"><div className="patient-detail-header"><div><p className="eyebrow">HISTÓRICO DO PACIENTE</p><h2 id="patient-follow-up-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room} · Leito {viewingPatient.bed} · {viewingPatient.active === false ? 'Alta registrada' : 'Internado'}</p></div><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(false)}>Fechar</button></div><form className="patient-observation-form" onSubmit={(event) => void savePatientObservation(event)}><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nível de acompanhamento</span><select value={attentionLevel} onChange={(event) => setAttentionLevel(event.target.value as PatientObservation['attention_level'])}><option value="green">Verde · rotina habitual</option><option value="yellow">Amarelo · atenção ampliada</option><option value="red">Vermelho · plano de abordagem prioritário</option></select></label><label className="field"><span className="field-label">Situação do tratamento</span><select value={treatmentStatus} onChange={(event) => setTreatmentStatus(event.target.value as PatientObservation['treatment_status'])}><option value="in_progress">Em andamento</option><option value="completed">Concluído</option><option value="discharged">Alta</option></select></label></div><label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={observationDraft} onChange={(event) => setObservationDraft(event.target.value)} placeholder="Registre fatos observáveis, cuidados realizados, resposta ao tratamento e orientações de continuidade." /></label><button className="button button-primary" type="submit" disabled={savingObservation || observationDraft.trim().length < 5}>{savingObservation ? 'Salvando…' : 'Registrar no histórico'}</button></form><div className="patient-observation-list">{patientObservations.map((item) => <article className={`patient-observation-card attention-${item.attention_level}`} key={item.id}><div><strong>{item.attention_level === 'green' ? 'Verde · rotina habitual' : item.attention_level === 'yellow' ? 'Amarelo · atenção ampliada' : 'Vermelho · plano prioritário'}</strong><span>{item.treatment_status === 'in_progress' ? 'Tratamento em andamento' : item.treatment_status === 'completed' ? 'Tratamento concluído' : 'Alta registrada'}</span></div><p>{item.observation}</p><small>{item.actor_name} · {dateTime(item.created_at)}</small></article>)}{!patientObservations.length && <div className="history-empty">Nenhuma anotação de acompanhamento registrada.</div>}</div></section></div>}
