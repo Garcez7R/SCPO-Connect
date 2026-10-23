@@ -1472,6 +1472,22 @@ def test_patient_registry_route_accepts_pagination_and_search_parameters(
         nursing.app.dependency_overrides.clear()
 
 
+def test_app_admin_can_read_physician_profile(nursing_db: Session) -> None:
+    admin = DemoPrincipal(
+        "admin-id", "admin", "Administradora de teste", "admin",
+        ["admin"], {"admin": ["consultar", "administrar"]},
+    )
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    nursing.app.dependency_overrides[nursing.PHYSICIAN_PROFILE_READ_ACCESS] = lambda: admin
+    try:
+        with TestClient(nursing.app) as client:
+            response = client.get("/api/v1/physicians/profile")
+        assert response.status_code == 200
+        assert response.json() == {"profile": None}
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
 def test_hourly_nursing_round_records_patient_checks_and_completion(
     nursing_db: Session, nurse: DemoPrincipal
 ) -> None:

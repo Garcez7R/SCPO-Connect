@@ -1846,7 +1846,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
 
   return (
     <section className="nursing-page page-enter">
-      <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><span className="module-icon module-icon-nursing"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
+      <div className="page-title-row"><span className="module-icon module-icon-nursing"><HeartPulse size={23} /></span><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><div className="nursing-vitals-action"><span className="module-icon"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button></div><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><label className="patient-copy"><span>Paciente</span><select value={patientRef} onChange={(event) => setPatientRef(event.target.value)}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label><span className="entry-status">{treatmentTrackLabel(patients.find((patient) => patient.reference === patientRef)?.treatment_track)}</span><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
       <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
       <div className="admin-tabs module-tabs nursing-tabs" role="tablist" aria-label="Seções de Enfermagem">
@@ -2510,7 +2510,7 @@ function AdminPage({ user }: { user: AuthUser }) {
     </section>
     <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia para todos os módulos e ações, incluindo administração de contas</span><span><strong>Superadministrador</strong> privilégio de sistema separado e reservado</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
     </>}
-    {activeTab === 'reports' && canReviewData && <AdminReportsCenter includeOperationalReports={user.modules.includes('admin')} />}
+    {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
     {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
   </section>
 }
@@ -3011,9 +3011,9 @@ function AdminPatientStatusRow({ record, onSaved }: { record: AdminReportRecord;
   </article>
 }
 
-function AdminReportsCenter({ includeOperationalReports }: { includeOperationalReports: boolean }) {
+function AdminReportsCenter() {
   const reportPageSize = 50
-  const [sourceId, setSourceId] = useState<(typeof adminReportSources)[number]['id']>(includeOperationalReports ? 'patients' : 'therapy')
+  const [sourceId, setSourceId] = useState<(typeof adminReportSources)[number]['id']>('patients')
   const [reportPage, setReportPage] = useState(0)
   const [rows, setRows] = useState<AdminReportRecord[]>([])
   const [reportTotal, setReportTotal] = useState<number | null>(null)
@@ -3022,7 +3022,7 @@ function AdminReportsCenter({ includeOperationalReports }: { includeOperationalR
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
-  const visibleSources = includeOperationalReports ? adminReportSources : adminReportSources.filter((item) => item.id === 'therapy')
+  const visibleSources = adminReportSources
   const source = visibleSources.find((item) => item.id === sourceId) ?? visibleSources[0]
 
   const loadReport = useCallback(async () => {

@@ -1621,6 +1621,7 @@ PATIENT_ACCESS = Depends(authorize_patient_module)
 PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "physician", "management", "admin"))
 CLINICAL_RISK_ACCESS = Depends(require_demo_role("nursing", "nutrition", "pharmacy", "physician", "management"))
 PHYSICIAN_ACCESS = require_demo_role("physician", "management")
+PHYSICIAN_PROFILE_READ_ACCESS = require_demo_role("physician", "management", "admin")
 PRESCRIPTION_READ_ACCESS = require_demo_role("physician", "pharmacy", "nursing", "management", "admin", "oversight")
 
 
@@ -2677,7 +2678,7 @@ def list_medication_administrations(
 
 @app.get("/api/v1/physicians/profile")
 def get_physician_profile(
-    principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_ACCESS)],
+    principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_PROFILE_READ_ACCESS)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     profile = db.get(PhysicianProfile, principal.user_id)
