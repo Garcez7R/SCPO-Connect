@@ -87,8 +87,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transition: color 140ms ease, background 140ms ease;
 }
 .nav-link > svg { flex: 0 0 22px; color: currentColor; transition: transform 180ms ease; }
-.nav-link:hover > svg { transform: translateY(-1px) scale(1.04); }
-.nav-link > span:not(.nav-count) { font-size: 13px; font-weight: 600; }
+.nav-link:hover > svg { transform: rotate(-5deg) scale(1.07); }
+.nav-link > span:not(.nav-count) { font-size: 14px; font-weight: 700; }
 .nav-link:hover { background: #f4f7f9; color: var(--ink); }
 .nav-link-active { background: var(--blue-pale); color: var(--blue-dark); font-weight: 700; }
 .nav-link-active::before { position: absolute; inset: 8px auto 8px 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--blue); content: ''; }
@@ -897,6 +897,53 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .patient-history-summary { grid-template-columns: auto 1fr auto; align-items: center; }
 .patient-history-summary h2 { margin: 0 0 3px; font-size: 17px; }
 .patient-history-summary p, .patient-history-summary small { display: block; margin: 2px 0; color: var(--muted); font-size: 11px; }
+.patient-history-page { min-width: 0; gap: 12px; }
+.patient-history-page > .page-title-row { margin-bottom: 0; }
+.patient-history-page .patient-history-summary { gap: 12px; padding: 14px 16px; }
+.patient-history-page .vital-trends-dashboard, .patient-history-page .vital-history, .patient-history-page .vital-extra-details { min-width: 0; margin: 0; padding: 14px; border-radius: 9px; }
+.patient-history-page .vital-history { background: var(--surface); }
+.patient-history-page .vital-extra-card { min-width: 0; padding: 10px; }
+.patient-history-page .vital-extra-card > div:first-child { flex-wrap: wrap; }
+.admin-reports-center { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
+.admin-report-controls { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(145px, .7fr)) auto auto; align-items: end; gap: 11px; }
+.admin-report-controls > .button { min-height: 42px; white-space: nowrap; }
+.admin-report-list { display: grid; max-height: 65vh; overflow: auto; }
+.admin-report-row { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.admin-report-row > div { display: grid; min-width: 0; gap: 4px; }
+.admin-report-row strong { color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
+.admin-report-row span { color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.patient-registry-tabs { margin-bottom: 0; }
+.patient-registry-page .patient-list-panel { min-width: 0; }
+.nursing-medication-panel { display: grid; gap: 15px; margin-top: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); }
+.nursing-medication-history { display: grid; gap: 9px; }
+.nursing-medication-history > article { display: grid; min-width: 0; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); color: var(--ink); }
+.nursing-medication-history > article > span, .nursing-medication-history > article > small { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+html[data-theme="dark"] .nursing-medication-panel { border-color: var(--line); background: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .nursing-medication-history > article { border-color: var(--line); background: var(--page); color: var(--ink); }
+html[data-theme="dark"] .nursing-medication-history > article > span, html[data-theme="dark"] .nursing-medication-history > article > small { color: var(--muted); }
+html[data-theme="dark"] .patient-history-page .vital-history { background: var(--surface); }
+html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
+.patient-registry-identity .entry-status { width: fit-content; margin: 0 0 3px; }
+@media (max-width: 760px) {
+  .nursing-medication-panel { gap: 12px; padding: 14px; }
+  .nursing-medication-panel > .section-heading { align-items: stretch; flex-direction: column; }
+  .nursing-medication-panel > .section-heading > .button { width: 100%; justify-content: center; }
+  .admin-report-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-report-controls .field:first-child { grid-column: 1 / -1; }
+  .admin-report-controls > .module-total { align-self: center; }
+  .admin-report-controls > .button { justify-content: center; }
+  .patient-history-page .vital-trends-dashboard,
+  .patient-history-page .vital-history,
+  .patient-history-page .vital-extra-details { padding: 12px; }
+  .patient-history-page .patient-history-summary { grid-template-columns: auto minmax(0, 1fr); padding: 12px; }
+  .patient-history-page .patient-history-summary .module-total { grid-column: 1 / -1; }
+}
+@media (max-width: 420px) {
+  .admin-report-controls { grid-template-columns: 1fr; }
+  .admin-report-controls .field:first-child { grid-column: auto; }
+  .admin-report-controls > .button { width: 100%; }
+  .admin-report-row { flex-direction: column; }
+}
 .therapy-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(270px, .8fr); align-items: start; gap: 16px; }
 .therapy-calendar-heading { display: flex; align-items: center; justify-content: space-between; }
 .therapy-calendar-heading h2 { margin: 0; color: var(--ink); font-size: 18px; text-transform: capitalize; }

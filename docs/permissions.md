@@ -6,7 +6,7 @@ O login local, troca obrigatória da senha inicial, MFA TOTP, sessão HttpOnly a
 
 O perfil **Superadministrador do Sistema** é um privilégio independente dos módulos de Gestão Hospitalar e Administração. O login definido por `SCPO_SUPERADMIN_USERNAME` (padrão `rgarcez`) é marcado na migração ou no bootstrap. A conta não pode ser alterada pelos administradores comuns; redefinição de credenciais, encerramento de sessões, MFA e backup são operações exclusivas do superadministrador. As senhas temporárias são aleatórias, exibidas uma única vez e exigem troca e novo cadastro de MFA. O serviço não oferece um fluxo alternativo para promover outra conta.
 
-A Administração Hospitalar separa dois escopos atribuíveis de forma independente: **Administração do aplicativo** (contas, permissões e perfis profissionais) e **Relatórios e auditoria** (consulta aos relatórios digitais e aos eventos registrados). Uma conta pode receber um ou ambos; a revisão de dados não concede administração de contas, e administrar contas não concede, por si só, consulta aos relatórios nem aos logs. A Gestão Hospitalar continua sendo uma visão operacional ampla, sem substituir um sistema financeiro/ERP hospitalar completo. Os logs e a recuperação de acesso continuam dependendo de validação operacional da instituição e da melhoria de durabilidade e resistência à alteração da trilha.
+A Administração Hospitalar separa dois escopos: **Administração do aplicativo** (contas, permissões e perfis profissionais) e **Relatórios e auditoria** (consulta aos relatórios digitais e aos eventos registrados). O administrador do aplicativo recebe acesso aos módulos operacionais e administrativos de dados, conforme solicitado pela instituição; não recebe as funções de backup/restauração, reservadas à conta superadministradora. Um perfil somente de relatórios continua sem administração de contas nem acesso aos módulos operacionais. A Gestão Hospitalar continua sendo uma visão operacional ampla, sem substituir um sistema financeiro/ERP hospitalar completo. Os logs e a recuperação de acesso continuam dependendo de validação operacional da instituição e da melhoria de durabilidade e resistência à alteração da trilha.
 
 ## Matriz efetiva no código
 
@@ -16,15 +16,15 @@ O sistema não possui cargos operacionais fixos: os módulos e ações são atri
 | --- | --- | --- | --- | --- | --- |
 | Módulo operacional individual | Sim, se selecionado | Sim, padrão | Sim, padrão | Opcional somente para Pacientes, Enfermagem, Nutrição e Recepção | Não |
 | Gestão Hospitalar | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Sim |
-| Administração do aplicativo | Contas e cadastros profissionais autorizados | Contas | Contas e cadastros profissionais | Não | Sim |
+| Administração do aplicativo | Todos os módulos operacionais | Todos os módulos operacionais | Todos os módulos operacionais | Conforme módulo | Sim |
 | Relatórios e auditoria | Relatórios e eventos registrados | Não | Não | Não | Não |
-| Superadministrador | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Operações de sistema restritas |
+| Superadministrador | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Backup, restauração e recuperação de acesso |
 
-Uma conta que recebe Gestão Hospitalar é ampliada pelo backend para todos os módulos e todas as ações; isso inclui os dois escopos administrativos e não é uma seleção de painel somente leitura. O backend impede que um administrador do aplicativo sem Gestão Hospitalar conceda esse acesso amplo. Por isso, a interface mostra um aviso de privilégio amplo ao conceder Gestão Hospitalar. O superadministrador é um privilégio independente e reservado, não um cargo que outros administradores possam atribuir.
+Gestão Hospitalar e Administração do aplicativo são perfis amplos de módulos no backend. Administração do aplicativo não concede acesso à API de backup/restauração: essas rotas verificam explicitamente o privilégio `is_superuser`. O superadministrador é independente e reservado; outros administradores não podem promovê-lo nem alterar sua conta.
 
 As ações gerais correspondem a `consultar`, `criar`, `alterar`, `excluir` e `administrar`. A autorização é checada no backend; esconder ou desabilitar um controle na interface não substitui essa checagem. A opção de arquivamento na interface existe somente para Pacientes, Enfermagem, Nutrição e Recepção.
 
-Antes de uso real, os responsáveis de cada área devem aprovar uma matriz nominal com módulo, ação, dados/campos acessíveis, justificativa, aprovador, validade e revisão. O comportamento amplo de Gestão Hospitalar deve ser validado; não conceda esse módulo para representar um gestor de painel com escopo reduzido.
+Antes de uso real, os responsáveis de cada área devem aprovar uma matriz nominal com módulo, ação, dados/campos acessíveis, justificativa, aprovador, validade e revisão. A concessão de Administração do aplicativo equivale a acesso operacional amplo e deve ser limitada às contas formalmente autorizadas.
 
 | Controle | Estado | Para dados reais |
 | --- | --- | --- |

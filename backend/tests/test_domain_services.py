@@ -65,11 +65,29 @@ def test_superadmin_is_explicit_and_reserved() -> None:
 
 def test_administration_scopes_are_independent() -> None:
     permissions = access._validate_permissions(["admin", "oversight"], None)
-    assert permissions["admin"] == ["consultar", "criar", "alterar", "administrar"]
-    assert permissions["oversight"] == ["consultar"]
+    assert permissions == access._all_permissions()
 
 
-def test_only_oversight_scope_reads_reports_and_audit(
+def test_app_admin_receives_all_operational_modules_but_not_system_admin(
+    domain_database: dict[str, Session],
+) -> None:
+    db = domain_database["access"]
+    user = access._new_user(
+        "hospitaladmin",
+        "Administrador do hospital",
+        ["admin"],
+        access._validate_permissions(["admin"], None),
+    )
+    db.add(user)
+    db.commit()
+    response = access._user_response(user)
+    assert set(response["modules"]) == access.MODULES
+    assert response["role"] == "admin"
+    assert response["is_superuser"] is False
+    assert "system-admin" not in response["modules"]
+
+
+def test_administration_and_oversight_can_read_reports_and_audit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reviewer = DemoPrincipal(
@@ -99,6 +117,17 @@ def test_only_oversight_scope_reads_reports_and_audit(
     assert asyncio.run(therapy.THERAPY_REPORT_ACCESS(request)) == reviewer
 
     principal = app_admin
+    assert asyncio.run(audit.ADMIN_ROLE(request)) == app_admin
+    assert asyncio.run(therapy.THERAPY_REPORT_ACCESS(request)) == app_admin
+
+    principal = DemoPrincipal(
+        "nurse",
+        "nurse",
+        "Enfermagem",
+        "nursing",
+        {"nursing"},
+        {"nursing": ["consultar"]},
+    )
     with pytest.raises(HTTPException) as error:
         asyncio.run(audit.ADMIN_ROLE(request))
     assert error.value.status_code == 403

@@ -168,7 +168,7 @@ def _all_permissions() -> dict[str, list[str]]:
 
 
 def _validate_permissions(modules: list[str], permissions: dict[str, list[str]] | None) -> dict[str, list[str]]:
-    if "management" in modules:
+    if "management" in modules or "admin" in modules:
         return _all_permissions()
     if permissions is None:
         return {
@@ -300,9 +300,11 @@ def _set_cookie(response: Response, user: AppUser, stage: str) -> None:
 
 def _user_response(user: AppUser) -> dict[str, object]:
     is_management = user.is_superuser or "management" in user.modules
-    modules = sorted(MODULES) if is_management else user.modules
-    permissions = _all_permissions() if is_management else user.permissions
-    role = "management" if is_management else (user.modules[0] if user.modules else "")
+    is_app_admin = "admin" in user.modules
+    has_all_modules = is_management or is_app_admin
+    modules = sorted(MODULES) if has_all_modules else user.modules
+    permissions = _all_permissions() if has_all_modules else user.permissions
+    role = "management" if is_management else "admin" if is_app_admin else (user.modules[0] if user.modules else "")
     return {
         "id": user.id,
         "username": user.username,
@@ -604,7 +606,13 @@ async def create_user(
         raise HTTPException(status_code=409, detail="Este usuário já existe")
     if username == SYSTEM_SUPERADMIN_USERNAME:
         raise HTTPException(status_code=409, detail="Este usuário está reservado à conta de superadministrador")
-    modules = sorted(MODULES) if "management" in payload.modules else payload.modules
+    modules = (
+        sorted(MODULES)
+        if "management" in payload.modules
+        else ["admin"]
+        if "admin" in payload.modules
+        else payload.modules
+    )
     permissions = _validate_permissions(modules, payload.permissions)
     temporary_password = secrets.token_urlsafe(18)
     user = _new_user(username, payload.name, modules, permissions, temporary_password)
@@ -647,6 +655,8 @@ async def update_user(
         raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode alterar esse acesso amplo")
     if "management" in modules:
         modules = sorted(MODULES)
+    elif "admin" in modules:
+        modules = ["admin"]
     if "management" in user.modules and (changes.get("active") is False or "management" not in modules):
         other_masters = db.scalars(select(AppUser).where(AppUser.active.is_(True), AppUser.id != user.id)).all()
         if not any("management" in item.modules for item in other_masters):
