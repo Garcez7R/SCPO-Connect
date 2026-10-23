@@ -63,6 +63,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .brand-trigger { display: flex; min-width: 0; align-items: center; gap: 11px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .brand-trigger:focus-visible { outline: 3px solid rgba(40, 109, 134, .3); outline-offset: 4px; }
 .brand-image { display: block; width: 48px; height: 48px; flex: 0 0 48px; padding: 4px; border-radius: 9px; background: #fff; object-fit: contain; }
+.brand-image { transition: transform 200ms ease, box-shadow 200ms ease; }
+.brand-trigger:hover .brand-image { transform: rotate(-5deg) scale(1.07); box-shadow: 0 4px 12px rgb(20 70 96 / 22%); }
 .brand-name { display: flex; flex-direction: column; font-size: 15px; font-weight: 500; letter-spacing: 0; line-height: 1.2; }
 .brand-name strong { display: inline; font-weight: 700; }
 .brand-name small { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
@@ -86,9 +88,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .nav-link > svg { flex: 0 0 22px; color: currentColor; transition: transform 180ms ease; }
 .nav-link:hover > svg { transform: translateY(-1px) scale(1.04); }
-.nav-link > span:not(.nav-count) { font-size: 12px; }
+.nav-link > span:not(.nav-count) { font-size: 13px; font-weight: 600; }
 .nav-link:hover { background: #f4f7f9; color: var(--ink); }
-.nav-link-active { background: var(--blue-pale); color: var(--blue-dark); font-weight: 600; }
+.nav-link-active { background: var(--blue-pale); color: var(--blue-dark); font-weight: 700; }
 .nav-link-active::before { position: absolute; inset: 8px auto 8px 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--blue); content: ''; }
 .nav-count { display: grid; width: 20px; height: 20px; margin-left: auto; place-items: center; border-radius: 5px; background: #fff; color: var(--blue); font-size: 10px; font-weight: 600; }
 .sidebar-bottom { display: grid; flex: 0 0 auto; gap: 15px; margin-top: auto; }
@@ -901,10 +903,10 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .therapy-calendar-heading .icon-button { width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); }
 .therapy-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .therapy-calendar-weekdays { padding: 5px 0; color: var(--muted); font-size: 10px; font-weight: 600; text-align: center; }
-.therapy-calendar-day { display: flex; min-width: 0; min-height: 90px; flex-direction: column; gap: 4px; overflow: hidden; padding: 6px; border: 1px solid #edf1f4; }
+.therapy-calendar-day { display: flex; min-width: 0; min-height: 90px; flex-direction: column; gap: 4px; overflow: hidden; padding: 6px; border: 1px solid var(--line); background: var(--page); }
 .therapy-calendar-day > strong { color: var(--ink); font-size: 11px; }
-.therapy-calendar-empty { background: #fafbfc; }
-.therapy-calendar-day.has-birthday { background: #fffaf0; }
+.therapy-calendar-empty { background: var(--surface); }
+.therapy-calendar-day.has-birthday { background: var(--amber-pale); }
 .therapy-calendar-day.has-activity { box-shadow: inset 0 2px #84b7cd; }
 .therapy-calendar-tag { display: block; overflow: hidden; padding: 3px 4px; border-radius: 3px; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .birthday-tag { background: #fff0d0; color: #81560a; }
@@ -916,7 +918,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .legend-birthday { background: #f2d79e; }
 .legend-activity { background: #84b7cd; }
 .therapy-birthday-list { display: grid; gap: 10px; }
-.therapy-birthday-list article { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.therapy-birthday-list article { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--page); }
 .birthday-date { min-width: 48px; color: #8b5c08; font-size: 12px; font-weight: 700; text-transform: capitalize; }
 .therapy-birthday-list article > div { display: grid; gap: 3px; min-width: 0; }
 .therapy-birthday-list strong { color: var(--ink); font-size: 11px; }
@@ -924,6 +926,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .therapy-birthday-panel > .field-hint { margin: 0; line-height: 1.5; }
 .therapy-activity-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .therapy-activity-card { display: flex; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: white; }
+.therapy-activity-card { background: var(--surface); }
 .therapy-activity-date { display: grid; width: 48px; height: 54px; flex: 0 0 auto; align-content: center; justify-items: center; border-radius: 6px; background: #edf4f6; color: var(--blue-dark); }
 .therapy-activity-date strong { font-size: 18px; line-height: 1.1; }
 .therapy-activity-date small { font-size: 10px; text-transform: capitalize; }
@@ -970,6 +973,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 @keyframes beta-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes beta-dialog-in { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .beta-confetti-piece { animation-duration: .01ms !important; animation-delay: 0s !important; } .beta-dialog, .beta-celebration-backdrop { animation-duration: .01ms !important; } }
+@media (prefers-reduced-motion: reduce) { .brand-image { transition: none; } .brand-trigger:hover .brand-image { transform: none; } }
 
 .about-page { max-width: 1120px; margin-inline: auto; }
 .about-legal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
@@ -1265,6 +1269,11 @@ html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, 
 html[data-theme="dark"] .brand-image { background: #fff; }
 html[data-theme="dark"] .unit-label { border-color: var(--line); background: #263944; color: var(--ink); }
 html[data-theme="dark"] .therapy-calendar-empty { border-color: var(--line); background: #17232b; }
+html[data-theme="dark"] .therapy-calendar-day.has-birthday { background: #332d20; }
+html[data-theme="dark"] .therapy-calendar-tag.birthday-tag { background: #44371f; color: #f1ce86; }
+html[data-theme="dark"] .therapy-calendar-tag.activity-tag { background: #243d49; color: #b5e3f5; }
+html[data-theme="dark"] :is(.therapy-birthday-list article, .therapy-activity-card) { border-color: var(--line); background: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .therapy-activity-date { background: #263944; color: var(--blue-dark); }
 html[data-theme="dark"] .maintenance-filters,
 html[data-theme="dark"] .permission-header { border-color: var(--line); background: #17232b; color: var(--muted); }
 html[data-theme="dark"] .fasting-plan-panel { border-color: #355d70; background: #203743; color: #b5e3f5; }
@@ -1680,6 +1689,8 @@ html[data-theme="dark"] .xray-page .laboratory-print-preview { border-color: var
 .vital-trends-heading h2 { margin: 3px 0 5px; font-size: 19px; }
 .vital-trends-heading p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .vital-trends-heading > .field { flex: 0 0 min(220px, 38%); }
+.vital-trends-period { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.vital-trends-period .field { min-width: 150px; }
 .vital-trends-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; color: var(--muted); font-size: 11px; }
 .vital-trends-gap-note { margin: 0; padding: 10px 12px; border-left: 3px solid #6e87b3; border-radius: 4px; background: var(--page); color: var(--muted); font-size: 11px; line-height: 1.5; }
 .vital-trends-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
@@ -1716,6 +1727,8 @@ html[data-theme="dark"] .vital-pressure-view button[aria-pressed="true"] { backg
 @media (max-width: 700px) {
   .vital-trends-heading { align-items: stretch; flex-direction: column; }
   .vital-trends-heading > .field { flex-basis: auto; width: 100%; }
+  .vital-trends-period { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vital-trends-period .field:first-child { grid-column: 1 / -1; }
   .vital-trends-grid { grid-template-columns: 1fr; }
   .vital-trends-dashboard { padding: 15px; }
 }

@@ -144,6 +144,80 @@ class Patient(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
+class NursingHourlyRound(Base):
+    __tablename__ = "nursing_hourly_rounds"
+    __table_args__ = (
+        Index(
+            "uq_nursing_hourly_rounds_open",
+            "status",
+            unique=True,
+            sqlite_where=text("status = 'open'"),
+            postgresql_where=text("status = 'open'"),
+        ),
+        Index("ix_nursing_hourly_rounds_started_at", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    started_by_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    started_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_by_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    completed_by_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NursingHourlyRoundPatient(Base):
+    __tablename__ = "nursing_hourly_round_patients"
+    __table_args__ = (
+        Index(
+            "uq_nursing_hourly_round_patients_reference",
+            "round_id",
+            "patient_reference",
+            unique=True,
+        ),
+        Index("ix_nursing_hourly_round_patients_round_status", "round_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    round_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("nursing_hourly_rounds.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False)
+    patient_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    room: Mapped[str] = mapped_column(String(20), nullable=False)
+    bed: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    exception_type: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    checked_by_id: Mapped[str] = mapped_column(String(36), nullable=False, default="")
+    checked_by_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NursingHourlyRoundPatientPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["checked", "exception"]
+    exception_type: Literal["away", "location", "not_found", "other"] | None = None
+    note: str = Field(default="", max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def trim_note(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_result(self) -> "NursingHourlyRoundPatientPayload":
+        if self.status == "exception":
+            if self.exception_type is None or len(self.note) < 3:
+                raise ValueError("Selecione a ocorrência e descreva brevemente")
+        elif self.exception_type is not None or self.note:
+            raise ValueError("Observação de ocorrência somente para exceções")
+        return self
+
+
 def validate_cpf_number(value: str) -> str:
     digits = re.sub(r"\D", "", value)
     if not digits:
@@ -1682,6 +1756,244 @@ def list_patients(
     patients = db.scalars(query).all()
     emit_audit_event(principal, "patients", "patient_list_read", "patient_registry")
     return {"patients": [serialize_patient(patient, principal=principal, full_profile=full_profile) for patient in patients]}
+
+
+def _active_round_patients(db: Session) -> list[Patient]:
+    return db.scalars(
+        select(Patient)
+        .where(
+            Patient.active.is_(True),
+            Patient.deleted_at.is_(None),
+            Patient.room != "",
+            Patient.bed != "",
+        )
+        .order_by(Patient.room, Patient.bed, Patient.name)
+    ).all()
+
+
+def serialize_nursing_hourly_round(db: Session, round_record: NursingHourlyRound) -> dict[str, object]:
+    patients = db.scalars(
+        select(NursingHourlyRoundPatient)
+        .where(NursingHourlyRoundPatient.round_id == round_record.id)
+        .order_by(
+            NursingHourlyRoundPatient.room,
+            NursingHourlyRoundPatient.bed,
+            NursingHourlyRoundPatient.patient_name,
+        )
+    ).all()
+    return {
+        "id": round_record.id,
+        "status": round_record.status,
+        "started_by_id": round_record.started_by_id,
+        "started_by_name": round_record.started_by_name,
+        "started_at": round_record.started_at.isoformat(),
+        "completed_by_id": round_record.completed_by_id,
+        "completed_by_name": round_record.completed_by_name,
+        "completed_at": round_record.completed_at.isoformat() if round_record.completed_at else None,
+        "patients": [
+            {
+                "patient_reference": item.patient_reference,
+                "patient_name": item.patient_name,
+                "room": item.room,
+                "bed": item.bed,
+                "status": item.status,
+                "exception_type": item.exception_type,
+                "note": item.note,
+                "checked_by_id": item.checked_by_id,
+                "checked_by_name": item.checked_by_name,
+                "checked_at": item.checked_at.isoformat() if item.checked_at else None,
+            }
+            for item in patients
+        ],
+    }
+
+
+@app.get("/api/v1/nursing/hourly-rounds/current")
+def get_current_nursing_hourly_round(
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object | None]:
+    round_record = db.scalar(
+        select(NursingHourlyRound).where(NursingHourlyRound.status == "open")
+    )
+    if round_record is None:
+        return {"round": None}
+
+    members = {
+        item.patient_reference: item
+        for item in db.scalars(
+            select(NursingHourlyRoundPatient).where(
+                NursingHourlyRoundPatient.round_id == round_record.id
+            )
+        ).all()
+    }
+    added_count = 0
+    for patient in _active_round_patients(db):
+        member = members.get(patient.reference)
+        if member is None:
+            member = NursingHourlyRoundPatient(
+                round_id=round_record.id,
+                patient_reference=patient.reference,
+                patient_name=patient.name,
+                room=patient.room,
+                bed=patient.bed,
+                status="pending",
+            )
+            db.add(member)
+            added_count += 1
+        elif member.status == "pending":
+            member.patient_name = patient.name
+            member.room = patient.room
+            member.bed = patient.bed
+
+    if added_count:
+        emit_audit_event(
+            principal,
+            "nursing",
+            "hourly_round_patients_added",
+            round_record.id,
+            db=db,
+        )
+    db.commit()
+    db.refresh(round_record)
+    return {"round": serialize_nursing_hourly_round(db, round_record)}
+
+
+@app.get("/api/v1/nursing/hourly-rounds")
+def list_nursing_hourly_rounds(
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> dict[str, list[dict[str, object]]]:
+    rounds = db.scalars(
+        select(NursingHourlyRound)
+        .order_by(NursingHourlyRound.started_at.desc())
+        .limit(limit)
+    ).all()
+    emit_audit_event(principal, "nursing", "hourly_round_history_read", "nursing_rounds")
+    return {"rounds": [serialize_nursing_hourly_round(db, item) for item in rounds]}
+
+
+@app.post("/api/v1/nursing/hourly-rounds", status_code=201)
+def start_nursing_hourly_round(
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    if db.scalar(
+        select(NursingHourlyRound.id).where(NursingHourlyRound.status == "open")
+    ):
+        raise HTTPException(status_code=409, detail="Já existe uma ronda em andamento")
+    patients = _active_round_patients(db)
+    if not patients:
+        raise HTTPException(
+            status_code=409,
+            detail="Não há pacientes ativos com quarto e leito para iniciar a ronda",
+        )
+    now = datetime.now(UTC)
+    round_record = NursingHourlyRound(
+        id=str(uuid.uuid4()),
+        status="open",
+        started_by_id=principal.user_id,
+        started_by_name=principal.actor_name,
+        started_at=now,
+    )
+    db.add(round_record)
+    for patient in patients:
+        db.add(
+            NursingHourlyRoundPatient(
+                round_id=round_record.id,
+                patient_reference=patient.reference,
+                patient_name=patient.name,
+                room=patient.room,
+                bed=patient.bed,
+                status="pending",
+            )
+        )
+    emit_audit_event(
+        principal,
+        "nursing",
+        "hourly_round_started",
+        round_record.id,
+        db=db,
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe uma ronda em andamento") from exc
+    db.refresh(round_record)
+    return serialize_nursing_hourly_round(db, round_record)
+
+
+@app.patch("/api/v1/nursing/hourly-rounds/{round_id}/patients/{patient_reference}")
+def update_nursing_hourly_round_patient(
+    round_id: str,
+    patient_reference: str,
+    payload: NursingHourlyRoundPatientPayload,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    round_record = db.get(NursingHourlyRound, round_id)
+    if round_record is None:
+        raise HTTPException(status_code=404, detail="Ronda não encontrada")
+    if round_record.status != "open":
+        raise HTTPException(status_code=409, detail="Esta ronda já foi encerrada")
+    member = db.scalar(
+        select(NursingHourlyRoundPatient).where(
+            NursingHourlyRoundPatient.round_id == round_id,
+            NursingHourlyRoundPatient.patient_reference == patient_reference,
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Paciente não pertence a esta ronda")
+    member.status = payload.status
+    member.exception_type = payload.exception_type or ""
+    member.note = payload.note
+    member.checked_by_id = principal.user_id
+    member.checked_by_name = principal.actor_name
+    member.checked_at = datetime.now(UTC)
+    emit_audit_event(
+        principal,
+        "nursing",
+        "hourly_round_patient_updated",
+        f"{round_id}:{patient_reference}",
+        db=db,
+    )
+    db.commit()
+    db.refresh(round_record)
+    return serialize_nursing_hourly_round(db, round_record)
+
+
+@app.post("/api/v1/nursing/hourly-rounds/{round_id}/complete")
+def complete_nursing_hourly_round(
+    round_id: str,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    round_record = db.get(NursingHourlyRound, round_id)
+    if round_record is None:
+        raise HTTPException(status_code=404, detail="Ronda não encontrada")
+    if round_record.status != "open":
+        raise HTTPException(status_code=409, detail="Esta ronda já foi encerrada")
+    pending_count = db.scalar(
+        select(func.count(NursingHourlyRoundPatient.id)).where(
+            NursingHourlyRoundPatient.round_id == round_id,
+            NursingHourlyRoundPatient.status == "pending",
+        )
+    ) or 0
+    if pending_count:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Confira ou registre uma ocorrência para os {pending_count} paciente(s) pendente(s)",
+        )
+    round_record.status = "completed"
+    round_record.completed_by_id = principal.user_id
+    round_record.completed_by_name = principal.actor_name
+    round_record.completed_at = datetime.now(UTC)
+    emit_audit_event(principal, "nursing", "hourly_round_completed", round_id, db=db)
+    db.commit()
+    db.refresh(round_record)
+    return serialize_nursing_hourly_round(db, round_record)
 
 
 @app.get("/api/v1/reception/arrivals")
@@ -3419,12 +3731,25 @@ def list_patient_vital_trends(
     principal: Annotated[DemoPrincipal, PATIENT_HISTORY_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
     hours: VitalTrendPeriod = VitalTrendPeriod.ONE_DAY,
+    from_date: date | None = None,
+    to_date: date | None = None,
 ) -> dict[str, object]:
     if db.get(Patient, patient_reference) is None:
         raise HTTPException(status_code=404, detail="Paciente não encontrado")
     now = datetime.now(UTC)
-    period_hours = int(hours)
-    start = now - timedelta(hours=period_hours)
+    if (from_date is None) != (to_date is None):
+        raise HTTPException(status_code=422, detail="Informe as duas datas para consultar um período personalizado")
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="A data inicial deve ser anterior à data final")
+    if from_date and from_date > now.date():
+        raise HTTPException(status_code=422, detail="A data inicial não pode ser futura")
+    if from_date and to_date:
+        start = datetime.combine(from_date, time.min, tzinfo=UTC)
+        end = min(datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC) - timedelta(microseconds=1), now)
+    else:
+        start = now - timedelta(hours=int(hours))
+        end = now
+    period_hours = max(1, int((end - start).total_seconds() // 3600))
     measured_time = func.coalesce(VitalRecord.measured_at, VitalRecord.recorded_at)
     records = db.scalars(
         select(VitalRecord)
@@ -3432,7 +3757,7 @@ def list_patient_vital_trends(
             VitalRecord.patient_reference == patient_reference,
             VitalRecord.voided_at.is_(None),
             measured_time >= start,
-            measured_time <= now,
+            measured_time <= end,
         )
         .order_by(measured_time.asc(), VitalRecord.id.asc())
     ).all()
@@ -3441,6 +3766,8 @@ def list_patient_vital_trends(
         "patient_reference": patient_reference,
         "hours": period_hours,
         "generated_at": now.isoformat(),
+        "range_start": start.isoformat(),
+        "range_end": end.isoformat(),
         "records": [serialize_record(record) for record in records],
         "total": len(records),
     }

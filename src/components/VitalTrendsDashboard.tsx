@@ -17,6 +17,8 @@ type TrendResponse = {
   records: VitalRecord[]
   total: number
   generated_at: string
+  range_start: string
+  range_end: string
 }
 
 type TrendSeries = {
@@ -120,8 +122,10 @@ function TrendChart({
             ><title>{item.label}: {value} {unit} · {dateTime(record.measured_at)}</title></circle>)}
           </g>
         })}
-        <text x="82" y="202" textAnchor="start" className="vital-trend-axis-label">{localDateTime(start)}</text>
-        <text x="460" y="202" textAnchor="end" className="vital-trend-axis-label">{localDateTime(end)}</text>
+        {[start, (start + end) / 2, end].map((timestamp, index) => {
+          const x = 82 + index * 189
+          return <g key={timestamp}><line x1={x} y1="36" x2={x} y2="168" className="vital-trend-gridline" /><text x={x} y="202" textAnchor={index === 0 ? 'start' : index === 2 ? 'end' : 'middle'} className="vital-trend-axis-label">{localDateTime(timestamp)}</text></g>
+        })}
       </svg>
     </div>
     <div className="vital-trend-legend">{series.map((item) => <span key={item.key}><i style={{ backgroundColor: item.color }} />{item.label}</span>)}<span>{entries.length} {entries.length === 1 ? 'medição' : 'medições'}</span></div>
@@ -134,19 +138,36 @@ function TrendChart({
 }
 
 export default function VitalTrendsDashboard({ patientReference }: { patientReference: string }) {
-  const [hours, setHours] = useState<6 | 24 | 168 | 720>(168)
+  const [period, setPeriod] = useState<'6' | '24' | '168' | '720' | 'custom'>('168')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [pressureView, setPressureView] = useState<PressureView>('both')
   const [data, setData] = useState<TrendResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null)
+  const incompleteRange = period === 'custom' && (!fromDate || !toDate)
+  const invalidRange = period === 'custom' && Boolean(fromDate && toDate && fromDate > toDate)
 
   useEffect(() => {
+    if (period === 'custom' && (incompleteRange || invalidRange)) {
+      setLoading(false)
+      setData(null)
+      setError('')
+      return
+    }
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setLoading(true)
       setError('')
-      fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/vital-trends?hours=${hours}`, { signal: controller.signal })
+      const params = new URLSearchParams()
+      if (period === 'custom') {
+        params.set('from_date', fromDate)
+        params.set('to_date', toDate)
+      } else {
+        params.set('hours', period)
+      }
+      fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/vital-trends?${params.toString()}`, { signal: controller.signal })
         .then((response) => readApiResponse<TrendResponse>(response))
         .then((result) => {
           setData(result)
@@ -163,11 +184,11 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [patientReference, hours])
+  }, [patientReference, period, fromDate, toDate, incompleteRange, invalidRange])
 
   const records = useMemo(() => data?.records ?? [], [data])
-  const start = data ? new Date(data.generated_at).getTime() - hours * 60 * 60 * 1000 : 0
-  const end = data ? new Date(data.generated_at).getTime() : 0
+  const start = data ? new Date(data.range_start).getTime() : 0
+  const end = data ? new Date(data.range_end).getTime() : 0
   const recordCount = records.length
   const series = {
     systolic: { key: 'systolic', label: 'Sistólica', color: '#147d92', read: (record: VitalRecord) => numberValue(record.values.pressure?.split('/')[0]) },
@@ -183,9 +204,11 @@ export default function VitalTrendsDashboard({ patientReference }: { patientRefe
     : [pressureView === 'systolic' ? series.systolic : series.diastolic]
 
   return <section className="vital-trends-dashboard" aria-label="Painel longitudinal de sinais vitais">
-    <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>Visualização dos registros no tempo; não interpreta os valores nem recomenda condutas.</p></div><label className="field"><span className="field-label">Período</span><select value={hours} onChange={(event) => setHours(Number(event.target.value) as 6 | 24 | 168 | 720)}><option value={6}>Últimas 6 horas</option><option value={24}>Últimas 24 horas</option><option value={168}>Últimos 7 dias</option><option value={720}>Últimos 30 dias</option></select></label></div>
+    <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>O eixo horizontal representa data e horário da aferição; o vertical representa o valor medido. A visualização não interpreta valores nem recomenda condutas.</p></div><div className="vital-trends-period"><label className="field"><span className="field-label">Período</span><select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option value="6">Últimas 6 horas</option><option value="24">Últimas 24 horas</option><option value="168">Últimos 7 dias</option><option value="720">Últimos 30 dias</option><option value="custom">Selecionar datas</option></select></label>{period === 'custom' && <><label className="field"><span className="field-label">De</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label></>}</div></div>
+    {incompleteRange && <p className="field-hint">Informe as datas inicial e final para consultar o período.</p>}
+    {invalidRange && <ToastMessage variant="error">A data inicial deve ser anterior ou igual à data final.</ToastMessage>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
-    {loading ? <div className="history-empty">Carregando evolução…</div> : <>
+    {incompleteRange ? <div className="history-empty">Selecione o período completo para consultar as medições.</div> : invalidRange ? null : loading ? <div className="history-empty">Carregando evolução…</div> : <>
       <div className="vital-trends-meta"><span>{recordCount} {recordCount === 1 ? 'coleta' : 'coletas'} no período</span><span>Atualizado em {data ? dateTime(data.generated_at) : '—'}</span></div>
       {recordCount === 0 ? <div className="history-empty"><Activity size={20} /><span>Não há sinais registrados neste período.</span></div> : <>
         <p className="vital-trends-gap-note">Os pontos são posicionados pelo horário de aferição. Os intervalos entre eles representam tempo sem coleta registrada e não indicam estabilidade.</p>

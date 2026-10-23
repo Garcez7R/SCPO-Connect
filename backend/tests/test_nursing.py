@@ -1211,6 +1211,49 @@ def test_patient_vital_trends_query_accepts_numeric_periods(
         nursing.app.dependency_overrides.clear()
 
 
+def test_patient_vital_trends_accepts_custom_calendar_range(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    nursing.create_vital_record(
+        nursing.VitalPayload(
+            patient_reference=reference,
+            values={"temperature": "36.8"},
+            measured_at=datetime(2025, 2, 10, 9, tzinfo=UTC),
+        ),
+        nurse,
+        nursing_db,
+    )
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    nursing.app.dependency_overrides[nursing.PATIENT_HISTORY_ACCESS.dependency] = lambda: nurse
+    try:
+        with TestClient(nursing.app) as client:
+            response = client.get(
+                f"/api/v1/nursing/patients/{reference}/vital-trends",
+                params={"from_date": "2025-02-10", "to_date": "2025-02-10"},
+            )
+            incomplete_range = client.get(
+                f"/api/v1/nursing/patients/{reference}/vital-trends",
+                params={"from_date": "2025-02-10"},
+            )
+            reversed_range = client.get(
+                f"/api/v1/nursing/patients/{reference}/vital-trends",
+                params={"from_date": "2025-02-11", "to_date": "2025-02-10"},
+            )
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert response.json()["range_start"].startswith("2025-02-10T00:00:00")
+        assert response.json()["range_end"].startswith("2025-02-10T23:59:59")
+        assert incomplete_range.status_code == 422
+        assert reversed_range.status_code == 422
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
 def test_vital_elimination_and_venous_access_choices_are_restricted() -> None:
     nursing.VitalPayload(
         patient_reference="123e4567-e89b-12d3-a456-426614174000",
@@ -1245,3 +1288,89 @@ def test_vital_filters_and_discharge_preserve_history(nursing_db: Session, nurse
     assert history["total"] == 1
     archived = nursing.list_patients(nurse, nursing_db, include_inactive=True)
     assert archived["patients"][0]["active"] is False
+
+
+def test_hourly_nursing_round_records_patient_checks_and_completion(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+
+    started = nursing.start_nursing_hourly_round(nurse, nursing_db)
+    assert started["status"] == "open"
+    assert len(started["patients"]) == 1
+    assert started["patients"][0]["status"] == "pending"
+
+    with pytest.raises(HTTPException) as pending_error:
+        nursing.complete_nursing_hourly_round(str(started["id"]), nurse, nursing_db)
+    assert pending_error.value.status_code == 409
+
+    updated = nursing.update_nursing_hourly_round_patient(
+        str(started["id"]),
+        reference,
+        nursing.NursingHourlyRoundPatientPayload(status="checked"),
+        nurse,
+        nursing_db,
+    )
+    assert updated["patients"][0]["status"] == "checked"
+    assert updated["patients"][0]["checked_by_id"] == nurse.user_id
+    assert updated["patients"][0]["checked_at"] is not None
+
+    completed = nursing.complete_nursing_hourly_round(str(started["id"]), nurse, nursing_db)
+    assert completed["status"] == "completed"
+    assert completed["completed_by_id"] == nurse.user_id
+    assert completed["completed_at"] is not None
+
+    with pytest.raises(HTTPException) as update_error:
+        nursing.update_nursing_hourly_round_patient(
+            str(started["id"]),
+            reference,
+            nursing.NursingHourlyRoundPatientPayload(status="checked"),
+            nurse,
+            nursing_db,
+        )
+    assert update_error.value.status_code == 409
+
+
+def test_hourly_nursing_round_requires_descriptive_exception(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    started = nursing.start_nursing_hourly_round(nurse, nursing_db)
+
+    with pytest.raises(ValidationError):
+        nursing.NursingHourlyRoundPatientPayload(status="exception")
+    with pytest.raises(ValidationError):
+        nursing.NursingHourlyRoundPatientPayload(
+            status="exception",
+            exception_type="away",
+            note="  ",
+        )
+
+    update = nursing.NursingHourlyRoundPatientPayload(
+        status="exception",
+        exception_type="away",
+        note="  Paciente em atendimento externo  ",
+    )
+    assert update.note == "Paciente em atendimento externo"
+    recorded = nursing.update_nursing_hourly_round_patient(
+        str(started["id"]),
+        str(patient["reference"]),
+        update,
+        nurse,
+        nursing_db,
+    )
+    assert recorded["patients"][0]["status"] == "exception"
+    assert recorded["patients"][0]["exception_type"] == "away"
+    assert recorded["patients"][0]["note"] == update.note
+
+
+def test_hourly_nursing_round_rejects_second_open_round(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    create_patient(nursing_db, nurse)
+    nursing.start_nursing_hourly_round(nurse, nursing_db)
+
+    with pytest.raises(HTTPException) as conflict:
+        nursing.start_nursing_hourly_round(nurse, nursing_db)
+    assert conflict.value.status_code == 409
