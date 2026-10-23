@@ -21,6 +21,10 @@ A agenda da Recepção, as prescrições médicas e os endpoints de Gestão Hosp
 
 A agenda da Recepção usa o cadastro central de pacientes. O endpoint valida conflitos de horário por paciente, profissional e local; alterações de situação seguem transições controladas e são auditadas sem registrar a finalidade do agendamento.
 
+As consultas usadas pelo centro de relatórios aceitam acesso somente de leitura para Administração e Relatórios/Auditoria; permissões de escrita continuam restritas aos módulos responsáveis. Relatórios com paginação percorrem os totais informados pela API antes de aplicar filtros, exibir contagens ou imprimir.
+
+A Farmácia valida a referência da prescrição e o vínculo com o paciente por uma chamada interna autenticada ao serviço Nursing antes de debitar o lote. Após registrar a dispensação, solicita a baixa da prescrição. Se a sincronização final falhar, uma nova submissão da mesma prescrição reutiliza a dispensação já registrada e tenta concluir a baixa sem debitar o estoque novamente.
+
 A Oficina Terapêutica mantém abas separadas para calendário/atividades, presença e relatórios. Relatos salvos podem ser consultados digitalmente na aba Relatórios da Gestão Hospitalar; a impressão continua opcional. O painel de chamadas da Recepção atualiza a fila periodicamente. Seu modo de exibição para a sala de espera mostra apenas códigos de chamada, exige sessão autorizada e não publica uma rota anônima.
 
 Solicitações de Higienização podem vincular um leito físico entre os bancos Maintenance e Nursing. O serviço Nursing mantém o leito bloqueado enquanto o pedido estiver ativo; somente após a conclusão registrada pela Higienização o serviço pode liberar o leito. Falhas na chamada entre serviços deixam a liberação pendente e permitem nova tentativa, sem liberar automaticamente um leito não confirmado como limpo.

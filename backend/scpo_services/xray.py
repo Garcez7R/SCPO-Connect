@@ -51,6 +51,7 @@ app = FastAPI(
     title="SCPO Connect · Central de Exames", version="1.0.0", lifespan=lifespan
 )
 XRAY_ROLE = require_demo_role("xray", "physician")
+XRAY_REPORT_ACCESS = require_demo_role("xray", "physician", "management", "admin", "oversight")
 LABORATORY_EXAMS = frozenset(
     {
         "TGO",
@@ -150,7 +151,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/xray/requests")
 def list_requests(
-    principal: Annotated[DemoPrincipal, Depends(XRAY_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(XRAY_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_xray_db)],
 ) -> dict[str, list[dict[str, object]]]:
     requests = [serialize_request(item) for item in db.scalars(select(ExamRequest).order_by(ExamRequest.created_at.desc())).all()]

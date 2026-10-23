@@ -742,6 +742,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [archiveReason, setArchiveReason] = useState('')
   const [showPatientFollowUp, setShowPatientFollowUp] = useState(false)
   const [patientObservations, setPatientObservations] = useState<PatientObservation[]>([])
+  const [patientObservationsReference, setPatientObservationsReference] = useState('')
+  const [patientObservationsError, setPatientObservationsError] = useState('')
   const [attentionLevel, setAttentionLevel] = useState<PatientObservation['attention_level']>('green')
   const [treatmentStatus, setTreatmentStatus] = useState<PatientObservation['treatment_status']>('in_progress')
   const [observationDraft, setObservationDraft] = useState('')
@@ -862,7 +864,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
         const rows: Patient[] = []
         let offset = 0
         let total = 0
-        do {
+        let shouldLoad = true
+        while (shouldLoad) {
           const params = new URLSearchParams({
             full_profile: 'true',
             include_inactive: 'true',
@@ -882,7 +885,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
           rows.push(...page)
           total = data.total ?? rows.length
           offset += page.length
-        } while (active && offset < total)
+          shouldLoad = active && offset < total && page.length > 0
+        }
         if (active) setReportPatients(rows)
       } catch (loadError) {
         if (active && !(loadError instanceof DOMException && loadError.name === 'AbortError')) {
@@ -910,11 +914,22 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   useEffect(() => {
     if (!viewingPatient) return
     let current = true
-    fetch(`/api/v1/nursing/patients/${encodeURIComponent(viewingPatient.reference)}/observations`).then(async (response) => {
-      const data = await response.json() as { observations?: PatientObservation[] }
-      if (!response.ok) throw new Error('Não foi possível carregar o histórico de acompanhamento.')
-      if (current) setPatientObservations(data.observations ?? [])
-    }).catch(() => { if (current) setPatientObservations([]) })
+    fetch(`/api/v1/nursing/patients/${encodeURIComponent(viewingPatient.reference)}/observations`)
+      .then((response) => readApiResponse<{ observations?: PatientObservation[] }>(response))
+      .then((data) => {
+        if (current) {
+          setPatientObservations(data.observations ?? [])
+          setPatientObservationsReference(viewingPatient.reference)
+          setPatientObservationsError('')
+        }
+      })
+      .catch((loadError) => {
+        if (current) {
+          setPatientObservations([])
+          setPatientObservationsReference(viewingPatient.reference)
+          setPatientObservationsError(readableApiError(loadError))
+        }
+      })
     return () => { current = false }
   }, [viewingPatient])
 
@@ -926,7 +941,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       const response = await fetch(`/api/v1/nursing/patients/${encodeURIComponent(viewingPatient.reference)}/observations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ attention_level: attentionLevel, observation: observationDraft, treatment_status: treatmentStatus }) })
       const data = await response.json() as PatientObservation & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar o acompanhamento.')
-      setPatientObservations((current) => [data, ...current]); setObservationDraft('')
+      setPatientObservations((current) => [data, ...current]); setPatientObservationsReference(viewingPatient.reference); setObservationDraft('')
       triggerMobileFeedback()
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar acompanhamento.') }
     finally { setSavingObservation(false) }
@@ -1095,7 +1110,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
     </>}
     {viewingPatient && <div className="patient-detail-toolbar"><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(true)}><ClipboardList size={15} /> Histórico</button><button className="button button-primary" type="button" onClick={() => { document.body.classList.add('print-patient-detail'); window.addEventListener('afterprint', () => document.body.classList.remove('print-patient-detail'), { once: true }); window.print() }}><Printer size={16} /> Imprimir ficha</button></div>}
     {archivingPatient && <div className="patient-modal-backdrop" role="presentation"><section className="patient-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-archive-title"><h2 id="patient-archive-title">Arquivar cadastro de paciente</h2><p><strong>{archivingPatient.name}</strong> deixará de aparecer nos cadastros ativos. Os dados assistenciais serão preservados, e a exclusão lógica, o motivo e o responsável ficarão registrados na auditoria.</p><label className="field"><span className="field-label">Motivo do arquivamento</span><textarea required minLength={5} maxLength={500} value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} /></label><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => setArchivingPatient(null)}>Cancelar</button><button className="button button-danger" type="button" onClick={() => void confirmArchivePatient()} disabled={archiveReason.trim().length < 5}>Arquivar paciente</button></div></section></div>}
-    {viewingPatient && showPatientFollowUp && <div className="patient-modal-backdrop" role="presentation"><section className="patient-follow-up-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-follow-up-title"><div className="patient-detail-header"><div><p className="eyebrow">HISTÓRICO DO PACIENTE</p><h2 id="patient-follow-up-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room} · Leito {viewingPatient.bed} · {viewingPatient.active === false ? 'Alta registrada' : 'Internado'}</p></div><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(false)}>Fechar</button></div><form className="patient-observation-form" onSubmit={(event) => void savePatientObservation(event)}><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nível de acompanhamento</span><select value={attentionLevel} onChange={(event) => setAttentionLevel(event.target.value as PatientObservation['attention_level'])}><option value="green">Verde · rotina habitual</option><option value="yellow">Amarelo · atenção ampliada</option><option value="red">Vermelho · plano de abordagem prioritário</option></select></label><label className="field"><span className="field-label">Situação do tratamento</span><select value={treatmentStatus} onChange={(event) => setTreatmentStatus(event.target.value as PatientObservation['treatment_status'])}><option value="in_progress">Em andamento</option><option value="completed">Concluído</option><option value="discharged">Alta</option></select></label></div><label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={observationDraft} onChange={(event) => setObservationDraft(event.target.value)} placeholder="Registre fatos observáveis, cuidados realizados, resposta ao tratamento e orientações de continuidade." /></label><button className="button button-primary" type="submit" disabled={savingObservation || observationDraft.trim().length < 5}>{savingObservation ? 'Salvando…' : 'Registrar no histórico'}</button></form><div className="patient-observation-list">{patientObservations.map((item) => <article className={`patient-observation-card attention-${item.attention_level}`} key={item.id}><div><strong>{item.attention_level === 'green' ? 'Verde · rotina habitual' : item.attention_level === 'yellow' ? 'Amarelo · atenção ampliada' : 'Vermelho · plano prioritário'}</strong><span>{item.treatment_status === 'in_progress' ? 'Tratamento em andamento' : item.treatment_status === 'completed' ? 'Tratamento concluído' : 'Alta registrada'}</span></div><p>{item.observation}</p><small>{item.actor_name} · {dateTime(item.created_at)}</small></article>)}{!patientObservations.length && <div className="history-empty">Nenhuma anotação de acompanhamento registrada.</div>}</div></section></div>}
+    {viewingPatient && showPatientFollowUp && <div className="patient-modal-backdrop" role="presentation"><section className="patient-follow-up-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-follow-up-title"><div className="patient-detail-header"><div><p className="eyebrow">HISTÓRICO DO PACIENTE</p><h2 id="patient-follow-up-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room} · Leito {viewingPatient.bed} · {viewingPatient.active === false ? 'Alta registrada' : 'Internado'}</p></div><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(false)}>Fechar</button></div><form className="patient-observation-form" onSubmit={(event) => void savePatientObservation(event)}><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nível de acompanhamento</span><select value={attentionLevel} onChange={(event) => setAttentionLevel(event.target.value as PatientObservation['attention_level'])}><option value="green">Verde · rotina habitual</option><option value="yellow">Amarelo · atenção ampliada</option><option value="red">Vermelho · plano de abordagem prioritário</option></select></label><label className="field"><span className="field-label">Situação do tratamento</span><select value={treatmentStatus} onChange={(event) => setTreatmentStatus(event.target.value as PatientObservation['treatment_status'])}><option value="in_progress">Em andamento</option><option value="completed">Concluído</option><option value="discharged">Alta</option></select></label></div><label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={observationDraft} onChange={(event) => setObservationDraft(event.target.value)} placeholder="Registre fatos observáveis, cuidados realizados, resposta ao tratamento e orientações de continuidade." /></label><button className="button button-primary" type="submit" disabled={savingObservation || observationDraft.trim().length < 5}>{savingObservation ? 'Salvando…' : 'Registrar no histórico'}</button></form><div className="patient-observation-list">{patientObservationsReference !== viewingPatient.reference ? <div className="history-empty">Carregando histórico…</div> : patientObservationsError ? <ToastMessage variant="error">{`Não foi possível carregar o histórico de acompanhamento: ${patientObservationsError}`}</ToastMessage> : patientObservations.map((item) => <article className={`patient-observation-card attention-${item.attention_level}`} key={item.id}><div><strong>{item.attention_level === 'green' ? 'Verde · rotina habitual' : item.attention_level === 'yellow' ? 'Amarelo · atenção ampliada' : 'Vermelho · plano prioritário'}</strong><span>{item.treatment_status === 'in_progress' ? 'Tratamento em andamento' : item.treatment_status === 'completed' ? 'Tratamento concluído' : 'Alta registrada'}</span></div><p>{item.observation}</p><small>{item.actor_name} · {dateTime(item.created_at)}</small></article>)}{patientObservationsReference === viewingPatient.reference && !patientObservationsError && !patientObservations.length && <div className="history-empty">Nenhuma anotação de acompanhamento registrada.</div>}</div></section></div>}
   </section>
 }
 
@@ -1125,6 +1140,24 @@ function PatientHistoryPage({ patientReference, onBack }: { patientReference: st
 
 const therapyActivityStatusLabels: Record<TherapyActivityStatus, string> = {
   scheduled: 'Agendada', in_progress: 'Em andamento', completed: 'Realizada', cancelled: 'Cancelada',
+}
+
+async function loadTherapyActivities(endpoint: string): Promise<TherapyActivity[]> {
+  const activities: TherapyActivity[] = []
+  let shouldLoad = true
+  while (shouldLoad) {
+    const url = new URL(endpoint, window.location.origin)
+    url.searchParams.set('limit', '200')
+    url.searchParams.set('offset', String(activities.length))
+    const page = await readApiResponse<{ activities?: TherapyActivity[]; total?: number }>(
+      await fetch(`${url.pathname}${url.search}`),
+    )
+    const rows = page.activities ?? []
+    activities.push(...rows)
+    const total = typeof page.total === 'number' ? page.total : null
+    shouldLoad = total !== null && activities.length < total && rows.length > 0
+  }
+  return activities
 }
 
 function TherapyAttendanceManager({ activities, patients, canEdit, onSaved }: {
@@ -1224,15 +1257,19 @@ function TherapyPage({ profile }: { profile: Profile }) {
     const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString()
     const end = new Date(month.getFullYear(), month.getMonth() + 1, 1).toISOString()
     Promise.all([
-      fetch('/api/v1/therapy/participants'),
-      fetch(`/api/v1/therapy/activities?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&limit=200`),
-    ]).then(async ([patientResponse, activityResponse]) => {
-      const patientData = await patientResponse.json() as { participants?: TherapyPatient[]; detail?: string }
-      const activityData = await activityResponse.json() as { activities?: TherapyActivity[]; detail?: string }
-      if (!patientResponse.ok) throw new Error(patientData.detail ?? 'Não foi possível carregar os pacientes autorizados.')
-      if (!activityResponse.ok) throw new Error(activityData.detail ?? 'Não foi possível carregar a agenda terapêutica.')
-      return { patientData, activityData }
-    }).then(({ patientData, activityData }) => { if (current) { const loadedActivities = activityData.activities ?? []; setPatients((patientData.participants ?? []).map((patient) => ({ ...patient, suppressClinicalData: true }))); setActivities(loadedActivities); setReportDrafts(Object.fromEntries(loadedActivities.map((activity) => [activity.id, activity.activity_report ?? '']))); setReportStatuses(Object.fromEntries(loadedActivities.map((activity) => [activity.id, activity.status]))); setError('') } }).catch((loadError) => { if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a oficina terapêutica.') }).finally(() => { if (current) setLoading(false) })
+      fetch('/api/v1/therapy/participants').then((response) => readApiResponse<{ participants?: TherapyPatient[] }>(response)),
+      loadTherapyActivities(`/api/v1/therapy/activities?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}`),
+    ]).then(([patientData, loadedActivities]) => {
+      if (current) {
+        setPatients((patientData.participants ?? []).map((patient) => ({ ...patient, suppressClinicalData: true })))
+        setActivities(loadedActivities)
+        setReportDrafts(Object.fromEntries(loadedActivities.map((activity) => [activity.id, activity.activity_report ?? ''])))
+        setReportStatuses(Object.fromEntries(loadedActivities.map((activity) => [activity.id, activity.status])))
+        setError('')
+      }
+    }).catch((loadError) => {
+      if (current) setError(readableApiError(loadError))
+    }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }
   }, [month])
 
@@ -1240,24 +1277,22 @@ function TherapyPage({ profile }: { profile: Profile }) {
     event.preventDefault(); setSaving(true); setError(''); setNotice('')
     try {
       const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, starts_at: new Date(form.starts_at).toISOString(), ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null, patient_reference: form.patient_reference || null }) })
-      const data = await response.json() as TherapyActivity & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível agendar a atividade.')
+      const data = await readApiResponse<TherapyActivity>(response)
       if (new Date(data.starts_at).getFullYear() === month.getFullYear() && new Date(data.starts_at).getMonth() === month.getMonth()) { setActivities((items) => [...items, data].sort((a, b) => a.starts_at.localeCompare(b.starts_at))); setReportDrafts((items) => ({ ...items, [data.id]: data.activity_report ?? '' })); setReportStatuses((items) => ({ ...items, [data.id]: data.status })) }
       setForm({ title: '', activity_type: '', description: '', location: '', starts_at: '', ends_at: '', patient_reference: '', participant_references: [] }); setShowForm(false); setNotice('Atividade incluída na agenda.')
-    } catch (submitError) { setError(submitError instanceof Error ? submitError.message : 'Falha ao salvar a atividade.') } finally { setSaving(false) }
+    } catch (submitError) { setError(readableApiError(submitError)) } finally { setSaving(false) }
   }
 
   async function saveActivityReport(activity: TherapyActivity) {
     setSavingReportId(activity.id); setError(''); setNotice('')
     try {
       const response = await fetch(`/api/v1/therapy/activities/${encodeURIComponent(activity.id)}/report`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activity_report: reportDrafts[activity.id] ?? '', status: reportStatuses[activity.id] ?? activity.status }) })
-      const data = await response.json() as TherapyActivity & { detail?: string }
-      if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar o relatório da atividade.')
+      const data = await readApiResponse<TherapyActivity>(response)
       setActivities((items) => items.map((item) => item.id === activity.id ? data : item))
       setReportDrafts((items) => ({ ...items, [activity.id]: data.activity_report ?? '' }))
       setReportStatuses((items) => ({ ...items, [activity.id]: data.status }))
       setNotice('Relatório da atividade salvo para consulta da Gestão Hospitalar.')
-    } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar o relatório.') } finally { setSavingReportId('') }
+    } catch (saveError) { setError(readableApiError(saveError)) } finally { setSavingReportId('') }
   }
 
   function printActivityReport() {
@@ -1644,7 +1679,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   const [medicationLoading, setMedicationLoading] = useState(true)
   const [showPatientForm, setShowPatientForm] = useState(false)
   const [newPatient, setNewPatient] = useState({ name: '', room: '', bed: '' })
-  const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null)
+  const [nutritionResult, setNutritionResult] = useState<{ patientReference: string; plan: NutritionPlan | null; error: string } | null>(null)
   const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
   const [physicianPrescriptions, setPhysicianPrescriptions] = useState<PhysicianPrescription[]>([])
   const [administrations, setAdministrations] = useState<MedicationAdministration[]>([])
@@ -1690,25 +1725,40 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   }, [profile.id])
 
   useEffect(() => {
-    if (!patientRef) return
+    if (!patientRef) {
+      return
+    }
     let current = true
-    fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientRef)}/nutrition-plan`).then(async (response) => {
-      const data = await response.json() as NutritionPlan
-      if (!response.ok) throw new Error('Falha ao carregar o plano alimentar')
-      if (current) setNutritionPlan(data)
-    }).catch(() => { if (current) setNutritionPlan(null) })
+    fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientRef)}/nutrition-plan`)
+      .then((response) => readApiResponse<NutritionPlan>(response))
+      .then((data) => { if (current) setNutritionResult({ patientReference: patientRef, plan: data, error: '' }) })
+      .catch((loadError) => {
+        if (current) {
+          setNutritionResult({
+            patientReference: patientRef,
+            plan: null,
+            error: readableApiError(loadError),
+          })
+        }
+      })
     return () => { current = false }
   }, [patientRef])
+  const nutritionPlan = nutritionResult?.patientReference === patientRef ? nutritionResult.plan : null
+  const nutritionError = nutritionResult?.patientReference === patientRef ? nutritionResult.error : ''
 
   async function addPatient(event: FormEvent) {
     event.preventDefault()
-    const response = await fetch('/api/v1/nursing/patients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newPatient) })
-    if (!response.ok) return
-    const patient = await response.json() as Patient
-    setPatients((items) => [...items, patient])
-    setPatientRef(patient.reference)
-    setShowPatientForm(false)
-    setNewPatient({ name: '', room: '', bed: '' })
+    setHistoryError('')
+    try {
+      const response = await fetch('/api/v1/nursing/patients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newPatient) })
+      const patient = await readApiResponse<Patient>(response)
+      setPatients((items) => [...items, patient])
+      setPatientRef(patient.reference)
+      setShowPatientForm(false)
+      setNewPatient({ name: '', room: '', bed: '' })
+    } catch (saveError) {
+      setHistoryError(readableApiError(saveError))
+    }
   }
 
   function updateField(field: keyof RecordFields, value: string) {
@@ -1793,7 +1843,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   return (
     <section className="nursing-page page-enter">
       <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><span className="module-icon module-icon-nursing"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
-      <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><label className="patient-copy"><span>Paciente</span><select value={patientRef} onChange={(event) => { setPatientRef(event.target.value); setNutritionPlan(null) }}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label><span className="entry-status">{treatmentTrackLabel(patients.find((patient) => patient.reference === patientRef)?.treatment_track)}</span><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+      <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><label className="patient-copy"><span>Paciente</span><select value={patientRef} onChange={(event) => setPatientRef(event.target.value)}>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label><span className="entry-status">{treatmentTrackLabel(patients.find((patient) => patient.reference === patientRef)?.treatment_track)}</span><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
       <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
       <div className="admin-tabs module-tabs nursing-tabs" role="tablist" aria-label="Seções de Enfermagem">
         <button className={`button ${nursingTab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'overview'} onClick={() => setNursingTab('overview')}>Visão geral</button>
@@ -1824,6 +1874,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
         {!!administrations.filter((record) => record.patient_reference === patientRef).length && <div className="nursing-medication-history">{administrations.filter((record) => record.patient_reference === patientRef).map((record) => <article key={record.id}><strong>{record.medication_name} · {record.dose} {record.unit}</strong><span>{record.status === 'administered' ? 'Administrado' : record.status === 'refused' ? 'Recusado' : 'Suspenso'} · {record.actor_name} · {dateTime(record.administered_at)}</span>{record.reason && <small>{record.reason}</small>}</article>)}</div>}
         <p className="work-order-privacy">Confirme paciente, alergias, prescrição, dose e momento correto segundo o protocolo institucional. Este registro não é prescrição nem orientação clínica automatizada.</p>
       </section>
+      {nutritionError && <ToastMessage variant="error">{`Não foi possível consultar o plano alimentar: ${nutritionError}`}</ToastMessage>}
       {nutritionPlan && (nutritionPlan.assessment_date || nutritionPlan.fasting_at) && <div className="care-plan-strip"><strong>Plano alimentar compartilhado</strong>{nutritionPlan.assessment_date && <span>Avaliação de {new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${nutritionPlan.assessment_date}T00:00:00Z`))} · {nutritionPlan.diet_type || 'Tipo de dieta não informado'}{nutritionPlan.restrictions ? ` · Restrições: ${nutritionPlan.restrictions}` : ''}</span>}{nutritionPlan.fasting_at && <span className="fasting-alert">Jejum programado: {dateTime(nutritionPlan.fasting_at)}{nutritionPlan.fasting_reason ? ` · ${nutritionPlan.fasting_reason}` : ''}</span>}</div>}
       </>}
       {showPatientForm && <form className="patient-create-form" onSubmit={addPatient}><label className="field"><span className="field-label">Nome do paciente</span><input required value={newPatient.name} onChange={(event) => setNewPatient({ ...newPatient, name: event.target.value })} /></label><label className="field"><span className="field-label">Quarto</span><input required value={newPatient.room} onChange={(event) => setNewPatient({ ...newPatient, room: event.target.value })} /></label><label className="field"><span className="field-label">Leito</span><input required value={newPatient.bed} onChange={(event) => setNewPatient({ ...newPatient, bed: event.target.value })} /></label><button className="button button-primary" type="submit">Salvar paciente</button></form>}
@@ -2291,6 +2342,7 @@ function AdminPage({ user }: { user: AuthUser }) {
   const [physicianProfiles, setPhysicianProfiles] = useState<PhysicianProfileData[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>(canManageApp ? 'loading' : 'ready')
   const [notice, setNotice] = useState('')
+  const [mutationError, setMutationError] = useState('')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [selectedModules, setSelectedModules] = useState<string[]>([])
@@ -2370,6 +2422,7 @@ function AdminPage({ user }: { user: AuthUser }) {
     event.preventDefault()
     setSaving(true)
     setNotice('')
+    setMutationError('')
     const permissions = Object.fromEntries(selectedModules.map((module) => [
       module,
       module === 'management' || module === 'admin'
@@ -2391,7 +2444,7 @@ function AdminPage({ user }: { user: AuthUser }) {
       setNotice(`Conta ${data.username} criada. Senha temporária de uso único: ${data.initial_password}. Entregue-a diretamente ao usuário; a troca e a ativação do MFA serão obrigatórias no primeiro acesso.`)
       await loadUsers()
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Falha ao criar a conta.')
+      setMutationError(error instanceof Error ? error.message : 'Falha ao criar a conta.')
     } finally {
       setSaving(false)
     }
@@ -2402,6 +2455,7 @@ function AdminPage({ user }: { user: AuthUser }) {
     if (!physicianUserId) return
     setSavingPhysicianProfile(true)
     setNotice('')
+    setMutationError('')
     try {
       const response = await fetch(`/api/v1/physicians/profiles/${encodeURIComponent(physicianUserId)}`, {
         method: 'PUT',
@@ -2412,7 +2466,7 @@ function AdminPage({ user }: { user: AuthUser }) {
       setPhysicianProfiles((current) => [...current.filter((profile) => profile.user_id !== saved.user_id), saved])
       setNotice(`Perfil profissional de ${saved.name} salvo.`)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Não foi possível salvar o perfil profissional.')
+      setMutationError(error instanceof Error ? error.message : 'Não foi possível salvar o perfil profissional.')
     } finally {
       setSavingPhysicianProfile(false)
     }
@@ -2420,6 +2474,7 @@ function AdminPage({ user }: { user: AuthUser }) {
 
   async function updateAccount(user: Account, body: Record<string, unknown>, success: string) {
     setNotice('')
+    setMutationError('')
     try {
       const response = await fetch(`/api/v1/access/users/${user.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await response.json() as Account & { detail?: string }
@@ -2427,7 +2482,7 @@ function AdminPage({ user }: { user: AuthUser }) {
       setUsers((current) => current.map((item) => item.id === user.id ? data : item))
       setNotice(success)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Falha ao atualizar a conta.')
+      setMutationError(error instanceof Error ? error.message : 'Falha ao atualizar a conta.')
     }
   }
 
@@ -2437,6 +2492,7 @@ function AdminPage({ user }: { user: AuthUser }) {
     {activeTab === 'users' && canManageApp && <>
     <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Senha temporária exclusiva, troca obrigatória e MFA.</strong><span>Uma senha aleatória de uso único é gerada para cada conta. Entregue-a ao titular por um canal seguro.</span></div></div>
     {status === 'unavailable' && <ToastMessage variant="error">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</ToastMessage>}
+    {mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos e escopos permitidos</legend><p className="field-hint">Administração do aplicativo controla contas; Relatórios e auditoria concede somente consulta. São permissões independentes.</p><div className="module-permission-grid">{assignableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset>{selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações no backend, além da administração de contas. Conceda somente após aprovação institucional.</span></div></div>}<div className="form-actions"><span className="draft-hint">As permissões serão registradas na auditoria. Gestão Hospitalar concede acesso amplo e não é somente leitura.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
     <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} availableModules={assignableModules} canManageBroadAccess={user.role === 'management' || user.is_superuser} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
@@ -2820,22 +2876,70 @@ type AdminReportRecord = Record<string, unknown>
 
 const adminReportSources = [
   { id: 'patients', label: 'Cadastro de pacientes', endpoint: '/api/v1/nursing/patients?include_inactive=true', collection: 'patients' },
-  { id: 'vitals', label: 'Enfermagem · sinais vitais', endpoint: '/api/v1/nursing/vitals?limit=100&offset=0', collection: 'records' },
+  { id: 'vitals', label: 'Enfermagem · sinais vitais', endpoint: '/api/v1/nursing/vitals', collection: 'records' },
   { id: 'prescriptions', label: 'Médico · prescrições', endpoint: '/api/v1/physicians/prescriptions', collection: 'prescriptions' },
   { id: 'medications', label: 'Farmácia · dispensações', endpoint: '/api/v1/pharmacy/dispensations', collection: 'dispensations' },
   { id: 'medication-actions', label: 'Enfermagem · administrações de medicamentos', endpoint: '/api/v1/nursing/medication-administrations', collection: 'administrations' },
-  { id: 'hourly-rounds', label: 'Enfermagem · verificações horárias', endpoint: '/api/v1/nursing/hourly-rounds?limit=50', collection: 'rounds' },
+  { id: 'hourly-rounds', label: 'Enfermagem · verificações horárias', endpoint: '/api/v1/nursing/hourly-rounds', collection: 'rounds' },
   { id: 'patient-status', label: 'Administração · acompanhamento de pacientes', endpoint: '/api/v1/management/patient-status', collection: 'statuses' },
   { id: 'stock', label: 'Farmácia · alertas de estoque', endpoint: '/api/v1/pharmacy/stock-alerts', collection: 'alerts' },
   { id: 'arrivals', label: 'Recepção · chegadas', endpoint: '/api/v1/reception/arrivals', collection: 'arrivals' },
-  { id: 'nutrition', label: 'Nutrição · avaliações', endpoint: '/api/v1/nursing/nutrition?limit=100&offset=0', collection: 'records' },
-  { id: 'therapy', label: 'Oficina Terapêutica · atividades', endpoint: '/api/v1/therapy/activities?limit=200', collection: 'activities' },
+  { id: 'nutrition', label: 'Nutrição · avaliações', endpoint: '/api/v1/nursing/nutrition', collection: 'records' },
+  { id: 'therapy', label: 'Oficina Terapêutica · atividades', endpoint: '/api/v1/therapy/activities', collection: 'activities' },
   { id: 'social', label: 'Serviço Social · encaminhamentos', endpoint: '/api/v1/social/referrals', collection: 'referrals' },
   { id: 'psychology', label: 'Psicologia · encaminhamentos', endpoint: '/api/v1/psychology/referrals', collection: 'referrals' },
   { id: 'exams', label: 'Central de Exames · solicitações', endpoint: '/api/v1/xray/requests', collection: 'requests' },
   { id: 'maintenance', label: 'Manutenção · ordens de serviço', endpoint: '/api/v1/maintenance/queue', collection: 'orders' },
   { id: 'hygiene', label: 'Higienização · solicitações', endpoint: '/api/v1/hygiene/requests', collection: 'requests' },
 ] as const
+
+const adminReportPageSizes: Partial<Record<(typeof adminReportSources)[number]['id'], number>> = {
+  patients: 200,
+  vitals: 100,
+  prescriptions: 500,
+  medications: 500,
+  'medication-actions': 500,
+  'hourly-rounds': 100,
+  nutrition: 100,
+  therapy: 200,
+  arrivals: 100,
+  hygiene: 500,
+}
+
+const reportStatusLabels: Record<string, string> = {
+  open: 'Aberta',
+  scheduled: 'Agendada',
+  confirmed: 'Confirmada',
+  arrived: 'Chegou',
+  called: 'Chamado',
+  waiting: 'Aguardando',
+  in_service: 'Em atendimento',
+  in_progress: 'Em andamento',
+  completed: 'Concluído',
+  cancelled: 'Cancelado',
+  canceled: 'Cancelado',
+  no_show: 'Não compareceu',
+  admitted: 'Internado',
+  pending: 'Pendente',
+  checked: 'Verificado',
+  exception: 'Exceção',
+  fulfilled: 'Atendida',
+  dispensed: 'Dispensado',
+  requested: 'Solicitada',
+  quoted: 'Cotada',
+  approved: 'Aprovada',
+  ordered: 'Pedido realizado',
+  received: 'Recebida',
+  rejected: 'Rejeitada',
+  attended: 'Presente',
+  absent: 'Ausente',
+  routine: 'Rotina habitual',
+  priority: 'Prioritária',
+  urgent: 'Urgente',
+  green: 'Verde · rotina habitual',
+  yellow: 'Amarelo · atenção ampliada',
+  red: 'Vermelho · prioritário',
+}
 
 function reportRecordText(record: AdminReportRecord, keys: string[]): string {
   for (const key of keys) {
@@ -2845,6 +2949,11 @@ function reportRecordText(record: AdminReportRecord, keys: string[]): string {
     if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
   }
   return ''
+}
+
+function reportStatusText(record: AdminReportRecord): string {
+  const status = reportRecordText(record, ['status', 'attendance', 'priority'])
+  return reportStatusLabels[status] ?? status
 }
 
 function reportRowDate(record: AdminReportRecord): string {
@@ -2903,6 +3012,7 @@ function AdminReportsCenter({ includeOperationalReports }: { includeOperationalR
   const [sourceId, setSourceId] = useState<(typeof adminReportSources)[number]['id']>(includeOperationalReports ? 'patients' : 'therapy')
   const [reportPage, setReportPage] = useState(0)
   const [rows, setRows] = useState<AdminReportRecord[]>([])
+  const [reportTotal, setReportTotal] = useState<number | null>(null)
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [loading, setLoading] = useState(true)
@@ -2914,6 +3024,7 @@ function AdminReportsCenter({ includeOperationalReports }: { includeOperationalR
     const reportSource = adminReportSources.find((item) => item.id === sourceId) ?? adminReportSources[0]
     if (reportSource.id === 'therapy') {
       setRows([])
+      setReportTotal(null)
       setLoading(false)
       setError('')
       return
@@ -2921,15 +3032,35 @@ function AdminReportsCenter({ includeOperationalReports }: { includeOperationalR
     setLoading(true)
     setError('')
     try {
-      const response = await fetch(reportSource.endpoint)
-      const data = await readApiResponse<Record<string, unknown>>(response)
-      const collection = data[reportSource.collection]
-      if (!Array.isArray(collection) || !collection.every((item) => typeof item === 'object' && item !== null && !Array.isArray(item))) {
-        throw new Error(`A resposta do relatório “${reportSource.label}” está em formato inesperado.`)
+      const pageSize = adminReportPageSizes[reportSource.id]
+      const loadedRows: AdminReportRecord[] = []
+      let offset = 0
+      let total: number | null = null
+      let shouldLoad = true
+      while (shouldLoad) {
+        const url = new URL(reportSource.endpoint, window.location.origin)
+        if (pageSize) {
+          url.searchParams.set('limit', String(pageSize))
+          url.searchParams.set('offset', String(offset))
+        }
+        const data = await readApiResponse<Record<string, unknown>>(await fetch(`${url.pathname}${url.search}`))
+        const collection = data[reportSource.collection]
+        if (!Array.isArray(collection) || !collection.every((item) => typeof item === 'object' && item !== null && !Array.isArray(item))) {
+          throw new Error(`A resposta do relatório “${reportSource.label}” está em formato inesperado.`)
+        }
+        loadedRows.push(...collection as AdminReportRecord[])
+        if (typeof data.total === 'number') total = data.total
+        shouldLoad = Boolean(pageSize && total !== null && loadedRows.length < total && collection.length > 0)
+        if (shouldLoad) offset += collection.length
       }
-      setRows(collection as AdminReportRecord[])
+      setRows(loadedRows)
+      setReportTotal(total)
+      if (total !== null && loadedRows.length < total) {
+        throw new Error(`A consulta retornou ${loadedRows.length} de ${total} registros. Atualize o relatório antes de usá-lo.`)
+      }
     } catch (loadError) {
       setRows([])
+      setReportTotal(null)
       setError(loadError instanceof Error ? loadError.message : `Não foi possível carregar ${reportSource.label}.`)
     } finally {
       setLoading(false)
@@ -2953,7 +3084,7 @@ function AdminReportsCenter({ includeOperationalReports }: { includeOperationalR
     const patient = reportRecordText(record, ['patient_name', 'name'])
     const title = reportRecordText(record, ['title', 'item_name', 'medication_name', 'patient_name', 'name', 'request_type']) || `${source.label} · ${index + 1}`
     const fields: [string, string][] = [
-      ['Situação', reportRecordText(record, ['status', 'attendance', 'priority']) || 'Não informada'],
+      ['Situação', reportStatusText(record) || 'Não informada'],
       ['Paciente', patient],
       ['Quarto / leito', [reportRecordText(record, ['room']), reportRecordText(record, ['bed'])].filter(Boolean).join(' / ')],
       ['Área / modalidade', reportRecordText(record, ['department', 'activity_type', 'modality', 'service_type', 'category'])],
@@ -2988,21 +3119,21 @@ function AdminReportsCenter({ includeOperationalReports }: { includeOperationalR
     <div className="patient-list-panel">
       <div className="section-heading"><div><p className="eyebrow">RELATÓRIOS DIGITAIS POR ÁREA</p><h2>Consultar relatórios</h2><p className="welcome-copy">Selecione uma área para consultar e, se necessário, imprimir os registros disponíveis no módulo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadReport()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar relatório'}</button></div>
       <div className="admin-report-controls">
-        <label className="field"><span className="field-label">Área / relatório</span><select value={sourceId} onChange={(event) => { setRows([]); setError(''); setReportPage(0); setSourceId(event.target.value as typeof sourceId) }}>{visibleSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Área / relatório</span><select value={sourceId} onChange={(event) => { setRows([]); setReportTotal(null); setError(''); setReportPage(0); setSourceId(event.target.value as typeof sourceId) }}>{visibleSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <label className="field"><span className="field-label">De</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setReportPage(0); setFromDate(event.target.value) }} /></label>
         <label className="field"><span className="field-label">Até</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setReportPage(0); setToDate(event.target.value) }} /></label>
         <span className="module-total">{filteredRows.length} registros</span>
         <button className="button button-secondary" type="button" onClick={printReport} disabled={loading || !filteredRows.length}><Printer size={16} /> Imprimir resultados</button>
       </div>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
-      <p className="field-hint">Os filtros de data usam os registros retornados pelo módulo; algumas consultas têm limite de resultados. {recordsWithDate < rows.length ? 'Registros sem data são mantidos no resultado.' : ''}</p>
+      <p className="field-hint">A consulta percorre as páginas disponíveis do módulo. {reportTotal !== null ? `Total confirmado pela API: ${reportTotal} registro(s). ` : ''}{recordsWithDate < rows.length ? 'Registros sem data são mantidos no resultado.' : ''}</p>
       {sourceId === 'patient-status' && <p className="field-hint">Os status são registros de acompanhamento identificados por cor. Alterar aqui acrescenta uma anotação ao histórico; nenhum registro anterior é sobrescrito.</p>}
       {loading ? <div className="history-empty" role="status">Carregando {source.label}…</div> : filteredRows.length ? <><div className="admin-report-list">{visibleRows.map((record, index) => {
         if (sourceId === 'patient-status') {
           return <AdminPatientStatusRow key={reportRecordText(record, ['patient_reference'])} record={record} onSaved={() => void loadReport()} />
         }
         const title = reportRecordText(record, ['title', 'item_name', 'medication_name', 'patient_name', 'name', 'request_type']) || `${source.label} · ${index + 1}`
-        const status = reportRecordText(record, ['status', 'attendance', 'priority'])
+        const status = reportStatusText(record)
         const detail = [
           reportRecordText(record, ['description', 'purpose', 'department', 'activity_type', 'modality', 'service_type', 'dose']),
           sourceId === 'hourly-rounds' ? `${reportRecordText(record, ['checked_count'])}/${reportRecordText(record, ['patient_count'])} verificações · ${reportRecordText(record, ['exception_count'])} exceções` : '',
@@ -3042,9 +3173,8 @@ function TherapyReportsCenter() {
           to_date: end.toISOString(),
           limit: '200',
         })
-        const response = await fetch(`/api/v1/therapy/activities?${params}`)
-        const data = await readApiResponse<{ activities?: TherapyActivity[] }>(response)
-        if (active) setActivities(data.activities ?? [])
+        const loadedActivities = await loadTherapyActivities(`/api/v1/therapy/activities?${params}`)
+        if (active) setActivities(loadedActivities)
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os relatórios da Oficina Terapêutica.')
       } finally {
@@ -3080,7 +3210,6 @@ function TherapyReportsCenter() {
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     <div className="psychology-filter-row"><label className="field"><span className="field-label">De</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label></div>
     {loading ? <div className="history-empty" role="status">Carregando relatórios…</div> : reports.length ? <div className="therapy-report-list">{reports.map((activity) => <article className="therapy-report-card" key={activity.id}><div className="therapy-report-heading"><div><p className="eyebrow">{dateTime(activity.starts_at)} · {activity.activity_type}</p><h3>{activity.title}</h3><p>{activity.location}</p></div><span className={`therapy-report-status therapy-report-status-${activity.status}`}>{therapyActivityStatusLabels[activity.status]}</span></div><p className="therapy-report-content">{activity.activity_report}</p><small className="therapy-report-author">{activity.report_updated_by ? `Registrado por ${activity.report_updated_by}` : 'Responsável não informado'}{activity.report_updated_at ? ` · ${dateTime(activity.report_updated_at)}` : ''}</small></article>)}</div> : <div className="history-empty">Nenhum relatório salvo para o período selecionado.</div>}
-    {activities.length >= 200 && <p className="field-hint">A consulta atingiu o limite de 200 atividades. Reduza o período para localizar os demais relatórios.</p>}
   </section>
 }
 

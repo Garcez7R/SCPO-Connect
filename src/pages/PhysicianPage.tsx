@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, ClipboardPlus, Printer, RefreshCw, Stethoscope } from 'lucide-react'
-import { readApiResponse } from '../api'
+import { readApiResponse, readableApiError } from '../api'
 import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
 import { printExternalPrescription, printMedicationAdministrationLabels } from '../printClinicalForm'
@@ -84,7 +84,7 @@ function PhysicianPage() {
           const data = await readApiResponse<T>(await fetch(path))
           if (active) apply(data)
         } catch (loadError) {
-          failures.push(`${label}: ${loadError instanceof Error ? loadError.message : 'falha inesperada na requisição'}`)
+          failures.push(`${label}: ${readableApiError(loadError)}`)
         }
       }
       await Promise.all([

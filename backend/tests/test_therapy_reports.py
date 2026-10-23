@@ -54,6 +54,41 @@ def test_therapy_staff_can_save_a_report_for_management(therapy_database: Sessio
     assert updated["status"] == "completed"
     assert updated["report_updated_by"] == "Profissional da oficina"
     assert report["activities"][0]["activity_report"] == "Seis participantes concluíram a atividade."
+    assert report["total"] == 1
+
+
+def test_therapy_reports_support_offset_pagination(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    therapist = DemoPrincipal(
+        "therapist-id", "therapist", "Profissional da oficina",
+        "therapy", ["therapy"], {"therapy": ["consultar", "criar"]},
+    )
+    for day in (14, 15):
+        therapy.create_activity(
+            therapy.ActivityPayload(
+                title=f"Atividade {day}",
+                activity_type="arte",
+                location="Sala de atividades",
+                starts_at=f"2026-10-{day:02d}T14:00:00-03:00",
+            ),
+            therapist,
+            therapy_database,
+        )
+
+    page = therapy.list_activities(
+        therapist,
+        therapy_database,
+        from_date=None,
+        to_date=None,
+        limit=1,
+        offset=1,
+    )
+
+    assert page["total"] == 2
+    assert page["offset"] == 1
+    assert [activity["title"] for activity in page["activities"]] == ["Atividade 15"]
 
 
 def test_therapy_activity_tracks_and_reconciles_participant_attendance(

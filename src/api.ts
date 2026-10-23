@@ -1,4 +1,10 @@
 function readableApiError(detail: unknown): string {
+  if (detail instanceof Error) {
+    if (/failed to fetch|networkerror|load failed/i.test(detail.message)) {
+      return 'Não foi possível conectar ao serviço. Verifique se a API correspondente está em execução e tente novamente.'
+    }
+    return detail.message
+  }
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
     const issues = detail.flatMap((issue) => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Pill, Search, X } from 'lucide-react'
-import { readApiResponse } from '../api'
+import { readApiResponse, readableApiError } from '../api'
 import { usePersistentTab } from '../components/PageNavigationContext'
 import ToastMessage from '../components/ToastMessage'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
@@ -15,7 +15,7 @@ type AnvisaCatalogSuggestion = { gtin: string; product_name: string; active_ingr
 type AnvisaCatalogStatus = { source: string; source_url: string; entry_count: number; imported_at: string | null; source_updated_at: string | null }
 type PharmacyBarcodeLookup = { gtin: string; lot: string | null; expiry_date: string | null; serial: string | null; matches: PharmacyItem[]; catalog_suggestions: AnvisaCatalogSuggestion[]; catalog_imported_at: string | null }
 type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_balance' | 'entry' | 'issue' | 'adjustment'; quantity: string; balance_after: string; reason: string; actor_name: string; created_at: string }
-type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
+type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; prescription_fulfillment_pending?: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type InternalPrescription = { id: string; patient_reference: string; medication_name: string; active_ingredient: string; presentation: string; dose: string; route: string; frequency: string; administration_times: string[]; duration: string; quantity: string; unit: string; instructions: string; is_controlled: boolean; prescriber_name: string; crm: string; crm_state: string; status: 'pending' | 'fulfilled' | 'cancelled'; created_at: string }
 type PurchaseRequest = { id: string; product_id: number | null; item_name: string; category: string; active_ingredient: string; presentation: string; base_unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; received_quantity: string; supplier: string; quoted_unit_price: string; justification: string; status: 'requested' | 'quoted' | 'approved' | 'ordered' | 'received' | 'rejected'; requested_by: string; approved_by: string; received_by: string; created_at: string; updated_at: string }
 function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
@@ -399,7 +399,7 @@ function PharmacyPage({ user }: { user: AuthUser }) {
         setDispensations(dispenseData.dispensations ?? [])
         setPrescriptions(prescriptionData.prescriptions ?? [])
       } catch (loadError) {
-        if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar pacientes e dispensações.')
+        if (current) setError(readableApiError(loadError))
       }
     }
 
@@ -453,22 +453,17 @@ function PharmacyPage({ user }: { user: AuthUser }) {
         body: JSON.stringify({ ...dispenseForm, item_id: Number(dispenseForm.item_id), quantity: dispenseForm.quantity.replace(',', '.') }),
       })
       const data = await readApiResponse<MedicationDispensation>(response)
-      setDispensations((current) => [data, ...current])
-      const prescriptionReference = dispenseForm.prescription_reference
+      setDispensations((current) => [data, ...current.filter((item) => item.id !== data.id)])
       setDispenseForm({ patient_reference: '', item_id: '', quantity: '', instructions: '', prescription_reference: '', prescriber_name: '', allergy_reviewed: false })
-      if (prescriptionReference) {
-        const prescriptionResponse = await fetch(`/api/v1/physicians/prescriptions/${encodeURIComponent(prescriptionReference)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'fulfilled' }),
-        })
-        const fulfilled = await readApiResponse<InternalPrescription>(prescriptionResponse)
-        setPrescriptions((current) => current.filter((prescription) => prescription.id !== fulfilled.id))
+      if (!data.prescription_fulfillment_pending) {
+        setPrescriptions((current) => current.filter((prescription) => prescription.id !== data.prescription_reference))
+        setNotice('Dispensação registrada, prescrição atendida, paciente vinculado e lote debitado.')
+      } else {
+        setError('A dispensação e a baixa do lote foram registradas, mas não foi possível atualizar o status da prescrição. Selecione novamente a mesma prescrição para concluir a sincronização; uma nova baixa de estoque não será feita.')
       }
-      setNotice('Dispensação registrada, vinculada ao paciente e debitada do lote.')
       await loadItems(0)
     } catch (dispenseError) {
-      setError(dispenseError instanceof Error ? `${dispenseError.message} Se a dispensação foi registrada, confira a fila de prescrições antes de tentar novamente.` : 'Não foi possível concluir a dispensação e atualizar a prescrição.')
+      setError(`${readableApiError(dispenseError)} Se a conexão caiu durante o envio, confira a fila antes de repetir; o servidor reutiliza a dispensação já registrada para a mesma prescrição.`)
     } finally { setDispensing(false) }
   }
 
@@ -582,11 +577,22 @@ function PharmacyPage({ user }: { user: AuthUser }) {
     {pharmacyTab === 'dispensation' && <section className="pharmacy-dispensation-panel">
       <div className="section-heading"><div><p className="eyebrow">SAÍDA ASSISTENCIAL</p><h2>Dispensar para paciente</h2><p className="welcome-copy">Registre a prescrição, confirme as alergias e selecione o lote dispensado. A Enfermagem receberá a quantidade e poderá registrar administrações parciais vinculadas à mesma dispensação.</p></div></div>
       <form className="field-grid field-grid-two" onSubmit={(event) => void submitDispensation(event)}>
-        <label className="field"><span className="field-label">Paciente</span><select required value={dispenseForm.patient_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, patient_reference: event.target.value, allergy_reviewed: false })}><option value="">Selecione</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>
+        <label className="field"><span className="field-label">Paciente</span><select required value={dispenseForm.patient_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, patient_reference: event.target.value, prescription_reference: '', prescriber_name: '', instructions: '', allergy_reviewed: false })}><option value="">Selecione</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>
         <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => setDispenseForm({ ...dispenseForm, item_id: event.target.value })}><option value="">Selecione lote válido</option>{eligibleMedicationLots.map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot}{suggestedFefoLotIds.has(item.id) ? ' · sugestão FEFO' : ''} · saldo {item.balance} {item.unit}</option>)}</select><span className="field-hint">A sugestão FEFO indica o lote válido com vencimento mais próximo por produto; a seleção permanece manual e deve seguir a política da instituição.</span></label>
         <label className="field"><span className="field-label">Quantidade ({selectedDispenseLot?.unit || 'unidade do lote'})</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: formatDecimalInput(event.target.value) })} /><span className="field-hint">Informe a quantidade entregue nesta unidade. O mesmo total fica disponível para registro de doses parciais na Enfermagem.</span></label>
-        <label className="field"><span className="field-label">Referência da prescrição</span><input required minLength={2} maxLength={80} value={dispenseForm.prescription_reference} onChange={(event) => setDispenseForm({ ...dispenseForm, prescription_reference: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Profissional prescritor</span><input required minLength={2} maxLength={120} value={dispenseForm.prescriber_name} onChange={(event) => setDispenseForm({ ...dispenseForm, prescriber_name: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Prescrição pendente</span><select required value={dispenseForm.prescription_reference} onChange={(event) => {
+          const prescription = prescriptions.find((item) => item.id === event.target.value)
+          setDispenseForm((current) => ({
+            ...current,
+            prescription_reference: prescription?.id ?? '',
+            patient_reference: prescription?.patient_reference ?? current.patient_reference,
+            quantity: prescription?.quantity ?? current.quantity,
+            prescriber_name: prescription?.prescriber_name ?? '',
+            instructions: prescription ? `${prescription.dose} · ${prescription.route} · ${prescription.frequency} · ${prescription.duration}${prescription.instructions ? ` · ${prescription.instructions}` : ''}`.slice(0, 500) : '',
+            allergy_reviewed: false,
+          }))
+        }}><option value="">Selecione uma prescrição pendente</option>{prescriptions.filter((item) => item.patient_reference === dispenseForm.patient_reference || !dispenseForm.patient_reference).map((item) => <option key={item.id} value={item.id}>{item.medication_name} · {patients.find((patient) => patient.reference === item.patient_reference)?.name ?? 'Paciente'} · {item.prescriber_name}</option>)}</select></label>
+        <label className="field"><span className="field-label">Profissional prescritor</span><input required minLength={2} maxLength={120} value={dispenseForm.prescriber_name} readOnly /></label>
         <label className="field"><span className="field-label">Instruções para administração (conforme prescrição)</span><input maxLength={500} value={dispenseForm.instructions} onChange={(event) => setDispenseForm({ ...dispenseForm, instructions: event.target.value })} /></label>
         {dispensePatient && <PatientAllergyAlert patient={dispensePatient} />}
         <label className="pharmacy-allergy-confirm"><input type="checkbox" required checked={dispenseForm.allergy_reviewed} onChange={(event) => setDispenseForm({ ...dispenseForm, allergy_reviewed: event.target.checked })} /><span><strong>Revisão de alergias do paciente</strong><small>Confirme que consultou o status e os detalhes cadastrais antes de dispensar.</small></span></label>

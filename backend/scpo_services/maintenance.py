@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, case, select
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, case, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
@@ -129,6 +129,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="SCPO Connect · Ordens de Serviço", version="1.0.0", lifespan=lifespan)
 AUTHENTICATED = Depends(authenticated_principal)
 HYGIENE_ROLE = require_demo_role("hygiene")
+HYGIENE_REPORT_ACCESS = require_demo_role("hygiene", "management", "admin", "oversight")
 
 
 class HygieneRequestCreate(BaseModel):
@@ -204,9 +205,11 @@ def _serialize_hygiene_request(request: HygieneRequest) -> dict[str, object]:
 
 @app.get("/api/v1/hygiene/requests")
 def list_hygiene_requests(
-    principal: Annotated[DemoPrincipal, Depends(HYGIENE_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(HYGIENE_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_maintenance_db)],
-) -> dict[str, list[dict[str, object]]]:
+    limit: Annotated[int, Query(ge=1, le=500)] = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
     priority_order = case(
         (HygieneRequest.priority == "urgent", 0),
         (HygieneRequest.priority == "high", 1),
@@ -217,13 +220,15 @@ def list_hygiene_requests(
         (HygieneRequest.status == "in_progress", 1),
         else_=2,
     )
+    query = select(HygieneRequest)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     requests = db.scalars(
-        select(HygieneRequest).order_by(
+        query.order_by(
             status_order, priority_order, HygieneRequest.created_at.asc()
-        ).limit(500)
+        ).offset(offset).limit(limit)
     ).all()
     emit_audit_event(principal, "hygiene", "hygiene_requests_read", "hygiene_queue")
-    return {"requests": [_serialize_hygiene_request(item) for item in requests]}
+    return {"requests": [_serialize_hygiene_request(item) for item in requests], "total": total, "limit": limit, "offset": offset}
 
 
 @app.post("/api/v1/hygiene/requests", status_code=201)
@@ -568,7 +573,11 @@ def maintenance_queue(
     priority: Literal["normal", "high", "urgent"] | None = None,
     q: str | None = Query(default=None, max_length=120),
 ) -> dict[str, list[dict[str, object]]]:
-    _require_maintenance(principal, "consultar")
+    if not any(
+        module in principal.modules and "consultar" in principal.permissions.get(module, [])
+        for module in ("maintenance", "management", "admin", "oversight")
+    ):
+        raise HTTPException(status_code=403, detail="Acesso de consulta à fila de manutenção não autorizado")
     if from_date and to_date and from_date > to_date:
         raise HTTPException(status_code=422, detail="A data inicial deve ser anterior à data final")
     query = select(WorkOrder)

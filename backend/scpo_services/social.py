@@ -92,6 +92,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="SCPO Connect · Serviço Social", version="1.0.0", lifespan=lifespan)
 SOCIAL_ROLE = require_demo_role("social")
 PSYCHOLOGY_ROLE = require_demo_role("psychology")
+SOCIAL_REPORT_ACCESS = require_demo_role("social", "management", "admin", "oversight")
+PSYCHOLOGY_REPORT_ACCESS = require_demo_role("psychology", "management", "admin", "oversight")
 
 
 class ReferralPayload(BaseModel):
@@ -203,7 +205,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/social/referrals")
 def list_referrals(
-    principal: Annotated[DemoPrincipal, Depends(SOCIAL_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(SOCIAL_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_social_db)],
 ) -> dict[str, list[dict[str, object]]]:
     referrals = [
@@ -268,7 +270,7 @@ def update_referral(
 
 @app.get("/api/v1/psychology/referrals")
 def list_psychology_referrals(
-    principal: Annotated[DemoPrincipal, Depends(PSYCHOLOGY_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(PSYCHOLOGY_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_social_db)],
 ) -> dict[str, list[dict[str, object]]]:
     rows = db.scalars(

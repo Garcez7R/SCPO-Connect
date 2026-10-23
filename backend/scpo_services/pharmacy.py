@@ -2,6 +2,7 @@ import calendar
 import csv
 import hashlib
 import io
+import os
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from sqlalchemy import (
     Integer,
     String,
     delete,
+    func,
     func,
     insert,
     select,
@@ -185,7 +187,8 @@ app = FastAPI(
 )
 PHARMACY_ROLE = require_demo_role("pharmacy")
 INVENTORY_READ_ROLE = require_demo_role("pharmacy", "management")
-DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "physician", "management")
+STOCK_REPORT_ACCESS = require_demo_role("pharmacy", "management", "admin", "oversight")
+DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "physician", "management", "admin", "oversight")
 ANVISA_CMED_CATALOG_URL = "https://dados.anvisa.gov.br/dados/TA_PRECO_MEDICAMENTO.csv"
 MAX_ANVISA_CATALOG_BYTES = 32 * 1024 * 1024
 
@@ -511,7 +514,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/pharmacy/stock-alerts")
 def list_stock_alerts(
-    principal: Annotated[DemoPrincipal, Depends(INVENTORY_READ_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(STOCK_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, list[dict[str, object]]]:
     today = date.today()
@@ -1111,17 +1114,55 @@ def list_dispensations(
     db: Annotated[Session, Depends(get_pharmacy_db)],
     patient_reference: str | None = None,
     status: Literal["dispensed", "cancelled"] | None = None,
-) -> dict[str, list[dict[str, object]]]:
+    limit: Annotated[int, Query(ge=1, le=500)] = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
     query = select(MedicationDispense)
     if patient_reference:
         query = query.where(MedicationDispense.patient_reference == patient_reference)
     if status:
         query = query.where(MedicationDispense.status == status)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     records = db.scalars(
-        query.order_by(MedicationDispense.created_at.desc()).limit(500)
+        query.order_by(MedicationDispense.created_at.desc()).offset(offset).limit(limit)
     ).all()
     emit_audit_event(principal, "pharmacy", "medication_dispensations_read", "medication_dispensations")
-    return {"dispensations": [serialize_dispensation(record) for record in records]}
+    return {"dispensations": [serialize_dispensation(record) for record in records], "total": total, "limit": limit, "offset": offset}
+
+
+def resolve_internal_prescription(
+    prescription_reference: str,
+    patient_reference: str,
+    *,
+    fulfill: bool,
+) -> None:
+    nursing_url = os.getenv("SCPO_NURSING_API_URL", "http://nursing:8000").rstrip("/")
+    service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
+    if not service_token:
+        raise HTTPException(status_code=503, detail="Validação da prescrição indisponível")
+    try:
+        response = httpx.post(
+            f"{nursing_url}/internal/v1/physicians/prescriptions/resolve",
+            headers={"X-Service-Token": service_token},
+            json={
+                "prescription_reference": prescription_reference,
+                "patient_reference": patient_reference,
+                "fulfill": fulfill,
+            },
+            timeout=3.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Serviço de prescrições indisponível") from exc
+    if response.is_success:
+        return
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, AttributeError):
+        detail = None
+    raise HTTPException(
+        status_code=response.status_code if 400 <= response.status_code < 500 else 503,
+        detail=detail if isinstance(detail, str) else "Não foi possível validar a prescrição",
+    )
 
 
 @app.post("/api/v1/pharmacy/dispensations", status_code=201)
@@ -1131,6 +1172,27 @@ def create_dispensation(
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, object]:
     patient = verify_patient_reference(payload.patient_reference)
+    prescription_reference = payload.prescription_reference.strip()
+    existing_dispensation = db.scalar(
+        select(MedicationDispense).where(
+            MedicationDispense.prescription_reference == prescription_reference
+        )
+    )
+    if existing_dispensation is not None:
+        if existing_dispensation.patient_reference != patient["reference"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Esta prescrição já está vinculada a outro paciente",
+            )
+        resolve_internal_prescription(
+            prescription_reference, patient["reference"], fulfill=True
+        )
+        response = serialize_dispensation(existing_dispensation)
+        response["prescription_fulfillment_pending"] = False
+        return response
+    resolve_internal_prescription(
+        prescription_reference, patient["reference"], fulfill=False
+    )
     if not payload.allergy_reviewed:
         raise HTTPException(status_code=422, detail="Confirme a revisão das alergias do paciente antes de dispensar")
     item = db.scalar(
@@ -1168,7 +1230,7 @@ def create_dispensation(
         quantity=format_stock_quantity(amount),
         unit=item.product.unit,
         instructions=payload.instructions,
-        prescription_reference=payload.prescription_reference.strip(),
+        prescription_reference=prescription_reference,
         prescriber_name=payload.prescriber_name.strip(),
         allergy_reviewed=payload.allergy_reviewed,
         status="dispensed",
@@ -1191,7 +1253,15 @@ def create_dispensation(
     )
     emit_audit_event(principal, "pharmacy", "medication_dispensed", dispense.id, db=db)
     db.commit()
-    return serialize_dispensation(dispense)
+    response = serialize_dispensation(dispense)
+    try:
+        resolve_internal_prescription(
+            prescription_reference, patient["reference"], fulfill=True
+        )
+        response["prescription_fulfillment_pending"] = False
+    except HTTPException:
+        response["prescription_fulfillment_pending"] = True
+    return response
 
 
 @app.post("/internal/v1/pharmacy/dispensations/resolve")

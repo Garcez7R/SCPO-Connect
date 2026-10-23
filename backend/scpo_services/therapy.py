@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     select,
 )
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -135,16 +136,18 @@ def list_activities(
     from_date: datetime | None = None,
     to_date: datetime | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
-) -> dict[str, list[dict[str, object]]]:
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
     query = select(TherapyActivity)
     if from_date:
         query = query.where(TherapyActivity.starts_at >= from_date)
     if to_date:
         query = query.where(TherapyActivity.starts_at < to_date)
-    activities = db.scalars(query.order_by(TherapyActivity.starts_at).limit(limit)).all()
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    activities = db.scalars(query.order_by(TherapyActivity.starts_at).offset(offset).limit(limit)).all()
     emit_audit_event(principal, "therapy", "therapy_activities_read", "therapy_calendar")
     attendance = activity_attendance(db, [activity.id for activity in activities])
-    return {"activities": [serialize_activity(activity, attendance.get(activity.id, [])) for activity in activities]}
+    return {"activities": [serialize_activity(activity, attendance.get(activity.id, [])) for activity in activities], "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/v1/therapy/participants")

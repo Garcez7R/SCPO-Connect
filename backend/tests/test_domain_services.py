@@ -136,6 +136,53 @@ def test_administration_and_oversight_can_read_reports_and_audit(
     assert error.value.status_code == 403
 
 
+def test_report_read_permissions_cover_admin_and_oversight_without_expanding_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin = DemoPrincipal(
+        "app-admin", "app-admin", "Administrador", "admin", {"admin"},
+        {"admin": ["consultar", "criar", "alterar", "administrar"]},
+    )
+    reviewer = DemoPrincipal(
+        "reviewer", "reviewer", "Revisor", "oversight", {"oversight"},
+        {"oversight": ["consultar"]},
+    )
+    principal = admin
+
+    async def current_principal(_request: Request) -> DemoPrincipal:
+        return principal
+
+    monkeypatch.setattr("scpo_services.common.authenticated_principal", current_principal)
+    request = Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b""})
+    report_access = [
+        nursing.NUTRITION_REPORT_ACCESS,
+        nursing.NURSING_VITALS_READ,
+        nursing.PRESCRIPTION_READ_ACCESS,
+        pharmacy.STOCK_REPORT_ACCESS,
+        pharmacy.DISPENSATION_READ_ROLE,
+        maintenance.HYGIENE_REPORT_ACCESS,
+        social.SOCIAL_REPORT_ACCESS,
+        social.PSYCHOLOGY_REPORT_ACCESS,
+        xray.XRAY_REPORT_ACCESS,
+    ]
+    for dependency in report_access:
+        assert asyncio.run(dependency(request)) == admin
+
+    principal = reviewer
+    for dependency in report_access:
+        assert asyncio.run(dependency(request)) == reviewer
+
+    principal = admin
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(social.SOCIAL_ROLE(request))
+    assert denied.value.status_code == 403
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(nursing.authorize_patient_module(
+            Request({"type": "http", "method": "POST", "path": "/", "headers": [], "query_string": b""})
+        ))
+    assert denied.value.status_code == 403
+
+
 def test_app_admin_cannot_assign_broad_management_access(
     domain_database: dict[str, Session],
     monkeypatch: pytest.MonkeyPatch,
@@ -259,6 +306,7 @@ def test_audit_accepts_minimum_clinical_access_event_without_payload() -> None:
 
 def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:
     monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pharmacy, "resolve_internal_prescription", lambda *args, **kwargs: None)
     monkeypatch.setattr(pharmacy, "verify_patient_reference", lambda reference: {"reference": reference, "name": "Paciente"})
     pharmacist = DemoPrincipal("pharm-1", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
     item = pharmacy.create_item(
@@ -354,6 +402,7 @@ def test_pharmacy_dispenses_one_tablet_from_twenty_counted_in_tablets(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:
     monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pharmacy, "resolve_internal_prescription", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         pharmacy,
         "verify_patient_reference",
@@ -397,6 +446,60 @@ def test_pharmacy_dispenses_one_tablet_from_twenty_counted_in_tablets(
     assert pharmacy.list_items(
         pharmacist, domain_database["pharmacy"]
     )["items"][0]["balance"] == "19"
+    assert pharmacy.list_dispensations(pharmacist, domain_database["pharmacy"])["total"] == 1
+
+
+def test_pharmacy_reuses_existing_dispensation_for_prescription_retry(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    resolutions: list[bool] = []
+    monkeypatch.setattr(
+        pharmacy,
+        "resolve_internal_prescription",
+        lambda _reference, _patient, *, fulfill: resolutions.append(fulfill),
+    )
+    monkeypatch.setattr(
+        pharmacy,
+        "verify_patient_reference",
+        lambda reference: {"reference": reference, "name": "Paciente"},
+    )
+    pharmacist = DemoPrincipal(
+        "pharm-retry",
+        "pharm",
+        "Farmacêutica",
+        "pharmacy",
+        ["pharmacy"],
+        {"pharmacy": ["consultar", "criar"]},
+    )
+    db = domain_database["pharmacy"]
+    item = pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Medicamento prescrito",
+            balance="10",
+            unit="comprimido",
+            lot="L-RETRY",
+            expiry_date="2099-12-31",
+        ),
+        pharmacist,
+        db,
+    )
+    payload = pharmacy.MedicationDispensePayload(
+        patient_reference="patient-retry",
+        item_id=item["id"],
+        quantity="2",
+        prescription_reference="prescription-retry",
+        prescriber_name="Dra. Teste",
+        allergy_reviewed=True,
+    )
+
+    first = pharmacy.create_dispensation(payload, pharmacist, db)
+    retry = pharmacy.create_dispensation(payload, pharmacist, db)
+
+    assert first["id"] == retry["id"]
+    assert retry["prescription_fulfillment_pending"] is False
+    assert pharmacy.list_items(pharmacist, db)["items"][0]["balance"] == "8"
+    assert resolutions == [False, True, True]
 
 
 def test_pharmacy_gs1_parser_validates_gtin_lot_expiry_and_serial() -> None:
@@ -1064,6 +1167,17 @@ def test_physician_profile_and_internal_prescription_flow(
     assert prescription["prescriber_name"] == "Dra. Teste"
     assert prescription["is_controlled"] is True
     assert prescription["administration_times"] == ["08:00", "20:00"]
+    with pytest.raises(HTTPException) as wrong_patient_prescription:
+        nursing.resolve_pharmacy_prescription(
+            nursing.InternalPrescriptionResolutionPayload(
+                prescription_reference=str(prescription["id"]),
+                patient_reference="another-patient",
+            ),
+            db,
+            None,
+        )
+    assert wrong_patient_prescription.value.status_code == 409
+    assert db.get(nursing.PhysicianPrescription, prescription["id"]).status == "pending"
     with pytest.raises(ValidationError):
         nursing.PhysicianPrescriptionPayload(
             patient_reference=patient_reference,
@@ -1092,6 +1206,15 @@ def test_physician_profile_and_internal_prescription_flow(
         nursing.PhysicianPrescriptionStatusPayload(status="fulfilled"),
         pharmacist,
         db,
+    )["status"] == "fulfilled"
+    assert nursing.resolve_pharmacy_prescription(
+        nursing.InternalPrescriptionResolutionPayload(
+            prescription_reference=str(prescription["id"]),
+            patient_reference=patient_reference,
+            fulfill=True,
+        ),
+        db,
+        None,
     )["status"] == "fulfilled"
 
 

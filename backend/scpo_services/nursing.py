@@ -923,6 +923,13 @@ class PhysicianPrescriptionStatusPayload(BaseModel):
     status: Literal["fulfilled", "cancelled"]
 
 
+class InternalPrescriptionResolutionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prescription_reference: str = Field(min_length=1, max_length=36)
+    patient_reference: str = Field(min_length=1, max_length=36)
+    fulfill: bool = False
+
+
 def get_nursing_db():
     yield from database_session("nursing")
 
@@ -1343,8 +1350,9 @@ def reconcile_legacy_patient_bed(
         "bed": _serialize_hospital_bed(bed, unit, _active_assignment_for_bed(db, bed.id)),
     }
 NURSING_ROLE = require_demo_role("nursing")
-NURSING_VITALS_READ = require_demo_role("nursing", "physician", "management")
+NURSING_VITALS_READ = require_demo_role("nursing", "physician", "management", "admin", "oversight")
 NUTRITION_ROLE = require_demo_role("nutrition")
+NUTRITION_REPORT_ACCESS = require_demo_role("nutrition", "management", "admin", "oversight")
 VALUE_FIELDS = {
     "saturation",
     "pressure",
@@ -1600,7 +1608,11 @@ async def authorize_patient_module(request: Request) -> DemoPrincipal:
 
     principal = await authenticated_principal(request)
     action = {"GET": "consultar", "HEAD": "consultar", "POST": "criar", "PUT": "alterar", "PATCH": "alterar", "DELETE": "excluir"}.get(request.method.upper(), "consultar")
-    if any(module in principal.modules and action in principal.permissions.get(module, []) for module in PATIENT_MODULES):
+    report_access = action == "consultar" and any(
+        module in principal.modules and action in principal.permissions.get(module, [])
+        for module in ("admin", "oversight")
+    )
+    if report_access or any(module in principal.modules and action in principal.permissions.get(module, []) for module in PATIENT_MODULES):
         return principal
     raise HTTPException(status_code=403, detail="Acesso ao cadastro de pacientes não autorizado")
 
@@ -1609,7 +1621,7 @@ PATIENT_ACCESS = Depends(authorize_patient_module)
 PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "physician", "management", "admin"))
 CLINICAL_RISK_ACCESS = Depends(require_demo_role("nursing", "nutrition", "pharmacy", "physician", "management"))
 PHYSICIAN_ACCESS = require_demo_role("physician", "management")
-PRESCRIPTION_READ_ACCESS = require_demo_role("physician", "pharmacy", "nursing", "management")
+PRESCRIPTION_READ_ACCESS = require_demo_role("physician", "pharmacy", "nursing", "management", "admin", "oversight")
 
 
 def record_patient_allergy_change(
@@ -1984,15 +1996,18 @@ def get_current_nursing_hourly_round(
 def list_nursing_hourly_rounds(
     principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management", "admin", "oversight"))],
     db: Annotated[Session, Depends(get_nursing_db)],
-    limit: Annotated[int, Query(ge=1, le=50)] = 10,
-) -> dict[str, list[dict[str, object]]]:
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    query = select(NursingHourlyRound)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rounds = db.scalars(
-        select(NursingHourlyRound)
-        .order_by(NursingHourlyRound.started_at.desc())
+        query.order_by(NursingHourlyRound.started_at.desc())
+        .offset(offset)
         .limit(limit)
     ).all()
     emit_audit_event(principal, "nursing", "hourly_round_history_read", "nursing_rounds")
-    return {"rounds": [serialize_nursing_hourly_round(db, item) for item in rounds]}
+    return {"rounds": [serialize_nursing_hourly_round(db, item) for item in rounds], "total": total, "limit": limit, "offset": offset}
 
 
 @app.post("/api/v1/nursing/hourly-rounds", status_code=201)
@@ -2119,7 +2134,7 @@ def complete_nursing_hourly_round(
 
 @app.get("/api/v1/reception/arrivals")
 def list_emergency_arrivals(
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management", "admin", "oversight"))],
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -2643,18 +2658,21 @@ def admit_emergency_arrival(
 
 @app.get("/api/v1/nursing/medication-administrations")
 def list_medication_administrations(
-    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management", "admin", "oversight"))],
     db: Annotated[Session, Depends(get_nursing_db)],
     patient_reference: str | None = None,
-) -> dict[str, list[dict[str, object]]]:
+    limit: Annotated[int, Query(ge=1, le=500)] = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
     query = select(MedicationAdministration)
     if patient_reference:
         query = query.where(MedicationAdministration.patient_reference == patient_reference)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     records = db.scalars(
-        query.order_by(MedicationAdministration.administered_at.desc()).limit(500)
+        query.order_by(MedicationAdministration.administered_at.desc()).offset(offset).limit(limit)
     ).all()
     emit_audit_event(principal, "nursing", "medication_administrations_read", "medication_administrations")
-    return {"administrations": [serialize_medication_administration(record) for record in records]}
+    return {"administrations": [serialize_medication_administration(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/v1/physicians/profile")
@@ -2720,17 +2738,20 @@ def list_physician_prescriptions(
     db: Annotated[Session, Depends(get_nursing_db)],
     patient_reference: str | None = None,
     status: Literal["pending", "fulfilled", "cancelled"] | None = None,
-) -> dict[str, list[dict[str, object]]]:
+    limit: Annotated[int, Query(ge=1, le=500)] = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
     query = select(PhysicianPrescription)
     if patient_reference:
         query = query.where(PhysicianPrescription.patient_reference == patient_reference)
     if status:
         query = query.where(PhysicianPrescription.status == status)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     records = db.scalars(
-        query.order_by(PhysicianPrescription.created_at.desc()).limit(500)
+        query.order_by(PhysicianPrescription.created_at.desc()).offset(offset).limit(limit)
     ).all()
     emit_audit_event(principal, "physician", "physician_prescriptions_read", patient_reference or "all")
-    return {"prescriptions": [serialize_physician_prescription(record) for record in records]}
+    return {"prescriptions": [serialize_physician_prescription(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
 @app.post("/api/v1/physicians/prescriptions", status_code=201)
@@ -2802,6 +2823,33 @@ def update_physician_prescription(
     )
     db.commit()
     db.refresh(prescription)
+    return serialize_physician_prescription(prescription)
+
+
+@app.post("/internal/v1/physicians/prescriptions/resolve")
+def resolve_pharmacy_prescription(
+    payload: InternalPrescriptionResolutionPayload,
+    db: Annotated[Session, Depends(get_nursing_db)],
+    _: Annotated[None, Depends(require_service_token)],
+) -> dict[str, object]:
+    prescription = db.scalar(
+        select(PhysicianPrescription)
+        .where(PhysicianPrescription.id == payload.prescription_reference)
+        .with_for_update()
+    )
+    if prescription is None:
+        raise HTTPException(status_code=404, detail="Prescrição interna não encontrada")
+    if prescription.patient_reference != payload.patient_reference:
+        raise HTTPException(status_code=409, detail="A prescrição não pertence ao paciente selecionado")
+    if prescription.status == "cancelled":
+        raise HTTPException(status_code=409, detail="A prescrição foi cancelada")
+    if not payload.fulfill and prescription.status != "pending":
+        raise HTTPException(status_code=409, detail="A prescrição já foi atendida")
+    if payload.fulfill and prescription.status == "pending":
+        prescription.status = "fulfilled"
+        prescription.updated_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(prescription)
     return serialize_physician_prescription(prescription)
 
 
@@ -4133,7 +4181,7 @@ def serialize_record(record: VitalRecord) -> dict[str, object]:
 
 @app.get("/api/v1/nursing/nutrition")
 def list_nutrition_records(
-    principal: Annotated[DemoPrincipal, Depends(NUTRITION_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(NUTRITION_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_nursing_db)],
     q: Annotated[str, Query(max_length=120)] = "",
     patient_reference: str | None = None,
