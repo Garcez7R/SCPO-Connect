@@ -11,6 +11,7 @@ import {
   Info,
   LockKeyhole,
   Search,
+  Stethoscope,
 } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import InterprofessionalSharePanel from '../components/InterprofessionalSharePanel'
@@ -132,6 +133,7 @@ export function PatientOperationsPage({ moduleId, user }: { moduleId: PatientOpe
 type PsychologyTab = 'triage' | 'encounters' | 'sharing'
 const psychologyTabs: PsychologyTab[] = ['triage', 'encounters', 'sharing']
 const psychologyTabLabels: Record<PsychologyTab, string> = { triage: 'Acolhimento', encounters: 'Evoluções', sharing: 'Compartilhamento' }
+type PsychologyServiceArea = 'psychology' | 'psychiatry'
 type PsychologyReferral = { id: number; patient_reference: string; referral_type: string; status: string; priority: 'routine' | 'priority'; created_at: string }
 type PsychologyEncounter = { id: number; patient_reference: string; encounter_type: 'intake' | 'follow_up' | 'psychiatry'; objective: string; evolution: string; plan: string; actor_name: string; created_at: string }
 
@@ -149,8 +151,9 @@ const psychologyEncounterTypes: Record<PsychologyEncounter['encounter_type'], st
   psychiatry: 'Atendimento psiquiátrico',
 }
 
-export function PsychologyPage({ userId }: { userId: string }) {
+export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { userId: string; canPrescribe: boolean; onOpenPhysician: () => void }) {
   const [tab, setTab] = usePersistentTab(`scpo-tab-psychology-${userId}`, 'triage', psychologyTabs, psychologyTabLabels)
+  const [serviceArea, setServiceArea] = useState<PsychologyServiceArea>('psychology')
   const [patients, setPatients] = useState<Patient[]>([])
   const [referrals, setReferrals] = useState<PsychologyReferral[]>([])
   const [encounters, setEncounters] = useState<PsychologyEncounter[]>([])
@@ -238,15 +241,29 @@ export function PsychologyPage({ userId }: { userId: string }) {
     const patient = patientName(referral.patient_reference)
     const matchesSearch = `${patient} ${referral.referral_type}`.toLocaleLowerCase('pt-BR')
       .includes(triageFilter.trim().toLocaleLowerCase('pt-BR'))
-    return matchesSearch
+    const isPsychiatry = /psiquiatr/i.test(referral.referral_type)
+    return matchesSearch && (serviceArea === 'psychiatry' ? isPsychiatry : !isPsychiatry)
   })
+  const visibleEncounters = encounters.filter((encounter) =>
+    serviceArea === 'psychiatry'
+      ? encounter.encounter_type === 'psychiatry'
+      : encounter.encounter_type !== 'psychiatry',
+  )
+
+  function selectServiceArea(area: PsychologyServiceArea) {
+    setServiceArea(area)
+    setTriageType(area === 'psychiatry' ? 'Avaliação psiquiátrica' : 'Acolhimento')
+    setRecordType(area === 'psychiatry' ? 'psychiatry' : 'intake')
+  }
 
   async function createReferral(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true)
     setError('')
     setNotice('')
-    const referralType = triageType === 'Outro' ? customTriageType.trim() : triageType
+    const referralType = (triageType === 'Outro'
+      ? `${serviceArea === 'psychiatry' ? 'Psiquiatria' : 'Psicologia'}: ${customTriageType.trim()}`
+      : triageType).slice(0, 80)
     try {
       const response = await fetch('/api/v1/psychology/referrals', {
         method: 'POST',
@@ -328,8 +345,13 @@ export function PsychologyPage({ userId }: { userId: string }) {
     <div className="psychology-privacy" role="note"><LockKeyhole size={18} /><span>Informações clínicas confidenciais: acesso restrito a contas autorizadas neste módulo. Registre apenas dados necessários ao atendimento.</span></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
+    <div className="admin-tabs module-tabs psychology-service-tabs" role="tablist" aria-label="Área profissional">
+      <button type="button" role="tab" aria-selected={serviceArea === 'psychology'} className={`button ${serviceArea === 'psychology' ? 'button-primary' : 'button-secondary'}`} onClick={() => selectServiceArea('psychology')}><Brain size={16} /> Psicologia</button>
+      <button type="button" role="tab" aria-selected={serviceArea === 'psychiatry'} className={`button ${serviceArea === 'psychiatry' ? 'button-primary' : 'button-secondary'}`} onClick={() => selectServiceArea('psychiatry')}><Stethoscope size={16} /> Psiquiatria</button>
+    </div>
+    {serviceArea === 'psychiatry' && <div className="psychology-prescription-guidance" role="note"><Stethoscope size={17} /><span>Para prescrever, o psiquiatra deve receber também o acesso ao módulo Médico. As prescrições ficam no fluxo médico compartilhado com Farmácia e Enfermagem, sem duplicar formulários aqui.</span>{canPrescribe && <button className="button button-secondary" type="button" onClick={onOpenPhysician}>Abrir módulo Médico</button>}</div>}
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do módulo de Psicologia e Psiquiatria">
-      <button type="button" role="tab" aria-selected={tab === 'triage'} className={`button ${tab === 'triage' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('triage')}>Fila e triagem <span>{referrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
+      <button type="button" role="tab" aria-selected={tab === 'triage'} className={`button ${tab === 'triage' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('triage')}>Fila e triagem <span>{visibleReferrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
       <button type="button" role="tab" aria-selected={tab === 'encounters'} className={`button ${tab === 'encounters' ? 'button-primary' : 'button-secondary'}`} onClick={() => { setEncountersPatient(''); setEncounterLoadError(''); setTab('encounters') }}>Atendimentos e registros</button>
       <button type="button" role="tab" aria-selected={tab === 'sharing'} className={`button ${tab === 'sharing' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('sharing')}>Compartilhamento seletivo</button>
     </div>
@@ -340,8 +362,8 @@ export function PsychologyPage({ userId }: { userId: string }) {
           <label className="field"><span className="field-label">Localizar paciente</span><span className="search-input-wrap"><Search size={17} /><input value={triagePatientQuery} onChange={(event) => setTriagePatientQuery(event.target.value)} placeholder="Nome, quarto ou leito" /></span></label>
           <label className="field"><span className="field-label">Paciente</span><select required value={triagePatient} onChange={(event) => { setTriagePatient(event.target.value); setTriagePatientQuery('') }}><option value="">Selecione o paciente</option>{filteredTriagePatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}</option>)}</select></label>
           <PatientAllergyAlert patient={patients.find((patient) => patient.reference === triagePatient)} />
-          <label className="field"><span className="field-label">Tipo de atendimento</span><select value={triageType} onChange={(event) => setTriageType(event.target.value)}><option>Acolhimento</option><option>Avaliação psicológica</option><option>Acompanhamento</option><option>Avaliação psiquiátrica</option><option>Outro</option></select></label>
-          {triageType === 'Outro' && <label className="field"><span className="field-label">Descreva o tipo</span><input required minLength={2} maxLength={80} value={customTriageType} onChange={(event) => setCustomTriageType(event.target.value)} /></label>}
+          <label className="field"><span className="field-label">Tipo de atendimento</span><select value={triageType} onChange={(event) => setTriageType(event.target.value)}>{serviceArea === 'psychiatry' ? <><option>Avaliação psiquiátrica</option><option>Consulta psiquiátrica</option><option>Acompanhamento psiquiátrico</option><option>Outro</option></> : <><option>Acolhimento</option><option>Avaliação psicológica</option><option>Acompanhamento psicológico</option><option>Outro</option></>}</select></label>
+          {triageType === 'Outro' && <label className="field"><span className="field-label">Descreva o tipo</span><input required minLength={2} maxLength={68} value={customTriageType} onChange={(event) => setCustomTriageType(event.target.value)} /></label>}
           <label className="field"><span className="field-label">Prioridade</span><select value={triagePriority} onChange={(event) => setTriagePriority(event.target.value as 'routine' | 'priority')}><option value="routine">Rotina</option><option value="priority">Prioritária · conforme protocolo institucional</option></select></label>
         </div>
         <p className="psychology-help">Use a prioridade institucionalmente definida. Não inclua relato clínico ou detalhes sensíveis no encaminhamento.</p>
@@ -366,7 +388,7 @@ export function PsychologyPage({ userId }: { userId: string }) {
           <label className="field"><span className="field-label">Localizar paciente</span><span className="search-input-wrap"><Search size={17} /><input value={recordPatientQuery} onChange={(event) => setRecordPatientQuery(event.target.value)} placeholder="Nome, quarto ou leito" /></span></label>
           <label className="field"><span className="field-label">Paciente</span><select required value={recordPatient} onChange={(event) => { setRecordPatient(event.target.value); setRecordPatientQuery(''); setEncountersPatient(''); setEncounterLoadError(''); setEncounters([]) }}><option value="">Selecione o paciente</option>{filteredRecordPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}</option>)}</select></label>
           <PatientAllergyAlert patient={patients.find((patient) => patient.reference === recordPatient)} />
-          <label className="field"><span className="field-label">Tipo de registro</span><select value={recordType} onChange={(event) => setRecordType(event.target.value as PsychologyEncounter['encounter_type'])}>{Object.entries(psychologyEncounterTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="field"><span className="field-label">Tipo de registro</span><select value={recordType} onChange={(event) => setRecordType(event.target.value as PsychologyEncounter['encounter_type'])}>{Object.entries(psychologyEncounterTypes).filter(([value]) => serviceArea === 'psychiatry' ? value === 'psychiatry' : value !== 'psychiatry').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label className="field psychology-field-wide"><span className="field-label">Objetivo do atendimento</span><textarea required minLength={3} maxLength={500} value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Finalidade do encontro, em termos objetivos" /></label>
           <label className="field psychology-field-wide"><span className="field-label">Evolução</span><textarea required minLength={3} maxLength={4000} value={evolution} onChange={(event) => setEvolution(event.target.value)} placeholder="Registre a evolução profissional pertinente ao atendimento" /></label>
           <label className="field psychology-field-wide"><span className="field-label">Plano e encaminhamentos</span><textarea maxLength={4000} value={plan} onChange={(event) => setPlan(event.target.value)} placeholder="Próximos passos e encaminhamentos acordados" /></label>
@@ -375,8 +397,8 @@ export function PsychologyPage({ userId }: { userId: string }) {
         <button className="button button-primary" type="submit" disabled={saving || !recordPatient}>{saving ? 'Salvando…' : 'Salvar registro clínico'} <CheckCircle2 size={16} /></button>
       </form>
       <section className="psychology-panel">
-        <div className="section-heading"><div><p className="eyebrow">HISTÓRICO INDIVIDUAL</p><h2>Registros de atendimento</h2></div><span className="module-total">{encounters.length}</span></div>
-        {!recordPatient ? <div className="history-empty">Selecione um paciente acima para consultar apenas o histórico individual autorizado.</div> : encounterLoadError ? <ToastMessage variant="error">{encounterLoadError}</ToastMessage> : encountersLoading ? <div className="history-empty">Carregando histórico confidencial…</div> : encounters.length ? <div className="psychology-encounter-list">{encounters.map((encounter) => <article className="psychology-encounter-card" key={encounter.id}>
+        <div className="section-heading"><div><p className="eyebrow">HISTÓRICO INDIVIDUAL</p><h2>Registros de {serviceArea === 'psychiatry' ? 'Psiquiatria' : 'Psicologia'}</h2></div><span className="module-total">{visibleEncounters.length}</span></div>
+        {!recordPatient ? <div className="history-empty">Selecione um paciente acima para consultar apenas o histórico individual autorizado.</div> : encounterLoadError ? <ToastMessage variant="error">{encounterLoadError}</ToastMessage> : encountersLoading ? <div className="history-empty">Carregando histórico confidencial…</div> : visibleEncounters.length ? <div className="psychology-encounter-list">{visibleEncounters.map((encounter) => <article className="psychology-encounter-card" key={encounter.id}>
           <div className="psychology-encounter-heading"><div><h3>{psychologyEncounterTypes[encounter.encounter_type]}</h3><p>{patientName(encounter.patient_reference)}</p></div><div><time>{dateTime(encounter.created_at)}</time><small>{encounter.actor_name}</small></div></div>
           <div className="psychology-encounter-field"><strong>Objetivo</strong><p>{encounter.objective}</p></div>
           <div className="psychology-encounter-field"><strong>Evolução</strong><p>{encounter.evolution}</p></div>

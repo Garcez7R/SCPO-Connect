@@ -25,6 +25,10 @@
   --shadow: 0 2px 9px rgba(24, 50, 74, 0.055);
   font-size: 14px;
 }
+@media (max-width: 620px) {
+  .psychology-prescription-guidance { align-items: stretch; flex-direction: column; }
+  .psychology-prescription-guidance .button { width: 100%; justify-content: center; }
+}
 
 * { box-sizing: border-box; }
 
@@ -530,6 +534,8 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .nursing-title-actions { display: flex; align-items: center; gap: 10px; }
 .nursing-vitals-action { display: flex; align-items: center; gap: 10px; }
 .nursing-title-actions .button { min-height: 42px; white-space: nowrap; }
+.nursing-vitals-action .module-icon { width: 42px; height: 42px; transform: none; }
+.nursing-vitals-action .button { min-height: 42px; }
 .nursing-history-page, .pharmacy-page { display: grid; max-width: 1120px; gap: 18px; margin-inline: auto; }
 .nursing-history-page .page-title-row, .pharmacy-page .page-title-row { align-items: center; }
 .pharmacy-page .page-title-row .module-icon { transform: none; }
@@ -572,6 +578,11 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .pharmacy-dispensation-submit { justify-self: start; min-height: 44px; }
 .management-page, .system-admin-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
 .management-operations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.asset-maintenance-grid { grid-template-columns: minmax(0, 1fr); }
+.asset-maintenance-grid > .admin-tabs { grid-column: 1 / -1; }
+.asset-maintenance-form { width: 100%; min-width: 0; }
+.asset-maintenance-form .section-heading { align-items: flex-start; margin: 0; }
+.asset-maintenance-form .section-heading .welcome-copy { margin-top: 6px; }
 .management-operations-grid > .form-message, .management-operations-grid > .patient-list-panel { grid-column: 1 / -1; }
 .management-operations-grid .form-message { margin: 0; }
 .management-operations-grid .account-create-panel { margin: 0; }
@@ -715,6 +726,11 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .psychology-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
 .psychology-privacy { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #cbdfe8; border-radius: 8px; background: #f0f7fa; color: #255c76; font-size: 12px; line-height: 1.55; }
 .psychology-privacy svg { flex: 0 0 auto; margin-top: 1px; }
+.psychology-service-tabs { margin-bottom: -3px; }
+.psychology-prescription-guidance { display: flex; align-items: center; gap: 11px; padding: 13px 15px; border: 1px solid #d8cdee; border-radius: 8px; background: #f7f3fc; color: #55447a; font-size: 12px; line-height: 1.5; }
+.psychology-prescription-guidance > svg { flex: 0 0 auto; }
+.psychology-prescription-guidance > span { flex: 1 1 auto; }
+.psychology-prescription-guidance .button { flex: 0 0 auto; }
 .psychology-panel { display: grid; gap: 15px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .psychology-panel .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .psychology-panel .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
@@ -947,6 +963,17 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .hourly-round-details > div { display: grid; gap: 7px; margin-top: 9px; }
 .hourly-round-details section { display: grid; gap: 4px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
 .hourly-round-details section > span, .hourly-round-details section > small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.hourly-round-status { display: inline-flex; width: fit-content; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 1.4; }
+.hourly-round-status-pending, .hourly-round-status-round-open { background: #fff4df; color: #80570d; }
+.hourly-round-status-checked, .hourly-round-status-round-completed { background: #eaf5ef; color: #2e6a4c; }
+.hourly-round-status-exception { background: #fff0f0; color: #a4232e; }
+.hourly-round-details section > .hourly-round-status,
+.nursing-medication-history > article > .hourly-round-status { color: inherit; }
+html[data-theme="dark"] .hourly-round-status-pending, html[data-theme="dark"] .hourly-round-status-round-open { background: #44371f; color: #efc16e; }
+html[data-theme="dark"] .hourly-round-status-checked, html[data-theme="dark"] .hourly-round-status-round-completed { background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .hourly-round-status-exception { background: #44272a; color: #f3a4a8; }
+html[data-theme="dark"] .hourly-round-details section > .hourly-round-status,
+html[data-theme="dark"] .nursing-medication-history > article > .hourly-round-status { color: inherit; }
 html[data-theme="dark"] .nursing-medication-panel { border-color: var(--line); background: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .nursing-medication-history > article { border-color: var(--line); background: var(--page); color: var(--ink); }
 html[data-theme="dark"] .nursing-medication-history > article > span, html[data-theme="dark"] .nursing-medication-history > article > small { color: var(--muted); }
@@ -1149,7 +1176,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 @media (max-width: 760px) {
   .nursing-title-actions { align-items: stretch; flex-direction: column-reverse; }
   .nursing-title-actions .button { justify-content: center; }
-  .nursing-vitals-action { display: grid; grid-template-columns: 38px minmax(0, 1fr); }
+  .nursing-vitals-action { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; }
   .nursing-vitals-action .module-icon { justify-self: center; }
   .nursing-vitals-action .button { width: 100%; }
   .history-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -1279,6 +1306,10 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .auth-mfa-instructions strong { font-size: 12px; }
 .auth-mfa-instructions p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .auth-mfa-instructions code { padding: 9px; border-radius: 4px; background: white; color: var(--blue-dark); font-size: 14px; font-weight: 700; letter-spacing: 1px; overflow-wrap: anywhere; }
+.auth-mfa-qr { width: 220px; max-width: 100%; justify-self: center; padding: 8px; border-radius: 6px; background: #fff; image-rendering: pixelated; }
+.auth-mfa-qr-loading { display: grid; min-height: 60px; place-items: center; color: var(--muted); font-size: 12px; }
+.auth-mfa-copy { justify-self: start; }
+.auth-mfa-copy-message { color: var(--muted); font-size: 11px; }
 .auth-install { display: grid; justify-items: center; gap: 10px; margin-top: 20px; padding-top: 17px; border-top: 1px solid #edf1f4; color: var(--muted); font-size: 12px; text-align: center; }
 .auth-install .install-button { min-height: 42px; padding-inline: 20px; font-size: 13px; }
 .install-installed { color: var(--green); font-weight: 600; }
@@ -1366,6 +1397,7 @@ html[data-theme="dark"] .hygiene-bed-link span { color: var(--muted); }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
 html[data-theme="dark"] .psychology-privacy { border-color: #355d70; background: #203743; color: #b5e3f5; }
+html[data-theme="dark"] .psychology-prescription-guidance { border-color: #51456c; background: #302a3c; color: #d4c6f0; }
 html[data-theme="dark"] .clinical-alert-clear { border-color: #315744; background: #21372d; color: #a2dfbb; }
 html[data-theme="dark"] .clinical-alert-unknown { border-color: #705b31; background: #332d20; color: #f1ce86; }
 html[data-theme="dark"] .psychology-priority.is-priority { background: #44371f; color: #efc16e; }

@@ -26,7 +26,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Enfermagem: registro de transferências e altas com histórico; central de alergias e contraindicações com autoria, justificativa e resolução rastreável.
 - Recepção: classificação manual da prioridade de chegadas à emergência; não substitui protocolo institucional de triagem.
 - Gestão Hospitalar: mapa de leitos e indicadores agregados de ocupação, chegadas, coletas, fluxo, riscos cadastrais e alertas de estoque. A ocupação percentual depende da reconciliação dos pacientes legados com o mapa.
-- Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP.
+- Contas individuais, troca obrigatória da senha inicial e autenticação multifator TOTP configurável por QR code ou chave manual.
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
 - Central de Exames: abas de Raio X e exames laboratoriais, requisições vinculadas ao paciente, fila por situação e formulário de solicitação para impressão.

@@ -7,13 +7,35 @@ function readableApiError(detail: unknown): string {
   }
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
+    const fieldLabels: Record<string, string> = {
+      activity_type: 'Modalidade',
+      activity_report: 'Relatório da atividade',
+      asset_tag: 'Número patrimonial',
+      field: 'Campo informado',
+      due_date: 'Próxima data',
+      ends_at: 'Término',
+      location: 'Local',
+      name: 'Nome',
+      patient_reference: 'Paciente',
+      participant_references: 'Participantes',
+      participants: 'Participantes',
+      procedure: 'Procedimento',
+      starts_at: 'Início',
+      status: 'Situação',
+      title: 'Nome da atividade',
+      username: 'Usuário',
+      x_bootstrap_token: 'Token',
+    }
     const issues = detail.flatMap((issue) => {
       if (!issue || typeof issue !== 'object') return []
       const item = issue as { loc?: unknown[]; msg?: unknown }
       const field = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').at(-1) : undefined
-      const label = field === 'username' ? 'Usuário' : field === 'name' ? 'Nome' : field === 'x_bootstrap_token' ? 'Token' : 'Campo'
+      const label = typeof field === 'string' ? fieldLabels[field] ?? field.replaceAll('_', ' ') : 'Campo'
       const message = typeof item.msg === 'string' ? item.msg : 'valor inválido'
-      return [`${label}: ${message}`]
+      const translatedMessage = /^field required$/i.test(message)
+        ? `Campo obrigatório: ${label}.`
+        : message
+      return [translatedMessage.startsWith('Campo obrigatório:') ? translatedMessage : `${label}: ${translatedMessage}`]
     })
     if (issues.length) return issues.join(' ')
   }

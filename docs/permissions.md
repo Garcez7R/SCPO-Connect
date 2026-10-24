@@ -12,6 +12,8 @@ A Administração separa dois escopos: **Administração do aplicativo** (contas
 
 O sistema não possui cargos operacionais fixos: os módulos e ações são atribuídos por conta. A tabela abaixo descreve o comportamento atual da API e da tela de Administração, não uma matriz aprovada pela Santa Casa.
 
+Psicologia e Psiquiatria permanecem reunidas no mesmo módulo, com áreas de trabalho separadas na interface e registros tipados. Para o profissional psiquiatra que também prescreve, atribua os módulos **Psicologia / Psiquiatria** e **Médico**. A prescrição deve ser criada no módulo Médico, que já alimenta os fluxos compartilhados de Farmácia e Enfermagem; não manter um segundo formulário de prescrição no módulo psicológico. O acesso ao módulo Médico deve ser concedido individualmente conforme função e aprovação institucional, não automaticamente a toda conta de Psicologia / Psiquiatria.
+
 | Acesso atribuído | Consultar | Criar | Alterar | Excluir/arquivar | Administrar contas |
 | --- | --- | --- | --- | --- | --- |
 | Módulo operacional individual | Sim, se selecionado | Sim, padrão | Sim, padrão | Opcional somente para Pacientes, Enfermagem, Nutrição e Recepção | Não |

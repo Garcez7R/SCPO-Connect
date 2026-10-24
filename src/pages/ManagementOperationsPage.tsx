@@ -117,7 +117,7 @@ export function AssetMaintenancePanel({ userId }: { userId: string }) {
 
   const activePlans = plans.filter((plan) => plan.status !== 'completed')
 
-  return <div className="management-operations-grid">
+  return <div className="management-operations-grid asset-maintenance-grid">
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Gestão de manutenção">
@@ -126,16 +126,16 @@ export function AssetMaintenancePanel({ userId }: { userId: string }) {
       <button className={`button ${tab === 'inventory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'inventory'} onClick={() => setTab('inventory')}>Inventário <span>{assets.length}</span></button>
       <button className={`button ${tab === 'calendar' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calendar'} onClick={() => setTab('calendar')}>Calendário <span>{activePlans.length}</span></button>
     </div>
-    {tab === 'assets' && <form className="account-create-panel" onSubmit={(event) => void createAsset(event)}>
-      <h3><Building2 size={17} /> Cadastrar bem ou equipamento</h3>
+    {tab === 'assets' && <form className="account-create-panel asset-maintenance-form" onSubmit={(event) => void createAsset(event)}>
+      <div className="section-heading"><div><p className="eyebrow">PATRIMÔNIO</p><h3><Building2 size={17} /> Cadastrar bem ou equipamento</h3><p className="welcome-copy">Identifique o ativo e informe sua unidade e localização para facilitar o acompanhamento.</p></div></div>
       <div className="field-grid field-grid-two">
         <label className="field"><span className="field-label">Número patrimonial</span><input required minLength={2} maxLength={40} value={assetForm.asset_tag} onChange={(event) => setAssetForm({ ...assetForm, asset_tag: event.target.value })} /></label>
         <label className="field"><span className="field-label">Nome do ativo</span><input required minLength={2} maxLength={120} value={assetForm.name} onChange={(event) => setAssetForm({ ...assetForm, name: event.target.value })} /></label>
         <label className="field"><span className="field-label">Categoria</span><input required minLength={2} maxLength={60} value={assetForm.category} onChange={(event) => setAssetForm({ ...assetForm, category: event.target.value })} placeholder="Equipamento clínico, mobiliário..." /></label>
         <label className="field"><span className="field-label">Unidade</span><input required minLength={2} maxLength={100} value={assetForm.unit} onChange={(event) => setAssetForm({ ...assetForm, unit: event.target.value })} /></label>
         <label className="field"><span className="field-label">Localização</span><input maxLength={120} value={assetForm.location} onChange={(event) => setAssetForm({ ...assetForm, location: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Fabricante e modelo (opcional)</span><input maxLength={100} value={assetForm.manufacturer} onChange={(event) => setAssetForm({ ...assetForm, manufacturer: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Modelo</span><input maxLength={100} value={assetForm.model} onChange={(event) => setAssetForm({ ...assetForm, model: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Fabricante (opcional)</span><input maxLength={100} value={assetForm.manufacturer} onChange={(event) => setAssetForm({ ...assetForm, manufacturer: event.target.value })} /></label>
+        <label className="field"><span className="field-label">Modelo (opcional)</span><input maxLength={100} value={assetForm.model} onChange={(event) => setAssetForm({ ...assetForm, model: event.target.value })} /></label>
         <label className="field"><span className="field-label">Número de série (opcional)</span><input maxLength={100} value={assetForm.serial_number} onChange={(event) => setAssetForm({ ...assetForm, serial_number: event.target.value })} /></label>
       </div>
       <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar ativo'}</button>

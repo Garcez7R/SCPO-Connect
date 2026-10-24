@@ -61,6 +61,7 @@ import { APP_VERSION } from './appVersion'
 import { MOBILE_FEEDBACK_STORAGE_KEY, triggerMobileFeedback } from './mobileFeedback'
 import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 import { squareImageFile, squareVideoFrame } from './patientPhoto'
+import QRCode from 'qrcode'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight'
@@ -103,6 +104,17 @@ type NursingHourlyRound = {
   completed_by_name: string
   completed_at: string | null
   patients: NursingHourlyRoundPatient[]
+}
+const hourlyRoundStatusLabels: Record<NursingHourlyRoundPatient['status'], string> = {
+  pending: 'Pendente',
+  checked: 'Conferido',
+  exception: 'Ocorrência',
+}
+const hourlyRoundExceptionLabels: Record<string, string> = {
+  away: 'Ausente ou em atendimento externo',
+  location: 'Em outro local da instituição',
+  not_found: 'Não localizado',
+  other: 'Outro',
 }
 function PatientAllergyAlert({ patient }: { patient?: { allergies?: string; allergies_status?: Patient['allergies_status']; suppressClinicalData?: boolean } }) {
   if (!patient) return null
@@ -546,7 +558,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {activeModule === 'work-orders' && <Suspense fallback={<div className="history-empty" role="status">Carregando ordens de serviço…</div>}><WorkOrdersPage user={user} /></Suspense>}
           {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage userId={user.id} /></Suspense>}
           {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
-          {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage userId={user.id} /></Suspense>}
+          {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage userId={user.id} canPrescribe={profile.modules.includes('physician')} onOpenPhysician={() => navigate('physician')} /></Suspense>}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
           {activeModule === 'reception' && <Suspense fallback={<div className="history-empty" role="status">Carregando Recepção…</div>}><ReceptionPage user={user} PatientRegistryPage={PatientRegistryPage} /></Suspense>}
           {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
@@ -600,18 +612,35 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
   const [totpCode, setTotpCode] = useState('')
   const [bootstrapToken, setBootstrapToken] = useState('')
   const [mfaSecret, setMfaSecret] = useState('')
+  const [mfaQrDataUrl, setMfaQrDataUrl] = useState('')
+  const [mfaCopyMessage, setMfaCopyMessage] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     if (stage !== 'mfa') return
+    let active = true
     fetch('/api/v1/auth/mfa/setup').then(async (response) => {
       if (!response.ok) throw new Error('Não foi possível iniciar a configuração do MFA.')
-      const data = await response.json() as { secret: string }
-      setMfaSecret(data.secret)
-    }).catch((error: Error) => setMessage(error.message))
+      const data = await response.json() as { secret: string; otpauth_uri: string }
+      const qrDataUrl = await QRCode.toDataURL(data.otpauth_uri, { errorCorrectionLevel: 'M', margin: 2, width: 220 })
+      if (active) {
+        setMfaSecret(data.secret)
+        setMfaQrDataUrl(qrDataUrl)
+      }
+    }).catch((error: Error) => { if (active) setMessage(error.message) })
+    return () => { active = false }
   }, [stage])
+
+  async function copyMfaSecret() {
+    try {
+      await navigator.clipboard.writeText(mfaSecret)
+      setMfaCopyMessage('Chave copiada.')
+    } catch {
+      setMfaCopyMessage('Não foi possível copiar automaticamente. Selecione e copie a chave exibida.')
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -667,7 +696,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
 
   const title = stage === 'bootstrap' ? 'Configurar administrador master' : stage === 'login' ? 'Entrar no SCPO Connect' : stage === 'password' ? 'Troque sua senha inicial' : 'Ative a autenticação em duas etapas'
   return <main className="auth-page"><section className="auth-card"><div className="auth-brand"><img src="/scpo-connect-icon.png" alt="" /><div><strong>SCPO Connect</strong><span>Santa Casa de Pedro Osório</span></div></div><p className="eyebrow">ACESSO SEGURO</p><h1>{title}</h1>
-    {stage === 'mfa' && <div className="auth-mfa-instructions"><strong>Aplicativo autenticador</strong><p>Cadastre esta chave em um aplicativo autenticador e informe o código de seis dígitos para confirmar:</p><code>{mfaSecret || 'Carregando chave segura…'}</code></div>}
+    {stage === 'mfa' && <div className="auth-mfa-instructions"><strong>Aplicativo autenticador</strong><p>Leia o QR code com seu aplicativo autenticador ou copie a chave para cadastrá-la manualmente. Depois, informe o código de seis dígitos:</p>{mfaQrDataUrl ? <img className="auth-mfa-qr" src={mfaQrDataUrl} alt="QR code para configurar a autenticação em duas etapas" /> : <span className="auth-mfa-qr-loading">Gerando QR code seguro…</span>}<code>{mfaSecret || 'Carregando chave segura…'}</code><button className="button button-secondary auth-mfa-copy" type="button" onClick={() => void copyMfaSecret()} disabled={!mfaSecret}>Copiar chave</button>{mfaCopyMessage && <span className="auth-mfa-copy-message" role="status">{mfaCopyMessage}</span>}</div>}
     <form className="auth-form" onSubmit={submit}>
       {stage === 'bootstrap' && <><label className="field"><span className="field-label">Nome do administrador</span><input required minLength={2} maxLength={120} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" title="Use pelo menos 3 caracteres: letras sem acento, números, ponto, hífen, sublinhado ou @." autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Token de bootstrap</span><input required type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label><p className="auth-help">O usuário deve ter ao menos 3 caracteres e usar letras sem acento, números, ponto, hífen, sublinhado ou @.</p><p className="auth-help">O token fica no arquivo <code>bootstrap-admin.token</code> no diretório de dados definido pelo servidor. Guarde-o como segredo.</p></>}
       {stage === 'login' && <><label className="field"><span className="field-label">Usuário</span><input required autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Senha</span><span className="auth-password-control"><input required type={passwordVisible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label><label className="field"><span className="field-label">Código MFA (6 dígitos)</span><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label></>}
@@ -1644,7 +1673,7 @@ function NursingHourlyRoundsPanel({ canUpdate }: { canUpdate: boolean }) {
         <div className="nursing-medication-history">
           {currentRound.patients.map((patient) => <article key={patient.patient_reference}>
             <strong>{patient.patient_name} · Quarto {patient.room} · Leito {patient.bed}</strong>
-            <span>{patient.status === 'pending' ? 'Pendente' : patient.status === 'checked' ? `Conferido por ${patient.checked_by_name} · ${patient.checked_at ? dateTime(patient.checked_at) : ''}` : `Ocorrência · ${patient.exception_type} · ${patient.checked_by_name} · ${patient.checked_at ? dateTime(patient.checked_at) : ''}`}</span>
+            <span className={`hourly-round-status hourly-round-status-${patient.status}`}>{hourlyRoundStatusLabels[patient.status]}{patient.status === 'exception' && patient.exception_type ? ` · ${hourlyRoundExceptionLabels[patient.exception_type] ?? patient.exception_type}` : ''} · {patient.checked_by_name || 'Sem responsável registrado'}{patient.checked_at ? ` · ${dateTime(patient.checked_at)}` : ''}</span>
             {patient.note && <small>{patient.note}</small>}
             {canUpdate && <div className="nursing-overview-actions">
               <button className="button button-secondary" type="button" disabled={busy} onClick={() => void updatePatient(patient, { status: 'checked' })}>Registrar conferência</button>
@@ -1663,7 +1692,7 @@ function NursingHourlyRoundsPanel({ canUpdate }: { canUpdate: boolean }) {
       <div className="section-heading"><div><p className="eyebrow">REGISTROS ANTERIORES</p><h3>Histórico de verificações</h3></div><span className="module-total">{roundHistoryTotal}</span></div>
       {roundHistory.length ? <div className="nursing-medication-history">{roundHistory.map((round) => {
         const exceptions = round.patients.filter((patient) => patient.status === 'exception').length
-        return <article key={round.id}><strong>{round.status === 'open' ? 'Em andamento' : 'Encerrada'} · {dateTime(round.started_at)}</strong><span>Iniciada por {round.started_by_name} · {round.patients.length} paciente(s) · {exceptions} ocorrência(s){round.completed_by_name ? ` · encerrada por ${round.completed_by_name}` : ''}</span><details className="hourly-round-details"><summary>Ver detalhes por paciente</summary><div>{round.patients.map((patient) => <section key={patient.patient_reference}><strong>{patient.patient_name} · Quarto {patient.room} · Leito {patient.bed}</strong><span>{patient.status === 'pending' ? 'Pendente' : patient.status === 'checked' ? 'Conferido' : `Ocorrência · ${patient.exception_type || 'Outros'}`} · {patient.checked_by_name || 'Sem responsável registrado'}{patient.checked_at ? ` · ${dateTime(patient.checked_at)}` : ''}</span>{patient.note && <small>{patient.note}</small>}</section>)}</div></details></article>
+        return <article key={round.id}><strong><span className={`hourly-round-status hourly-round-status-round-${round.status}`}>{round.status === 'open' ? 'Em andamento' : 'Encerrada'}</span> · {dateTime(round.started_at)}</strong><span>Iniciada por {round.started_by_name} · {round.patients.length} paciente(s) · {exceptions} ocorrência(s){round.completed_by_name ? ` · encerrada por ${round.completed_by_name}` : ''}</span><details className="hourly-round-details"><summary>Ver detalhes por paciente</summary><div>{round.patients.map((patient) => <section key={patient.patient_reference}><strong>{patient.patient_name} · Quarto {patient.room} · Leito {patient.bed}</strong><span className={`hourly-round-status hourly-round-status-${patient.status}`}>{hourlyRoundStatusLabels[patient.status]}{patient.status === 'exception' && patient.exception_type ? ` · ${hourlyRoundExceptionLabels[patient.exception_type] ?? patient.exception_type}` : ''} · {patient.checked_by_name || 'Sem responsável registrado'}{patient.checked_at ? ` · ${dateTime(patient.checked_at)}` : ''}</span>{patient.note && <small>{patient.note}</small>}</section>)}</div></details></article>
       })}</div> : <p className="history-empty">Nenhuma verificação anterior registrada.</p>}
       {roundHistoryTotal > 10 && <nav className="history-pagination" aria-label="Paginação do histórico de verificações"><span>Exibindo {roundHistoryOffset + 1}–{Math.min(roundHistoryOffset + roundHistory.length, roundHistoryTotal)} de {roundHistoryTotal}</span><div><button className="button button-secondary" type="button" disabled={roundHistoryOffset === 0 || loading} onClick={() => setRoundHistoryOffset((offset) => Math.max(0, offset - 10))}><ArrowLeft size={15} /> Anteriores</button><button className="button button-secondary" type="button" disabled={roundHistoryOffset + roundHistory.length >= roundHistoryTotal || loading} onClick={() => setRoundHistoryOffset((offset) => offset + 10)}>Mais antigas <ArrowRight size={15} /></button></div></nav>}
     </section>
@@ -2498,7 +2527,7 @@ function AdminPage({ user }: { user: AuthUser }) {
     {status === 'unavailable' && <ToastMessage variant="error">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</ToastMessage>}
     {mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-    <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos e escopos permitidos</legend><p className="field-hint">Administração do aplicativo controla contas; Relatórios e auditoria concede somente consulta. São permissões independentes.</p><div className="module-permission-grid">{assignableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset>{selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações no backend, além da administração de contas. Conceda somente após aprovação institucional.</span></div></div>}<div className="form-actions"><span className="draft-hint">As permissões serão registradas na auditoria. Gestão Hospitalar concede acesso amplo e não é somente leitura.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
+    <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos e escopos permitidos</legend><p className="field-hint">Administração do aplicativo controla contas; Relatórios e auditoria concede somente consulta. São permissões independentes. Psiquiatras que precisam prescrever devem receber também o módulo Médico; a prescrição é feita no fluxo médico compartilhado com Farmácia e Enfermagem.</p><div className="module-permission-grid">{assignableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset>{selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações no backend, além da administração de contas. Conceda somente após aprovação institucional.</span></div></div>}<div className="form-actions"><span className="draft-hint">As permissões serão registradas na auditoria. Gestão Hospitalar concede acesso amplo e não é somente leitura.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
     <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} availableModules={assignableModules} canManageBroadAccess={user.role === 'management' || user.is_superuser} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
     <section className="patient-list-panel physician-profile-admin">
       <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfis médicos</h2><p className="welcome-copy">A Administração cadastra e mantém o nome profissional e o CRM/UF usados nas prescrições.</p></div></div>
@@ -2925,8 +2954,12 @@ const reportStatusLabels: Record<string, string> = {
   no_show: 'Não compareceu',
   admitted: 'Internado',
   pending: 'Pendente',
-  checked: 'Verificado',
+  checked: 'Conferido',
   exception: 'Exceção',
+  away: 'Ausente ou em atendimento externo',
+  location: 'Em outro local da instituição',
+  not_found: 'Não localizado',
+  other: 'Outro',
   fulfilled: 'Atendida',
   dispensed: 'Dispensado',
   requested: 'Solicitada',
@@ -3152,7 +3185,14 @@ function AdminReportsCenter() {
         const roundPatients = sourceId === 'hourly-rounds' && Array.isArray(record.patients)
           ? record.patients.filter((patient): patient is AdminReportRecord => typeof patient === 'object' && patient !== null && !Array.isArray(patient))
           : []
-        return <article className="admin-report-row" key={reportRecordText(record, ['id', 'reference']) || `${sourceId}-${index}`}><div><strong>{title}</strong><span>{reportRowDate(record) ? dateTime(reportRowDate(record)) : 'Data não informada'}{detail ? ` · ${detail}` : ''}</span>{sourceId === 'hourly-rounds' && <details className="hourly-round-details"><summary>Ver detalhes por paciente ({roundPatients.length})</summary><div>{roundPatients.map((patient) => <section key={reportRecordText(patient, ['patient_reference'])}><strong>{reportRecordText(patient, ['patient_name'])} · Quarto {reportRecordText(patient, ['room'])} · Leito {reportRecordText(patient, ['bed'])}</strong><span>{reportStatusText(patient)}{reportRecordText(patient, ['exception_type']) ? ` · ${reportRecordText(patient, ['exception_type'])}` : ''} · {reportRecordText(patient, ['checked_by_name']) || 'Sem responsável registrado'}{reportRecordText(patient, ['checked_at']) ? ` · ${dateTime(reportRecordText(patient, ['checked_at']))}` : ''}</span>{reportRecordText(patient, ['note']) && <small>{reportRecordText(patient, ['note'])}</small>}</section>)}</div></details>}</div>{status && <span className="entry-status">{status}</span>}</article>
+        return <article className="admin-report-row" key={reportRecordText(record, ['id', 'reference']) || `${sourceId}-${index}`}><div><strong>{title}</strong><span>{reportRowDate(record) ? dateTime(reportRowDate(record)) : 'Data não informada'}{detail ? ` · ${detail}` : ''}</span>{sourceId === 'hourly-rounds' && <details className="hourly-round-details"><summary>Ver detalhes por paciente ({roundPatients.length})</summary><div>{roundPatients.map((patient) => {
+          const patientStatus = reportRecordText(patient, ['status'])
+          const exceptionType = reportRecordText(patient, ['exception_type'])
+          const patientStatusLabel = patientStatus === 'exception'
+            ? `Ocorrência · ${reportStatusLabels[exceptionType] ?? (exceptionType || 'Outro')}`
+            : reportStatusText(patient)
+          return <section key={reportRecordText(patient, ['patient_reference'])}><strong>{reportRecordText(patient, ['patient_name'])} · Quarto {reportRecordText(patient, ['room'])} · Leito {reportRecordText(patient, ['bed'])}</strong><span className={`hourly-round-status hourly-round-status-${patientStatus}`}>{patientStatusLabel} · {reportRecordText(patient, ['checked_by_name']) || 'Sem responsável registrado'}{reportRecordText(patient, ['checked_at']) ? ` · ${dateTime(reportRecordText(patient, ['checked_at']))}` : ''}</span>{reportRecordText(patient, ['note']) && <small>{reportRecordText(patient, ['note'])}</small>}</section>
+        })}</div></details>}</div>{status && <span className="entry-status">{status}</span>}</article>
       })}</div>{filteredRows.length > reportPageSize && <nav className="history-pagination" aria-label="Paginação do relatório"><span>Exibindo {currentReportPage * reportPageSize + 1}–{Math.min((currentReportPage + 1) * reportPageSize, filteredRows.length)} de {filteredRows.length}</span><div><button className="button button-secondary" type="button" disabled={currentReportPage === 0} onClick={() => setReportPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentReportPage + 1 >= reportPageCount} onClick={() => setReportPage((page) => Math.min(reportPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}</> : <div className="history-empty">{rows.length ? 'Nenhum registro corresponde ao período selecionado.' : 'Nenhum registro disponível para esta área.'}</div>}
     </div>
   </section>
