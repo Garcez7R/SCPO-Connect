@@ -289,6 +289,71 @@ def test_management_cannot_recover_credentials_or_change_superadmin(
     assert error.value.status_code == 403
 
 
+def test_app_admin_can_reset_another_users_password_without_disabling_mfa(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    admin = access._new_user("admin", "Admin", ["admin"], {"admin": ["consultar", "administrar"]})
+    target = access._new_user("nurse", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
+    target.mfa_enabled = True
+    target.mfa_secret_encrypted = "existing-mfa-secret"
+    db.add_all([admin, target])
+    db.commit()
+    token = issue_session(admin.id, "active", admin.session_version)
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+    response = Response()
+
+    async def record_audit(*_args) -> None:
+        return None
+
+    monkeypatch.setattr(access, "record_audit_event", record_audit)
+    result = asyncio.run(access.reset_user_password(target.id, request, response, db))
+
+    db.refresh(target)
+    assert verify_password(str(result["initial_password"]), target.password_hash)
+    assert target.must_change_password is True
+    assert target.mfa_enabled is True
+    assert target.mfa_secret_encrypted == "existing-mfa-secret"
+    assert target.session_version == 2
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_session_refresh_keeps_the_original_expiration(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    user = access._new_user("nurse", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
+    user.must_change_password = False
+    user.mfa_enabled = True
+    db.add(user)
+    db.commit()
+    token = issue_session(user.id, "active", user.session_version)
+    claims = access.read_session(token)
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+    response = Response()
+
+    result = access.refresh_session(request, response, db)
+
+    assert result["session_expires_at"] == claims["exp"]
+    assert "set-cookie" not in response.headers
+
+
 def test_audit_accepts_minimum_clinical_access_event_without_payload() -> None:
     event = audit.AuditEventPayload(
         source_event_id="source-event",

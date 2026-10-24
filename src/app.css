@@ -967,9 +967,15 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .patient-history-page .vital-history { background: var(--surface); }
 .patient-history-page .vital-extra-card { min-width: 0; padding: 10px; }
 .patient-history-page .vital-extra-card > div:first-child { flex-wrap: wrap; }
+.physician-profile-inline { display: grid; gap: 13px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.physician-profile-inline .section-heading { align-items: center; }
+.physician-profile-inline .section-heading h3 { margin: 0; }
+.physician-profile-inline .section-heading > .button { flex: 0 0 auto; }
 .admin-reports-center { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
-.admin-report-controls { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(145px, .7fr)) auto auto; align-items: end; gap: 11px; }
-.admin-report-controls > .button { min-height: 42px; white-space: nowrap; }
+.admin-report-controls { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(210px, 1.3fr) repeat(2, minmax(145px, .75fr)); align-items: end; gap: 11px; }
+.admin-report-actions { display: flex; flex-wrap: wrap; grid-column: 1 / -1; align-items: center; justify-content: flex-end; gap: 9px; padding-top: 4px; }
+.admin-report-actions .module-total { margin-right: auto; }
+.admin-report-actions > .button { min-height: 42px; white-space: nowrap; }
 .admin-report-list { display: grid; max-height: 65vh; overflow: auto; }
 .admin-report-row { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
 .admin-report-row > div { display: grid; min-width: 0; gap: 4px; }
@@ -1011,10 +1017,12 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
   .nursing-medication-panel { gap: 12px; padding: 14px; }
   .nursing-medication-panel > .section-heading { align-items: stretch; flex-direction: column; }
   .nursing-medication-panel > .section-heading > .button { width: 100%; justify-content: center; }
+  .physician-profile-inline .section-heading { align-items: stretch; flex-direction: column; }
+  .physician-profile-inline .section-heading > .button { width: 100%; justify-content: center; }
   .admin-report-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-report-controls .field:first-child { grid-column: 1 / -1; }
-  .admin-report-controls > .module-total { align-self: center; }
-  .admin-report-controls > .button { justify-content: center; }
+  .admin-report-actions { justify-content: stretch; }
+  .admin-report-actions > .button { flex: 1 1 auto; justify-content: center; }
   .patient-history-page .vital-trends-dashboard,
   .patient-history-page .vital-history,
   .patient-history-page .vital-extra-details { padding: 12px; }

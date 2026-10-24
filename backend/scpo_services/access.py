@@ -285,8 +285,21 @@ def _reset_credentials(user: AppUser) -> str:
     return temporary_password
 
 
-def _set_cookie(response: Response, user: AppUser, stage: str) -> None:
+def _reset_password(user: AppUser) -> str:
+    temporary_password = secrets.token_urlsafe(18)
+    user.password_hash = hash_password(temporary_password)
+    user.must_change_password = True
+    user.session_version += 1
+    user.failed_attempts = 0
+    user.locked_until = None
+    return temporary_password
+
+
+def _set_cookie(response: Response, user: AppUser, stage: str) -> int:
     token = issue_session(user.id, stage, user.session_version)
+    claims = read_session(token)
+    if claims is None:
+        raise RuntimeError("Falha ao emitir sessão autenticada")
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -296,6 +309,7 @@ def _set_cookie(response: Response, user: AppUser, stage: str) -> None:
         samesite="strict",
         path="/",
     )
+    return int(claims["exp"])
 
 
 def _user_response(user: AppUser) -> dict[str, object]:
@@ -356,8 +370,8 @@ def bootstrap_admin(
     db.add(user)
     db.commit()
     db.refresh(user)
-    _set_cookie(response, user, "password_change")
-    return {"user": _user_response(user), "must_change_password": True}
+    session_expires_at = _set_cookie(response, user, "password_change")
+    return {"user": _user_response(user), "must_change_password": True, "session_expires_at": session_expires_at}
 
 
 @app.post("/api/v1/auth/login")
@@ -395,11 +409,12 @@ def login(
     user.locked_until = None
     db.commit()
     stage = "password_change" if user.must_change_password else ("mfa_setup" if not user.mfa_enabled else "active")
-    _set_cookie(response, user, stage)
+    session_expires_at = _set_cookie(response, user, stage)
     return {
         "user": _user_response(user),
         "must_change_password": user.must_change_password,
         "mfa_setup_required": not user.mfa_enabled and not user.must_change_password,
+        "session_expires_at": session_expires_at,
     }
 
 
@@ -417,8 +432,8 @@ def change_password(
     user.must_change_password = False
     user.session_version += 1
     db.commit()
-    _set_cookie(response, user, "mfa_setup" if not user.mfa_enabled else "active")
-    return {"user": _user_response(user), "mfa_setup_required": not user.mfa_enabled}
+    session_expires_at = _set_cookie(response, user, "mfa_setup" if not user.mfa_enabled else "active")
+    return {"user": _user_response(user), "mfa_setup_required": not user.mfa_enabled, "session_expires_at": session_expires_at}
 
 
 @app.get("/api/v1/auth/mfa/setup")
@@ -457,8 +472,8 @@ def mfa_confirm(
     user.locked_until = None
     user.session_version += 1
     db.commit()
-    _set_cookie(response, user, "active")
-    return {"user": _user_response(user)}
+    session_expires_at = _set_cookie(response, user, "active")
+    return {"user": _user_response(user), "session_expires_at": session_expires_at}
 
 
 @app.post("/api/v1/auth/refresh")
@@ -467,9 +482,8 @@ def refresh_session(
     response: Response,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    user, _ = _current_user(request, db)
-    _set_cookie(response, user, "active")
-    return {"user": _user_response(user)}
+    user, claims = _current_user(request, db)
+    return {"user": _user_response(user), "session_expires_at": claims["exp"]}
 
 
 @app.post("/api/v1/auth/logout", status_code=204)
@@ -494,10 +508,10 @@ def current_session(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    user, _ = _current_user(request, db)
+    user, claims = _current_user(request, db)
     if user.must_change_password or not user.mfa_enabled:
         raise HTTPException(status_code=403, detail="Conclua a configuração de segurança da conta")
-    return {"user": _user_response(user)}
+    return {"user": _user_response(user), "session_expires_at": claims["exp"]}
 
 
 @app.post("/internal/v1/auth/introspect")
@@ -579,6 +593,33 @@ async def reset_one_user_credentials(
     _prevent_superuser_changes(user)
     await record_audit_event(principal, user.id, "user_credentials_reset", db)
     temporary_password = _reset_credentials(user)
+    db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return {"user": _user_response(user), "initial_password": temporary_password}
+
+
+@app.post("/api/v1/access/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: str,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    actor, principal = _require_account_admin(request, db)
+    user = db.get(AppUser, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    _prevent_superuser_changes(user)
+    if user.id == actor.id:
+        raise HTTPException(status_code=409, detail="Use a troca de senha da própria conta")
+    can_manage_broad_access = actor.is_superuser or (
+        "management" in actor.modules
+        and "administrar" in actor.permissions.get("management", [])
+    )
+    if "management" in user.modules and not can_manage_broad_access:
+        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode redefinir a senha desta conta")
+    await record_audit_event(principal, user.id, "user_password_reset", db)
+    temporary_password = _reset_password(user)
     db.commit()
     response.headers["Cache-Control"] = "no-store"
     return {"user": _user_response(user), "initial_password": temporary_password}

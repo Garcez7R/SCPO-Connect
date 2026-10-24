@@ -66,6 +66,7 @@ import QRCode from 'qrcode'
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
+const sessionDurationMs = 12 * 60 * 60 * 1000
 const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds'] as const
 const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária' }
 const adminTabValues = ['users', 'reports', 'audit'] as const
@@ -347,6 +348,8 @@ class ModuleErrorBoundary extends Component<
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null)
+  const [sessionExpired, setSessionExpired] = useState(false)
   const [authReady, setAuthReady] = useState(false)
   const [bootstrapRequired, setBootstrapRequired] = useState(false)
 
@@ -364,9 +367,19 @@ function App() {
 
     Promise.all([fetch('/api/v1/auth/session'), fetch('/api/v1/auth/status')]).then(async ([sessionResponse, statusResponse]) => {
       const status = statusResponse.ok ? await statusResponse.json() as { bootstrap_required: boolean } : { bootstrap_required: false }
-      const session = sessionResponse.ok ? await sessionResponse.json() as { user: AuthUser } : null
+      const session = sessionResponse.ok ? await sessionResponse.json() as { user: AuthUser; session_expires_at?: number } : null
       if (!active) return
       setUser(session?.user ?? null)
+      if (session?.session_expires_at) {
+        const expiresAt = session.session_expires_at * 1000
+        setSessionExpiresAt(expiresAt)
+        window.localStorage.setItem('scpo-auth-session-expires-at', String(expiresAt))
+        setSessionExpired(expiresAt <= Date.now())
+      } else {
+        setSessionExpiresAt(null)
+        const savedExpiry = Number(window.localStorage.getItem('scpo-auth-session-expires-at'))
+        setSessionExpired(Boolean(savedExpiry && savedExpiry <= Date.now()))
+      }
       setBootstrapRequired(status.bootstrap_required)
       finishStartup()
     }).catch(() => { if (active) finishStartup() })
@@ -377,15 +390,29 @@ function App() {
   }, [])
 
   if (!authReady) return <StartupScreen />
-  if (!user) return <AuthFlow bootstrapRequired={bootstrapRequired} onAuthenticated={setUser} />
-  return <AuthenticatedApp user={user} onLogout={() => setUser(null)} />
+  if (!user) return <AuthFlow bootstrapRequired={bootstrapRequired} sessionExpired={sessionExpired} onAuthenticated={(authenticatedUser, sessionExpiration) => {
+    const expiresAt = sessionExpiration ? sessionExpiration * 1000 : Date.now() + sessionDurationMs
+    window.localStorage.setItem('scpo-auth-session-expires-at', String(expiresAt))
+    setSessionExpiresAt(expiresAt)
+    setSessionExpired(false)
+    setUser(authenticatedUser)
+  }} />
+  return <AuthenticatedApp user={user} sessionExpiresAt={sessionExpiresAt} onSessionExpired={() => {
+    setUser(null)
+    setSessionExpired(true)
+  }} onLogout={() => {
+    window.localStorage.removeItem('scpo-auth-session-expires-at')
+    setSessionExpiresAt(null)
+    setSessionExpired(false)
+    setUser(null)
+  }} />
 }
 
 function StartupScreen() {
   return <main className="startup-screen" role="status" aria-live="polite" aria-busy="true"><div className="startup-brand"><span className="startup-orbit startup-orbit-one" /><span className="startup-orbit startup-orbit-two" /><span className="startup-mark"><img className="startup-mark-base" src="/scpo-connect-icon.png" alt="" /><img className="startup-mark-fill" src="/scpo-connect-icon.png" alt="" /></span><span className="startup-glow" /></div><strong>SCPO Connect</strong><span>Preparando seu espaço de trabalho</span><div className="startup-progress"><i /></div></main>
 }
 
-function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }: { user: AuthUser; sessionExpiresAt: number | null; onSessionExpired: () => void; onLogout: () => void }) {
   const [activeModule, setActiveModule] = useState<ModuleId>(() => {
     try {
       const saved = navigation.find((item) => item.id === window.sessionStorage.getItem(`scpo-active-module:${user.id}`))
@@ -440,30 +467,14 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
     window.localStorage.setItem('scpo-font-zoom', String(fontZoom))
   }, [fontZoom])
   useEffect(() => {
-    let timer = 0
-    let lastActivity = Date.now()
-    const schedule = () => {
-      window.clearTimeout(timer)
-      timer = window.setTimeout(async () => {
-        if (Date.now() - lastActivity < 10 * 60 * 1000) {
-          const response = await fetch('/api/v1/auth/refresh', { method: 'POST' })
-          if (!response.ok) { onLogout(); return }
-          schedule()
-        }
-      }, 8 * 60 * 1000)
+    if (!sessionExpiresAt) return
+    const expireSession = () => {
+      void fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => undefined)
+      onSessionExpired()
     }
-    const recordActivity = () => { lastActivity = Date.now(); schedule() }
-    window.addEventListener('pointerdown', recordActivity)
-    window.addEventListener('keydown', recordActivity)
-    window.addEventListener('touchstart', recordActivity)
-    schedule()
-    return () => {
-      window.clearTimeout(timer)
-      window.removeEventListener('pointerdown', recordActivity)
-      window.removeEventListener('keydown', recordActivity)
-      window.removeEventListener('touchstart', recordActivity)
-    }
-  }, [onLogout])
+    const timer = window.setTimeout(expireSession, Math.max(0, sessionExpiresAt - Date.now()))
+    return () => window.clearTimeout(timer)
+  }, [onSessionExpired, sessionExpiresAt])
   const role = user.role
   const profile: Profile = {
     id: role,
@@ -623,7 +634,7 @@ function BetaCelebration({ onClose, iconError, onIconError }: { onClose: () => v
   </div>
 }
 
-function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: boolean; onAuthenticated: (user: AuthUser) => void }) {
+function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { bootstrapRequired: boolean; sessionExpired: boolean; onAuthenticated: (user: AuthUser, sessionExpiresAt?: number) => void }) {
   const [stage, setStage] = useState<'bootstrap' | 'login' | 'password' | 'mfa'>(bootstrapRequired ? 'bootstrap' : 'login')
   const [username, setUsername] = useState('')
   const [name, setName] = useState('')
@@ -690,7 +701,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
           body: JSON.stringify({ code: totpCode }),
         })
       }
-      const data = await response.json().catch(() => ({})) as { detail?: unknown; user?: AuthUser; must_change_password?: boolean; mfa_setup_required?: boolean }
+      const data = await response.json().catch(() => ({})) as { detail?: unknown; user?: AuthUser; must_change_password?: boolean; mfa_setup_required?: boolean; session_expires_at?: number }
       if (!response.ok) throw new Error(readableApiError(data.detail))
       if (stage === 'bootstrap') {
         setPassword('0000')
@@ -700,12 +711,12 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
         setPasswordVisible(false)
         if (data.must_change_password) setStage('password')
         else if (data.mfa_setup_required) setStage('mfa')
-        else if (data.user) onAuthenticated(data.user)
+        else if (data.user) onAuthenticated(data.user, data.session_expires_at)
       } else if (stage === 'password') {
         setNewPassword('')
         setStage('mfa')
       } else if (data.user) {
-        onAuthenticated(data.user)
+        onAuthenticated(data.user, data.session_expires_at)
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Falha ao conectar ao serviço de identidade.')
@@ -716,6 +727,7 @@ function AuthFlow({ bootstrapRequired, onAuthenticated }: { bootstrapRequired: b
 
   const title = stage === 'bootstrap' ? 'Configurar administrador master' : stage === 'login' ? 'Entrar no SCPO Connect' : stage === 'password' ? 'Troque sua senha inicial' : 'Ative a autenticação em duas etapas'
   return <main className="auth-page"><section className="auth-card"><div className="auth-brand"><img src="/scpo-connect-icon.png" alt="" /><div><strong>SCPO Connect</strong><span>Santa Casa de Pedro Osório</span></div></div><p className="eyebrow">ACESSO SEGURO</p><h1>{title}</h1>
+    {sessionExpired && <div className="admin-warning session-expired-notice" role="status"><Clock3 size={18} /><div><strong>Sessão encerrada</strong><span>O limite de 12 horas foi atingido. Entre novamente para continuar.</span></div></div>}
     {stage === 'mfa' && <div className="auth-mfa-instructions"><strong>Aplicativo autenticador</strong><p>Leia o QR code com seu aplicativo autenticador ou copie a chave para cadastrá-la manualmente. Depois, informe o código de seis dígitos:</p>{mfaQrDataUrl ? <img className="auth-mfa-qr" src={mfaQrDataUrl} alt="QR code para configurar a autenticação em duas etapas" /> : <span className="auth-mfa-qr-loading">Gerando QR code seguro…</span>}<code>{mfaSecret || 'Carregando chave segura…'}</code><button className="button button-secondary auth-mfa-copy" type="button" onClick={() => void copyMfaSecret()} disabled={!mfaSecret}>Copiar chave</button>{mfaCopyMessage && <span className="auth-mfa-copy-message" role="status">{mfaCopyMessage}</span>}</div>}
     <form className="auth-form" onSubmit={submit}>
       {stage === 'bootstrap' && <><label className="field"><span className="field-label">Nome do administrador</span><input required minLength={2} maxLength={120} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" title="Use pelo menos 3 caracteres: letras sem acento, números, ponto, hífen, sublinhado ou @." autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Token de bootstrap</span><input required type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label><p className="auth-help">O usuário deve ter ao menos 3 caracteres e usar letras sem acento, números, ponto, hífen, sublinhado ou @.</p><p className="auth-help">O token fica no arquivo <code>bootstrap-admin.token</code> no diretório de dados definido pelo servidor. Guarde-o como segredo.</p></>}
@@ -2374,7 +2386,6 @@ function SavedConfirmation({ savedAt, actorName, patient, onReset }: { savedAt: 
 }
 
 type Account = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]>; active: boolean; must_change_password: boolean; mfa_enabled: boolean; is_superuser: boolean }
-type PhysicianProfileData = { user_id: string; name: string; crm: string; crm_state: string; updated_at?: string }
 
 const moduleLabels: Record<string, string> = {
   patients: 'Pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
@@ -2392,49 +2403,26 @@ function AdminPage({ user }: { user: AuthUser }) {
   const [tab, setTab] = usePersistentTab(`scpo-tab-admin-${user.id}`, canManageApp ? 'users' : 'reports', adminTabValues, adminTabLabels)
   const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'reports'
   const [users, setUsers] = useState<Account[]>([])
-  const [physicianProfiles, setPhysicianProfiles] = useState<PhysicianProfileData[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>(canManageApp ? 'loading' : 'ready')
   const [notice, setNotice] = useState('')
   const [mutationError, setMutationError] = useState('')
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [selectedModules, setSelectedModules] = useState<string[]>([])
-  const [physicianUserId, setPhysicianUserId] = useState('')
   const [physicianForm, setPhysicianForm] = useState({ name: '', crm: '', crm_state: '' })
-  const [savingPhysicianProfile, setSavingPhysicianProfile] = useState(false)
+  const [pendingPhysicianProfile, setPendingPhysicianProfile] = useState<{ userId: string; userName: string } | null>(null)
   const [saving, setSaving] = useState(false)
-  const physicianAccounts = users.filter((user) => user.active && user.modules.includes('physician'))
-  const selectedPhysicianProfile = physicianProfiles.find((profile) => profile.user_id === physicianUserId)
 
   useEffect(() => {
     if (!availableTabs.includes(tab)) setTab(availableTabs[0] ?? 'reports')
   }, [availableTabs, setTab, tab])
 
-  function selectPhysician(userId: string) {
-    const user = physicianAccounts.find((item) => item.id === userId)
-    const existing = physicianProfiles.find((item) => item.user_id === userId)
-    setPhysicianUserId(userId)
-    setPhysicianForm({
-      name: existing?.name ?? user?.name ?? '',
-      crm: existing?.crm ?? '',
-      crm_state: existing?.crm_state ?? '',
-    })
-  }
-
   async function loadUsers() {
     if (!canManageApp) return
     setStatus('loading')
     try {
-      const [usersResponse, profilesResponse] = await Promise.all([
-        fetch('/api/v1/access/users'),
-        fetch('/api/v1/physicians/profiles'),
-      ])
-      const [userData, profileData] = await Promise.all([
-        readApiResponse<{ users: Account[] }>(usersResponse),
-        readApiResponse<{ profiles: PhysicianProfileData[] }>(profilesResponse),
-      ])
+      const userData = await readApiResponse<{ users: Account[] }>(await fetch('/api/v1/access/users'))
       setUsers(userData.users)
-      setPhysicianProfiles(profileData.profiles)
       setStatus('ready')
     } catch {
       setStatus('unavailable')
@@ -2446,17 +2434,9 @@ function AdminPage({ user }: { user: AuthUser }) {
     let active = true
     const loadInitialUsers = async () => {
       try {
-        const [usersResponse, profilesResponse] = await Promise.all([
-          fetch('/api/v1/access/users'),
-          fetch('/api/v1/physicians/profiles'),
-        ])
-        const [userData, profileData] = await Promise.all([
-          readApiResponse<{ users: Account[] }>(usersResponse),
-          readApiResponse<{ profiles: PhysicianProfileData[] }>(profilesResponse),
-        ])
+        const userData = await readApiResponse<{ users: Account[] }>(await fetch('/api/v1/access/users'))
         if (active) {
           setUsers(userData.users)
-          setPhysicianProfiles(profileData.profiles)
           setStatus('ready')
         }
       } catch {
@@ -2468,7 +2448,35 @@ function AdminPage({ user }: { user: AuthUser }) {
   }, [canManageApp])
 
   function toggleModule(module: string) {
-    setSelectedModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])
+    const selected = selectedModules.includes(module)
+    setSelectedModules((current) => selected ? current.filter((item) => item !== module) : [...current, module])
+    if (module === 'physician' && !selected) {
+      setPhysicianForm((current) => ({ ...current, name: current.name || name }))
+    }
+  }
+
+  async function savePhysicianProfile(userId: string) {
+    await readApiResponse(await fetch(`/api/v1/physicians/profiles/${encodeURIComponent(userId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...physicianForm, crm_state: physicianForm.crm_state.toUpperCase() }),
+    }))
+  }
+
+  async function retryPhysicianProfile() {
+    if (!pendingPhysicianProfile) return
+    setSaving(true)
+    setMutationError('')
+    setNotice('')
+    try {
+      await savePhysicianProfile(pendingPhysicianProfile.userId)
+      setNotice(`Perfil médico de ${pendingPhysicianProfile.userName} salvo.`)
+      setPendingPhysicianProfile(null)
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : 'Não foi possível salvar o perfil médico.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function createAccount(event: FormEvent) {
@@ -2494,34 +2502,22 @@ function AdminPage({ user }: { user: AuthUser }) {
       setName('')
       setUsername('')
       setSelectedModules([])
-      setNotice(`Conta ${data.username} criada. Senha temporária de uso único: ${data.initial_password}. Entregue-a diretamente ao usuário; a troca e a ativação do MFA serão obrigatórias no primeiro acesso.`)
+      let physicianProfileMessage = ''
+      if (selectedModules.includes('physician')) {
+        try {
+          await savePhysicianProfile(data.id)
+          setPhysicianForm({ name: '', crm: '', crm_state: '' })
+        } catch (error) {
+          setPendingPhysicianProfile({ userId: data.id, userName: data.name })
+          physicianProfileMessage = ` A conta foi criada, mas o perfil médico não foi salvo: ${error instanceof Error ? error.message : 'serviço indisponível'}. Complete o cadastro abaixo.`
+        }
+      }
+      setNotice(`Conta ${data.username} criada. Senha temporária de uso único: ${data.initial_password}. Entregue-a diretamente ao usuário; a troca e a ativação do MFA serão obrigatórias no primeiro acesso.${physicianProfileMessage}`)
       await loadUsers()
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Falha ao criar a conta.')
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function savePhysicianProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!physicianUserId) return
-    setSavingPhysicianProfile(true)
-    setNotice('')
-    setMutationError('')
-    try {
-      const response = await fetch(`/api/v1/physicians/profiles/${encodeURIComponent(physicianUserId)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...physicianForm, crm_state: physicianForm.crm_state.toUpperCase() }),
-      })
-      const saved = await readApiResponse<PhysicianProfileData>(response)
-      setPhysicianProfiles((current) => [...current.filter((profile) => profile.user_id !== saved.user_id), saved])
-      setNotice(`Perfil profissional de ${saved.name} salvo.`)
-    } catch (error) {
-      setMutationError(error instanceof Error ? error.message : 'Não foi possível salvar o perfil profissional.')
-    } finally {
-      setSavingPhysicianProfile(false)
     }
   }
 
@@ -2539,6 +2535,19 @@ function AdminPage({ user }: { user: AuthUser }) {
     }
   }
 
+  async function resetUserPassword(account: Account) {
+    if (!window.confirm(`Gerar uma senha temporária para ${account.name}? A senha atual e todas as sessões serão invalidadas; o usuário deverá trocar a senha no próximo acesso. O MFA permanecerá configurado.`)) return
+    setNotice('')
+    setMutationError('')
+    try {
+      const data = await readApiResponse<{ initial_password: string; user: Account }>(await fetch(`/api/v1/access/users/${encodeURIComponent(account.id)}/reset-password`, { method: 'POST' }))
+      setUsers((current) => current.map((item) => item.id === data.user.id ? data.user : item))
+      setNotice(`Senha temporária de uso único para ${account.username}: ${data.initial_password}. Entregue-a diretamente ao usuário por canal seguro; o MFA permanece ativo.`)
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : 'Não foi possível redefinir a senha.')
+    }
+  }
+
   return <section className="admin-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div><p className="eyebrow">ADMINISTRAÇÃO</p><h1>{adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div>{canManageApp && <span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span>}</div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções de Administração">{availableTabs.map((value) => <button className={`button ${activeTab === value ? 'button-primary' : 'button-secondary'}`} key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setTab(value)}>{adminTabLabels[value]}</button>)}</div>
@@ -2547,16 +2556,39 @@ function AdminPage({ user }: { user: AuthUser }) {
     {status === 'unavailable' && <ToastMessage variant="error">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</ToastMessage>}
     {mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-    <form className="account-create-panel" onSubmit={createAccount}><div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label></div><fieldset className="module-permission-fieldset"><legend>Módulos e escopos permitidos</legend><p className="field-hint">Administração do aplicativo controla contas; Relatórios e auditoria concede somente consulta. São permissões independentes. Psiquiatras que precisam prescrever devem receber também o módulo Médico; a prescrição é feita no fluxo médico compartilhado com Farmácia e Enfermagem.</p><div className="module-permission-grid">{assignableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div></fieldset>{selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações no backend, além da administração de contas. Conceda somente após aprovação institucional.</span></div></div>}<div className="form-actions"><span className="draft-hint">As permissões serão registradas na auditoria. Gestão Hospitalar concede acesso amplo e não é somente leitura.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div></form>
-    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} availableModules={assignableModules} canManageBroadAccess={user.role === 'management' || user.is_superuser} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
-    <section className="patient-list-panel physician-profile-admin">
-      <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfis médicos</h2><p className="welcome-copy">A Administração cadastra e mantém o nome profissional e o CRM/UF usados nas prescrições.</p></div></div>
-      {physicianAccounts.length ? <form className="form-grid" onSubmit={(event) => void savePhysicianProfile(event)}>
-        <label className="field"><span className="field-label">Conta médica</span><select required value={physicianUserId} onChange={(event) => selectPhysician(event.target.value)}><option value="">Selecione um usuário Médico</option>{physicianAccounts.map((user) => <option key={user.id} value={user.id}>{user.name} · @{user.username}{physicianProfiles.some((profile) => profile.user_id === user.id) ? ' · perfil cadastrado' : ' · sem perfil'}</option>)}</select></label>
-        <div className="field-grid field-grid-three"><label className="field"><span className="field-label">Nome profissional</span><input required minLength={2} maxLength={120} value={physicianForm.name} onChange={(event) => setPhysicianForm((current) => ({ ...current, name: event.target.value }))} /></label><label className="field"><span className="field-label">CRM</span><input required minLength={3} maxLength={24} value={physicianForm.crm} onChange={(event) => setPhysicianForm((current) => ({ ...current, crm: event.target.value }))} /></label><label className="field"><span className="field-label">UF do CRM</span><input required pattern="[A-Za-z]{2}" maxLength={2} value={physicianForm.crm_state} onChange={(event) => setPhysicianForm((current) => ({ ...current, crm_state: event.target.value.toUpperCase() }))} /></label></div>
-        <div className="form-actions"><span className="draft-hint">{selectedPhysicianProfile ? 'Este perfil já existe e será atualizado.' : 'Confira os dados profissionais antes de liberar prescrições.'}</span><button className="button button-primary" type="submit" disabled={!physicianUserId || savingPhysicianProfile}>{savingPhysicianProfile ? 'Salvando…' : selectedPhysicianProfile ? 'Atualizar perfil' : 'Cadastrar perfil'}</button></div>
-      </form> : <p className="history-empty">Crie uma conta com o módulo Médico para cadastrar um perfil profissional.</p>}
-    </section>
+    <form className="account-create-panel" onSubmit={createAccount}>
+      <div className="users-heading"><div><p className="eyebrow">NOVA CONTA</p><h2>Cadastrar usuário</h2></div></div>
+      <div className="field-grid field-grid-two">
+        <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label className="field"><span className="field-label">Usuário de acesso</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" value={username} onChange={(event) => setUsername(event.target.value)} /></label>
+      </div>
+      <fieldset className="module-permission-fieldset">
+        <legend>Módulos e escopos permitidos</legend>
+        <p className="field-hint">Administração do aplicativo controla contas; Relatórios e auditoria concede somente consulta. São permissões independentes. Psiquiatras que precisam prescrever devem receber também o módulo Médico; a prescrição é feita no fluxo médico compartilhado com Farmácia e Enfermagem.</p>
+        <div className="module-permission-grid">{assignableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={selectedModules.includes(module)} onChange={() => toggleModule(module)} /><span>{label}</span></label>)}</div>
+      </fieldset>
+      {selectedModules.includes('physician') && <section className="physician-profile-inline">
+        <div className="section-heading"><div><p className="eyebrow">PERFIL PROFISSIONAL</p><h3>Dados para prescrições médicas</h3></div><a className="button button-secondary" href="https://portal.cfm.org.br/busca-medicos/" target="_blank" rel="noreferrer">Consultar no portal oficial do CFM</a></div>
+        <p className="field-hint">O portal oficial exige consulta interativa. Confira o registro no CFM e preencha os dados abaixo; não usamos fontes de terceiros nem autopreenchimento não oficial.</p>
+        <div className="field-grid field-grid-three">
+          <label className="field"><span className="field-label">Nome profissional</span><input required minLength={2} maxLength={120} value={physicianForm.name} onChange={(event) => setPhysicianForm((current) => ({ ...current, name: event.target.value }))} /></label>
+          <label className="field"><span className="field-label">CRM</span><input required minLength={1} maxLength={24} value={physicianForm.crm} onChange={(event) => setPhysicianForm((current) => ({ ...current, crm: event.target.value.trim() }))} /></label>
+          <label className="field"><span className="field-label">UF do CRM</span><input required pattern="[A-Za-z]{2}" maxLength={2} value={physicianForm.crm_state} onChange={(event) => setPhysicianForm((current) => ({ ...current, crm_state: event.target.value.toUpperCase() }))} /></label>
+        </div>
+      </section>}
+      {selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações no backend, além da administração de contas. Conceda somente após aprovação institucional.</span></div></div>}
+      <div className="form-actions"><span className="draft-hint">As permissões serão registradas na auditoria. Gestão Hospitalar concede acesso amplo e não é somente leitura.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div>
+    </form>
+    {pendingPhysicianProfile && <section className="account-create-panel physician-profile-inline">
+      <div className="section-heading"><div><p className="eyebrow">FINALIZAÇÃO PENDENTE</p><h3>Perfil médico de {pendingPhysicianProfile.userName}</h3><p className="welcome-copy">A conta existe, mas o serviço médico não confirmou o perfil. Tente salvar novamente.</p></div></div>
+      <div className="field-grid field-grid-three">
+        <label className="field"><span className="field-label">Nome profissional</span><input required minLength={2} maxLength={120} value={physicianForm.name} onChange={(event) => setPhysicianForm((current) => ({ ...current, name: event.target.value }))} /></label>
+        <label className="field"><span className="field-label">CRM</span><input required minLength={1} maxLength={24} value={physicianForm.crm} onChange={(event) => setPhysicianForm((current) => ({ ...current, crm: event.target.value.trim() }))} /></label>
+        <label className="field"><span className="field-label">UF do CRM</span><input required pattern="[A-Za-z]{2}" maxLength={2} value={physicianForm.crm_state} onChange={(event) => setPhysicianForm((current) => ({ ...current, crm_state: event.target.value.toUpperCase() }))} /></label>
+      </div>
+      <button className="button button-primary" type="button" onClick={() => void retryPhysicianProfile()} disabled={saving}>{saving ? 'Salvando…' : 'Tentar salvar perfil médico'}</button>
+    </section>}
+    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} onResetPassword={resetUserPassword} currentUserId={user.id} availableModules={assignableModules} canManageBroadAccess={user.role === 'management' || user.is_superuser} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
     <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia para todos os módulos e ações, incluindo administração de contas</span><span><strong>Superadministrador</strong> privilégio de sistema separado e reservado</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
     </>}
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
@@ -2564,13 +2596,13 @@ function AdminPage({ user }: { user: AuthUser }) {
   </section>
 }
 
-function AccountRow({ user, onUpdate, availableModules, canManageBroadAccess }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void>; availableModules: [string, string][]; canManageBroadAccess: boolean }) {
+function AccountRow({ user, onUpdate, onResetPassword, currentUserId, availableModules, canManageBroadAccess }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void>; onResetPassword: (user: Account) => Promise<void>; currentUserId: string; availableModules: [string, string][]; canManageBroadAccess: boolean }) {
   const [editModules, setEditModules] = useState(user.modules)
   const [editPermissions, setEditPermissions] = useState(user.permissions)
   const [expanded, setExpanded] = useState(false)
   const mayEditBroad = canManageBroadAccess || user.role !== 'management'
   const assignedModules = user.role === 'admin' ? ['admin'] : user.modules
-  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span>{mayEditBroad && <><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => { setEditModules(assignedModules); setEditPermissions(user.role === 'admin' ? { admin: user.permissions.admin ?? ['consultar', 'criar', 'alterar', 'administrar'] } : user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></>}</div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{availableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? (module === 'admin' ? ['consultar', 'criar', 'alterar', 'administrar'] : module === 'oversight' ? ['consultar'] : ['consultar', 'criar', 'alterar'])])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
+  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span>{user.id !== currentUserId && <button className="user-action" type="button" onClick={() => void onResetPassword(user)}>Redefinir senha</button>}{mayEditBroad && <><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => { setEditModules(assignedModules); setEditPermissions(user.role === 'admin' ? { admin: user.permissions.admin ?? ['consultar', 'criar', 'alterar', 'administrar'] } : user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button></>}</div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{availableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? (module === 'admin' ? ['consultar', 'criar', 'alterar', 'administrar'] : module === 'oversight' ? ['consultar'] : ['consultar', 'criar', 'alterar'])])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
 }
 
 function NutritionPage() {
@@ -3070,6 +3102,7 @@ function AdminReportsCenter() {
   const [reportPage, setReportPage] = useState(0)
   const [rows, setRows] = useState<AdminReportRecord[]>([])
   const [reportTotal, setReportTotal] = useState<number | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [loading, setLoading] = useState(true)
@@ -3133,11 +3166,11 @@ function AdminReportsCenter() {
   const filteredRows = rows.filter((row) => {
     if (invalidPeriod) return false
     const rowDate = reportRowDate(row)
-    if (!rowDate) return true
-    const timestamp = new Date(rowDate).getTime()
-    const start = fromDate ? new Date(fromDate).getTime() : null
-    const end = toDate ? new Date(toDate).getTime() : null
-    return (!start || timestamp >= start) && (!end || timestamp <= end)
+    const matchesPeriod = !rowDate || (
+      (!fromDate || new Date(rowDate).getTime() >= new Date(fromDate).getTime())
+      && (!toDate || new Date(rowDate).getTime() <= new Date(toDate).getTime())
+    )
+    return matchesPeriod && (!searchQuery.trim() || JSON.stringify(row).toLocaleLowerCase('pt-BR').includes(searchQuery.trim().toLocaleLowerCase('pt-BR')))
   })
   const reportPageCount = Math.max(1, Math.ceil(filteredRows.length / reportPageSize))
   const currentReportPage = Math.min(reportPage, reportPageCount - 1)
@@ -3183,10 +3216,14 @@ function AdminReportsCenter() {
       <div className="section-heading"><div><p className="eyebrow">RELATÓRIOS DIGITAIS POR ÁREA</p><h2>Consultar relatórios</h2><p className="welcome-copy">Selecione uma área para consultar e, se necessário, imprimir os registros disponíveis no módulo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadReport()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar relatório'}</button></div>
       <div className="admin-report-controls">
         <label className="field"><span className="field-label">Área / relatório</span><select value={sourceId} onChange={(event) => { setRows([]); setReportTotal(null); setError(''); setReportPage(0); setSourceId(event.target.value as typeof sourceId) }}>{visibleSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Pesquisar nos resultados</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={searchQuery} onChange={(event) => { setReportPage(0); setSearchQuery(event.target.value) }} placeholder="Paciente, responsável, situação…" /></span></label>
         <label className="field"><span className="field-label">De (data e hora)</span><input type="datetime-local" value={fromDate} max={toDate || undefined} onChange={(event) => { setReportPage(0); setFromDate(event.target.value) }} /></label>
         <label className="field"><span className="field-label">Até (data e hora)</span><input type="datetime-local" value={toDate} min={fromDate || undefined} onChange={(event) => { setReportPage(0); setToDate(event.target.value) }} /></label>
-        <span className="module-total">{filteredRows.length} registros</span>
-        <button className="button button-secondary" type="button" onClick={printReport} disabled={loading || !filteredRows.length}><Printer size={16} /> Imprimir resultados</button>
+        <div className="admin-report-actions">
+          <span className="module-total">{filteredRows.length} registros</span>
+          <button className="button button-secondary" type="button" onClick={printReport} disabled={loading || !filteredRows.length}><Printer size={16} /> Imprimir resultados</button>
+          <button className="button button-secondary" type="button" onClick={() => { setSearchQuery(''); setFromDate(''); setToDate(''); setReportPage(0) }} disabled={!searchQuery && !fromDate && !toDate}>Limpar filtros</button>
+        </div>
       </div>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {invalidPeriod && <ToastMessage variant="error">A data e hora inicial devem ser anteriores ou iguais à data e hora final.</ToastMessage>}
@@ -3213,7 +3250,7 @@ function AdminReportsCenter() {
             : reportStatusText(patient)
           return <section key={reportRecordText(patient, ['patient_reference'])}><strong>{reportRecordText(patient, ['patient_name'])} · Quarto {reportRecordText(patient, ['room'])} · Leito {reportRecordText(patient, ['bed'])}</strong><span className={`hourly-round-status hourly-round-status-${patientStatus}`}>{patientStatusLabel} · {reportRecordText(patient, ['checked_by_name']) || 'Sem responsável registrado'}{reportRecordText(patient, ['checked_at']) ? ` · ${dateTime(reportRecordText(patient, ['checked_at']))}` : ''}</span>{reportRecordText(patient, ['note']) && <small>{reportRecordText(patient, ['note'])}</small>}</section>
         })}</div></details>}</div>{status && <span className="entry-status">{status}</span>}</article>
-      })}</div>{filteredRows.length > reportPageSize && <nav className="history-pagination" aria-label="Paginação do relatório"><span>Exibindo {currentReportPage * reportPageSize + 1}–{Math.min((currentReportPage + 1) * reportPageSize, filteredRows.length)} de {filteredRows.length}</span><div><button className="button button-secondary" type="button" disabled={currentReportPage === 0} onClick={() => setReportPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentReportPage + 1 >= reportPageCount} onClick={() => setReportPage((page) => Math.min(reportPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}</> : <div className="history-empty">{rows.length ? 'Nenhum registro corresponde ao período selecionado.' : 'Nenhum registro disponível para esta área.'}</div>}
+      })}</div>{filteredRows.length > reportPageSize && <nav className="history-pagination" aria-label="Paginação do relatório"><span>Exibindo {currentReportPage * reportPageSize + 1}–{Math.min((currentReportPage + 1) * reportPageSize, filteredRows.length)} de {filteredRows.length}</span><div><button className="button button-secondary" type="button" disabled={currentReportPage === 0} onClick={() => setReportPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentReportPage + 1 >= reportPageCount} onClick={() => setReportPage((page) => Math.min(reportPageCount - 1, page + 1))}>Próxima <ArrowRight size={16} /></button></div></nav>}</> : <div className="history-empty">{rows.length ? 'Nenhum registro corresponde aos filtros selecionados.' : 'Nenhum registro disponível para esta área.'}</div>}
     </div>
   </section>
 }
