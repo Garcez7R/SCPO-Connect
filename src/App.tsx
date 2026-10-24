@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import type { ErrorInfo, FormEvent, ReactNode } from 'react'
+import type { CSSProperties, ErrorInfo, FormEvent, ReactNode } from 'react'
 import { readApiResponse, readableApiError } from './api'
 import AllergyFields from './components/AllergyFields'
 import {
@@ -407,6 +407,13 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
   })
   const [activeTabLabel, setActiveTabLabel] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('scpo-sidebar-collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
   const [historyPatientReference, setHistoryPatientReference] = useState('')
   const [showBetaPopup, setShowBetaPopup] = useState(false)
   const [betaIconError, setBetaIconError] = useState(false)
@@ -416,6 +423,7 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const logoClickCount = useRef(0)
   const logoClickTimer = useRef<number | undefined>(undefined)
   const closeBetaPopup = useCallback(() => setShowBetaPopup(false), [])
+  const sidebarStyle = { ['--sidebar-width' as string]: sidebarCollapsed ? '84px' : '246px' } as CSSProperties
 
   useEffect(() => () => {
     if (logoClickTimer.current !== undefined) window.clearTimeout(logoClickTimer.current)
@@ -424,6 +432,9 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
     window.localStorage.setItem('scpo-theme', darkMode ? 'dark' : 'light')
   }, [darkMode])
+  useEffect(() => {
+    window.localStorage.setItem('scpo-sidebar-collapsed', sidebarCollapsed ? '1' : '0')
+  }, [sidebarCollapsed])
   useEffect(() => {
     document.documentElement.style.zoom = String(fontZoom)
     window.localStorage.setItem('scpo-font-zoom', String(fontZoom))
@@ -502,13 +513,22 @@ function AuthenticatedApp({ user, onLogout }: { user: AuthUser; onLogout: () => 
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={sidebarStyle}>
       <PageNavigationContext.Provider value={setActiveTabLabel}>
-      <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`} aria-label="Navegação principal">
+      <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} aria-label="Navegação principal">
         <div className="brand-lockup">
           <button className="brand-trigger" type="button" aria-label="Marca SCPO Connect" onClick={handleBrandClick}>
             <img className="brand-image" src="/scpo-connect-icon.png" alt="" />
             <span className="brand-name">SCPO <strong>Connect</strong><small>Santa Casa de Pedro Osório</small></span>
+          </button>
+          <button
+            className="icon-button sidebar-toggle"
+            type="button"
+            aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            title={sidebarCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+            onClick={() => setSidebarCollapsed((current) => !current)}
+          >
+            {sidebarCollapsed ? <ArrowRight size={17} /> : <ArrowLeft size={17} />}
           </button>
           <button className="icon-button sidebar-close" type="button" aria-label="Fechar menu" onClick={() => setMenuOpen(false)}><X size={19} /></button>
         </div>
