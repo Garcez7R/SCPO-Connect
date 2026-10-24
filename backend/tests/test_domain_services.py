@@ -1624,7 +1624,8 @@ def test_hygiene_requests_have_a_dedicated_assignable_queue(
     assert request["location"] == "Quarto 3"
     assert request["status"] == "open"
     assert request["requester_name"] == "Equipe de Higienização"
-    assert request["request_number"].startswith("HIG-")
+    assert len(request["request_number"]) == 7
+    assert request["request_number"].isdigit()
 
     updated = maintenance.update_hygiene_request(
         request["id"],
@@ -1785,7 +1786,8 @@ def test_work_order_links_registered_asset_by_tag(
         db,
     )
     assert order["asset_id"] == asset["id"]
-    assert order["order_number"].startswith("OS-")
+    assert len(order["order_number"]) == 7
+    assert order["order_number"].isdigit()
 
 
 def test_pharmacy_converts_purchase_packages_and_receives_orders_by_lot(

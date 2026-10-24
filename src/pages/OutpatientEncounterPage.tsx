@@ -135,7 +135,7 @@ function marked(value: boolean) {
   return value ? '[X]' : '[ ]'
 }
 
-function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCreate: boolean }) {
+function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userId: string; canCreate: boolean; onArrivalQueued?: () => void }) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [encounters, setEncounters] = useState<OutpatientEncounter[]>([])
   const [patientSearch, setPatientSearch] = useState('')
@@ -263,6 +263,7 @@ function OutpatientEncounterPage({ userId, canCreate }: { userId: string; canCre
       setAntibioticPrescription('')
       setReferral('discharge')
       setNotice('Ficha ambulatorial salva no histórico do paciente.')
+      onArrivalQueued?.()
       if (newPatientMode) {
         try {
           const patientsResponse = await fetch('/api/v1/nursing/patients')

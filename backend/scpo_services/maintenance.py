@@ -25,10 +25,20 @@ from .common import (
 )
 
 
+class ServiceRequestNumber(Base):
+    __tablename__ = "service_request_numbers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class WorkOrder(Base):
     __tablename__ = "work_orders"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    service_number_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_request_numbers.id"), nullable=True, unique=True
+    )
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(String(1500), nullable=False)
     service_type: Mapped[str] = mapped_column(String(80), nullable=False, default="Outro serviço")
@@ -64,6 +74,9 @@ class HygieneRequest(Base):
     __table_args__ = (Index("ix_hygiene_requests_bed_id", "bed_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    service_number_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_request_numbers.id"), nullable=True, unique=True
+    )
     request_type: Mapped[str] = mapped_column(String(32), nullable=False)
     custom_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     unit: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -183,7 +196,9 @@ class HygieneRequestUpdate(BaseModel):
 def _serialize_hygiene_request(request: HygieneRequest) -> dict[str, object]:
     return {
         "id": request.id,
-        "request_number": _service_request_number("HIG", request.id, request.created_at),
+        "request_number": (
+            f"{request.service_number_id:07d}" if request.service_number_id else ""
+        ),
         "request_type": request.request_type,
         "custom_type": request.custom_type,
         "unit": request.unit,
@@ -253,6 +268,7 @@ def create_hygiene_request(
         bed_status = "cleaning"
     request = HygieneRequest(
         id=request_id,
+        service_number_id=_new_service_request_number(db, now),
         **payload.model_dump(),
         bed_status=bed_status,
         status="open",
@@ -462,7 +478,9 @@ def _require_maintenance(principal: DemoPrincipal, action: str) -> None:
 def _serialize_order(order: WorkOrder) -> dict[str, object]:
     return {
         "id": order.id,
-        "order_number": _service_request_number("OS", order.id, order.created_at),
+        "order_number": (
+            f"{order.service_number_id:07d}" if order.service_number_id else ""
+        ),
         "title": order.title,
         "description": order.description,
         "service_type": order.service_type,
@@ -480,9 +498,16 @@ def _serialize_order(order: WorkOrder) -> dict[str, object]:
     }
 
 
-def _service_request_number(prefix: str, request_id: str, created_at: datetime) -> str:
-    created_at_utc = created_at.replace(tzinfo=UTC) if created_at.tzinfo is None else created_at.astimezone(UTC)
-    return f"{prefix}-{created_at_utc:%Y%m%d}-{request_id.replace('-', '').upper()[:12]}"
+def _new_service_request_number(db: Session, issued_at: datetime) -> int:
+    number = ServiceRequestNumber(issued_at=issued_at)
+    db.add(number)
+    db.flush()
+    if number.id > 9_999_999:
+        raise HTTPException(
+            status_code=503,
+            detail="A sequência de ordens de serviço atingiu o limite de sete dígitos",
+        )
+    return number.id
 
 
 @app.get("/health")
@@ -517,6 +542,7 @@ def create_order(
     now = datetime.now(UTC)
     order = WorkOrder(
         id=str(uuid.uuid4()),
+        service_number_id=_new_service_request_number(db, now),
         **payload.model_dump(exclude={"asset_tag", "asset_id"}),
         asset_id=asset_id,
         status="open",

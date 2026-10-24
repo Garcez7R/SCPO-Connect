@@ -266,7 +266,7 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
         <p className="vital-trends-gap-note">Os pontos são posicionados pelo horário de aferição. Os intervalos entre eles representam tempo sem coleta registrada e não indicam estabilidade.</p>
         <div className="vital-trends-view-controls" role="group" aria-label="Forma de visualizar as medições">
           <button className="button button-secondary" type="button" aria-pressed={trendsView === 'charts'} onClick={() => setTrendsView('charts')}>Gráficos</button>
-          <button className="button button-secondary" type="button" aria-pressed={trendsView === 'table'} onClick={() => setTrendsView('table')}>Tabela acessível</button>
+          <button className="button button-secondary" type="button" aria-pressed={trendsView === 'table'} onClick={() => setTrendsView('table')}>Tabela</button>
           <button className="button button-secondary vital-trends-print" type="button" onClick={printTable}><Printer size={16} /> Imprimir tabela</button>
         </div>
         {trendsView === 'charts' ? <div className="vital-trends-grid">

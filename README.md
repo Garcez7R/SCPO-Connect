@@ -36,7 +36,9 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Farmácia: consulta alfabética consolidada do estoque de medicamentos e fila de prescrições médicas pendentes para conferência e dispensação.
 - Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado com busca no servidor e filtro por paciente.
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
-- Recepção: painel de chamadas com atualização automática e modo de exibição para sala de espera usando somente códigos; as chegadas/agendamentos informam o código para a pessoa atendida.
+- Recepção: ficha ambulatorial também entra na fila do pronto atendimento; painel de chamadas separa filas comuns e prioritárias por ordem de chegada.
+- Sala de espera: abra `/painel-sala-espera` em um computador dedicado; após login de uma conta autorizada, a tela abre sem menu lateral e atualiza a cada 15 segundos. O painel mostra a senha e somente o primeiro nome; clique em **Ativar voz e som** uma vez para liberar os alertas do navegador.
+- Ordens de Manutenção e Higienização: numeração sequencial compartilhada de sete dígitos, sem prefixos nem datas.
 - Cadastro do paciente: status explícito de alergia (não verificado, sem alergia conhecida ou alergia conhecida), alerta visual nos fluxos clínicos e opção de responsável não aplicável ou autorreferência do paciente.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
@@ -45,6 +47,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
 - Interface responsiva para computadores, celulares e tablets.
 - Menu lateral recolhível para uso mais eficiente em monitores menores e telas mais estreitas.
+- Enfermagem: verificação horária separa pacientes com e sem risco de evasão; o risco começa ativo e pode ser alterado por profissional autorizado, com registro de auditoria.
 - Oficina terapêutica com abas de atividades/calendário, lista de presença e relatórios; resultados salvos ficam disponíveis digitalmente na aba Relatórios da Gestão Hospitalar, com impressão opcional.
 - Saudação de bom dia, boa tarde ou boa noite conforme o horário de Brasília.
 

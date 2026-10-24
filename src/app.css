@@ -85,13 +85,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sidebar-collapsed .sidebar-bottom { gap: 12px; }
 .sidebar-collapsed .privacy-note { justify-content: center; }
 .sidebar-collapsed .sidebar-close { display: none; }
-.brand-trigger { display: flex; min-width: 0; align-items: center; gap: 11px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.sidebar-collapsed .brand-lockup { display: grid; grid-template-columns: 1fr; justify-items: center; gap: 8px; padding: 4px 0; }
+.sidebar-collapsed .brand-trigger { width: 100%; justify-content: center; }
+.sidebar-collapsed .brand-image { width: 40px; height: 40px; flex-basis: 40px; }
+.sidebar-collapsed .sidebar-toggle { width: 34px; height: 34px; }
+.brand-trigger { display: flex; flex: 1; min-width: 0; align-items: center; gap: 9px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .brand-trigger:focus-visible { outline: 3px solid rgba(40, 109, 134, .3); outline-offset: 4px; }
 .brand-image { display: block; width: 48px; height: 48px; flex: 0 0 48px; padding: 4px; border-radius: 9px; background: #fff; object-fit: contain; }
 .brand-image { transition: transform 200ms ease, box-shadow 200ms ease; }
 .brand-trigger:hover .brand-image { transform: rotate(-5deg) scale(1.07); box-shadow: 0 4px 12px rgb(20 70 96 / 22%); }
-.brand-name { display: flex; flex-direction: column; font-size: 15px; font-weight: 500; letter-spacing: 0; line-height: 1.2; }
-.brand-name strong { display: inline; font-weight: 700; }
+.brand-name { display: flex; flex: 1; flex-direction: column; align-items: center; min-width: 0; font-size: 17px; font-weight: 700; letter-spacing: 0; line-height: 1.2; text-align: center; }
 .brand-name small { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 400; }
 .nav-caption, .eyebrow { margin: 0; color: var(--subtle); font-size: 10px; font-weight: 700; letter-spacing: 1.1px; }
 .nav-caption { padding: 0 11px; }
@@ -154,7 +157,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .appearance-button > span { font-size: 13px; font-weight: 700; }
 .profile-switch-label { color: var(--subtle); font-size: 11px; }
 .profile-switch { width: 190px; min-height: 34px; padding: 0 27px 0 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink); font-size: 11px; }
-.page-content { width: min(100%, 1380px); min-height: calc(100vh - 105px); margin: 0 auto; padding: 33px 38px 30px; }
+.page-content { width: min(100%, 1560px); min-height: calc(100vh - 105px); margin: 0 auto; padding: 33px clamp(22px, 2.5vw, 38px) 30px; }
 .app-footer { display: flex; justify-content: space-between; gap: 15px; padding: 15px 38px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .footer-version { color: var(--subtle); }
 .page-enter { animation: page-enter 240ms ease both; }
@@ -415,6 +418,18 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 @media (max-width: 760px) {
   .sidebar { z-index: 40; inset: 0 auto 0 0; width: min(310px, calc(100vw - 44px)); max-height: 100dvh; padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-105%); transition: transform 180ms ease; box-shadow: none; -webkit-overflow-scrolling: touch; }
   .sidebar-collapsed { width: min(310px, calc(100vw - 44px)); }
+  .sidebar-collapsed .brand-lockup { display: flex; justify-content: flex-start; gap: 11px; padding: 4px 7px; }
+  .sidebar-collapsed .brand-trigger { width: auto; justify-content: flex-start; }
+  .sidebar-collapsed .brand-image { width: 48px; height: 48px; flex-basis: 48px; }
+  .sidebar-collapsed .brand-name,
+  .sidebar-collapsed .nav-link > span,
+  .sidebar-collapsed .privacy-note > span,
+  .sidebar-collapsed .profile-copy { display: initial; }
+  .sidebar-collapsed .brand-name { display: flex; }
+  .sidebar-collapsed .nav-link { justify-content: flex-start; padding-right: 11px; padding-left: 11px; }
+  .sidebar-collapsed .nav-link > svg { margin: 0; }
+  .sidebar-collapsed .profile-card { justify-content: flex-start; padding: 10px 8px; }
+  .sidebar-collapsed .privacy-note { justify-content: flex-start; }
   .sidebar-open { transform: translateX(0); box-shadow: 7px 0 26px rgba(18, 44, 61, .13); }
   .sidebar-toggle { display: none; }
   .primary-nav { flex: 0 0 auto; }
@@ -538,7 +553,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 }
 
 /* Touch friendly nursing collection on phones and tablets. */
-.nursing-page { max-width: 1120px; margin-inline: auto; }
+.nursing-page { max-width: 1440px; margin-inline: auto; }
 .nursing-page .nursing-form { overflow: hidden; border-radius: 10px; box-shadow: 0 3px 14px rgba(24, 50, 74, .045); }
 .nursing-page .patient-strip { border-radius: 10px; }
 .nursing-page .form-section { padding: 21px 22px; }
@@ -559,7 +574,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .nursing-title-actions .button { min-height: 42px; white-space: nowrap; }
 .nursing-vitals-action .module-icon { width: 42px; height: 42px; transform: none; }
 .nursing-vitals-action .button { min-height: 42px; }
-.nursing-history-page, .pharmacy-page { display: grid; max-width: 1120px; gap: 18px; margin-inline: auto; }
+.nursing-history-page, .pharmacy-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .nursing-history-page .page-title-row, .pharmacy-page .page-title-row { align-items: center; }
 .pharmacy-page .page-title-row .module-icon { transform: none; }
 .history-filter-panel, .pharmacy-form, .pharmacy-inventory { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
@@ -599,7 +614,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .pharmacy-dispensation-safety strong { font-size: 13px; line-height: 1.45; }
 .pharmacy-dispensation-safety p { margin: 0; font-size: 12px; line-height: 1.6; }
 .pharmacy-dispensation-submit { justify-self: start; min-height: 44px; }
-.management-page, .system-admin-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
+.management-page, .system-admin-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .management-operations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .asset-maintenance-grid { grid-template-columns: minmax(0, 1fr); }
 .asset-maintenance-grid > .admin-tabs { grid-column: 1 / -1; }
@@ -746,7 +761,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .work-order-review-description p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .work-order-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .work-order-form-actions .button { min-height: 44px; }
-.psychology-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
+.psychology-page { display: grid; max-width: 1440px; gap: 16px; margin-inline: auto; }
 .psychology-privacy { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #cbdfe8; border-radius: 8px; background: #f0f7fa; color: #255c76; font-size: 12px; line-height: 1.55; }
 .psychology-privacy svg { flex: 0 0 auto; margin-top: 1px; }
 .psychology-service-tabs { margin-bottom: -3px; }
@@ -792,7 +807,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .interprofessional-share-card > .button { justify-self: start; min-height: 40px; }
 .interprofessional-share-items { display: grid; gap: 10px; }
 .interprofessional-share-card { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
-.hygiene-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
+.hygiene-page { display: grid; max-width: 1440px; gap: 16px; margin-inline: auto; }
 .hygiene-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .hygiene-summary article { display: grid; gap: 5px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .hygiene-summary strong { color: var(--ink); font-size: 23px; line-height: 1; }
@@ -821,7 +836,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .hygiene-bed-link-available { border-color: #8bc3a0; background: #edf8f1; color: #285d3b; }
 .hygiene-bed-link-release_pending { border-color: #d7b664; background: #fff8e8; }
 .hygiene-updated { color: var(--subtle); font-size: 10px; }
-.patient-registry-page, .patient-history-page, .therapy-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
+.patient-registry-page, .patient-history-page, .therapy-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .patient-registry-form, .patient-list-panel, .patient-history-summary, .therapy-form, .therapy-calendar-panel, .therapy-birthday-panel, .therapy-activity-list { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .patient-registry-form .section-heading, .patient-list-panel .section-heading, .therapy-form .section-heading, .therapy-birthday-panel .section-heading, .therapy-activity-list .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .patient-registry-form .section-heading h2, .patient-list-panel .section-heading h2, .therapy-form .section-heading h2, .therapy-birthday-panel .section-heading h2, .therapy-activity-list .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
@@ -842,7 +857,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .nutrition-record-card p { margin: 5px 0; color: var(--muted); font-size: 11px; }
 .nutrition-record-card small { display: block; margin-top: 5px; color: #536778; font-size: 11px; }
 .nutrition-author { color: var(--subtle); font-size: 10px; white-space: nowrap; }
-.xray-page { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
+.xray-page { display: grid; max-width: 1440px; gap: 16px; margin-inline: auto; }
 .xray-field-wide { grid-column: 1 / -1; }
 .xray-queue-panel { display: grid; gap: 14px; }
 .xray-search { max-width: 560px; }
@@ -971,7 +986,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .physician-profile-inline .section-heading { align-items: center; }
 .physician-profile-inline .section-heading h3 { margin: 0; }
 .physician-profile-inline .section-heading > .button { flex: 0 0 auto; }
-.admin-reports-center { display: grid; max-width: 1180px; gap: 16px; margin-inline: auto; }
+.admin-reports-center { display: grid; max-width: 1440px; gap: 16px; margin-inline: auto; }
 .admin-report-controls { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(210px, 1.3fr) repeat(2, minmax(145px, .75fr)); align-items: end; gap: 11px; }
 .admin-report-actions { display: flex; flex-wrap: wrap; grid-column: 1 / -1; align-items: center; justify-content: flex-end; gap: 9px; padding-top: 4px; }
 .admin-report-actions .module-total { margin-right: auto; }
@@ -992,6 +1007,21 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .hourly-round-details > div { display: grid; gap: 7px; margin-top: 9px; }
 .hourly-round-details section { display: grid; gap: 4px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
 .hourly-round-details section > span, .hourly-round-details section > small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.hourly-round-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; }
+.hourly-round-group { display: grid; min-width: 0; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; }
+.hourly-round-group > h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; font-size: 13px; }
+.hourly-round-group > h3 span { color: var(--muted); font-size: 11px; }
+.hourly-round-group-risk { border-top: 4px solid var(--red); }
+.hourly-round-group-clear { border-top: 4px solid var(--green); }
+.hourly-round-patient-risk { border-left: 4px solid var(--red) !important; }
+.hourly-round-patient-clear { border-left: 4px solid var(--green) !important; }
+.hourly-round-risk-tag { width: fit-content; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.hourly-round-risk-tag-active { background: var(--red-pale); color: var(--red); }
+.hourly-round-risk-tag-clear { background: var(--green-pale); color: var(--green); }
+html[data-theme="dark"] .hourly-round-patient-risk { border-left-color: #e77d85 !important; }
+html[data-theme="dark"] .hourly-round-patient-clear { border-left-color: #67b98b !important; }
+html[data-theme="dark"] .hourly-round-risk-tag-active { background: #44272a; color: #f3a4a8; }
+html[data-theme="dark"] .hourly-round-risk-tag-clear { background: #21372d; color: #a2dfbb; }
 .hourly-round-status { display: inline-flex; width: fit-content; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 1.4; }
 .hourly-round-status-pending, .hourly-round-status-round-open { background: #fff4df; color: #80570d; }
 .hourly-round-status-checked, .hourly-round-status-round-completed { background: #eaf5ef; color: #2e6a4c; }
@@ -1106,7 +1136,19 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-report-actions > .field { width: min(100%, 260px); }
 .therapy-report-actions .button { min-height: 42px; }
 .therapy-report-author { color: var(--subtle); font-size: 10px; }
-.therapy-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.therapy-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.therapy-participant-picker { display: grid; min-width: 0; gap: 11px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.therapy-participant-picker > div:first-child { display: grid; gap: 3px; }
+.therapy-participant-picker > div:first-child strong { color: var(--ink); font-size: 12px; }
+.therapy-participant-picker > div:first-child span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.therapy-participant-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
+.therapy-participant-add .button { min-height: 39px; }
+.therapy-selected-participants { display: grid; max-height: 210px; overflow: auto; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.therapy-selected-participants li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.therapy-selected-participants li > span { color: var(--ink); font-size: 11px; font-weight: 600; }
+.therapy-selected-participants li .button { min-height: 32px; padding: 5px 8px; font-size: 10px; }
+html[data-theme="dark"] .therapy-participant-picker,
+html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--line); background: var(--surface); }
 @media (max-width: 760px) { .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .beta-celebration { position: fixed; z-index: 1800; inset: 0; display: grid; place-items: center; overflow: hidden; padding: 20px; }
 .beta-celebration-backdrop { position: absolute; inset: 0; background: rgba(18, 37, 49, .54); animation: beta-backdrop-in .2s ease-out both; }
@@ -1130,7 +1172,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 @media (prefers-reduced-motion: reduce) { .beta-dialog-icon img, .module-card .module-icon > svg { animation: none !important; transition: none !important; } }
 @media (prefers-reduced-motion: reduce) { .brand-image { transition: none; } .brand-trigger:hover .brand-image { transform: none; } }
 
-.about-page { max-width: 1120px; margin-inline: auto; }
+.about-page { max-width: 1440px; margin-inline: auto; }
 .about-legal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
 .about-version { margin: 16px 0; }
 .about-version h2 { margin: 2px 0 6px; font-size: 18px; }
@@ -1146,7 +1188,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .about-scope .panel-heading { margin-bottom: 12px; }
 .about-scope > p { margin-bottom: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
 
-.work-orders-page { display: grid; max-width: 1000px; gap: 18px; margin-inline: auto; }
+.work-orders-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .work-order-form, .work-order-list-panel { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .work-order-form .section-heading, .work-order-list-panel .section-heading { margin: 0; }
 .work-order-form > .field { gap: 7px; }
@@ -1602,7 +1644,7 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
   .executive-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.reception-page, .nutrition-page { display: grid; max-width: 1180px; gap: 18px; margin-inline: auto; }
+.reception-page, .nutrition-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .reception-page > .hygiene-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .reception-arrival-action { display: flex; justify-content: flex-end; }
 .reception-admissions-page .patient-registry-page { gap: 18px; }
@@ -1829,6 +1871,23 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
 .waiting-room-card > strong { color: var(--ink); font-size: clamp(18px, 2.4vw, 26px); overflow-wrap: anywhere; }
 .waiting-room-card > small { color: var(--muted); font-size: 12px; }
 .waiting-room-card .waiting-room-actions .button { flex: 1; justify-content: center; }
+.waiting-room-kiosk { position: fixed; z-index: 20000; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: clamp(12px, 2vh, 24px); overflow: auto; padding: clamp(16px, 3vw, 42px); background: var(--page); color: var(--ink); }
+.waiting-room-kiosk > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.waiting-room-kiosk > header h1 { margin: 4px 0; font-size: clamp(23px, 3vw, 40px); }
+.waiting-room-kiosk > header p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: clamp(13px, 1.4vw, 18px); }
+.waiting-room-kiosk-tools { display: grid; justify-items: end; gap: 6px; }
+.waiting-room-kiosk-tools > span { color: var(--muted); font-size: 11px; text-align: right; }
+.waiting-room-kiosk-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(12px, 2vw, 24px); min-height: 0; }
+.waiting-room-kiosk-group { display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: start; min-width: 0; gap: 12px; padding: clamp(12px, 2vw, 24px); border: 1px solid var(--line); border-top: 6px solid var(--blue); border-radius: 10px; background: var(--surface); }
+.waiting-room-kiosk-group-priority { border-top-color: var(--red); }
+.waiting-room-kiosk-group-common { border-top-color: var(--blue); }
+.waiting-room-kiosk-group > h2 { font-size: clamp(17px, 2vw, 26px); }
+.waiting-room-kiosk-group .waiting-room-display-grid { align-content: start; max-height: 100%; overflow: auto; }
+.waiting-room-kiosk-group .waiting-room-display-card { min-height: clamp(118px, 18vh, 190px); padding: clamp(12px, 2vw, 24px); }
+.waiting-room-kiosk-group .waiting-room-display-card > span { font-size: clamp(23px, 4vw, 50px); letter-spacing: 0; }
+.waiting-room-kiosk-group .waiting-room-display-card > strong { font-size: clamp(22px, 3.2vw, 40px); }
+.waiting-room-kiosk-group .waiting-room-display-card > small { color: var(--muted); font-size: clamp(11px, 1.3vw, 16px); font-weight: 700; }
+.waiting-room-kiosk > footer { color: var(--muted); font-size: clamp(11px, 1.2vw, 15px); text-align: center; }
 .waiting-room-display { position: fixed; z-index: 20000; inset: 0; display: grid; grid-template-rows: auto 1fr auto; gap: clamp(16px, 3vh, 30px); overflow: auto; padding: clamp(20px, 4vw, 56px); background: var(--page); color: var(--ink); }
 .waiting-room-display > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .waiting-room-display > header h1 { margin: 4px 0 0; font-size: clamp(28px, 4vw, 48px); }
@@ -1852,7 +1911,7 @@ html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
 .pharmacy-alphabetic-heading > strong { color: var(--blue-dark); text-align: right; white-space: nowrap; }
 .pharmacy-alphabetic-lots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .pharmacy-alphabetic-lots span { padding: 5px 8px; border-radius: 5px; background: var(--page); color: var(--muted); font-size: 10px; }
-.physician-page { max-width: 1120px; margin-inline: auto; }
+.physician-page { max-width: 1440px; margin-inline: auto; }
 .physician-page .page-title-row > svg { color: var(--blue); }
 .physician-page .patient-list-panel { display: grid; gap: 16px; }
 .physician-page .section-heading { margin: 0; }

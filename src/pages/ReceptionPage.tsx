@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentType, FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, BadgeCheck, ContactRound, Info, Search } from 'lucide-react'
 import { readApiResponse } from '../api'
@@ -61,7 +61,7 @@ type ReceptionTab = 'emergency' | 'outpatient' | 'appointments' | 'admissions' |
 type HospitalBed = { id: string; unit_name: string; room: string; label: string; status: string; occupied: boolean }
 const receptionTabs: ReceptionTab[] = ['emergency', 'outpatient', 'appointments', 'admissions', 'calls']
 const receptionTabLabels: Record<ReceptionTab, string> = {
-  emergency: 'Fila de emergência',
+  emergency: 'Pronto atendimento',
   outpatient: 'Atendimento ambulatorial',
   appointments: 'Agendamentos',
   admissions: 'Internações',
@@ -176,7 +176,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       setOffset(pageOffset)
       setError('')
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila de emergência.')
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila do pronto atendimento.')
     } finally { setLoading(false) }
   }
 
@@ -235,7 +235,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       setArrivalMode('walk_in'); setReason('')
       setAllergyReportStatus('not_asked'); setReportedAllergies('')
       setArrivalFormOpen(false)
-      setNotice(`Chegada registrada. Informe à pessoa o código E-${arrival.id.slice(0, 6).toUpperCase()} para identificar a chamada no painel.`)
+      setNotice(`Chegada registrada na fila do pronto atendimento para ${arrival.patient_name}.`)
       await loadArrivals(statusFilter, query, 0)
       if (createCentralPatient) {
         try {
@@ -302,18 +302,18 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
 
   return <section className="reception-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : tab === 'appointments' ? 'Organize consultas, exames e procedimentos em uma agenda compartilhada.' : tab === 'calls' ? 'Chame pacientes na sala de espera com painel visual e anúncio por voz opcional.' : 'Registre chegadas e acompanhe os atendimentos de emergência.'}</p></div><span className="module-icon module-icon-reception"><ContactRound size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · RECEPÇÃO</p><h1>Recepção</h1><p className="welcome-copy">{tab === 'admissions' ? 'Consulte os pacientes e organize admissões e internações.' : tab === 'outpatient' ? 'Registre e consulte fichas de atendimento ambulatorial.' : tab === 'appointments' ? 'Organize consultas, exames e procedimentos em uma agenda compartilhada.' : tab === 'calls' ? 'Chame pacientes na sala de espera com painel visual e anúncio por voz opcional.' : 'Registre chegadas e acompanhe a fila do pronto atendimento.'}</p></div><span className="module-icon module-icon-reception"><ContactRound size={23} /></span></div>
     <div className="admin-tabs module-tabs reception-primary-tabs" role="tablist" aria-label="Fluxos da Recepção">
-      <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Emergência <span>{counts.waiting}</span></button>
+      <button className={`button ${tab === 'emergency' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'emergency'} onClick={() => setTab('emergency')}>Pronto atendimento <span>{counts.waiting}</span></button>
       <button className={`button ${tab === 'outpatient' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'outpatient'} onClick={() => setTab('outpatient')}>Ficha ambulatorial</button>
       <button className={`button ${tab === 'appointments' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'appointments'} onClick={() => setTab('appointments')}>Agendamentos</button>
       <button className={`button ${tab === 'calls' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calls'} onClick={() => setTab('calls')}><span>Painel de chamadas</span><span>{counts.waiting + counts.called}</span></button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} /> : <>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-      <div className="hygiene-summary" aria-label="Resumo operacional da emergência"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
+      <div className="hygiene-summary" aria-label="Resumo operacional do pronto atendimento"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
       <div className="reception-arrival-action"><button className="button button-primary" type="button" aria-expanded={arrivalFormOpen} aria-controls="reception-arrival-form" onClick={() => setArrivalFormOpen((open) => !open)} disabled={!canCreate}>{arrivalFormOpen ? 'Fechar formulário' : 'Registrar chegada'}</button></div>
       {arrivalFormOpen && <form id="reception-arrival-form" className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
         <div className="section-heading"><div><p className="eyebrow">CHEGADA À EMERGÊNCIA</p><h2>Registrar atendimento</h2></div></div>
@@ -364,12 +364,12 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
         <button className="button button-primary" type="submit" disabled={!canCreate || saving}>{saving ? 'Registrando…' : 'Registrar chegada'} <ArrowRight size={16} /></button>
       </form>}
       <section className="patient-list-panel reception-queue-panel">
-        <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila de emergência <span className="module-total">{total}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadArrivals(statusFilter, query, offset)} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
+        <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila do pronto atendimento <span className="module-total">{total}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadArrivals(statusFilter, query, offset)} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
         <div className="service-tabs module-tabs" role="tablist" aria-label="Filtrar chegadas por situação">
           {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`button ${statusFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
         </div>
         <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
-        {loading ? <div className="history-empty">Carregando fila de emergência…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}>
+        {loading ? <div className="history-empty">Carregando fila do pronto atendimento…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}>
           <div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div>
           <ReceptionAllergyAlert status={arrival.allergies_status} />
           {arrival.allergy_report_status === 'reported' && <p className="field-hint">Alergia relatada na chegada · confirme com a equipe clínica.</p>}
@@ -390,9 +390,9 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
 type WaitingRoomItem = {
   id: string
   patient_name: string
-  status: 'waiting' | 'called'
+  status: 'waiting' | 'called' | 'other'
   type: 'appointment' | 'arrival'
-  starts_at: string
+  arrived_at: string
   code: string
   clinical_priority: EmergencyArrival['clinical_priority']
 }
@@ -404,16 +404,20 @@ const priorityOrder: Record<EmergencyArrival['clinical_priority'], number> = {
   unassigned: 3,
 }
 
-function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
+function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boolean; kioskMode?: boolean }) {
   const [items, setItems] = useState<WaitingRoomItem[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState('')
   const [displayMode, setDisplayMode] = useState(false)
   const [displayError, setDisplayError] = useState('')
+  const [kioskAlertsEnabled, setKioskAlertsEnabled] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const previousCalledRef = useRef<Set<string> | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const kioskAlertsEnabledRef = useRef(false)
 
-  async function loadQueue() {
+  const loadQueue = useCallback(async () => {
     try {
       const today = new Date()
       const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
@@ -424,41 +428,93 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
         fetch(`/api/v1/reception/arrivals?limit=100&offset=0&${params}`),
       ])
       const [appointmentData, arrivalData] = await Promise.all([
-        readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; status: string }> }>(appointmentsResponse),
-        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority'] }> }>(arrivalsResponse),
+        readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; arrived_at?: string | null; status: string }>; total?: number }>(appointmentsResponse),
+        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority'] }>; total?: number }>(arrivalsResponse),
       ])
-      const appointments = (appointmentData.appointments ?? [])
-        .filter((item) => item.status === 'arrived' || item.status === 'called')
+      const allAppointments = [...(appointmentData.appointments ?? [])]
+      const appointmentsTotal = appointmentData.total ?? allAppointments.length
+      while (allAppointments.length < appointmentsTotal) {
+        const nextParams = new URLSearchParams(params)
+        nextParams.set('limit', '100')
+        nextParams.set('offset', String(allAppointments.length))
+        const nextResponse = await fetch(`/api/v1/reception/appointments?${nextParams}`)
+        const nextPage = await readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; arrived_at?: string | null; status: string }> }>(nextResponse)
+        const nextAppointments = nextPage.appointments ?? []
+        if (!nextAppointments.length) break
+        allAppointments.push(...nextAppointments)
+      }
+      const allArrivals = [...(arrivalData.arrivals ?? [])]
+      const arrivalsTotal = arrivalData.total ?? allArrivals.length
+      while (allArrivals.length < arrivalsTotal) {
+        const nextParams = new URLSearchParams(params)
+        nextParams.set('limit', '100')
+        nextParams.set('offset', String(allArrivals.length))
+        const nextResponse = await fetch(`/api/v1/reception/arrivals?${nextParams}`)
+        const nextPage = await readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority'] }> }>(nextResponse)
+        const nextArrivals = nextPage.arrivals ?? []
+        if (!nextArrivals.length) break
+        allArrivals.push(...nextArrivals)
+      }
+      const appointments = allAppointments
+        .filter((item) =>
+          ['arrived', 'called', 'completed'].includes(item.status)
+          && Boolean(item.arrived_at),
+        )
         .map((item): WaitingRoomItem => ({
           id: String(item.id),
           patient_name: item.patient_name,
-          starts_at: item.starts_at,
-          status: item.status === 'called' ? 'called' : 'waiting',
+          arrived_at: item.arrived_at ?? item.starts_at,
+          status: item.status === 'called' ? 'called' : item.status === 'arrived' ? 'waiting' : 'other',
           type: 'appointment',
-          code: `A-${item.id}`,
+          code: '',
           clinical_priority: 'routine',
         }))
-      const arrivals = (arrivalData.arrivals ?? [])
+      const arrivals = allArrivals
         .filter((item) => {
           const arrivalTime = new Date(item.created_at).getTime()
-          return (item.status === 'waiting' || item.status === 'called')
-            && arrivalTime >= start.getTime()
+          return arrivalTime >= start.getTime()
             && arrivalTime < end.getTime()
         })
         .map((item): WaitingRoomItem => ({
           id: item.id,
           patient_name: item.patient_name,
-          starts_at: item.created_at,
-          status: item.status === 'called' ? 'called' : 'waiting',
+          arrived_at: item.created_at,
+          status: item.status === 'called'
+            ? 'called'
+            : item.status === 'waiting' ? 'waiting' : 'other',
           type: 'arrival',
-          code: `E-${item.id.slice(0, 6).toUpperCase()}`,
+          code: '',
           clinical_priority: item.clinical_priority,
         }))
-      setItems([...appointments, ...arrivals].sort((left, right) =>
+      const numberedQueues = new Map<string, number>()
+      const arrivalOrdered = [...appointments, ...arrivals].sort((left, right) =>
+        left.arrived_at.localeCompare(right.arrived_at)
+        || left.id.localeCompare(right.id),
+      )
+      const numberedItems = arrivalOrdered.map((item) => {
+        const queue = item.clinical_priority === 'urgent' || item.clinical_priority === 'priority'
+          ? 'Prioritário'
+          : 'Comum'
+        const nextNumber = (numberedQueues.get(queue) ?? 0) + 1
+        numberedQueues.set(queue, nextNumber)
+        return { ...item, code: `${queue} ${String(nextNumber).padStart(3, '0')}` }
+      })
+      const calledNow = new Set(numberedItems.filter((item) => item.status === 'called').map((item) => `${item.type}-${item.id}`))
+      const previousCalled = previousCalledRef.current
+      if (previousCalled && kioskAlertsEnabledRef.current) {
+        const newCalls = numberedItems.filter((item) =>
+          item.status === 'called' && !previousCalled.has(`${item.type}-${item.id}`),
+        )
+        if (newCalls.length) {
+          playKioskAlert()
+          newCalls.forEach((item) => announce(item))
+        }
+      }
+      previousCalledRef.current = calledNow
+      setItems(numberedItems.filter((item) => item.status !== 'other').sort((left, right) =>
         Number(left.status === 'called') - Number(right.status === 'called')
-        || Number(right.type === 'arrival') - Number(left.type === 'arrival')
         || priorityOrder[left.clinical_priority] - priorityOrder[right.clinical_priority]
-        || left.starts_at.localeCompare(right.starts_at),
+        || left.arrived_at.localeCompare(right.arrived_at),
       ))
       setError('')
     } catch (loadError) {
@@ -466,7 +522,7 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -483,6 +539,10 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
       window.clearTimeout(timer)
       window.clearInterval(interval)
     }
+  }, [loadQueue])
+
+  useEffect(() => () => {
+    void audioContextRef.current?.close()
   }, [])
 
   function announce(item: WaitingRoomItem) {
@@ -492,12 +552,41 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
     }
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(
-      `Paciente ${item.patient_name}, código ${item.code}. Por favor, dirija-se à recepção.`,
+      `Senha ${item.code}. ${item.patient_name.trim().split(/\s+/)[0]}. Por favor, dirija-se à recepção.`,
     )
     utterance.lang = 'pt-BR'
     utterance.onerror = () => setError('O navegador não conseguiu reproduzir o anúncio por voz.')
     window.speechSynthesis.speak(utterance)
     return true
+  }
+
+  function playKioskAlert() {
+    const context = audioContextRef.current
+    if (!context) return
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.value = 880
+    gain.gain.setValueAtTime(0.16, context.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.7)
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start()
+    oscillator.stop(context.currentTime + 0.7)
+  }
+
+  async function enableKioskAlerts() {
+    try {
+      const context = audioContextRef.current ?? new window.AudioContext()
+      await context.resume()
+      audioContextRef.current = context
+      kioskAlertsEnabledRef.current = true
+      setKioskAlertsEnabled(true)
+      setNotice('Alertas sonoros e chamadas por voz ativados neste computador.')
+      setError('')
+    } catch (audioError) {
+      setError(audioError instanceof Error ? audioError.message : 'Não foi possível ativar os alertas deste navegador.')
+    }
   }
 
   async function callPatient(item: WaitingRoomItem, withVoice: boolean) {
@@ -525,6 +614,8 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
 
   const waiting = items.filter((item) => item.status === 'waiting')
   const called = items.filter((item) => item.status === 'called')
+  const priorityItems = items.filter((item) => item.clinical_priority === 'urgent' || item.clinical_priority === 'priority')
+  const commonItems = items.filter((item) => item.clinical_priority !== 'urgent' && item.clinical_priority !== 'priority')
 
   async function openDisplayMode() {
     setDisplayMode(true)
@@ -550,25 +641,51 @@ function WaitingRoomCallBoard({ canUpdate }: { canUpdate: boolean }) {
     }
   }
 
+  function openKioskWindow() {
+    const kioskWindow = window.open('/painel-sala-espera', '_blank', 'noopener,noreferrer')
+    if (!kioskWindow) setError('O navegador bloqueou a nova janela. Permita pop-ups ou acesse /painel-sala-espera neste computador.')
+  }
+
+  if (kioskMode) {
+    return <main className="waiting-room-kiosk" aria-label="Painel da sala de espera">
+      <header><div><p className="eyebrow">SANTA CASA PEDRO OSÓRIO</p><h1>Painel da sala de espera</h1><p>Chamadas por ordem de chegada</p></div><div className="waiting-room-kiosk-tools"><span>{kioskAlertsEnabled ? 'Alertas ativos' : 'Ative voz e som para este computador'}</span><button className="button button-secondary" type="button" onClick={() => void enableKioskAlerts()}>{kioskAlertsEnabled ? 'Som e voz ativos' : 'Ativar voz e som'}</button></div></header>
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+      {loading ? <p className="waiting-room-display-empty">Carregando chamadas…</p> : <div className="waiting-room-kiosk-groups">
+        {[
+          { label: 'Prioritários', className: 'priority', queue: priorityItems },
+          { label: 'Comuns', className: 'common', queue: commonItems },
+        ].map(({ label, className, queue }) => <section className={`waiting-room-kiosk-group waiting-room-kiosk-group-${className}`} key={className}>
+          <h2>{label}</h2>
+          {queue.length ? <div className="waiting-room-display-grid">{queue.map((item) => <article className={`waiting-room-display-card waiting-room-display-card-${item.status}`} key={`${item.type}-${item.id}`}><span>{item.code}</span><strong>{item.patient_name.trim().split(/\s+/)[0]}</strong><small>{item.status === 'called' ? 'DIRIJA-SE À RECEPÇÃO' : 'AGUARDANDO'}</small></article>)}</div> : <p className="waiting-room-display-empty">Nenhuma chamada neste momento.</p>}
+        </section>)}
+      </div>}
+      <footer>Atualização automática a cada 15 segundos · Painel sem informações clínicas.</footer>
+    </main>
+  }
+
   return <>
   <section className="waiting-room-board patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. O painel público exibe apenas códigos de chamada, sem nome, motivo ou informação clínica.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={() => void openDisplayMode()}>Abrir painel da sala de espera</button></div></div>
+    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. O painel público separa senhas comuns e prioritárias e exibe apenas a senha e o primeiro nome.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Abrir quiosque em nova janela</button><button className="button button-secondary" type="button" onClick={() => void openDisplayMode()}>Abrir tela cheia</button></div></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {!canUpdate && <div className="form-message form-message-warning" role="note">Seu perfil pode acompanhar as chamadas, mas não pode iniciar uma chamada.</div>}
     <div className="waiting-room-counts"><article><strong>{waiting.length}</strong><span>Aguardando chamada</span></article><article><strong>{called.length}</strong><span>Chamados</span></article></div>
     {loading ? <div className="history-empty">Carregando fila de chamadas…</div> : !items.length ? <div className="history-empty">Não há pacientes aguardando ou chamados neste momento.</div> : <div className="waiting-room-lists" aria-live="polite">
-      {waiting.length > 0 && <section><h3>Aguardando</h3><div className="waiting-room-cards">{waiting.map((item) => <article className="waiting-room-card" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>{item.type === 'appointment' ? 'Agendamento' : 'Emergência'} · {dateTime(item.starts_at)}</small>{canUpdate && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, false)}>Chamar na tela</button><button className="button button-secondary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, true)}>Chamar com voz</button></div>}</article>)}</div></section>}
-      {called.length > 0 && <section><h3>Chamados</h3><div className="waiting-room-cards">{called.map((item) => <article className="waiting-room-card waiting-room-card-called" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>Chamado · {dateTime(item.starts_at)}</small>{'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar por voz</button>}</article>)}</div></section>}
+      {waiting.length > 0 && <section><h3>Aguardando</h3><div className="waiting-room-cards">{waiting.map((item) => <article className="waiting-room-card" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>{item.type === 'appointment' ? 'Agendamento' : 'Pronto atendimento'} · {dateTime(item.arrived_at)}</small>{canUpdate && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, false)}>Chamar na tela</button><button className="button button-secondary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, true)}>Chamar com voz</button></div>}</article>)}</div></section>}
+      {called.length > 0 && <section><h3>Chamados</h3><div className="waiting-room-cards">{called.map((item) => <article className="waiting-room-card waiting-room-card-called" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>Chamado · {dateTime(item.arrived_at)}</small>{'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar por voz</button>}</article>)}</div></section>}
     </div>}
   </section>
   {displayMode && <main className="waiting-room-display" role="dialog" aria-label="Painel de chamadas da sala de espera" aria-live="polite">
     <header><div><p className="eyebrow">SCPO CONNECT</p><h1>Chamadas</h1></div><button className="button button-secondary" type="button" onClick={() => void closeDisplayMode()}>Sair do painel</button></header>
     {displayError && <ToastMessage variant="error">{displayError}</ToastMessage>}
-    {loading ? <p className="waiting-room-display-empty">Atualizando chamadas…</p> : items.length ? <div className="waiting-room-display-grid">{items.map((item) => <article className={`waiting-room-display-card waiting-room-display-card-${item.status}`} key={`${item.type}-${item.id}`}><span>{item.code}</span><strong>{item.status === 'called' ? 'DIRIJA-SE À RECEPÇÃO' : 'AGUARDANDO CHAMADA'}</strong></article>)}</div> : <p className="waiting-room-display-empty">Não há chamadas pendentes.</p>}
+    {loading ? <p className="waiting-room-display-empty">Atualizando chamadas…</p> : items.length ? <div className="waiting-room-display-grid">{items.map((item) => <article className={`waiting-room-display-card waiting-room-display-card-${item.status}`} key={`${item.type}-${item.id}`}><span>{item.code}</span><strong>{item.patient_name.trim().split(/\s+/)[0]}</strong><small>{item.status === 'called' ? 'DIRIJA-SE À RECEPÇÃO' : 'AGUARDANDO CHAMADA'}</small></article>)}</div> : <p className="waiting-room-display-empty">Não há chamadas pendentes.</p>}
     <footer>O painel atualiza automaticamente. Para atendimento, dirija-se à recepção.</footer>
   </main>}
   </>
 }
 
 export default ReceptionPage
+
+export function WaitingRoomKioskPage() {
+  return <WaitingRoomCallBoard canUpdate={false} kioskMode />
+}

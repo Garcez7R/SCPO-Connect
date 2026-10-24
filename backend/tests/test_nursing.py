@@ -275,6 +275,15 @@ def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
     )
     assert history["total"] == 1
     assert history["encounters"][0]["id"] == created["id"]
+    queue = nursing.list_emergency_arrivals(
+        receptionist, nursing_db, limit=25, offset=0
+    )
+    assert any(
+        arrival["id"] == created["arrival_id"]
+        and arrival["status"] == "waiting"
+        and arrival["patient_name"] == "Paciente ambulatorial"
+        for arrival in queue["arrivals"]
+    )
 
 
 def test_reception_appointments_validate_conflicts_and_status_transitions(
@@ -332,6 +341,7 @@ def test_reception_appointments_validate_conflicts_and_status_transitions(
         nursing_db,
     )
     assert arrived["status"] == "arrived"
+    assert arrived["arrived_at"] is not None
     completed = nursing.update_reception_appointment_status(
         int(created["id"]),
         nursing.ReceptionAppointmentStatusPayload(status="completed"),
@@ -1561,6 +1571,27 @@ def test_hourly_nursing_round_requires_descriptive_exception(
     assert recorded["patients"][0]["status"] == "exception"
     assert recorded["patients"][0]["exception_type"] == "away"
     assert recorded["patients"][0]["note"] == update.note
+
+
+def test_nursing_can_clear_patient_elopement_risk_and_round_tracks_it(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    started = nursing.start_nursing_hourly_round(nurse, nursing_db)
+    assert started["patients"][0]["elopement_risk"] is True
+
+    updated = nursing.update_patient_elopement_risk(
+        reference,
+        nursing.ElopementRiskPayload(at_risk=False),
+        nurse,
+        nursing_db,
+    )
+
+    assert updated["elopement_risk"] is False
+    current = nursing.get_current_nursing_hourly_round(nurse, nursing_db)
+    assert current["round"]["patients"][0]["elopement_risk"] is False
+    assert nursing_db.get(nursing.Patient, reference).elopement_risk is False
 
 
 def test_hourly_nursing_round_rejects_second_open_round(

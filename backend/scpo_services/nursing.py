@@ -142,6 +142,7 @@ class Patient(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    elopement_risk: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
 class NursingHourlyRound(Base):
@@ -192,6 +193,7 @@ class NursingHourlyRoundPatient(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     exception_type: Mapped[str] = mapped_column(String(24), nullable=False, default="")
     note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    elopement_risk: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     checked_by_id: Mapped[str] = mapped_column(String(36), nullable=False, default="")
     checked_by_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -298,6 +300,7 @@ class ReceptionAppointment(Base):
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
     updated_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    arrived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -1418,6 +1421,7 @@ class PatientPayload(BaseModel):
     responsible_state: str = Field(default="", max_length=2)
     responsible_postal_code: str = Field(default="", max_length=12)
     photo_data: str = Field(default="", max_length=1_500_000)
+    elopement_risk: bool = True
 
     @field_validator("name")
     @classmethod
@@ -1463,10 +1467,10 @@ class PatientPayload(BaseModel):
             raise ValueError("Descreva alergias somente quando o status for 'known'")
         return self
 
-    @field_validator("sus_card")
-    @classmethod
-    def normalize_sus_card(cls, value: str) -> str:
-        return re.sub(r"\D", "", value)
+
+class ElopementRiskPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    at_risk: bool
 
 
 class ActivityProcedureRow(BaseModel):
@@ -1933,6 +1937,7 @@ def serialize_nursing_hourly_round(db: Session, round_record: NursingHourlyRound
                 "status": item.status,
                 "exception_type": item.exception_type,
                 "note": item.note,
+                "elopement_risk": item.elopement_risk,
                 "checked_by_id": item.checked_by_id,
                 "checked_by_name": item.checked_by_name,
                 "checked_at": item.checked_at.isoformat() if item.checked_at else None,
@@ -1971,14 +1976,18 @@ def get_current_nursing_hourly_round(
                 patient_name=patient.name,
                 room=patient.room,
                 bed=patient.bed,
+                elopement_risk=patient.elopement_risk,
                 status="pending",
             )
             db.add(member)
             added_count += 1
-        elif member.status == "pending":
-            member.patient_name = patient.name
-            member.room = patient.room
-            member.bed = patient.bed
+        else:
+            if member.status == "pending":
+                member.patient_name = patient.name
+                member.room = patient.room
+                member.bed = patient.bed
+            if member.elopement_risk != patient.elopement_risk:
+                member.elopement_risk = patient.elopement_risk
 
     if added_count:
         emit_audit_event(
@@ -2043,6 +2052,7 @@ def start_nursing_hourly_round(
                 patient_name=patient.name,
                 room=patient.room,
                 bed=patient.bed,
+                elopement_risk=patient.elopement_risk,
                 status="pending",
             )
         )
@@ -2348,6 +2358,8 @@ def create_emergency_arrival(
 def list_reception_appointments(
     principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
     db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
     from_at: datetime | None = None,
     to_at: datetime | None = None,
     status: Literal["scheduled", "confirmed", "arrived", "called", "completed", "cancelled", "no_show"] | None = None,
@@ -2385,7 +2397,8 @@ def list_reception_appointments(
         .join(Patient, Patient.reference == ReceptionAppointment.patient_reference)
         .where(*filters)
         .order_by(ReceptionAppointment.starts_at, ReceptionAppointment.id)
-        .limit(500)
+        .limit(limit)
+        .offset(offset)
     ).all()
     total = db.scalar(
         select(func.count(ReceptionAppointment.id))
@@ -2399,6 +2412,8 @@ def list_reception_appointments(
             for appointment, patient_name in rows
         ],
         "total": total,
+        "limit": limit,
+        "offset": offset,
     }
 
 
@@ -2482,6 +2497,8 @@ def update_reception_appointment_status(
         )
 
     appointment.status = payload.status
+    if payload.status == "arrived" and appointment.arrived_at is None:
+        appointment.arrived_at = datetime.now(UTC)
     appointment.updated_by_name = principal.actor_name
     appointment.updated_at = datetime.now(UTC)
     emit_audit_event(
@@ -2557,11 +2574,28 @@ def create_outpatient_encounter(
         created_at=now,
     )
     db.add(encounter)
+    arrival = EmergencyArrival(
+        id=str(uuid.uuid4()),
+        patient_reference=patient.reference,
+        patient_name=patient.name,
+        arrival_mode="walk_in",
+        reason="Ficha ambulatorial registrada",
+        status="waiting",
+        created_by=principal.actor_name,
+        updated_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+        clinical_priority="routine",
+    )
+    db.add(arrival)
     db.flush()
     emit_audit_event(principal, "reception", "outpatient_encounter_created", str(encounter.id), db=db)
+    emit_audit_event(principal, "reception", "emergency_arrival_created", arrival.id, db=db)
     db.commit()
     db.refresh(encounter)
-    return serialize_outpatient_encounter(encounter)
+    result = serialize_outpatient_encounter(encounter)
+    result["arrival_id"] = arrival.id
+    return result
 
 
 @app.patch("/api/v1/reception/arrivals/{arrival_id}")
@@ -3001,6 +3035,7 @@ def serialize_reception_appointment(
         "updated_by_name": appointment.updated_by_name,
         "created_at": appointment.created_at.isoformat(),
         "updated_at": appointment.updated_at.isoformat(),
+        "arrived_at": appointment.arrived_at.isoformat() if appointment.arrived_at else None,
     }
 
 
@@ -3679,6 +3714,47 @@ def create_clinical_risk(
     return serialize_clinical_risk(risk)
 
 
+@app.patch("/api/v1/nursing/patients/{patient_reference}/elopement-risk")
+def update_patient_elopement_risk(
+    patient_reference: str,
+    payload: ElopementRiskPayload,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if patient is None or not patient.active:
+        raise HTTPException(status_code=404, detail="Paciente ativo não encontrado")
+    patient.elopement_risk = payload.at_risk
+    patient.updated_at = datetime.now(UTC)
+    patient.updated_by = principal.actor_name
+    open_round = db.scalar(
+        select(NursingHourlyRound).where(NursingHourlyRound.status == "open")
+    )
+    if open_round is not None:
+        round_patient = db.scalar(
+            select(NursingHourlyRoundPatient).where(
+                NursingHourlyRoundPatient.round_id == open_round.id,
+                NursingHourlyRoundPatient.patient_reference == patient.reference,
+            )
+        )
+        if round_patient is not None:
+            round_patient.elopement_risk = payload.at_risk
+    emit_audit_event(
+        principal,
+        "nursing",
+        "patient_elopement_risk_updated",
+        patient.reference,
+        db=db,
+    )
+    db.commit()
+    return {
+        "patient_reference": patient.reference,
+        "elopement_risk": patient.elopement_risk,
+        "updated_by": patient.updated_by,
+        "updated_at": patient.updated_at.isoformat(),
+    }
+
+
 @app.patch("/api/v1/nursing/clinical-risks/{risk_id}/resolve")
 def resolve_clinical_risk(
     risk_id: int,
@@ -3776,11 +3852,12 @@ def create_patient_record(
     ):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
     now = datetime.now(UTC)
-    patient_data = payload.model_dump(exclude={"treatment_track"})
+    patient_data = payload.model_dump(exclude={"treatment_track", "elopement_risk"})
     patient = Patient(
         reference=str(uuid.uuid4()),
         **patient_data,
         treatment_track=payload.treatment_track or "unclassified",
+        elopement_risk=True,
         created_at=now,
         updated_at=now,
         updated_by=principal.actor_name,
@@ -3846,6 +3923,8 @@ def update_patient(
         "Atualização do cadastro do paciente",
     )
     for key, value in payload.model_dump(exclude_none=True).items():
+        if key == "elopement_risk":
+            continue
         setattr(patient, key, value)
     patient.updated_at = datetime.now(UTC)
     patient.updated_by = principal.actor_name
@@ -4025,6 +4104,7 @@ def list_management_patient_status(
                 "room": patient.room,
                 "bed": patient.bed,
                 "active": patient.active,
+                "elopement_risk": patient.elopement_risk,
                 "attention_level": latest[patient.reference].attention_level if patient.reference in latest else None,
                 "treatment_status": latest[patient.reference].treatment_status if patient.reference in latest else None,
                 "observation": latest[patient.reference].observation if patient.reference in latest else "",
@@ -4120,10 +4200,13 @@ def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profil
         result.update({
             key: getattr(patient, key)
             for key in PatientPayload.model_fields
+            if key != "elopement_risk"
             if key not in {"allergies", "allergies_status"} or can_view_patient_allergies(principal)
             if key != "treatment_track" or can_view_patient_treatment_track(principal)
         })
         result.update({"created_at": patient.created_at.isoformat() if patient.created_at else None, "updated_at": patient.updated_at.isoformat() if patient.updated_at else None, "updated_by": patient.updated_by})
+    if "nursing" in principal.modules and "consultar" in principal.permissions.get("nursing", []):
+        result["elopement_risk"] = patient.elopement_risk
     if can_view_patient_allergies(principal):
         result["allergies"] = patient.allergies
         result["allergies_status"] = patient.allergies_status
