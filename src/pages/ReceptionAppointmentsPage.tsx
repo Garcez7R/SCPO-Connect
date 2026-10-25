@@ -170,7 +170,7 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
       })
       await readApiResponse<Appointment>(response)
       setNotice(status === 'arrived'
-        ? `Chegada registrada. Informe à pessoa o código A-${appointment.id} para identificar a chamada no painel.`
+        ? 'Chegada registrada. A senha sequencial da fila comum será exibida no painel de chamadas.'
         : 'Situação do agendamento atualizada.')
       await loadAppointments()
     } catch (updateError) {
