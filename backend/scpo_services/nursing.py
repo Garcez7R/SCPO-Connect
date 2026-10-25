@@ -250,11 +250,22 @@ class EmergencyArrival(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     clinical_priority: Mapped[str] = mapped_column(String(16), nullable=False, default="unassigned")
+    queue_type: Mapped[str] = mapped_column(String(12), nullable=False, default="common")
     clinical_priority_updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     clinical_priority_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     clinical_priority_reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     allergy_report_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_asked")
     reported_allergies: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+
+class ReceptionQueueSettings(Base):
+    __tablename__ = "reception_queue_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    normal_before_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    normal_calls_since_priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class OutpatientEncounter(Base):
@@ -511,6 +522,7 @@ class EmergencyArrivalPayload(BaseModel):
     new_patient: "EmergencyPatientPayload | None" = None
     arrival_mode: Literal["walk_in", "ambulance", "other"] = "walk_in"
     reason: str = Field(min_length=3, max_length=1000)
+    queue_type: Literal["common", "priority"] = "common"
     allergy_report_status: Literal["not_asked", "reported", "denied"] = "not_asked"
     reported_allergies: str = Field(default="", max_length=500)
 
@@ -533,6 +545,16 @@ class EmergencyArrivalPayload(BaseModel):
         if len(value) < 3:
             raise ValueError("Informe o motivo da procura")
         return value
+
+
+class ReceptionQueueSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    normal_before_priority: int = Field(ge=1, le=20)
+
+
+class ReceptionQueueCallPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["automatic", "common", "priority"] = "automatic"
 
 
 class EmergencyPatientPayload(BaseModel):
@@ -1496,6 +1518,7 @@ class OutpatientEncounterPayload(BaseModel):
         "emergency_referral",
         "reference_consultation",
     ]
+    queue_type: Literal["common", "priority"] = "common"
     same_number: str = Field(default="", max_length=40)
     physician_name: str = Field(default="", max_length=120)
     examination: str = Field(default="", max_length=1000)
@@ -2220,6 +2243,201 @@ def list_emergency_arrivals(
     }
 
 
+def get_reception_queue_settings(db: Session) -> ReceptionQueueSettings:
+    settings = db.get(ReceptionQueueSettings, 1)
+    if settings is None:
+        raise RuntimeError("As configurações da fila da recepção não foram inicializadas pela migração")
+    return settings
+
+
+def record_manual_reception_call(
+    db: Session,
+    principal: DemoPrincipal,
+    clinical_priority: str,
+) -> None:
+    settings = db.scalar(
+        select(ReceptionQueueSettings)
+        .where(ReceptionQueueSettings.id == 1)
+        .with_for_update()
+    )
+    if settings is None:
+        raise RuntimeError("As configurações da fila da recepção não foram inicializadas pela migração")
+    if clinical_priority in {"priority", "urgent"}:
+        settings.normal_calls_since_priority = 0
+    else:
+        settings.normal_calls_since_priority = min(
+            settings.normal_before_priority,
+            settings.normal_calls_since_priority + 1,
+        )
+    settings.updated_by = principal.actor_name
+    settings.updated_at = datetime.now(UTC)
+
+
+@app.get("/api/v1/reception/queue-settings")
+def read_reception_queue_settings(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, int]:
+    settings = get_reception_queue_settings(db)
+    emit_audit_event(principal, "reception", "queue_call_settings_read", "reception_queue_settings")
+    return {
+        "normal_before_priority": settings.normal_before_priority,
+        "normal_calls_since_priority": settings.normal_calls_since_priority,
+    }
+
+
+@app.patch("/api/v1/reception/queue-settings")
+def update_reception_queue_settings(
+    payload: ReceptionQueueSettingsPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, int]:
+    settings = get_reception_queue_settings(db)
+    settings.normal_before_priority = payload.normal_before_priority
+    settings.updated_by = principal.actor_name
+    settings.updated_at = datetime.now(UTC)
+    emit_audit_event(principal, "reception", "queue_call_settings_updated", "reception_queue_settings", db=db)
+    db.commit()
+    return {"normal_before_priority": settings.normal_before_priority}
+
+
+@app.post("/api/v1/reception/queue/call-next")
+def call_next_reception_queue_item(
+    payload: ReceptionQueueCallPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    settings = db.scalar(
+        select(ReceptionQueueSettings)
+        .where(ReceptionQueueSettings.id == 1)
+        .with_for_update()
+    )
+    if settings is None:
+        raise RuntimeError("As configurações da fila da recepção não foram inicializadas pela migração")
+
+    common_arrivals = db.scalars(
+        select(EmergencyArrival)
+        .where(
+            EmergencyArrival.status == "waiting",
+            EmergencyArrival.queue_type == "common",
+        )
+        .order_by(EmergencyArrival.created_at, EmergencyArrival.id)
+        .with_for_update()
+    ).all()
+    common_appointments = db.scalars(
+        select(ReceptionAppointment)
+        .where(
+            ReceptionAppointment.status == "arrived",
+            ReceptionAppointment.arrived_at.is_not(None),
+        )
+        .order_by(ReceptionAppointment.arrived_at, ReceptionAppointment.id)
+        .with_for_update()
+    ).all()
+    priority_arrivals = db.scalars(
+        select(EmergencyArrival)
+        .where(
+            EmergencyArrival.status == "waiting",
+            or_(
+                EmergencyArrival.queue_type == "priority",
+                EmergencyArrival.clinical_priority.in_(("priority", "urgent")),
+            ),
+        )
+        .order_by(
+            case(
+                (EmergencyArrival.clinical_priority == "urgent", 0),
+                else_=1,
+            ),
+            EmergencyArrival.created_at,
+            EmergencyArrival.id,
+        )
+        .with_for_update()
+    ).all()
+
+    common_candidates: list[tuple[datetime, str, EmergencyArrival | ReceptionAppointment]] = [
+        (arrival.created_at, "arrival", arrival) for arrival in common_arrivals
+    ]
+    common_candidates.extend(
+        (appointment.arrived_at, "appointment", appointment)
+        for appointment in common_appointments
+        if appointment.arrived_at is not None
+    )
+    common_candidates.sort(key=lambda item: (item[0], item[2].id))
+    chosen: tuple[datetime, str, EmergencyArrival | ReceptionAppointment] | None = None
+
+    if payload.mode == "common":
+        chosen = common_candidates[0] if common_candidates else None
+        settings.normal_calls_since_priority = min(
+            settings.normal_before_priority,
+            settings.normal_calls_since_priority + 1,
+        )
+    elif payload.mode == "priority":
+        chosen = (
+            (priority_arrivals[0].created_at, "arrival", priority_arrivals[0])
+            if priority_arrivals
+            else None
+        )
+        if chosen:
+            settings.normal_calls_since_priority = 0
+    elif common_candidates and priority_arrivals:
+        if settings.normal_calls_since_priority >= settings.normal_before_priority:
+            chosen = (priority_arrivals[0].created_at, "arrival", priority_arrivals[0])
+            settings.normal_calls_since_priority = 0
+        else:
+            chosen = common_candidates[0]
+            settings.normal_calls_since_priority += 1
+    elif common_candidates:
+        chosen = common_candidates[0]
+        settings.normal_calls_since_priority = min(
+            settings.normal_before_priority,
+            settings.normal_calls_since_priority + 1,
+        )
+    elif priority_arrivals:
+        chosen = (priority_arrivals[0].created_at, "arrival", priority_arrivals[0])
+        settings.normal_calls_since_priority = 0
+
+    if chosen is None:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Não há pacientes aguardando nessa fila")
+
+    _, item_type, item = chosen
+    item.status = "called"
+    if item_type == "arrival":
+        item.updated_by = principal.actor_name
+        item.updated_at = datetime.now(UTC)
+        item_id = item.id
+        patient_name = item.patient_name
+        clinical_priority = item.clinical_priority
+        called_at = item.updated_at
+    else:
+        item.updated_by_name = principal.actor_name
+        item.updated_at = datetime.now(UTC)
+        item_id = str(item.id)
+        patient = db.get(Patient, item.patient_reference)
+        patient_name = patient.name if patient else ""
+        clinical_priority = "routine"
+        called_at = item.updated_at
+
+    settings.updated_by = principal.actor_name
+    settings.updated_at = datetime.now(UTC)
+    emit_audit_event(
+        principal,
+        "reception",
+        "waiting_room_patient_called",
+        item_id,
+        db=db,
+    )
+    db.commit()
+    return {
+        "type": item_type,
+        "id": item_id,
+        "patient_name": patient_name,
+        "status": "called",
+        "clinical_priority": clinical_priority,
+        "called_at": called_at.isoformat(),
+        "normal_calls_since_priority": settings.normal_calls_since_priority,
+    }
+
+
 @app.patch("/api/v1/reception/arrivals/{arrival_id}/clinical-priority")
 def update_emergency_clinical_priority(
     arrival_id: str,
@@ -2321,6 +2539,7 @@ def create_emergency_arrival(
         allergy_report_status=payload.allergy_report_status,
         reported_allergies=payload.reported_allergies.strip(),
         status="waiting",
+        queue_type=payload.queue_type,
         created_by=principal.actor_name,
         updated_by=principal.actor_name,
         created_at=now,
@@ -2497,6 +2716,8 @@ def update_reception_appointment_status(
         )
 
     appointment.status = payload.status
+    if payload.status == "called":
+        record_manual_reception_call(db, principal, "routine")
     if payload.status == "arrived" and appointment.arrived_at is None:
         appointment.arrived_at = datetime.now(UTC)
     appointment.updated_by_name = principal.actor_name
@@ -2586,6 +2807,7 @@ def create_outpatient_encounter(
         created_at=now,
         updated_at=now,
         clinical_priority="routine",
+        queue_type=payload.queue_type,
     )
     db.add(arrival)
     db.flush()
@@ -2617,6 +2839,8 @@ def update_emergency_arrival(
     }
     if payload.status not in transitions.get(arrival.status, set()):
         raise HTTPException(status_code=409, detail="Transição da chegada não permitida")
+    if payload.status == "called" and arrival.status == "waiting":
+        record_manual_reception_call(db, principal, arrival.clinical_priority)
     arrival.status = payload.status
     arrival.updated_by = principal.actor_name
     arrival.updated_at = datetime.now(UTC)
@@ -2964,6 +3188,7 @@ def serialize_emergency_arrival(
         "reason": arrival.reason,
         "status": arrival.status,
         "clinical_priority": arrival.clinical_priority,
+        "queue_type": arrival.queue_type,
         "clinical_priority_updated_by": arrival.clinical_priority_updated_by,
         "clinical_priority_updated_at": arrival.clinical_priority_updated_at.isoformat() if arrival.clinical_priority_updated_at else None,
         "clinical_priority_reason": arrival.clinical_priority_reason,

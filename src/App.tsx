@@ -175,7 +175,7 @@ type HospitalBed = { id: string; unit_id: string; unit_name: string; room: strin
 type ClinicalRisk = { id: number | string; patient_reference: string; patient_name: string; room: string; bed: string; risk_type: 'allergy' | 'contraindication'; description: string; severity: 'unspecified' | 'low' | 'moderate' | 'high'; status: 'active' | 'resolved'; reason: string; actor_name: string; created_at: string; resolved_at?: string | null; resolved_by?: string; resolution_reason?: string }
 type EmergencyArrivalStatus = 'waiting' | 'called' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
 type EmergencyClinicalPriority = 'unassigned' | 'routine' | 'priority' | 'urgent'
-type EmergencyArrival = { id: string; patient_reference: string | null; patient_name: string; allergies_status?: Patient['allergies_status']; allergy_report_status?: 'not_asked' | 'reported' | 'denied'; reported_allergies?: string; arrival_mode: 'walk_in' | 'ambulance' | 'other'; reason: string; status: EmergencyArrivalStatus; clinical_priority: EmergencyClinicalPriority; clinical_priority_updated_by: string; clinical_priority_updated_at: string | null; clinical_priority_reason: string; created_by: string; updated_by: string; created_at: string; updated_at: string }
+type EmergencyArrival = { id: string; patient_reference: string | null; patient_name: string; allergies_status?: Patient['allergies_status']; allergy_report_status?: 'not_asked' | 'reported' | 'denied'; reported_allergies?: string; arrival_mode: 'walk_in' | 'ambulance' | 'other'; reason: string; status: EmergencyArrivalStatus; clinical_priority: EmergencyClinicalPriority; queue_type?: 'common' | 'priority'; clinical_priority_updated_by: string; clinical_priority_updated_at: string | null; clinical_priority_reason: string; created_by: string; updated_by: string; created_at: string; updated_at: string }
 type TherapyActivityStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 type TherapyParticipant = { patient_reference: string; attendance: 'pending' | 'attended' | 'absent' }
 type TherapyPatient = { reference: string; name: string; birth_date: string | null; room?: string; bed?: string; suppressClinicalData: true }
@@ -2129,31 +2129,42 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
       const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
       const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'called' || arrival.status === 'in_service')
       setArrivals(openArrivals)
-      if (!openArrivals.some((arrival) => arrival.id === selectedId)) setSelectedId(openArrivals[0]?.id ?? '')
+      setSelectedId((current) => (openArrivals.some((arrival) => arrival.id === current) ? current : openArrivals[0]?.id ?? ''))
       setError('')
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a fila clínica.')
     }
-  }, [selectedId])
+  }, [])
 
   useEffect(() => {
     let active = true
-    const loadArrivals = async () => {
+
+    const loadQueue = async () => {
+      if (!active) return
       try {
         const response = await fetch('/api/v1/reception/arrivals?limit=100')
         const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
         const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'called' || arrival.status === 'in_service')
         if (!active) return
         setArrivals(openArrivals)
-        if (!openArrivals.some((arrival) => arrival.id === selectedId)) setSelectedId(openArrivals[0]?.id ?? '')
+        setSelectedId((current) => (openArrivals.some((arrival) => arrival.id === current) ? current : openArrivals[0]?.id ?? ''))
         setError('')
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a fila clínica.')
+        if (!active) return
+        setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a fila clínica.')
       }
     }
-    void loadArrivals()
-    return () => { active = false }
-  }, [selectedId])
+
+    void loadQueue()
+    const timer = window.setInterval(() => {
+      void loadQueue()
+    }, 15_000)
+
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [])
   const selectedArrival = arrivals.find((arrival) => arrival.id === selectedId)
 
   async function savePriority(event: FormEvent<HTMLFormElement>) {
@@ -2188,7 +2199,7 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
     {arrivals.length === 0 ? <div className="history-empty">Nenhuma chegada aguardando atendimento ou em atendimento.</div> : <>
       <div className="collection-list">{arrivals.map((arrival) => <article className="collection-row" key={arrival.id}>
         <div className="collection-row-heading"><strong>{arrival.patient_name}</strong><span className={`work-order-status status-${arrival.clinical_priority}`}>{priorityLabels[arrival.clinical_priority]}</span></div>
-        <p>{arrival.reason}</p><ReceptionAllergyAlert status={arrival.allergies_status} />
+        <p>{arrival.reason}</p><span className={`work-order-status status-${arrival.queue_type === 'priority' ? 'priority' : 'routine'}`}>{arrival.queue_type === 'priority' ? 'Fila prioritária' : 'Fila comum'}</span><ReceptionAllergyAlert status={arrival.allergies_status} />
         {arrival.allergy_report_status === 'reported' && <div className="clinical-alert" role="alert"><AlertTriangle size={19} /><div><strong>Alergia relatada · aguarda confirmação clínica</strong><span>{arrival.reported_allergies || 'Detalhes não disponíveis nesta fila.'}</span></div></div>}
         <small>{arrival.status === 'waiting' ? 'Aguardando' : 'Em atendimento'} · Chegada {dateTime(arrival.created_at)}{arrival.clinical_priority_updated_by ? ` · Classificada por ${arrival.clinical_priority_updated_by}` : ''}</small>
       </article>)}</div>
@@ -2483,6 +2494,9 @@ function AdminPage({ user }: { user: AuthUser }) {
   const [physicianForm, setPhysicianForm] = useState({ name: '', crm: '', crm_state: '' })
   const [pendingPhysicianProfile, setPendingPhysicianProfile] = useState<{ userId: string; userName: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [resetPasswordTarget, setResetPasswordTarget] = useState<Account | null>(null)
+  const [temporaryPassword, setTemporaryPassword] = useState('')
+  const [resettingPassword, setResettingPassword] = useState(false)
 
   useEffect(() => {
     if (!availableTabs.includes(tab)) setTab(availableTabs[0] ?? 'reports')
@@ -2607,15 +2621,24 @@ function AdminPage({ user }: { user: AuthUser }) {
   }
 
   async function resetUserPassword(account: Account) {
-    if (!window.confirm(`Gerar uma senha temporária para ${account.name}? A senha atual e todas as sessões serão invalidadas; o usuário deverá trocar a senha no próximo acesso. O MFA permanecerá configurado.`)) return
     setNotice('')
     setMutationError('')
+    setTemporaryPassword('')
+    setResetPasswordTarget(account)
+  }
+
+  async function confirmPasswordReset() {
+    if (!resetPasswordTarget) return
+    setResettingPassword(true)
     try {
-      const data = await readApiResponse<{ initial_password: string; user: Account }>(await fetch(`/api/v1/access/users/${encodeURIComponent(account.id)}/reset-password`, { method: 'POST' }))
+      const data = await readApiResponse<{ initial_password: string; user: Account }>(await fetch(`/api/v1/access/users/${encodeURIComponent(resetPasswordTarget.id)}/reset-password`, { method: 'POST' }))
       setUsers((current) => current.map((item) => item.id === data.user.id ? data.user : item))
-      setNotice(`Senha temporária de uso único para ${account.username}: ${data.initial_password}. Entregue-a diretamente ao usuário por canal seguro; o MFA permanece ativo.`)
+      setTemporaryPassword(data.initial_password)
+      setMutationError('')
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Não foi possível redefinir a senha.')
+    } finally {
+      setResettingPassword(false)
     }
   }
 
@@ -2664,6 +2687,7 @@ function AdminPage({ user }: { user: AuthUser }) {
     </>}
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
     {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
+    {resetPasswordTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !resettingPassword) { setResetPasswordTarget(null); setTemporaryPassword('') } }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-reset-title"><div><p className="eyebrow">ADMINISTRAÇÃO · CREDENCIAIS</p><h2 id="credential-reset-title">{temporaryPassword ? 'Senha temporária gerada' : 'Redefinir senha?'}</h2></div>{temporaryPassword ? <><p>A senha atual e as sessões foram invalidadas. Entregue esta senha temporária diretamente a <strong>{resetPasswordTarget.name}</strong> por canal seguro. A troca será obrigatória no próximo acesso; o MFA permanece configurado.</p><code className="credential-reset-value">{temporaryPassword}</code><div className="form-actions"><button className="button button-primary" type="button" onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Concluir</button></div></> : <><p>Será gerada uma senha de uso único para <strong>{resetPasswordTarget.name}</strong>. A senha atual e todas as sessões serão invalidadas; a troca será obrigatória no próximo acesso. O MFA permanecerá configurado.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={resettingPassword} onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Cancelar</button><button className="button button-danger" type="button" disabled={resettingPassword} onClick={() => void confirmPasswordReset()}>{resettingPassword ? 'Redefinindo…' : 'Confirmar redefinição'}</button></div></>}</section></div>}
   </section>
 }
 

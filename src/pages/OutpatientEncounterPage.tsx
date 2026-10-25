@@ -20,6 +20,7 @@ type Patient = {
 type ActivityRow = { professional_activity: string; procedure: string }
 type PatientSnapshot = Record<string, string>
 type EncounterType = 'outpatient' | 'urgent_emergency' | 'first_consultation' | 'return' | 'emergency_referral' | 'reference_consultation'
+type QueueType = 'common' | 'priority'
 type Referral = 'discharge' | 'return_same_unit' | 'exams' | 'specialty' | 'hospital' | 'emergency'
 type Program = 'prenatal' | 'puericulture' | 'cervical_cancer'
 
@@ -143,6 +144,7 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
   const [newPatientMode, setNewPatientMode] = useState(false)
   const [newPatient, setNewPatient] = useState<NewPatientForm>(emptyNewPatient)
   const [encounterType, setEncounterType] = useState<EncounterType>('outpatient')
+  const [queueType, setQueueType] = useState<QueueType>('common')
   const [physicianName, setPhysicianName] = useState('')
   const [examination, setExamination] = useState('')
   const [activityRows, setActivityRows] = useState<ActivityRow[]>(emptyActivityRows)
@@ -229,6 +231,7 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
         allergies_status: 'unknown',
       } : null,
       encounter_type: encounterType,
+      queue_type: queueType,
       same_number: newPatientMode
         ? newPatient.same_number.trim()
         : patients.find((patient) => patient.reference === patientReference)?.same_number ?? '',
@@ -254,6 +257,7 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
       setNewPatientMode(false)
       setNewPatient(emptyNewPatient())
       setEncounterType('outpatient')
+      setQueueType('common')
       setPhysicianName('')
       setExamination('')
       setActivityRows(emptyActivityRows())
@@ -262,7 +266,7 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
       setDiagnosticHypothesis('')
       setAntibioticPrescription('')
       setReferral('discharge')
-      setNotice('Ficha ambulatorial salva no histórico do paciente.')
+      setNotice(`Ficha ambulatorial salva e paciente incluído na fila ${queueType === 'priority' ? 'prioritária' : 'comum'}, visível também em Enfermagem · Fila e segurança.`)
       onArrivalQueued?.()
       if (newPatientMode) {
         try {
@@ -287,6 +291,7 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="outpatient-encounter-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">FICHA AMBULATORIAL · SIA/SUS-RS</p><h2>Novo atendimento</h2><p className="welcome-copy">O registro fica associado ao cadastro central e pode ser consultado e impresso depois.</p></div></div>
+      <label className="field outpatient-queue-type"><span className="field-label">Fila de atendimento</span><select value={queueType} onChange={(event) => setQueueType(event.target.value as QueueType)}><option value="common">Padrão · fila comum</option><option value="priority">Prioritária · conforme orientação da equipe</option></select><span className="field-hint">A classificação da fila não substitui avaliação clínica. A chegada será compartilhada com Recepção e Enfermagem.</span></label>
       <div className="outpatient-patient-choice">
         {!newPatientMode ? <>
           <label className="field"><span className="field-label">Buscar paciente cadastrado</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, CPF, CNS ou número do cadastro" /></label>

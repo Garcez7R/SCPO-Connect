@@ -17,10 +17,18 @@ self.addEventListener('activate', (event) => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('scpo-connect-') && key !== CACHE) await caches.delete(key);
   await self.clients.claim();
 })()));
+self.addEventListener('install', (event) => event.waitUntil((async () => {
+  const cache = await caches.open(CACHE);
+  await cache.addAll(['/offline.html', '/scpo-connect-icon.png']);
+})()));
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (request.mode === 'navigate') {
+    event.respondWith(fetch(request).catch(async () => (await caches.match('/offline.html')) || Response.error()));
+    return;
+  }
   if (!/\\.(?:js|css|png|svg|woff2?)$/.test(url.pathname)) return;
   event.respondWith((async () => {
     const cached = await caches.match(request);

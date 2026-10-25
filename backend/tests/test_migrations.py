@@ -42,9 +42,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0044_waiting_room_service"
+    assert revision == "0045_reception_queue_calls"
     if service == "nursing":
-        assert len(tables) == 24
+        assert len(tables) == 25
         assert {"nursing_hourly_rounds", "nursing_hourly_round_patients"} <= tables
         assert {"physician_profiles", "physician_prescriptions"} <= tables
         assert "administration_times" in {
@@ -58,6 +58,21 @@ def test_each_service_migration_creates_only_its_owned_table(
             for index in inspect(get_engine(service)).get_indexes("physician_prescriptions")
         }
         assert "reception_appointments" in tables
+        assert "reception_queue_settings" in tables
+        assert "queue_type" in {
+            column["name"]
+            for column in inspect(get_engine(service)).get_columns("emergency_arrivals")
+        }
+        queue_settings_columns = {
+            column["name"]
+            for column in inspect(get_engine(service)).get_columns("reception_queue_settings")
+        }
+        assert {
+            "normal_before_priority",
+            "normal_calls_since_priority",
+            "updated_by",
+            "updated_at",
+        } <= queue_settings_columns
         assert "therapy_activity_attendance" in tables
         assert "same_number" in {
             column["name"] for column in inspect(get_engine(service)).get_columns("patients")

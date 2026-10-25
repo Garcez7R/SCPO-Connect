@@ -1755,6 +1755,7 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
 .outpatient-encounter-form .section-heading h2, .outpatient-history-panel .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
 .outpatient-encounter-form .section-heading .welcome-copy { margin: 6px 0 0; }
 .outpatient-patient-choice { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.outpatient-queue-type { max-width: 520px; }
 .outpatient-new-patient-toggle { min-height: 43px; white-space: nowrap; }
 .outpatient-new-patient-heading { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 12px; }
 .outpatient-new-patient-heading > div { display: grid; gap: 4px; }
@@ -1780,6 +1781,8 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
 html[data-theme="dark"] :is(.outpatient-encounter-form, .outpatient-history-panel, .outpatient-encounter-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 @media (max-width: 760px) {
   .outpatient-patient-choice { grid-template-columns: 1fr; }
+  .waiting-room-cadence { align-items: stretch; flex-direction: column; }
+  .waiting-room-cadence .field { width: 100%; }
   .outpatient-new-patient-toggle { justify-self: start; }
   .outpatient-encounter-card { grid-template-columns: 1fr auto; }
   .outpatient-encounter-card > span { grid-column: 1; }
@@ -1857,6 +1860,15 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
 }
 .waiting-room-board { display: grid; gap: 18px; }
 .waiting-room-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.waiting-room-call-controls { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.waiting-room-call-controls > div:first-child { display: grid; gap: 4px; }
+.waiting-room-call-controls > div:first-child strong { color: var(--ink); }
+.waiting-room-call-controls > div:first-child span { color: var(--muted); font-size: 12px; }
+.waiting-room-cadence { display: flex; align-items: end; gap: 10px; }
+.waiting-room-cadence .field { width: min(100%, 240px); }
+.credential-reset-dialog { align-self: center; }
+.credential-reset-dialog h2 { margin: 4px 0 0; }
+.credential-reset-value { display: block; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 8px; background: var(--page); color: var(--ink); font-size: 20px; font-weight: 700; letter-spacing: .08em; text-align: center; overflow-wrap: anywhere; }
 .waiting-room-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .waiting-room-counts article { display: grid; gap: 5px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .waiting-room-counts strong { color: var(--ink); font-size: 24px; }

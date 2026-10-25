@@ -51,6 +51,7 @@ type EmergencyArrival = {
   reason: string
   status: EmergencyArrivalStatus
   clinical_priority: 'unassigned' | 'routine' | 'priority' | 'urgent'
+  queue_type?: 'common' | 'priority'
   created_by: string
   updated_by: string
   created_at: string
@@ -395,6 +396,7 @@ type WaitingRoomItem = {
   arrived_at: string
   code: string
   clinical_priority: EmergencyArrival['clinical_priority']
+  queue_type: 'common' | 'priority'
 }
 
 const priorityOrder: Record<EmergencyArrival['clinical_priority'], number> = {
@@ -411,6 +413,9 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   const [displayMode, setDisplayMode] = useState(false)
   const [displayError, setDisplayError] = useState('')
   const [kioskAlertsEnabled, setKioskAlertsEnabled] = useState(false)
+  const [normalBeforePriority, setNormalBeforePriority] = useState(3)
+  const [normalCallsSincePriority, setNormalCallsSincePriority] = useState(0)
+  const [savingCadence, setSavingCadence] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const previousCalledRef = useRef<Set<string> | null>(null)
@@ -429,7 +434,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       ])
       const [appointmentData, arrivalData] = await Promise.all([
         readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; arrived_at?: string | null; status: string }>; total?: number }>(appointmentsResponse),
-        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority'] }>; total?: number }>(arrivalsResponse),
+        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority']; queue_type?: 'common' | 'priority' }>; total?: number }>(arrivalsResponse),
       ])
       const allAppointments = [...(appointmentData.appointments ?? [])]
       const appointmentsTotal = appointmentData.total ?? allAppointments.length
@@ -468,6 +473,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
           type: 'appointment',
           code: '',
           clinical_priority: 'routine',
+          queue_type: 'common',
         }))
       const arrivals = allArrivals
         .filter((item) => {
@@ -485,6 +491,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
           type: 'arrival',
           code: '',
           clinical_priority: item.clinical_priority,
+          queue_type: item.queue_type ?? (item.clinical_priority === 'priority' || item.clinical_priority === 'urgent' ? 'priority' : 'common'),
         }))
       const numberedQueues = new Map<string, number>()
       const arrivalOrdered = [...appointments, ...arrivals].sort((left, right) =>
@@ -492,7 +499,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         || left.id.localeCompare(right.id),
       )
       const numberedItems = arrivalOrdered.map((item) => {
-        const queue = item.clinical_priority === 'urgent' || item.clinical_priority === 'priority'
+        const queue = item.queue_type === 'priority'
           ? 'Prioritário'
           : 'Comum'
         const nextNumber = (numberedQueues.get(queue) ?? 0) + 1
@@ -511,6 +518,10 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         }
       }
       previousCalledRef.current = calledNow
+      const queueSettingsResponse = await fetch('/api/v1/reception/queue-settings')
+      const queueSettings = await readApiResponse<{ normal_before_priority: number; normal_calls_since_priority: number }>(queueSettingsResponse)
+      setNormalBeforePriority(queueSettings.normal_before_priority)
+      setNormalCallsSincePriority(queueSettings.normal_calls_since_priority)
       setItems(numberedItems.filter((item) => item.status !== 'other').sort((left, right) =>
         Number(left.status === 'called') - Number(right.status === 'called')
         || priorityOrder[left.clinical_priority] - priorityOrder[right.clinical_priority]
@@ -612,6 +623,48 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
     }
   }
 
+  async function saveCallCadence(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSavingCadence(true)
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch('/api/v1/reception/queue-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ normal_before_priority: normalBeforePriority }),
+      })
+      const updated = await readApiResponse<{ normal_before_priority: number }>(response)
+      setNormalBeforePriority(updated.normal_before_priority)
+      setNotice(`Alternância atualizada: ${updated.normal_before_priority} chamada(s) comum(ns) antes de uma prioritária.`)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível atualizar a alternância das filas.')
+    } finally {
+      setSavingCadence(false)
+    }
+  }
+
+  async function callNext(mode: 'automatic' | 'common' | 'priority') {
+    setUpdating('next')
+    setError('')
+    setNotice('')
+    try {
+      const response = await fetch('/api/v1/reception/queue/call-next', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      })
+      const calledItem = await readApiResponse<{ patient_name: string; normal_calls_since_priority: number }>(response)
+      setNormalCallsSincePriority(calledItem.normal_calls_since_priority)
+      setNotice(`${calledItem.patient_name} foi chamado. O painel da sala de espera será atualizado automaticamente.`)
+      await loadQueue()
+    } catch (callError) {
+      setError(callError instanceof Error ? callError.message : 'Não foi possível chamar o próximo paciente.')
+    } finally {
+      setUpdating('')
+    }
+  }
+
   const waiting = items.filter((item) => item.status === 'waiting')
   const called = items.filter((item) => item.status === 'called')
   const priorityItems = items.filter((item) => item.clinical_priority === 'urgent' || item.clinical_priority === 'priority')
@@ -666,6 +719,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   return <>
   <section className="waiting-room-board patient-list-panel">
     <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. O painel público separa senhas comuns e prioritárias e exibe apenas a senha e o primeiro nome.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Abrir quiosque em nova janela</button><button className="button button-secondary" type="button" onClick={() => void openDisplayMode()}>Abrir tela cheia</button></div></div>
+    {canUpdate && <div className="waiting-room-call-controls"><div><strong>Chamar próximo paciente</strong><span>{normalCallsSincePriority} de {normalBeforePriority} chamada(s) comum(ns) desde a última prioritária</span></div><div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('automatic')}>{updating === 'next' ? 'Chamando…' : 'Próximo automático'}</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('common')}>Chamar comum</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('priority')}>Chamar prioritário</button></div><form className="waiting-room-cadence" onSubmit={(event) => void saveCallCadence(event)}><label className="field"><span className="field-label">Comuns antes de prioritário</span><input type="number" min={1} max={20} value={normalBeforePriority} onChange={(event) => setNormalBeforePriority(Number(event.target.value))} /></label><button className="button button-secondary" type="submit" disabled={savingCadence || normalBeforePriority < 1 || normalBeforePriority > 20}>{savingCadence ? 'Salvando…' : 'Salvar alternância'}</button></form></div>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {!canUpdate && <div className="form-message form-message-warning" role="note">Seu perfil pode acompanhar as chamadas, mas não pode iniciar uma chamada.</div>}

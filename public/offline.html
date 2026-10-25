@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#edf4f6" />
+    <title>Sem conexão · SCPO Connect</title>
+    <style>
+      :root { color-scheme: light dark; font-family: "IBM Plex Sans", Arial, sans-serif; background: #edf4f6; color: #203542; }
+      * { box-sizing: border-box; }
+      body { display: grid; min-height: 100vh; margin: 0; padding: 24px; place-items: center; }
+      main { display: grid; width: min(100%, 460px); justify-items: center; gap: 16px; padding: 36px 28px; border: 1px solid #d6e2e7; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 18px 55px rgb(28 61 76 / 12%); }
+      img { width: 88px; height: 88px; object-fit: contain; }
+      h1 { margin: 0; font-size: clamp(24px, 6vw, 32px); }
+      p { margin: 0; color: #536b77; line-height: 1.6; }
+      button { min-height: 44px; margin-top: 6px; padding: 10px 18px; border: 0; border-radius: 8px; background: #286d86; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+      @media (prefers-color-scheme: dark) {
+        :root { background: #141e24; color: #edf3f6; }
+        main { border-color: #344751; background: #202c33; }
+        p { color: #b4c3ca; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/scpo-connect-icon.png" alt="Ícone do SCPO Connect" />
+      <h1>Sem conexão com a internet</h1>
+      <p>Não foi possível conectar ao SCPO Connect. Verifique a conexão deste computador e tente novamente. Os registros precisam de conexão para serem enviados com segurança.</p>
+      <button type="button" onclick="window.location.reload()">Tentar novamente</button>
+    </main>
+  </body>
+</html>
