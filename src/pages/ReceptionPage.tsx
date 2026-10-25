@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentType, FormEvent } from 'react'
 import { AlertTriangle, ArrowRight, BadgeCheck, ContactRound, Info, Search } from 'lucide-react'
 import { readApiResponse } from '../api'
+import PatientSelect from '../components/PatientSelect'
 import { formatCpf, formatPhone, formatPostalCode } from '../inputFormatting'
 import AllergyFields from '../components/AllergyFields'
 import OutpatientEncounterPage from './OutpatientEncounterPage'
@@ -144,7 +145,6 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [patientName, setPatientName] = useState('')
   const [createCentralPatient, setCreateCentralPatient] = useState(false)
   const [emergencyPatient, setEmergencyPatient] = useState(emptyEmergencyPatient)
-  const [patientSearch, setPatientSearch] = useState('')
   const [arrivalMode, setArrivalMode] = useState<EmergencyArrival['arrival_mode']>('walk_in')
   const [reason, setReason] = useState('')
   const [allergyReportStatus, setAllergyReportStatus] = useState<AllergyReportStatus>('not_asked')
@@ -230,7 +230,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
         }),
       })
       const arrival = await readApiResponse<EmergencyArrival>(response)
-      setPatientReference(''); setPatientName(''); setPatientSearch('')
+      setPatientReference(''); setPatientName('')
       setCreateCentralPatient(false)
       setEmergencyPatient(emptyEmergencyPatient())
       setArrivalMode('walk_in'); setReason('')
@@ -299,7 +299,6 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   }
 
   const selectedPatient = patients.find((patient) => patient.reference === patientReference)
-  const filteredPatients = patients.filter((patient) => `${patient.name} ${patient.room} ${patient.bed} ${patient.cpf ?? ''} ${patient.sus_card ?? ''} ${patient.phone ?? ''}`.toLocaleLowerCase('pt-BR').includes(patientSearch.trim().toLocaleLowerCase('pt-BR')))
   const labels = { walk_in: 'Chegada espontânea', ambulance: 'Ambulância', other: 'Outro meio' }
 
   return <section className="reception-page page-enter">
@@ -319,10 +318,9 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       {arrivalFormOpen && <form id="reception-arrival-form" className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
         <div className="section-heading"><div><p className="eyebrow">CHEGADA À EMERGÊNCIA</p><h2>Registrar atendimento</h2></div></div>
         <div className="field-grid field-grid-two">
-          {!createCentralPatient && <><label className="field"><span className="field-label">Buscar paciente cadastrado (opcional)</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, quarto, leito ou identificador" /></label>
-          <label className="field"><span className="field-label">Vincular ao cadastro existente</span><select value={patientReference} onChange={(event) => { const reference = event.target.value; const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? ''); if (patient) setPatientSearch(`${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}`) }}><option value="">Sem vínculo cadastral</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}{patient.cpf ? ` · CPF ${patient.cpf}` : ''}</option>)}</select></label>{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}{patientSearch.trim() && !filteredPatients.length && <ToastMessage variant="info">Nenhum cadastro correspondente. Você pode registrar a chegada sem vínculo ou criar um cadastro central.</ToastMessage>}</>}
+          {!createCentralPatient && <><PatientSelect label="Vincular ao cadastro existente (opcional)" patients={patients} value={patientReference} onChange={(reference) => { const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? '') }} emptyLabel="Sem vínculo cadastral" placeholder="Nome, quarto, leito, CPF, CNS ou telefone" optionLabel={(patient) => `${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}${patient.cpf ? ` · CPF ${patient.cpf}` : ''}`} />{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}</>}
           <label className="field"><span className="field-label">{createCentralPatient ? 'Nome completo para novo cadastro' : 'Nome da pessoa atendida'}</span><input required minLength={2} maxLength={120} value={patientName} onChange={(event) => { setPatientName(event.target.value); if (patientReference) setPatientReference('') }} placeholder="Nome informado na recepção" /></label>
-          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setPatientSearch(''); setEmergencyPatient(emptyEmergencyPatient()) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
+          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setEmergencyPatient(emptyEmergencyPatient()) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
           {createCentralPatient && <>
             <label className="field"><span className="field-label">CPF (opcional)</span><input inputMode="numeric" maxLength={14} value={formatCpf(emergencyPatient.cpf)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, cpf: formatCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
             <label className="field"><span className="field-label">Cartão Nacional de Saúde (opcional)</span><input inputMode="numeric" maxLength={20} value={emergencyPatient.sus_card} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>

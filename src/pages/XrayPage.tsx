@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { printLaboratoryRequest } from '../printClinicalForm'
+import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
 import ToastMessage from '../components/ToastMessage'
 
@@ -83,7 +84,6 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   const [section, setSection] = usePersistentTab(`scpo-tab-xray-${user.id}`, 'xray', xraySections, xraySectionLabels)
   const [patients, setPatients] = useState<Patient[]>([])
   const [requests, setRequests] = useState<XrayRequest[]>([])
-  const [patientSearch, setPatientSearch] = useState('')
   const [patientReference, setPatientReference] = useState('')
   const [examLabel, setExamLabel] = useState('')
   const [selectedLaboratoryExams, setSelectedLaboratoryExams] = useState<string[]>([])
@@ -162,7 +162,6 @@ export default function XrayPage({ user }: { user: AuthUser }) {
       const data = await readApiResponse<XrayRequest>(response)
       setRequests((current) => [data, ...current])
       setPatientReference('')
-      setPatientSearch('')
       setExamLabel('')
       setNotice('Exame incluído na fila de Raio X.')
     } catch (submitError) {
@@ -250,21 +249,8 @@ export default function XrayPage({ user }: { user: AuthUser }) {
 
   const sectionRequests = requests.filter((request) => (request.exam_type ?? 'xray') === (section === 'xray' ? 'xray' : 'laboratory'))
   const activeCount = sectionRequests.filter((request) => ['requested', 'scheduled', 'in_progress'].includes(request.status)).length
-  const filteredPatients = patients.filter((patient) =>
-    patient.reference === patientReference
-      || `${patient.name} ${patient.room} ${patient.bed}`.toLocaleLowerCase('pt-BR')
-        .includes(patientSearch.trim().toLocaleLowerCase('pt-BR')),
-  )
   const selectedPatientLabel = (patient: Patient) => `${patient.name} · ${patientLocationLabel(patient)}`
 
-  function updatePatientSearch(value: string) {
-    setPatientSearch(value)
-    const normalized = value.trim().toLocaleLowerCase('pt-BR')
-    const matchedPatient = patients.find((patient) =>
-      [patient.name, selectedPatientLabel(patient)].some((label) => label.toLocaleLowerCase('pt-BR') === normalized),
-    )
-    setPatientReference(matchedPatient?.reference ?? '')
-  }
   const visibleRequests = sectionRequests.filter((request) => {
     const matchesStatus = filter === 'all' || (filter === 'active'
       ? ['requested', 'scheduled', 'in_progress'].includes(request.status)
@@ -290,8 +276,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
     <form className="hygiene-panel" onSubmit={(event) => void (section === 'xray' ? submit(event) : submitLaboratory(event))}>
       <div className="section-heading"><div><p className="eyebrow">{section === 'xray' ? 'NOVO EXAME' : 'REQUISIÇÃO LABORATORIAL'}</p><h2>{section === 'xray' ? 'Adicionar à fila de Raio X' : 'Solicitar exames'}</h2></div></div>
       <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Buscar paciente por nome, quarto ou leito</span><input type="search" list="xray-patient-options" value={patientSearch} onChange={(event) => updatePatientSearch(event.target.value)} placeholder="Digite para localizar e selecionar" /><datalist id="xray-patient-options">{filteredPatients.map((patient) => <option key={patient.reference} value={selectedPatientLabel(patient)} />)}</datalist></label>
-        <label className="field"><span className="field-label">Paciente selecionado</span><select required value={patientReference} onChange={(event) => { const selected = patients.find((patient) => patient.reference === event.target.value); setPatientReference(event.target.value); if (selected) setPatientSearch(selectedPatientLabel(selected)) }}><option value="">Selecione um paciente</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{selectedPatientLabel(patient)}</option>)}</select></label>
+        <PatientSelect label="Paciente" patients={patients} value={patientReference} onChange={setPatientReference} required optionLabel={selectedPatientLabel} />
         {section === 'xray' ? <label className="field xray-field-wide"><span className="field-label">Exame solicitado</span><input required minLength={2} maxLength={80} value={examLabel} onChange={(event) => setExamLabel(event.target.value)} placeholder="Ex.: radiografia de tórax" /></label> : <>
           <fieldset className="laboratory-exam-fieldset xray-field-wide"><legend>Exames disponíveis</legend><div className="laboratory-exam-grid">{laboratoryExamOptions.map((exam) => <label className="checkbox-label" key={exam}><input type="checkbox" checked={selectedLaboratoryExams.includes(exam)} onChange={() => setSelectedLaboratoryExams((current) => current.includes(exam) ? current.filter((item) => item !== exam) : [...current, exam])} /><span>{exam}</span></label>)}</div></fieldset>
           <label className="field"><span className="field-label">Outros exames</span><input maxLength={72} value={otherExam} onChange={(event) => setOtherExam(event.target.value)} placeholder="Descreva outro exame" /></label>

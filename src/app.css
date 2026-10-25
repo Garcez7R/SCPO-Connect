@@ -286,7 +286,8 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .patient-copy > span, .patient-meta > span { color: var(--muted); font-size: 10px; }
 .patient-copy strong, .patient-meta strong { color: var(--ink); font-size: 11px; font-weight: 600; }
 .patient-copy small { color: var(--subtle); font-size: 10px; font-weight: 400; }
-.patient-copy select { max-width: min(55vw, 390px); min-height: 32px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink); font-size: 12px; }
+.patient-copy input, .patient-copy select { max-width: min(55vw, 390px); min-height: 32px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink); font-size: 12px; }
+.patient-copy .search-input-wrap input { min-height: 32px; padding-left: 33px; font-size: 12px; }
 .patient-tag { margin-left: 2px; padding: 4px 6px; border-radius: 3px; background: #eef4f7; color: var(--blue-dark); font-size: 8px; font-weight: 700; letter-spacing: .5px; }
 .patient-meta { display: grid; gap: 3px; margin-left: auto; padding-left: 18px; border-left: 1px solid var(--line); }
 .patient-meta + .patient-meta { margin-left: 0; }
@@ -308,6 +309,10 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .vital-extra-card > div:first-child { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .vital-extra-card time { font-size: 11px; }
 .field { display: grid; min-width: 0; gap: 6px; color: var(--ink); }
+.patient-select-field { align-content: start; }
+.patient-select-field > label { display: grid; min-width: 0; gap: 6px; }
+.patient-select-field .search-input-wrap input { min-height: 37px; padding-left: 38px; border-color: #cfdbe2; border-radius: 5px; font-size: 11px; }
+.patient-select-field .field-hint { text-align: left; }
 .field-label { color: #344e61; font-size: 10px; font-weight: 600; }
 .field input, .field select, .field textarea, .input-with-unit input { width: 100%; min-width: 0; min-height: 37px; padding: 0 10px; border: 1px solid #cfdbe2; border-radius: 5px; background: #fff; color: var(--ink); font-size: 11px; }
 .field input::placeholder, .field textarea::placeholder, .input-with-unit input::placeholder { color: #8c9aa4; opacity: 1; }
@@ -1419,7 +1424,8 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
   .nursing-page .entry-status { min-height: 36px; padding-inline: 8px; font-size: 10px; }
   .nursing-page .patient-strip { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; padding: 13px; }
   .nursing-page .patient-copy { grid-column: 2 / -1; }
-  .nursing-page .patient-copy select { width: 100%; max-width: none; min-height: 44px; font-size: 14px; }
+  .nursing-page .patient-copy input, .nursing-page .patient-copy select { width: 100%; max-width: none; min-height: 44px; font-size: 14px; }
+  .nursing-page .patient-copy .search-input-wrap input { min-height: 44px; }
   .nursing-page .patient-strip > .button { grid-column: 2 / -1; min-height: 42px; }
   .nursing-page .patient-meta { grid-column: 2 / -1; margin: 0; padding: 8px 0 0; border-top: 1px solid #edf1f3; }
   .nursing-page .form-section { padding: 18px 14px; }

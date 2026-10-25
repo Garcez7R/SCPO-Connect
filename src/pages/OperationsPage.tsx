@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowLeft, ArrowRight, BadgeCheck, CheckCircle2, ClipboardList, ClipboardPlus, Printer, Search, ShieldCheck, SprayCan, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
+import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
 import ToastMessage from '../components/ToastMessage'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
@@ -155,7 +156,7 @@ export function WorkOrdersPage({ user }: { user: AuthUser }) {
           {form.department === 'Outro' && <label className="field"><span className="field-label">Informe o setor</span><input required minLength={2} maxLength={100} value={form.customDepartment} onChange={(event) => setForm({ ...form, customDepartment: event.target.value })} /></label>}
           <label className="field"><span className="field-label">Unidade</span><select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option value="">Selecione a unidade</option><option>Hospital</option><option>Pronto atendimento</option><option>Área externa</option><option>Outro</option></select></label>
           <label className="field"><span className="field-label">Quarto, sala ou local</span><input maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Ex.: quarto 3, sala de espera" /></label>
-          {canLookupPatients && <label className="field"><span className="field-label">Paciente relacionado (opcional)</span><select value={form.patientReference} onChange={(event) => setForm({ ...form, patientReference: event.target.value })}><option value="">Sem vínculo com paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocationLabel(patient)}</option>)}</select></label>}
+          {canLookupPatients && <PatientSelect label="Paciente relacionado (opcional)" patients={patients} value={form.patientReference} onChange={(reference) => setForm({ ...form, patientReference: reference })} emptyLabel="Sem vínculo com paciente" optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} />}
           <label className="field"><span className="field-label">Número do patrimônio (opcional)</span><input maxLength={40} value={form.assetCode} onChange={(event) => setForm({ ...form, assetCode: event.target.value })} placeholder="Etiqueta do equipamento" /></label>
           <label className="field"><span className="field-label">Prioridade</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as WorkOrderPriority })}><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select><span className="field-hint">Use urgente quando houver impacto imediato no funcionamento ou na segurança.</span></label>
         </div>

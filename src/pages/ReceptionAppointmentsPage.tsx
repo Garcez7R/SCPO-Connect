@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { CalendarClock, Clock3 } from 'lucide-react'
 import { readApiResponse } from '../api'
+import PatientSelect from '../components/PatientSelect'
 import ToastMessage from '../components/ToastMessage'
 
 type Patient = { reference: string; name: string; active?: boolean }
@@ -210,7 +211,7 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
     {formOpen && <form className="hygiene-panel" onSubmit={(event) => void createAppointment(event)}>
       <div className="section-heading"><div><p className="eyebrow">RECEPÇÃO · AGENDA</p><h2>Novo agendamento</h2></div><CalendarClock size={22} /></div>
       <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Paciente</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione o paciente</option>{activePatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name}</option>)}</select></label>
+        <PatientSelect label="Paciente" patients={activePatients} value={patientReference} onChange={setPatientReference} required />
         <label className="field"><span className="field-label">Tipo</span><select value={appointmentType} onChange={(event) => setAppointmentType(event.target.value as AppointmentType)}>{Object.entries(appointmentTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <label className="field"><span className="field-label">Profissional</span><input required minLength={2} maxLength={120} value={professionalName} onChange={(event) => setProfessionalName(event.target.value)} /></label>
         <label className="field"><span className="field-label">Local / sala</span><input required minLength={2} maxLength={120} value={location} onChange={(event) => setLocation(event.target.value)} /></label>

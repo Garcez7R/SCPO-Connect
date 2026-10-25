@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight, LockKeyhole } from 'lucide-react'
 import { readApiResponse } from '../api'
+import PatientSelect from './PatientSelect'
 import ToastMessage from './ToastMessage'
 
 type ShareModule = 'social' | 'psychology'
@@ -145,7 +146,7 @@ export default function InterprofessionalSharePanel({
     <form className="psychology-panel interprofessional-share-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">COMPARTILHAMENTO SELETIVO</p><h2>Enviar resumo assistencial</h2><p className="welcome-copy">Destino: {moduleLabel(recipientModule)}. Nenhum registro privado do módulo será copiado automaticamente; o envio também não cria encaminhamento nem atendimento no módulo destinatário.</p></div><LockKeyhole size={19} /></div>
       <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Paciente</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione o paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patientName(patient.reference)}</option>)}</select></label>
+        <PatientSelect label="Paciente" patients={patients} value={patientReference} onChange={setPatientReference} required optionLabel={(patient) => patientName(patient.reference)} />
         <label className="field"><span className="field-label">Finalidade do compartilhamento</span><input required minLength={10} maxLength={300} value={purpose} onChange={(event) => setPurpose(event.target.value)} placeholder="Ex.: coordenar o acompanhamento após alta" /></label>
         <fieldset className="interprofessional-share-categories">
           <legend>Marque somente as informações necessárias</legend>

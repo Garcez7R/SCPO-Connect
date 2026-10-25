@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, BadgeCheck, Building2, FileText, Wrench } from 'lucide-react'
 import { readApiResponse } from '../api'
+import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
 import ToastMessage from '../components/ToastMessage'
 import { triggerMobileFeedback } from '../mobileFeedback'
@@ -235,7 +236,7 @@ function SafetyIncidentPanel() {
         <label className="field"><span className="field-label">Data e hora</span><input required type="datetime-local" value={form.occurred_at} onChange={(event) => setForm({ ...form, occurred_at: event.target.value })} /></label>
         <label className="field"><span className="field-label">Unidade</span><input required minLength={2} maxLength={100} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} /></label>
         <label className="field"><span className="field-label">Local</span><input required minLength={2} maxLength={120} value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Paciente relacionado (opcional)</span><select value={form.patient_reference} onChange={(event) => setForm({ ...form, patient_reference: event.target.value })}><option value="">Sem paciente relacionado</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name}{patient.room && patient.bed ? ` · Quarto ${patient.room}, leito ${patient.bed}` : ''}</option>)}</select></label>
+        <PatientSelect label="Paciente relacionado (opcional)" patients={patients} value={form.patient_reference} onChange={(reference) => setForm({ ...form, patient_reference: reference })} emptyLabel="Sem paciente relacionado" optionLabel={(patient) => `${patient.name}${patient.room && patient.bed ? ` · Quarto ${patient.room}, leito ${patient.bed}` : ''}`} />
         <label className="field"><span className="field-label">Descrição objetiva</span><textarea required minLength={5} maxLength={2000} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
       </div>
       <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Registrando…' : 'Registrar incidente confidencial'}</button>

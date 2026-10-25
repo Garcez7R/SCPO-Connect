@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, ClipboardPlus, Printer, RefreshCw, Stethoscope } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
+import PatientSelect from '../components/PatientSelect'
 import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
 import { printExternalPrescription, printMedicationAdministrationLabels } from '../printClinicalForm'
@@ -165,7 +166,7 @@ function PhysicianPage() {
         {profile ? <div className="physician-profile-summary"><strong>{profile.name}</strong><span>CRM {profile.crm}/{profile.crm_state}</span></div> : <div className="admin-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira seu nome e CRM/UF antes de registrar prescrições.</span></div></div>}
       </section>
       <div className="form-grid physician-patient-picker">
-        <label className="field"><span className="field-label">Paciente para consulta</span><select value={patientReference} onChange={(event) => { setPatientReference(event.target.value); setForm((current) => ({ ...current, patient_reference: event.target.value })) }}><option value="">Selecione um paciente</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · quarto {patient.room || '—'} · leito {patient.bed || '—'}</option>)}</select></label>
+        <PatientSelect label="Paciente para consulta" patients={patients} value={patientReference} onChange={(reference) => { setPatientReference(reference); setForm((current) => ({ ...current, patient_reference: reference })) }} optionLabel={(patient) => `${patient.name} · quarto ${patient.room || '—'} · leito ${patient.bed || '—'}`} />
       </div>
       {selectedPatient && <>
         <section className="patient-list-panel">

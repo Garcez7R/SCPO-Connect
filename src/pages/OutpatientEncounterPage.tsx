@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, Printer, Save, Trash2 } from 'lucide-react'
 import { readApiResponse } from '../api'
+import PatientSelect from '../components/PatientSelect'
 import ToastMessage from '../components/ToastMessage'
 import { formatCpf } from '../inputFormatting'
 
@@ -139,7 +140,6 @@ function marked(value: boolean) {
 function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userId: string; canCreate: boolean; onArrivalQueued?: () => void }) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [encounters, setEncounters] = useState<OutpatientEncounter[]>([])
-  const [patientSearch, setPatientSearch] = useState('')
   const [patientReference, setPatientReference] = useState('')
   const [newPatientMode, setNewPatientMode] = useState(false)
   const [newPatient, setNewPatient] = useState<NewPatientForm>(emptyNewPatient)
@@ -208,12 +208,6 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
     }
   }, [printingEncounter])
 
-  const filteredPatients = patients.filter((patient) =>
-    `${patient.name} ${patient.cpf ?? ''} ${patient.sus_card ?? ''} ${patient.reference}`
-      .toLocaleLowerCase('pt-BR')
-      .includes(patientSearch.trim().toLocaleLowerCase('pt-BR')),
-  )
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true)
@@ -253,7 +247,6 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
       const created = await readApiResponse<OutpatientEncounter>(response)
       setEncounters((current) => [created, ...current.filter((item) => item.id !== created.id)])
       setPatientReference('')
-      setPatientSearch('')
       setNewPatientMode(false)
       setNewPatient(emptyNewPatient())
       setEncounterType('outpatient')
@@ -294,9 +287,8 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
       <label className="field outpatient-queue-type"><span className="field-label">Senha prioritária?</span><select value={queueType} onChange={(event) => setQueueType(event.target.value as QueueType)}><option value="common">Não · fila comum (C)</option><option value="priority">Sim · fila prioritária (P)</option></select><span className="field-hint">Selecione conforme o critério institucional. A senha de fila não substitui avaliação clínica nem classificação de risco.</span></label>
       <div className="outpatient-patient-choice">
         {!newPatientMode ? <>
-          <label className="field"><span className="field-label">Buscar paciente cadastrado</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientReference('') }} placeholder="Nome, CPF, CNS ou número do cadastro" /></label>
-          <label className="field"><span className="field-label">Paciente</span><select required value={patientReference} onChange={(event) => setPatientReference(event.target.value)}><option value="">Selecione o paciente</option>{filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name}{patient.cpf ? ` · CPF ${patient.cpf}` : ''}</option>)}</select></label>
-          <button className="button button-secondary outpatient-new-patient-toggle" type="button" onClick={() => { setNewPatientMode(true); setPatientReference(''); setPatientSearch('') }}>Cadastrar novo paciente</button>
+          <PatientSelect label="Paciente cadastrado" patients={patients} value={patientReference} onChange={setPatientReference} required placeholder="Digite nome, CPF, CNS ou número do cadastro" optionLabel={(patient) => `${patient.name}${patient.cpf ? ` · CPF ${patient.cpf}` : ''}`} />
+          <button className="button button-secondary outpatient-new-patient-toggle" type="button" onClick={() => { setNewPatientMode(true); setPatientReference('') }}>Cadastrar novo paciente</button>
         </> : <>
           <div className="outpatient-new-patient-heading"><div><strong>Novo cadastro central</strong><span>O paciente será reutilizado em consultas e internações.</span></div><button className="button button-secondary" type="button" onClick={() => { setNewPatientMode(false); setNewPatient(emptyNewPatient()) }}>Escolher cadastrado</button></div>
           <div className="field-grid field-grid-two outpatient-new-patient-fields">
