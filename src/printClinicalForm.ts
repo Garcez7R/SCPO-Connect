@@ -132,3 +132,34 @@ export function printMedicationAdministrationLabels(data: {
   }, 150)
   return true
 }
+
+export function printMedicationScheduleSheet(data: {
+  dateLabel: string
+  timeLabel: string
+  rows: Array<{
+    patient: ExamPrintPatient
+    medications: Array<{
+      medicationName: string
+      dose: string
+      route: string
+      instructions?: string
+      unit?: string
+    }>
+  }>
+}) {
+  const body = `<header><img src="/scpo-connect-icon.png" alt=""><div><h1>SANTA CASA DE PEDRO OSÓRIO</h1><h2>Escala de medicações por horário</h2><p>${escapeHtml(data.dateLabel)} · ${escapeHtml(data.timeLabel)}</p></div></header>
+    ${data.rows.map((row) => `<section class="patient-sheet"><h3>${escapeHtml(row.patient.name)} · Quarto ${escapeHtml(row.patient.room || '—')} · Leito ${escapeHtml(row.patient.bed || '—')}</h3>
+      <table><thead><tr><th>Medicamento</th><th>Dose</th><th>Via</th><th>Observação</th><th>Ministrado</th></tr></thead><tbody>${row.medications.map((item) => `<tr><td>${escapeHtml(item.medicationName)}</td><td>${escapeHtml(item.dose)}</td><td>${escapeHtml(item.route)}</td><td>${escapeHtml(item.instructions || item.unit || '')}</td><td>□</td></tr>`).join('')}</tbody></table></section>`).join('')}
+    <footer><span>Registro da equipe de enfermagem</span><span>Data/Hora: ${escapeHtml(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date()))}</span></footer>`
+  const popup = window.open('', '_blank', 'width=980,height=760')
+  if (!popup) return false
+  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Escala de medicações</title><style>@page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:10pt Arial,sans-serif;color:#172b3a;margin:0;padding:0}header{display:grid;grid-template-columns:18mm 1fr;gap:6mm;align-items:center;padding-bottom:5mm;border-bottom:2px solid #246b8e}header img{width:16mm;height:16mm;object-fit:contain}h1,h2,h3{margin:0}h1{font-size:14pt}h2{font-size:11pt;margin-top:2mm;font-weight:600}header p{margin:2mm 0 0;color:#526575}section{margin-top:8mm}h3{font-size:11pt;margin-bottom:3mm}table{width:100%;border-collapse:collapse}th,td{border:1px solid #9aa7b0;padding:2mm 2.5mm;text-align:left;vertical-align:top;font-size:9pt}th{background:#edf3f8}tr td:last-child{width:18mm;text-align:center}footer{margin-top:10mm;display:grid;grid-template-columns:1fr 1fr;gap:12mm;color:#526575;font-size:9pt}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body>${body}</body></html>`)
+  popup.document.close()
+  window.setTimeout(() => {
+    if (!popup.closed) {
+      popup.focus();
+      popup.print();
+    }
+  }, 150)
+  return true
+}

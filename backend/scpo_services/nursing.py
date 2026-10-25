@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     case,
     exists,
     func,
@@ -476,6 +477,30 @@ class MedicationAdministration(Base):
     administered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ScheduledMedicationAdministration(Base):
+    __tablename__ = "scheduled_medication_administrations"
+    __table_args__ = (
+        UniqueConstraint(
+            "prescription_reference",
+            "scheduled_date",
+            "scheduled_time",
+            name="uq_scheduled_med_admin_prescription_date_time",
+        ),
+        Index("ix_scheduled_med_admin_date_time", "scheduled_date", "scheduled_time"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    prescription_reference: Mapped[str] = mapped_column(String(36), nullable=False)
+    patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    scheduled_date: Mapped[date] = mapped_column(Date, nullable=False)
+    scheduled_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class PhysicianProfile(Base):
     __tablename__ = "physician_profiles"
 
@@ -864,6 +889,40 @@ class MedicationAdministrationPayload(BaseModel):
     @classmethod
     def trim_reason(cls, value: str) -> str:
         return value.strip()
+
+
+class ScheduledMedicationAdministrationItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prescription_reference: str = Field(min_length=1, max_length=36)
+    status: Literal["administered", "unavailable", "refused", "held"]
+    reason: str = Field(default="", max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def trim_reason(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_reason(self) -> "ScheduledMedicationAdministrationItem":
+        if self.status != "administered" and len(self.reason) < 3:
+            raise ValueError("Informe o motivo da dose não administrada")
+        if self.status == "administered" and self.reason:
+            raise ValueError("Motivo de exceção somente para dose não administrada")
+        return self
+
+
+class ScheduledMedicationAdministrationBatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scheduled_date: date
+    scheduled_time: str = Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    items: list[ScheduledMedicationAdministrationItem] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_items(self) -> "ScheduledMedicationAdministrationBatch":
+        references = [item.prescription_reference for item in self.items]
+        if len(set(references)) != len(references):
+            raise ValueError("Não repita prescrições no mesmo registro")
+        return self
 
 
 class PhysicianProfilePayload(BaseModel):
@@ -3023,6 +3082,81 @@ def list_medication_administrations(
     return {"administrations": [serialize_medication_administration(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
+@app.get("/api/v1/nursing/scheduled-medication-administrations")
+def list_scheduled_medication_administrations(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management", "admin", "oversight"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    scheduled_date: date,
+    scheduled_time: str = Query(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$"),
+) -> dict[str, object]:
+    records = db.scalars(
+        select(ScheduledMedicationAdministration)
+        .where(
+            ScheduledMedicationAdministration.scheduled_date == scheduled_date,
+            ScheduledMedicationAdministration.scheduled_time == scheduled_time,
+        )
+        .order_by(ScheduledMedicationAdministration.patient_reference)
+    ).all()
+    emit_audit_event(principal, "nursing", "scheduled_medication_administrations_read", f"{scheduled_date.isoformat()} {scheduled_time}")
+    return {"administrations": [serialize_scheduled_medication_administration(record) for record in records]}
+
+
+@app.post("/api/v1/nursing/scheduled-medication-administrations", status_code=201)
+def create_scheduled_medication_administrations(
+    payload: ScheduledMedicationAdministrationBatch,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    prescriptions = {
+        prescription.id: prescription
+        for prescription in db.scalars(
+            select(PhysicianPrescription).where(
+                PhysicianPrescription.id.in_([item.prescription_reference for item in payload.items])
+            )
+        ).all()
+    }
+    records: list[ScheduledMedicationAdministration] = []
+    for item in payload.items:
+        prescription = prescriptions.get(item.prescription_reference)
+        if prescription is None:
+            raise HTTPException(status_code=404, detail="Uma das prescrições selecionadas não foi encontrada")
+        if prescription.status == "cancelled":
+            raise HTTPException(status_code=409, detail="Prescrição cancelada não pode ter administração registrada")
+        if payload.scheduled_time not in (prescription.administration_times or []):
+            raise HTTPException(status_code=409, detail="O horário não corresponde aos horários definidos na prescrição")
+        patient = db.get(Patient, prescription.patient_reference)
+        if patient is None or not patient.active:
+            raise HTTPException(status_code=409, detail="Paciente inativo ou não encontrado")
+        records.append(
+            ScheduledMedicationAdministration(
+                prescription_reference=prescription.id,
+                patient_reference=patient.reference,
+                scheduled_date=payload.scheduled_date,
+                scheduled_time=payload.scheduled_time,
+                status=item.status,
+                reason=item.reason,
+                actor_id=principal.user_id,
+                actor_name=principal.actor_name,
+                recorded_at=datetime.now(UTC),
+            )
+        )
+    db.add_all(records)
+    for record in records:
+        emit_audit_event(
+            principal,
+            "nursing",
+            "scheduled_medication_administration_recorded",
+            f"{record.patient_reference}:{payload.scheduled_date.isoformat()}:{payload.scheduled_time}",
+            db=db,
+        )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Uma ou mais administrações deste horário já foram registradas") from exc
+    return {"administrations": [serialize_scheduled_medication_administration(record) for record in records]}
+
+
 @app.get("/api/v1/physicians/profile")
 def get_physician_profile(
     principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_PROFILE_READ_ACCESS)],
@@ -3444,6 +3578,22 @@ def serialize_medication_administration(record: MedicationAdministration) -> dic
         "reason": record.reason,
         "actor_name": record.actor_name,
         "administered_at": record.administered_at.isoformat(),
+    }
+
+
+def serialize_scheduled_medication_administration(
+    record: ScheduledMedicationAdministration,
+) -> dict[str, object]:
+    return {
+        "id": record.id,
+        "prescription_reference": record.prescription_reference,
+        "patient_reference": record.patient_reference,
+        "scheduled_date": record.scheduled_date.isoformat(),
+        "scheduled_time": record.scheduled_time,
+        "status": record.status,
+        "reason": record.reason,
+        "actor_name": record.actor_name,
+        "recorded_at": record.recorded_at.isoformat(),
     }
 
 

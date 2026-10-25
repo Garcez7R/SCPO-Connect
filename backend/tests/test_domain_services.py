@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Generator
 from contextlib import nullcontext
+from datetime import UTC, date, datetime
 
 import pytest
 from alembic import command
@@ -911,6 +912,62 @@ def test_nursing_records_partial_doses_against_patient_linked_dispensation(monke
             db,
         )
     assert invalid_dispensation.value.status_code == 503
+
+
+def test_nursing_records_scheduled_medication_administrations(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_database: dict[str, Session],
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    db = domain_database["nursing"]
+    patient = nursing.Patient(
+        reference="123e4567-e89b-12d3-a456-426614174001",
+        name="Paciente Agendado",
+        room="7",
+        bed="A",
+        active=True,
+    )
+    db.add(patient)
+    prescription = nursing.PhysicianPrescription(
+        id="prescription-scheduled-1",
+        patient_reference=patient.reference,
+        medication_name="Dipirona 500mg",
+        active_ingredient="Dipirona",
+        presentation="Comprimido",
+        dose="1",
+        route="oral",
+        frequency="8/8h",
+        administration_times=["08:00", "20:00"],
+        duration="3 dias",
+        quantity="6",
+        unit="comprimido",
+        instructions="Tomar com água",
+        is_controlled=False,
+        prescriber_id="doctor-1",
+        prescriber_name="Dr. Ana",
+        crm="12345",
+        crm_state="RS",
+        status="pending",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db.add(prescription)
+    db.commit()
+    nurse = DemoPrincipal("nurse-scheduled", "nurse", "Enfermeira", "nursing", ["nursing"], {"nursing": ["consultar", "criar"]})
+    batch = nursing.ScheduledMedicationAdministrationBatch(
+        scheduled_date=date(2025, 2, 10),
+        scheduled_time="08:00",
+        items=[
+            nursing.ScheduledMedicationAdministrationItem(
+                prescription_reference=prescription.id,
+                status="administered",
+            )
+        ],
+    )
+    result = nursing.create_scheduled_medication_administrations(batch, nurse, db)
+    assert result["administrations"][0]["patient_reference"] == patient.reference
+    assert result["administrations"][0]["status"] == "administered"
+    assert nursing.list_scheduled_medication_administrations(nurse, db, date(2025, 2, 10), "08:00")["administrations"][0]["id"] == result["administrations"][0]["id"]
 
 
 def test_reception_records_emergency_arrival_without_inpatient_bed(

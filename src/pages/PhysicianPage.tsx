@@ -5,7 +5,7 @@ import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
-import { printExternalPrescription, printMedicationAdministrationLabels } from '../printClinicalForm'
+import { printExternalPrescription, printMedicationAdministrationLabels, printMedicationScheduleSheet } from '../printClinicalForm'
 
 type Patient = {
   reference: string
@@ -208,6 +208,14 @@ function PhysicianPage() {
                 }
               }}><Printer size={15} /> Receita simples</button>}
               {prescription.administration_times.length > 0 && selectedPatientForm && <button className="button button-secondary" type="button" onClick={() => { if (!printMedicationAdministrationLabels({ patient: selectedPatientForm, medicationName: prescription.medication_name, dose: prescription.dose, route: prescription.route, times: prescription.administration_times, prescriberName: prescription.prescriber_name })) setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.') }}><Printer size={15} /> Etiquetas de horários</button>}
+              {selectedPatientForm && prescription.administration_times.length > 0 && <button className="button button-secondary" type="button" onClick={() => {
+                const time = prescription.administration_times[0] ?? ''
+                if (!time) return
+                const rows = [{ patient: selectedPatientForm, medications: [{ medicationName: prescription.medication_name, dose: prescription.dose, route: prescription.route, instructions: prescription.instructions, unit: prescription.unit }] }]
+                if (!printMedicationScheduleSheet({ dateLabel: new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full' }).format(new Date()), timeLabel: time, rows })) {
+                  setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.')
+                }
+              }}><Printer size={15} /> Folha de horário</button>}
               {prescription.is_controlled && <small>Controle especial · receita externa indisponível</small>}
             </div>
           </article>)}</div> : <div className="history-empty">Nenhuma prescrição registrada para este paciente.</div>}
