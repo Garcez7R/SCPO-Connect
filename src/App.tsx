@@ -751,7 +751,7 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
       {message && <ToastMessage variant="error">{message}</ToastMessage>}
       <button className="button button-primary auth-submit" type="submit" disabled={busy || (stage === 'mfa' && !mfaSecret)}>{busy ? 'Aguarde…' : stage === 'login' ? 'Entrar' : stage === 'bootstrap' ? 'Criar administrador' : stage === 'password' ? 'Salvar nova senha' : 'Ativar MFA'}</button>
     </form>
-    <div className="auth-install"><span>Use o SCPO como aplicativo no seu dispositivo.</span><InstallAppButton /></div>
+    <InstallAppButton showDescription />
   </section></main>
 }
 
@@ -1505,7 +1505,7 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
   )
 }
 
-function InstallAppButton() {
+function InstallAppButton({ showDescription = false }: { showDescription?: boolean }) {
   const [installPrompt, setInstallPrompt] = useState<Event | null>(deferredInstallPrompt)
   const [helpOpen, setHelpOpen] = useState(false)
   const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone))
@@ -1516,8 +1516,9 @@ function InstallAppButton() {
     window.addEventListener('appinstalled', installedListener)
     return () => { window.removeEventListener('scpo-install-ready', promptReady); window.removeEventListener('appinstalled', installedListener) }
   }, [])
-  if (installed) return <span className="install-installed">Aplicativo instalado</span>
-  return <>
+  if (installed) return null
+  return <div className={showDescription ? 'auth-install' : undefined}>
+    {showDescription && <span>Use o SCPO como aplicativo no seu dispositivo.</span>}
     <button className="button button-secondary install-button" type="button" onClick={async () => {
       if (!installPrompt) { setHelpOpen(true); return }
       const prompt = installPrompt as Event & { prompt: () => Promise<void>; userChoice?: Promise<{ outcome: string }> }
@@ -1528,7 +1529,7 @@ function InstallAppButton() {
       setInstallPrompt(null)
     }}>Instalar app</button>
     {helpOpen && <div className="install-dialog-backdrop" role="presentation" onClick={() => setHelpOpen(false)}><section className="install-dialog" role="dialog" aria-modal="true" aria-labelledby="install-dialog-title" onClick={(event) => event.stopPropagation()}><button className="install-dialog-close" type="button" aria-label="Fechar" onClick={() => setHelpOpen(false)}>×</button><h2 id="install-dialog-title">Instalar SCPO Connect</h2>{!window.isSecureContext ? <p>A instalação exige uma conexão segura. Abra o endereço HTTPS do SCPO e confirme que o navegador não exibe um aviso de certificado.</p> : /iPhone|iPad|iPod/i.test(navigator.userAgent) ? <p>No iPhone ou iPad, toque em <strong>Compartilhar</strong> e depois em <strong>Adicionar à Tela de Início</strong>. O iOS exige essa confirmação do sistema.</p> : /Android/i.test(navigator.userAgent) && /Chrome/i.test(navigator.userAgent) ? <p>No Chrome para Android, abra o menu <strong>⋮</strong> e escolha <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>. Essa opção pode aparecer mesmo quando o botão de instalação direta não é liberado. Se não aparecer, confirme que o endereço HTTPS abre sem aviso de certificado, atualize a página e tente novamente.</p> : <p>Este navegador não liberou a instalação direta. Verifique se está usando um navegador compatível e se o endereço HTTPS abre sem aviso de certificado; também é possível procurar <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong> no menu do navegador.</p>}<button className="button button-primary" type="button" onClick={() => setHelpOpen(false)}>Entendi</button></section></div>}
-  </>
+  </div>
 }
 
 function NursingHistoryPage({ onBack }: { onBack: () => void }) {
