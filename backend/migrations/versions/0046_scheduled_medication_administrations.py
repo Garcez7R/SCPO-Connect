@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect
 
-revision = "0046_scheduled_medication_administrations"
+revision = "0046_scheduled_med_admins"
 down_revision = "0045_reception_queue_calls"
 branch_labels = None
 depends_on = None
