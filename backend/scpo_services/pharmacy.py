@@ -455,7 +455,11 @@ def parse_anvisa_cmed_csv(
         csv_text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
         csv_text = content.decode("cp1252")
-    reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
+    try:
+        delimiter = csv.Sniffer().sniff(csv_text[:8192], delimiters=";,\t").delimiter
+    except csv.Error:
+        delimiter = ";"
+    reader = csv.DictReader(io.StringIO(csv_text), delimiter=delimiter)
     required_columns = {
         "EAN 1", "EAN 2", "EAN 3", "PRODUTO", "APRESENTAÇÃO",
         "SUBSTÂNCIA", "LABORATÓRIO", "REGISTRO",
@@ -610,13 +614,13 @@ def refresh_anvisa_catalog(
                 raise HTTPException(status_code=503, detail="A Anvisa não disponibilizou o catálogo agora")
             content_length = response.headers.get("Content-Length")
             if content_length and content_length.isdigit() and int(content_length) > MAX_ANVISA_CATALOG_BYTES:
-                raise HTTPException(status_code=502, detail="O arquivo Anvisa excede o limite de importação configurado")
+                raise HTTPException(status_code=413, detail="O arquivo público da Anvisa excede o limite de importação configurado")
             chunks: list[bytes] = []
             total_bytes = 0
             for chunk in response.iter_bytes():
                 total_bytes += len(chunk)
                 if total_bytes > MAX_ANVISA_CATALOG_BYTES:
-                    raise HTTPException(status_code=502, detail="O arquivo Anvisa excede o limite de importação configurado")
+                    raise HTTPException(status_code=413, detail="O arquivo público da Anvisa excede o limite de importação configurado")
                 chunks.append(chunk)
             content = b"".join(chunks)
             modified_header = response.headers.get("Last-Modified")

@@ -1801,6 +1801,7 @@ def list_patients(
     search: Annotated[str | None, Query(max_length=120)] = None,
     room: Annotated[str | None, Query(max_length=20)] = None,
     bed: Annotated[str | None, Query(max_length=20)] = None,
+    treatment_track: Literal["clinical", "psychiatric", "combined", "unclassified"] | None = None,
     status: Literal["all", "active", "inactive"] | None = None,
     sort: Literal["location", "name"] = "location",
 ) -> dict[str, object]:
@@ -1820,6 +1821,8 @@ def list_patients(
         query = query.where(Patient.room == room)
     if bed:
         query = query.where(Patient.bed == bed)
+    if treatment_track:
+        query = query.where(Patient.treatment_track == treatment_track)
 
     query_terms = (search or "").strip().casefold().split()
     searchable_fields = [Patient.name, Patient.room, Patient.bed]
@@ -3077,6 +3080,18 @@ def save_physician_profile(
     )
 
 
+@app.delete("/internal/v1/physicians/profiles/{user_id}", status_code=204)
+def delete_physician_profile(
+    user_id: str,
+    _: Annotated[None, Depends(require_service_token)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> None:
+    profile = db.get(PhysicianProfile, user_id)
+    if profile is not None:
+        db.delete(profile)
+        db.commit()
+
+
 @app.get("/api/v1/physicians/prescriptions")
 def list_physician_prescriptions(
     principal: Annotated[DemoPrincipal, Depends(PRESCRIPTION_READ_ACCESS)],
@@ -3216,9 +3231,11 @@ def create_medication_administration(
         dose = Decimal(payload.dose.replace(",", "."))
         dispensed_quantity = Decimal(dispensation["quantity"].replace(",", "."))
     except (InvalidOperation, KeyError) as exc:
-        raise HTTPException(status_code=502, detail="A quantidade da dispensação é inválida") from exc
-    if not dose.is_finite() or dose <= 0 or not dispensed_quantity.is_finite():
+        raise HTTPException(status_code=503, detail="Resposta inválida do serviço de Farmácia") from exc
+    if not dose.is_finite() or dose <= 0:
         raise HTTPException(status_code=422, detail="Informe uma dose válida e maior que zero")
+    if not dispensed_quantity.is_finite() or dispensed_quantity <= 0:
+        raise HTTPException(status_code=502, detail="A Farmácia retornou uma quantidade de dispensação inválida")
     previous_records = db.scalars(
         select(MedicationAdministration).where(
             MedicationAdministration.dispensation_id == payload.dispensation_id
@@ -4494,7 +4511,7 @@ def can_view_patient_allergies(principal: DemoPrincipal) -> bool:
 def can_view_patient_treatment_track(principal: DemoPrincipal) -> bool:
     return any(
         module in principal.modules and "consultar" in principal.permissions.get(module, [])
-        for module in ("nursing", "psychology", "management")
+        for module in ("nursing", "psychology", "physician", "management")
     )
 
 

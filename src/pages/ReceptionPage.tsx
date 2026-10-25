@@ -598,7 +598,8 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       return false
     }
     window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(`Senha ${item.code}. ${item.first_name ?? item.patient_name.trim().split(/\s+/)[0]}. Aguarde ser atendido.`)
+    const priorityText = item.queue_type === 'priority' ? 'Atendimento prioritário. ' : ''
+    const utterance = new SpeechSynthesisUtterance(`${priorityText}Senha ${item.code}. ${item.first_name ?? item.patient_name.trim().split(/\s+/)[0]}. Dirija-se ao atendimento.`)
     utterance.lang = 'pt-BR'
     utterance.onerror = () => setError('O navegador não conseguiu reproduzir o anúncio por voz.')
     window.speechSynthesis.speak(utterance)
@@ -647,6 +648,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'called' }),
       }))
+      if (withVoice) playKioskAlert()
       const voiceAvailable = withVoice ? announce(item) : true
       setNotice(`${item.code} · ${item.patient_name} foi chamado.${withVoice && !voiceAvailable ? ' O navegador não oferece anúncio por voz.' : ''}`)
       await loadQueue()
@@ -705,22 +707,17 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   const commonItems = items.filter((item) => item.queue_type === 'common')
 
   function openKioskWindow() {
-    const kioskWindow = window.open('/painel-sala-espera', '_blank', 'noopener,noreferrer')
-    if (!kioskWindow) setError('O navegador bloqueou a nova janela. Permita pop-ups ou acesse /painel-sala-espera neste computador.')
+    const kioskWindow = window.open('/painel', '_blank', 'noopener,noreferrer')
+    if (!kioskWindow) setError('O navegador bloqueou a nova janela. Permita pop-ups ou acesse /painel neste computador.')
   }
 
   if (kioskMode) {
     const calledFor = (queue: WaitingRoomItem[]) => queue
       .filter((item) => item.status === 'called' || item.status === 'in_service')
       .sort((left, right) => (right.updated_at ?? right.arrived_at).localeCompare(left.updated_at ?? left.arrived_at))[0]
-    const waitingFor = (queue: WaitingRoomItem[]) => queue
-      .filter((item) => item.status === 'waiting')
-      .sort((left, right) => left.arrived_at.localeCompare(right.arrived_at))[0]
-    const kioskGroups = [
-      { label: 'Chamados agora', items: [calledFor(priorityItems), calledFor(commonItems)] },
-      { label: 'Próximos aguardando', items: [waitingFor(priorityItems), waitingFor(commonItems)] },
-    ]
-    const displayedFirstNames = new Set<string>()
+    const currentCall = [calledFor(priorityItems), calledFor(commonItems)]
+      .filter((item): item is WaitingRoomItem => Boolean(item))
+      .sort((left, right) => (right.updated_at ?? right.arrived_at).localeCompare(left.updated_at ?? left.arrived_at))[0]
     return <main className="waiting-room-kiosk" aria-label="Chamadas da Santa Casa Pedro Osório">
       <header>
         <div className="waiting-room-kiosk-brand">
@@ -733,36 +730,46 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         </div>
       </header>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
-      {loading ? <p className="waiting-room-display-empty">Carregando chamadas…</p> : <div className="waiting-room-kiosk-groups" aria-live="polite">
-        {kioskGroups.map(({ label, items: groupItems }) => <section className="waiting-room-kiosk-group" key={label}>
-          <h2>{label}</h2>
-          <div className="waiting-room-kiosk-slots">
-            {groupItems.map((item, index) => {
-              const queueClass = index === 0 ? 'priority' : 'common'
-              if (item?.first_name) displayedFirstNames.add(item.first_name)
-              return <article className={`waiting-room-kiosk-card waiting-room-kiosk-card-${queueClass}`} key={queueClass}>
-                {item ? <><strong>{item.code}</strong><b>{item.first_name}</b></> : <p>—</p>}
-              </article>
-            })}
-          </div>
-        </section>)}
-        {!displayedFirstNames.size && <p className="waiting-room-display-empty">Nenhum paciente aguardando chamada.</p>}
-      </div>}
+      <section className="waiting-room-kiosk-current" aria-live="polite" aria-atomic="true">
+        {loading && !items.length
+          ? <p className="waiting-room-display-empty">Carregando chamada…</p>
+          : currentCall
+            ? <article className={`waiting-room-kiosk-card waiting-room-kiosk-card-${currentCall.queue_type}`}>
+              <span className={`waiting-room-kiosk-priority ${currentCall.queue_type}`}>
+                {currentCall.queue_type === 'priority' ? 'Atendimento prioritário' : 'Atendimento comum'}
+              </span>
+              <strong>{currentCall.code}</strong>
+              <b>{currentCall.first_name ?? currentCall.patient_name.trim().split(/\s+/)[0]}</b>
+            </article>
+            : <p className="waiting-room-display-empty">Aguarde. Em breve uma chamada será exibida.</p>}
+      </section>
       <footer><time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(clock).replace(/^./, (char) => char.toUpperCase())}</time></footer>
     </main>
   }
 
   return <>
   <section className="waiting-room-board patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">Chame o próximo paciente automaticamente ou escolha manualmente a fila comum ou prioritária. A tela pública abre sem sessão de operador em <code>/painel-sala-espera</code>.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Abrir quiosque em nova janela</button></div></div>
+    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">Chame o próximo paciente automaticamente ou escolha alguém específico nas filas comum e prioritária. A tela pública abre sem sessão de operador em <code>/painel</code>.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Painel</button></div></div>
     {canUpdate && <div className="waiting-room-call-controls"><div><strong>Chamar próximo paciente</strong><span>{normalCallsSincePriority} de {normalBeforePriority} chamada(s) comum(ns) desde a última prioritária</span></div><div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('automatic')}>{updating === 'next' ? 'Chamando…' : 'Próximo automático'}</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('common')}>Chamar comum</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('priority')}>Chamar prioritário</button></div><form className="waiting-room-cadence" onSubmit={(event) => void saveCallCadence(event)}><label className="field"><span className="field-label">Comuns antes de prioritário</span><input type="number" min={1} max={20} value={normalBeforePriority} onChange={(event) => setNormalBeforePriority(Number(event.target.value))} /></label><button className="button button-secondary" type="submit" disabled={savingCadence || normalBeforePriority < 1 || normalBeforePriority > 20}>{savingCadence ? 'Salvando…' : 'Salvar alternância'}</button></form></div>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {!canUpdate && <div className="form-message form-message-warning" role="note">Seu perfil pode acompanhar as chamadas, mas não pode iniciar uma chamada.</div>}
     <div className="waiting-room-counts"><article><strong>{waiting.length}</strong><span>Aguardando chamada</span></article><article><strong>{called.length}</strong><span>Chamados</span></article></div>
     {loading ? <div className="history-empty">Carregando fila de chamadas…</div> : !items.length ? <div className="history-empty">Não há pacientes aguardando ou chamados neste momento.</div> : <div className="waiting-room-lists" aria-live="polite">
-      {waiting.length > 0 && <section><h3>Aguardando</h3><div className="waiting-room-cards">{waiting.map((item) => <article className="waiting-room-card" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>{item.type === 'appointment' ? 'Agendamento' : 'Pronto atendimento'} · {dateTime(item.arrived_at)}</small>{canUpdate && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, false)}>Chamar na tela</button><button className="button button-secondary" type="button" disabled={updating === `${item.type}-${item.id}`} onClick={() => void callPatient(item, true)}>Chamar com voz</button></div>}</article>)}</div></section>}
-      {called.length > 0 && <section><h3>Chamados</h3><div className="waiting-room-cards">{called.map((item) => <article className="waiting-room-card waiting-room-card-called" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>Chamado · {dateTime(item.arrived_at)}</small>{'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar por voz</button>}</article>)}</div></section>}
+      {(['priority', 'common'] as const).map((queueType) => {
+        const queueItems = items.filter((item) => item.queue_type === queueType)
+        if (!queueItems.length) return null
+        return <section className="waiting-room-operator-column" key={queueType}>
+          <h3>{queueType === 'priority' ? 'Prioritários' : 'Comuns'}</h3>
+          <div className="waiting-room-operator-list">{queueItems.map((item) => <article className={`waiting-room-operator-row ${item.status === 'called' ? 'is-called' : ''}`} key={`${item.type}-${item.id}`}>
+            <span className={`waiting-room-code ${queueType}`}>{item.code}</span>
+            <strong>{item.patient_name}</strong>
+            <small>{item.status === 'called' ? 'Chamado' : 'Aguardando'} · {dateTime(item.arrived_at)}</small>
+            {canUpdate && item.status === 'waiting' && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callPatient(item, false)}>Chamar este paciente</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callPatient(item, true)}>Chamar com voz</button></div>}
+            {canUpdate && item.status === 'called' && 'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar</button>}
+          </article>)}</div>
+        </section>
+      })}
     </div>}
   </section>
   </>

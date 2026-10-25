@@ -326,6 +326,39 @@ def test_app_admin_can_reset_another_users_password_without_disabling_mfa(
     assert response.headers["Cache-Control"] == "no-store"
 
 
+def test_app_admin_can_delete_non_superuser_account(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    admin = access._new_user("admin", "Admin", ["admin"], {"admin": ["consultar", "administrar"]})
+    target = access._new_user("nurse", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
+    root = access._new_user("rgarcez", "Superadministrador", ["management"], access._all_permissions())
+    root.is_superuser = True
+    db.add_all([admin, target, root])
+    db.commit()
+    token = issue_session(admin.id, "active", admin.session_version)
+    request = Request({
+        "type": "http",
+        "method": "DELETE",
+        "path": f"/api/v1/access/users/{target.id}",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+
+    async def record_audit(*_args) -> None:
+        return None
+
+    monkeypatch.setattr(access, "record_audit_event", record_audit)
+
+    result = asyncio.run(access.delete_user(target.id, request, db))
+
+    assert result["message"] == "Conta excluída"
+    assert db.get(access.AppUser, target.id) is None
+    assert [user["username"] for user in access.list_users(request, db)["users"]] == ["admin"]
+
+
 def test_session_refresh_keeps_the_original_expiration(
     domain_database: dict[str, Session],
     monkeypatch: pytest.MonkeyPatch,
@@ -615,6 +648,19 @@ def test_anvisa_cmed_parser_accepts_cp1252_and_deduplicates_eans() -> None:
     assert records[0]["registration"] == "123"
 
 
+def test_anvisa_cmed_parser_accepts_comma_delimited_source() -> None:
+    content = (
+        "EAN 1,EAN 2,EAN 3,PRODUTO,APRESENTAÇÃO,SUBSTÂNCIA,LABORATÓRIO,REGISTRO\n"
+        '4006381333931,,,Medicamento,Comprimido 500 mg,Substância,"Laboratório, S.A.",123\n'
+    ).encode()
+
+    records = pharmacy.parse_anvisa_cmed_csv(content, pharmacy.datetime.now(pharmacy.UTC), None)
+
+    assert len(records) == 1
+    assert records[0]["gtin"] == "04006381333931"
+    assert records[0]["manufacturer"] == "Laboratório, S.A."
+
+
 def test_anvisa_refresh_suggests_catalog_data_without_creating_stock(
     monkeypatch: pytest.MonkeyPatch,
     domain_database: dict[str, Session],
@@ -674,7 +720,7 @@ def test_anvisa_refresh_rejects_oversized_stream_without_replacing_catalog(
     with pytest.raises(HTTPException) as error:
         pharmacy.refresh_anvisa_catalog(pharmacist, db)
 
-    assert error.value.status_code == 502
+    assert error.value.status_code == 413
     assert db.query(pharmacy.AnvisaCatalogEntry).count() == 0
 
 
@@ -842,6 +888,29 @@ def test_nursing_records_partial_doses_against_patient_linked_dispensation(monke
             db,
         )
     assert exhausted.value.status_code == 409
+    monkeypatch.setattr(
+        nursing,
+        "resolve_medication_dispensation",
+        lambda identifier: {
+            "id": identifier,
+            "patient_reference": patient.reference,
+            "medication_name": "Comprimido de teste",
+            "quantity": "quantidade inválida",
+            "unit": "comprimido",
+        },
+    )
+    with pytest.raises(HTTPException) as invalid_dispensation:
+        nursing.create_medication_administration(
+            nursing.MedicationAdministrationPayload(
+                dispensation_id="dispense-invalid",
+                patient_reference=patient.reference,
+                dose="1",
+                status="administered",
+            ),
+            nurse,
+            db,
+        )
+    assert invalid_dispensation.value.status_code == 503
 
 
 def test_reception_records_emergency_arrival_without_inpatient_bed(

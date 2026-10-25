@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String, select
@@ -538,9 +539,11 @@ def list_users(
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, list[dict[str, object]]]:
     actor, _ = _require_account_admin(request, db)
-    users = db.scalars(select(AppUser).order_by(AppUser.name)).all()
-    if not actor.is_superuser:
-        users = [user for user in users if not user.is_superuser]
+    users = db.scalars(
+        select(AppUser)
+        .where(AppUser.is_superuser.is_(False))
+        .order_by(AppUser.name)
+    ).all()
     if "management" not in actor.modules:
         users = [user for user in users if "management" not in user.modules]
     return {"users": [_user_response(user) for user in users]}
@@ -719,3 +722,52 @@ async def update_user(
     user.session_version += 1
     db.commit()
     return _user_response(user)
+
+
+@app.delete("/api/v1/access/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, str]:
+    actor, principal = _require_account_admin(request, db)
+    user = db.get(AppUser, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    _prevent_superuser_changes(user)
+    if user.id == actor.id:
+        raise HTTPException(status_code=409, detail="Não é possível excluir a própria conta")
+    can_manage_broad_access = actor.is_superuser or (
+        "management" in actor.modules
+        and "administrar" in actor.permissions.get("management", [])
+    )
+    if "management" in user.modules and not can_manage_broad_access:
+        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode excluir esta conta")
+    if "management" in user.modules:
+        other_managers = db.scalars(
+            select(AppUser).where(
+                AppUser.active.is_(True),
+                AppUser.id != user.id,
+                AppUser.is_superuser.is_(False),
+            )
+        ).all()
+        if not any("management" in candidate.modules for candidate in other_managers):
+            raise HTTPException(status_code=409, detail="Mantenha ao menos uma conta de Gestão Hospitalar ativa")
+    if "physician" in user.modules:
+        service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
+        nursing_url = os.getenv("SCPO_NURSING_API_URL", "http://nursing:8000").rstrip("/")
+        if not service_token:
+            raise HTTPException(status_code=503, detail="Não foi possível remover o perfil médico associado")
+        try:
+            profile_response = httpx.delete(
+                f"{nursing_url}/internal/v1/physicians/profiles/{user.id}",
+                headers={"X-Service-Token": service_token},
+                timeout=3.0,
+            )
+            profile_response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=503, detail="Não foi possível remover o perfil médico associado") from exc
+    await record_audit_event(principal, user.id, "user_deleted", db)
+    db.delete(user)
+    db.commit()
+    return {"message": "Conta excluída"}

@@ -303,7 +303,7 @@ function InstitutionalDocumentsPanel() {
   }
 
   return <div className="management-operations-grid">
-    <div className="form-message form-message-warning" role="note">Este cadastro mantém conteúdo textual, versão, validade e aprovação. Não faz assinatura digital certificada nem armazena anexos.</div>
+    <div className="form-message form-message-warning" role="note">Use este espaço para registrar protocolos, políticas, procedimentos e formulários institucionais, acompanhar versões, revisão, aprovação e validade. Ele é um controle operacional leve: não substitui o repositório oficial de documentos, assinatura digital certificada nem armazena anexos.</div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="account-create-panel" onSubmit={(event) => void createDocument(event)}>

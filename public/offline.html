@@ -28,5 +28,16 @@
       <p>Não foi possível conectar ao SCPO Connect. Verifique a conexão deste computador e tente novamente. Os registros precisam de conexão para serem enviados com segurança.</p>
       <button type="button" onclick="window.location.reload()">Tentar novamente</button>
     </main>
+    <script>
+      window.setInterval(async () => {
+        if (!navigator.onLine) return;
+        try {
+          const response = await fetch('/', { method: 'HEAD', cache: 'no-store' });
+          if (response.ok) window.location.reload();
+        } catch {
+          // Keep the offline screen visible until the app can be reached.
+        }
+      }, 30_000);
+    </script>
   </body>
 </html>
