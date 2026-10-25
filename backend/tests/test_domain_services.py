@@ -1493,6 +1493,16 @@ def test_interprofessional_shares_are_scoped_expiring_and_revocable(
     )["shares"]
     assert sent[0]["direction"] == "sent"
 
+    same_user_access = DemoPrincipal(
+        "shared-user", "shared", "Usuário compartilhado", "psychology",
+        ["social", "psychology"],
+        {"social": ["consultar", "criar", "alterar"], "psychology": ["consultar", "criar", "alterar"]},
+    )
+    psychology_view = social.list_interprofessional_shares(
+        same_user_access, domain_database["social"], module="psychology"
+    )["shares"]
+    assert psychology_view[0]["direction"] == "received"
+
     with pytest.raises(HTTPException) as wrong_module:
         social.list_interprofessional_shares(
             psychologist, domain_database["social"], module="social"

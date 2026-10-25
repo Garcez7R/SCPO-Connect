@@ -353,6 +353,13 @@ class ModuleErrorBoundary extends Component<
 }
 
 function App() {
+  if (window.location.pathname === '/painel-sala-espera') {
+    return <Suspense fallback={<StartupScreen />}><WaitingRoomKioskPage /></Suspense>
+  }
+  return <AuthenticatedAppEntry />
+}
+
+function AuthenticatedAppEntry() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [sessionExpiresAt, setSessionExpiresAt] = useState<number | null>(null)
   const [sessionExpired, setSessionExpired] = useState(false)
@@ -528,10 +535,6 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
     : activeModule === 'nursing-history' ? 'Coletas de sinais vitais'
     : activeModule === 'patient-history' ? 'Histórico do paciente'
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
-
-  if (window.location.pathname === '/painel-sala-espera') {
-    return <Suspense fallback={<StartupScreen />}><WaitingRoomKioskPage /></Suspense>
-  }
 
   return (
     <div className="app-shell" style={sidebarStyle}>

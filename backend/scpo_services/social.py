@@ -404,7 +404,14 @@ def list_interprofessional_shares(
     ).all()
     result = []
     for share in shares:
-        direction = "sent" if share.created_by == principal.user_id else "received"
+        direction = "received"
+        if module is not None:
+            if share.sender_module == module:
+                direction = "sent"
+            elif share.recipient_module == module:
+                direction = "received"
+        elif share.created_by == principal.user_id:
+            direction = "sent"
         emit_audit_event(
             principal, "interprofessional", "interprofessional_share_read", str(share.id)
         )

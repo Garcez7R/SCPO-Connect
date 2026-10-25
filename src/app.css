@@ -1529,6 +1529,27 @@ html[data-theme="dark"] .temporary-credential-list p { border-color: #315744; }
 html[data-theme="dark"] .module-card-status .status-dot { background: currentColor; }
 html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { filter: none; }
 @media (max-width: 700px) { .page-title-actions { flex-wrap: wrap; justify-content: flex-end; } }
+@media (max-width: 760px) {
+  .waiting-room-kiosk { grid-template-rows: auto minmax(0, 1fr) auto; min-height: 100dvh; }
+  .waiting-room-kiosk > header { align-items: flex-start; }
+  .waiting-room-kiosk-brand { gap: 10px; }
+  .waiting-room-kiosk-brand img { width: 50px; height: 50px; }
+  .waiting-room-kiosk-brand h1 { font-size: clamp(20px, 5vw, 28px); }
+  .waiting-room-kiosk-brand strong { font-size: clamp(18px, 4.5vw, 25px); }
+  .waiting-room-kiosk-brand span { font-size: 14px; }
+  .waiting-room-kiosk-tools time { font-size: 20px; }
+  .waiting-room-kiosk-groups { grid-template-columns: 1fr; }
+  .waiting-room-kiosk-card { min-height: clamp(125px, 20vh, 190px); }
+}
+@media (max-width: 520px) {
+  .waiting-room-kiosk { gap: 12px; padding: 14px; }
+  .waiting-room-kiosk > header { flex-direction: column; }
+  .waiting-room-kiosk-tools { align-self: flex-end; }
+  .waiting-room-kiosk-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .waiting-room-kiosk-card { min-height: 125px; }
+  .waiting-room-kiosk-card > strong { font-size: clamp(30px, 9vw, 44px); }
+  .waiting-room-kiosk-card > b { font-size: clamp(21px, 6vw, 30px); }
+}
 @media (max-width: 520px) { .xray-page .laboratory-exam-grid { grid-template-columns: 1fr; } }
 
 #toast-root {
@@ -1688,6 +1709,14 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
 .reception-reason-field { grid-column: 1 / -1; }
 .reception-reason-field textarea { min-height: 84px; resize: vertical; }
 .reception-arrival-card { display: grid; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.reception-arrival-details { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.reception-arrival-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 54px; padding: 10px 14px; color: var(--ink); cursor: pointer; list-style: none; }
+.reception-arrival-summary::-webkit-details-marker { display: none; }
+.reception-arrival-summary::before { content: "›"; color: var(--blue); font-size: 23px; font-weight: 700; transition: transform .15s ease; }
+.reception-arrival-details[open] .reception-arrival-summary::before { transform: rotate(90deg); }
+.reception-arrival-summary > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reception-arrival-summary > span:last-child { color: var(--muted); font-size: 11px; }
+.reception-arrival-details > .reception-arrival-card { border: 0; border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; }
 .reception-arrival-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .reception-arrival-heading h3 { margin: 0 0 4px; color: var(--ink); font-size: 14px; }
 .reception-arrival-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -1695,7 +1724,7 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
 .reception-arrival-meta span { display: grid; gap: 4px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
 .reception-arrival-meta strong { color: var(--subtle); font-size: 9px; text-transform: uppercase; }
 .reception-status-control { max-width: 270px; }
-html[data-theme="dark"] :is(.pharmacy-movement-ledger, .pharmacy-movement-row, .reception-arrival-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] :is(.pharmacy-movement-ledger, .pharmacy-movement-row, .reception-arrival-card, .reception-arrival-details) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .reception-appointment-card { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .status-badge { background: #27323a; color: #c0c9cf; }
 html[data-theme="dark"] .status-scheduled { background: #26374b; color: #b6d4f6; }
@@ -1711,8 +1740,14 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
   .reception-appointment-toolbar .field:nth-child(3), .reception-appointment-toolbar .field:nth-child(4) { grid-column: 1 / -1; }
   .reception-appointment-toolbar > .button { justify-content: center; }
   .reception-arrival-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reception-arrival-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .reception-arrival-summary > span:last-child { grid-column: 2; }
   .reception-appointment-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
   .reception-appointment-state { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; align-items: end; }
+  .waiting-room-kiosk { gap: 14px; padding: 16px; }
+  .waiting-room-kiosk-groups, .waiting-room-kiosk-slots { grid-template-columns: 1fr; }
+  .waiting-room-kiosk-card { min-height: clamp(135px, 20vh, 220px); }
+  .waiting-room-kiosk-tools time { font-size: 22px; }
   .pharmacy-movement-row { grid-template-columns: 1fr 1fr; }
   .pharmacy-movement-author { grid-column: 1 / -1; text-align: left; }
 }
@@ -1883,33 +1918,28 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
 .waiting-room-card > strong { color: var(--ink); font-size: clamp(18px, 2.4vw, 26px); overflow-wrap: anywhere; }
 .waiting-room-card > small { color: var(--muted); font-size: 12px; }
 .waiting-room-card .waiting-room-actions .button { flex: 1; justify-content: center; }
-.waiting-room-kiosk { position: fixed; z-index: 20000; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: clamp(12px, 2vh, 24px); overflow: auto; padding: clamp(16px, 3vw, 42px); background: var(--page); color: var(--ink); }
-.waiting-room-kiosk > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-.waiting-room-kiosk > header h1 { margin: 4px 0; font-size: clamp(23px, 3vw, 40px); }
-.waiting-room-kiosk > header p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: clamp(13px, 1.4vw, 18px); }
-.waiting-room-kiosk-tools { display: grid; justify-items: end; gap: 6px; }
-.waiting-room-kiosk-tools > span { color: var(--muted); font-size: 11px; text-align: right; }
-.waiting-room-kiosk-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(12px, 2vw, 24px); min-height: 0; }
-.waiting-room-kiosk-group { display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: start; min-width: 0; gap: 12px; padding: clamp(12px, 2vw, 24px); border: 1px solid var(--line); border-top: 6px solid var(--blue); border-radius: 10px; background: var(--surface); }
-.waiting-room-kiosk-group-priority { border-top-color: var(--red); }
-.waiting-room-kiosk-group-common { border-top-color: var(--blue); }
-.waiting-room-kiosk-group > h2 { font-size: clamp(17px, 2vw, 26px); }
-.waiting-room-kiosk-group .waiting-room-display-grid { align-content: start; max-height: 100%; overflow: auto; }
-.waiting-room-kiosk-group .waiting-room-display-card { min-height: clamp(118px, 18vh, 190px); padding: clamp(12px, 2vw, 24px); }
-.waiting-room-kiosk-group .waiting-room-display-card > span { font-size: clamp(23px, 4vw, 50px); letter-spacing: 0; }
-.waiting-room-kiosk-group .waiting-room-display-card > strong { font-size: clamp(22px, 3.2vw, 40px); }
-.waiting-room-kiosk-group .waiting-room-display-card > small { color: var(--muted); font-size: clamp(11px, 1.3vw, 16px); font-weight: 700; }
-.waiting-room-kiosk > footer { color: var(--muted); font-size: clamp(11px, 1.2vw, 15px); text-align: center; }
-.waiting-room-display { position: fixed; z-index: 20000; inset: 0; display: grid; grid-template-rows: auto 1fr auto; gap: clamp(16px, 3vh, 30px); overflow: auto; padding: clamp(20px, 4vw, 56px); background: var(--page); color: var(--ink); }
-.waiting-room-display > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.waiting-room-display > header h1 { margin: 4px 0 0; font-size: clamp(28px, 4vw, 48px); }
-.waiting-room-display-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); align-content: center; gap: clamp(14px, 2vw, 24px); }
-.waiting-room-display-card { display: grid; min-height: 170px; align-content: center; justify-items: center; gap: 14px; padding: 22px; border: 2px solid var(--line); border-left: 10px solid var(--amber); border-radius: 12px; background: var(--surface); text-align: center; }
-.waiting-room-display-card-called { border-left-color: var(--green); }
-.waiting-room-display-card > span { color: var(--blue-dark); font-size: clamp(32px, 6vw, 68px); font-weight: 700; letter-spacing: .08em; }
-.waiting-room-display-card > strong { font-size: clamp(16px, 2vw, 24px); letter-spacing: .04em; }
+.waiting-room-kiosk { position: fixed; z-index: 20000; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: clamp(18px, 3vh, 34px); overflow: auto; padding: clamp(20px, 4vw, 56px); background: var(--page); color: var(--ink); }
+.waiting-room-kiosk > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.waiting-room-kiosk-brand { display: flex; align-items: center; gap: clamp(12px, 2vw, 24px); }
+.waiting-room-kiosk-brand img { width: clamp(54px, 7vw, 92px); height: clamp(54px, 7vw, 92px); object-fit: contain; }
+.waiting-room-kiosk-brand div { display: grid; gap: 4px; }
+.waiting-room-kiosk-brand h1 { margin: 0; font-size: clamp(24px, 3.5vw, 48px); line-height: 1.1; }
+.waiting-room-kiosk-brand strong { color: var(--blue-dark); font-size: clamp(20px, 2.8vw, 36px); }
+.waiting-room-kiosk-brand span { color: var(--muted); font-size: clamp(15px, 1.8vw, 23px); }
+.waiting-room-kiosk-tools { display: grid; justify-items: end; gap: 8px; }
+.waiting-room-kiosk-tools time { color: var(--ink); font-size: clamp(24px, 3vw, 40px); font-variant-numeric: tabular-nums; font-weight: 700; }
+.waiting-room-kiosk-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: clamp(14px, 2.4vw, 32px); min-height: 0; }
+.waiting-room-kiosk-group { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; gap: 16px; padding: clamp(16px, 2.4vw, 32px); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.waiting-room-kiosk-group > h2 { margin: 0; color: var(--ink); font-size: clamp(19px, 2.4vw, 32px); }
+.waiting-room-kiosk-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.waiting-room-kiosk-card { display: grid; min-width: 0; min-height: clamp(180px, 30vh, 360px); align-content: center; justify-items: center; gap: clamp(8px, 1.5vh, 18px); padding: clamp(12px, 2vw, 24px); border: 2px solid var(--line); border-radius: 10px; background: var(--page); text-align: center; }
+.waiting-room-kiosk-card-priority { border-top: 8px solid var(--red); }
+.waiting-room-kiosk-card-common { border-top: 8px solid var(--blue); }
+.waiting-room-kiosk-card > strong { color: var(--ink); font-size: clamp(36px, 6vw, 80px); letter-spacing: .06em; }
+.waiting-room-kiosk-card > b { color: var(--ink); font-size: clamp(25px, 4vw, 54px); overflow-wrap: anywhere; }
+.waiting-room-kiosk-card > p { margin: 0; color: var(--muted); font-size: clamp(32px, 5vw, 64px); }
+.waiting-room-kiosk > footer { color: var(--muted); font-size: clamp(13px, 1.5vw, 19px); text-align: center; }
 .waiting-room-display-empty { align-self: center; justify-self: center; margin: 0; color: var(--muted); font-size: clamp(22px, 3vw, 38px); text-align: center; }
-.waiting-room-display > footer { color: var(--muted); font-size: clamp(13px, 1.5vw, 18px); text-align: center; }
 html[data-theme="dark"] .waiting-room-card { border-color: var(--line); background: var(--surface); }
 html[data-theme="dark"] .waiting-room-display-card { border-color: var(--line); background: var(--surface); }
 .status-called { background: #e8f1f7; color: #205777; }
@@ -2029,4 +2059,25 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
   .vital-trend-chart { height: 180px; }
   .vital-pressure-view { gap: 2px; }
   .vital-pressure-view button { padding-inline: 6px; font-size: 9px; }
+}
+@media (max-width: 760px) {
+  .waiting-room-kiosk { grid-template-rows: auto minmax(0, 1fr) auto; min-height: 100dvh; }
+  .waiting-room-kiosk > header { align-items: flex-start; }
+  .waiting-room-kiosk-brand { gap: 10px; }
+  .waiting-room-kiosk-brand img { width: 50px; height: 50px; }
+  .waiting-room-kiosk-brand h1 { font-size: clamp(20px, 5vw, 28px); }
+  .waiting-room-kiosk-brand strong { font-size: clamp(18px, 4.5vw, 25px); }
+  .waiting-room-kiosk-brand span { font-size: 14px; }
+  .waiting-room-kiosk-tools time { font-size: 20px; }
+  .waiting-room-kiosk-groups { grid-template-columns: 1fr; }
+  .waiting-room-kiosk-card { min-height: clamp(125px, 20vh, 190px); }
+}
+@media (max-width: 520px) {
+  .waiting-room-kiosk { gap: 12px; padding: 14px; }
+  .waiting-room-kiosk > header { flex-direction: column; }
+  .waiting-room-kiosk-tools { align-self: flex-end; }
+  .waiting-room-kiosk-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .waiting-room-kiosk-card { min-height: 125px; }
+  .waiting-room-kiosk-card > strong { font-size: clamp(30px, 9vw, 44px); }
+  .waiting-room-kiosk-card > b { font-size: clamp(21px, 6vw, 30px); }
 }

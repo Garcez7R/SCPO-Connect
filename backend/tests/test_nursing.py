@@ -372,6 +372,97 @@ def test_reception_appointment_requires_timezone_and_valid_future_interval() -> 
         )
 
 
+def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
+    nursing_db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(ZoneInfo("America/Sao_Paulo")).astimezone(UTC)
+    local_day_start = now.astimezone(ZoneInfo("America/Sao_Paulo")).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).astimezone(UTC)
+    nursing_db.add_all(
+        [
+            nursing.EmergencyArrival(
+                id=str(uuid.uuid4()),
+                patient_reference=None,
+                patient_name="Ontem Exemplo Sobrenome",
+                arrival_mode="walk_in",
+                reason="Registro de ontem",
+                status="waiting",
+                created_by="Recepção",
+                updated_by="Recepção",
+                created_at=local_day_start - timedelta(seconds=1),
+                updated_at=local_day_start - timedelta(seconds=1),
+                clinical_priority="routine",
+                queue_type="common",
+            ),
+            nursing.EmergencyArrival(
+                id=str(uuid.uuid4()),
+                patient_reference=None,
+                patient_name="Ana Exemplo Sobrenome",
+                arrival_mode="walk_in",
+                reason="Motivo privado",
+                status="waiting",
+                created_by="Recepção",
+                updated_by="Recepção",
+                created_at=now - timedelta(minutes=4),
+                updated_at=now - timedelta(minutes=4),
+                clinical_priority="routine",
+                queue_type="common",
+            ),
+            nursing.EmergencyArrival(
+                id=str(uuid.uuid4()),
+                patient_reference=None,
+                patient_name="Bruna Exemplo Sobrenome",
+                arrival_mode="walk_in",
+                reason="Motivo privado",
+                status="called",
+                created_by="Recepção",
+                updated_by="Recepção",
+                created_at=now - timedelta(minutes=3),
+                updated_at=now - timedelta(minutes=2),
+                clinical_priority="routine",
+                queue_type="priority",
+            ),
+        ]
+    )
+    nursing_db.commit()
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    try:
+        with TestClient(nursing.app) as client:
+            response = client.get("/api/v1/reception/public/queue")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["items"] == [
+            {
+                "id": "C001",
+                "type": "arrival",
+                "code": "C001",
+                "first_name": "Ana",
+                "status": "waiting",
+                "queue_type": "common",
+                "arrived_at": payload["items"][0]["arrived_at"],
+                "updated_at": payload["items"][0]["updated_at"],
+            },
+            {
+                "id": "P001",
+                "type": "arrival",
+                "code": "P001",
+                "first_name": "Bruna",
+                "status": "called",
+                "queue_type": "priority",
+                "arrived_at": payload["items"][1]["arrived_at"],
+                "updated_at": payload["items"][1]["updated_at"],
+            },
+        ]
+        assert "Sobrenome" not in response.text
+        assert "Ontem" not in response.text
+        assert "Motivo privado" not in response.text
+        assert response.headers["cache-control"] == "no-store"
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
 def test_hygiene_linked_bed_requires_internal_release(nursing_db: Session) -> None:
     bed = create_physical_bed(nursing_db, "7", "A")
     bed_id = str(bed["id"])

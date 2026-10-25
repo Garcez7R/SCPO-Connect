@@ -7,7 +7,7 @@ from enum import IntEnum
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
     JSON,
@@ -2241,6 +2241,92 @@ def list_emergency_arrivals(
         "offset": offset,
         "status_counts": {key: count for key, count in grouped_counts},
     }
+
+
+@app.get("/api/v1/reception/public/queue")
+def list_public_reception_queue(
+    db: Annotated[Session, Depends(get_nursing_db)],
+    response: Response,
+) -> dict[str, object]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    timezone = ZoneInfo("America/Sao_Paulo")
+    today = datetime.now(timezone).date()
+    start_at = datetime.combine(today, time.min, timezone).astimezone(UTC)
+    end_at = datetime.combine(today + timedelta(days=1), time.min, timezone).astimezone(UTC)
+
+    arrivals = db.scalars(
+        select(EmergencyArrival).where(
+            EmergencyArrival.created_at >= start_at,
+            EmergencyArrival.created_at < end_at,
+        )
+    ).all()
+    appointment_rows = db.execute(
+        select(ReceptionAppointment, Patient.name)
+        .join(Patient, Patient.reference == ReceptionAppointment.patient_reference)
+        .where(
+            ReceptionAppointment.arrived_at.is_not(None),
+            ReceptionAppointment.arrived_at >= start_at,
+            ReceptionAppointment.arrived_at < end_at,
+        )
+    ).all()
+
+    queue_entries: list[tuple[datetime, str, str, str, str, str, datetime]] = []
+    for arrival in arrivals:
+        queue_type = (
+            "priority"
+            if arrival.queue_type == "priority"
+            or arrival.clinical_priority in {"priority", "urgent"}
+            else "common"
+        )
+        queue_entries.append(
+            (
+                arrival.created_at,
+                arrival.id,
+                arrival.patient_name,
+                arrival.status,
+                queue_type,
+                "arrival",
+                arrival.updated_at,
+            )
+        )
+    for appointment, patient_name in appointment_rows:
+        if appointment.arrived_at is None:
+            continue
+        queue_entries.append(
+            (
+                appointment.arrived_at,
+                str(appointment.id),
+                patient_name,
+                appointment.status,
+                "common",
+                "appointment",
+                appointment.updated_at,
+            )
+        )
+
+    queue_entries.sort(key=lambda item: (item[0], item[1]))
+    sequence_by_queue = {"common": 0, "priority": 0}
+    public_items: list[dict[str, str]] = []
+    for arrived_at, item_id, patient_name, status, queue_type, item_type, updated_at in queue_entries:
+        sequence_by_queue[queue_type] += 1
+        prefix = "P" if queue_type == "priority" else "C"
+        if status not in {"waiting", "arrived", "called", "in_service"}:
+            continue
+        code = f"{prefix}{sequence_by_queue[queue_type]:03d}"
+        public_items.append(
+            {
+                "id": code,
+                "type": item_type,
+                "code": code,
+                "first_name": patient_name.strip().split(maxsplit=1)[0] if patient_name.strip() else "",
+                "status": "waiting" if status in {"waiting", "arrived"} else status,
+                "queue_type": queue_type,
+                "arrived_at": arrived_at.isoformat(),
+                "updated_at": updated_at.isoformat(),
+            }
+        )
+    return {"items": public_items, "generated_at": datetime.now(UTC).isoformat()}
 
 
 def get_reception_queue_settings(db: Session) -> ReceptionQueueSettings:

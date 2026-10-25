@@ -370,18 +370,21 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
           {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`button ${statusFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
         </div>
         <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
-        {loading ? <div className="history-empty">Carregando fila do pronto atendimento…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <article className="reception-arrival-card" key={arrival.id}>
-          <div className="reception-arrival-heading"><div><h3>{arrival.patient_name}</h3><p>{arrival.reason}</p></div><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></div>
-          <ReceptionAllergyAlert status={arrival.allergies_status} />
-          {arrival.allergy_report_status === 'reported' && <p className="field-hint">Alergia relatada na chegada · confirme com a equipe clínica.</p>}
-          <div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>
-          {canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span><select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="called">Chamado</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
-          {canUpdate && arrival.patient_reference && ['waiting', 'called', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}>
-            <label className="field"><span className="field-label">Perfil de cuidado da internação</span><select required value={admissionDraft[arrival.id]?.treatmentTrack ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: current[arrival.id]?.bedId ?? '', treatmentTrack: event.target.value as TreatmentTrack } }))}><option value="">Selecione o perfil de cuidado</option><option value="clinical">Tratamento clínico</option><option value="psychiatric">Tratamento psiquiátrico</option><option value="combined">Cuidado clínico e psiquiátrico</option></select><span className="field-hint">Classifica o fluxo assistencial; não representa diagnóstico.</span></label>
-            <label className="field"><span className="field-label">Leito físico disponível</span><select required value={admissionDraft[arrival.id]?.bedId ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: event.target.value, treatmentTrack: current[arrival.id]?.treatmentTrack ?? 'clinical' } }))}><option value="">Selecione unidade, quarto e leito</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Cadastre ou libere um leito em Gestão Hospitalar.</span>}</label>
-            <button className="button button-secondary" type="submit" disabled={updating === arrival.id || !admissionDraft[arrival.id]?.bedId || !admissionDraft[arrival.id]?.treatmentTrack || !beds.some((bed) => bed.id === admissionDraft[arrival.id]?.bedId && bed.status === 'available' && !bed.occupied)}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button>
-          </form>}
-        </article>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}
+        {loading ? <div className="history-empty">Carregando fila do pronto atendimento…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <details className="reception-arrival-details" key={arrival.id}>
+            <summary className="reception-arrival-summary"><strong>{arrival.patient_name}</strong><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></summary>
+            <div className="reception-arrival-card">
+              <p>{arrival.reason}</p>
+              <ReceptionAllergyAlert status={arrival.allergies_status} />
+              {arrival.allergy_report_status === 'reported' && <p className="field-hint">Alergia relatada na chegada · confirme com a equipe clínica.</p>}
+              <div className="reception-arrival-meta"><span><strong>Chegada</strong>{labels[arrival.arrival_mode]}</span><span><strong>Registrada em</strong>{dateTime(arrival.created_at)}</span><span><strong>Recepcionista</strong>{arrival.created_by}</span><span><strong>Última atualização</strong>{arrival.updated_by} · {dateTime(arrival.updated_at)}</span></div>
+              {canUpdate && arrival.status !== 'completed' && arrival.status !== 'cancelled' && arrival.status !== 'admitted' && <label className="field reception-status-control"><span className="field-label">Situação operacional</span><select value={arrival.status} disabled={updating === arrival.id} onChange={(event) => void updateArrival(arrival, event.target.value as Exclude<EmergencyArrivalStatus, 'admitted'>)}><option value="waiting">Aguardando</option><option value="called">Chamado</option><option value="in_service">Em atendimento</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
+              {canUpdate && arrival.patient_reference && ['waiting', 'called', 'in_service'].includes(arrival.status) && <form className="reception-admission-form" onSubmit={(event) => { event.preventDefault(); void admitArrival(arrival) }}>
+                <label className="field"><span className="field-label">Perfil de cuidado da internação</span><select required value={admissionDraft[arrival.id]?.treatmentTrack ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: current[arrival.id]?.bedId ?? '', treatmentTrack: event.target.value as TreatmentTrack } }))}><option value="">Selecione o perfil de cuidado</option><option value="clinical">Tratamento clínico</option><option value="psychiatric">Tratamento psiquiátrico</option><option value="combined">Cuidado clínico e psiquiátrico</option></select><span className="field-hint">Classifica o fluxo assistencial; não representa diagnóstico.</span></label>
+                <label className="field"><span className="field-label">Leito físico disponível</span><select required value={admissionDraft[arrival.id]?.bedId ?? ''} onChange={(event) => setAdmissionDraft((current) => ({ ...current, [arrival.id]: { bedId: event.target.value, treatmentTrack: current[arrival.id]?.treatmentTrack ?? 'clinical' } }))}><option value="">Selecione unidade, quarto e leito</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Cadastre ou libere um leito em Gestão Hospitalar.</span>}</label>
+                <button className="button button-secondary" type="submit" disabled={updating === arrival.id || !admissionDraft[arrival.id]?.bedId || !admissionDraft[arrival.id]?.treatmentTrack || !beds.some((bed) => bed.id === admissionDraft[arrival.id]?.bedId && bed.status === 'available' && !bed.occupied)}>{updating === arrival.id ? 'Internando…' : 'Converter em internação'}</button>
+              </form>}
+            </div>
+          </details>)}</div> : <div className="history-empty">Nenhuma chegada corresponde aos filtros selecionados.</div>}
         <div className="pharmacy-ledger-pagination"><span>{total ? `${offset + 1}–${Math.min(offset + arrivals.length, total)} de ${total}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => void loadArrivals(statusFilter, query, Math.max(0, offset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + arrivals.length >= total} onClick={() => void loadArrivals(statusFilter, query, offset + 25)}>Próxima</button></div></div>
       </section>
     </>}
@@ -391,9 +394,11 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
 type WaitingRoomItem = {
   id: string
   patient_name: string
-  status: 'waiting' | 'called' | 'other'
+  first_name?: string
+  status: 'waiting' | 'called' | 'in_service' | 'other'
   type: 'appointment' | 'arrival'
   arrived_at: string
+  updated_at?: string
   code: string
   clinical_priority: EmergencyArrival['clinical_priority']
   queue_type: 'common' | 'priority'
@@ -410,9 +415,8 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   const [items, setItems] = useState<WaitingRoomItem[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState('')
-  const [displayMode, setDisplayMode] = useState(false)
-  const [displayError, setDisplayError] = useState('')
   const [kioskAlertsEnabled, setKioskAlertsEnabled] = useState(false)
+  const [clock, setClock] = useState(() => new Date())
   const [normalBeforePriority, setNormalBeforePriority] = useState(3)
   const [normalCallsSincePriority, setNormalCallsSincePriority] = useState(0)
   const [savingCadence, setSavingCadence] = useState(false)
@@ -424,6 +428,33 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
 
   const loadQueue = useCallback(async () => {
     try {
+      if (kioskMode) {
+        const response = await fetch('/api/v1/reception/public/queue', { cache: 'no-store' })
+        const data = await readApiResponse<{ items?: WaitingRoomItem[] }>(response)
+        const publicItems = data.items ?? []
+        const calledNow = new Set(publicItems.filter((item) => item.status === 'called' || item.status === 'in_service').map((item) => `${item.type}-${item.id}`))
+        const previousCalled = previousCalledRef.current
+        if (previousCalled && kioskAlertsEnabledRef.current) {
+          const newCalls = publicItems.filter((item) =>
+            (item.status === 'called' || item.status === 'in_service')
+            && !previousCalled.has(`${item.type}-${item.id}`),
+          )
+          if (newCalls.length) {
+            playKioskAlert()
+            newCalls.forEach((item, index) => {
+              window.setTimeout(() => announce(item), 500 + index * 2500)
+            })
+          }
+        }
+        previousCalledRef.current = calledNow
+        setItems(publicItems.map((item) => ({
+          ...item,
+          patient_name: item.first_name ?? '',
+          clinical_priority: item.queue_type === 'priority' ? 'priority' : 'routine',
+        })))
+        setError('')
+        return
+      }
       const today = new Date()
       const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
       const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
@@ -499,12 +530,10 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         || left.id.localeCompare(right.id),
       )
       const numberedItems = arrivalOrdered.map((item) => {
-        const queue = item.queue_type === 'priority'
-          ? 'Prioritário'
-          : 'Comum'
+        const queue = item.queue_type === 'priority' ? 'P' : 'C'
         const nextNumber = (numberedQueues.get(queue) ?? 0) + 1
         numberedQueues.set(queue, nextNumber)
-        return { ...item, code: `${queue} ${String(nextNumber).padStart(3, '0')}` }
+        return { ...item, code: `${queue}${String(nextNumber).padStart(3, '0')}` }
       })
       const calledNow = new Set(numberedItems.filter((item) => item.status === 'called').map((item) => `${item.type}-${item.id}`))
       const previousCalled = previousCalledRef.current
@@ -533,28 +562,37 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
     } finally {
       setLoading(false)
     }
-  }, [])
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) setDisplayMode(false)
-    }
-    document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
-  }, [])
+  }, [kioskMode])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadQueue(), 0)
     const interval = window.setInterval(() => void loadQueue(), 15_000)
+    const clockInterval = kioskMode ? window.setInterval(() => setClock(new Date()), 1000) : undefined
     return () => {
       window.clearTimeout(timer)
       window.clearInterval(interval)
+      if (clockInterval) window.clearInterval(clockInterval)
     }
-  }, [loadQueue])
+  }, [kioskMode, loadQueue])
 
   useEffect(() => () => {
     void audioContextRef.current?.close()
   }, [])
+
+  useEffect(() => {
+    if (!kioskMode) return
+    const context = new window.AudioContext()
+    audioContextRef.current = context
+    void context.resume().then(() => {
+      if (context.state === 'running') {
+        kioskAlertsEnabledRef.current = true
+        setKioskAlertsEnabled(true)
+      }
+    }).catch(() => {
+      kioskAlertsEnabledRef.current = false
+      setKioskAlertsEnabled(false)
+    })
+  }, [kioskMode])
 
   function announce(item: WaitingRoomItem) {
     if (!('speechSynthesis' in window)) {
@@ -562,9 +600,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       return false
     }
     window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(
-      `Senha ${item.code}. ${item.patient_name.trim().split(/\s+/)[0]}. Por favor, dirija-se à recepção.`,
-    )
+    const utterance = new SpeechSynthesisUtterance(`Senha ${item.code}. ${item.first_name ?? item.patient_name.trim().split(/\s+/)[0]}. Aguarde ser atendido.`)
     utterance.lang = 'pt-BR'
     utterance.onerror = () => setError('O navegador não conseguiu reproduzir o anúncio por voz.')
     window.speechSynthesis.speak(utterance)
@@ -667,32 +703,8 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
 
   const waiting = items.filter((item) => item.status === 'waiting')
   const called = items.filter((item) => item.status === 'called')
-  const priorityItems = items.filter((item) => item.clinical_priority === 'urgent' || item.clinical_priority === 'priority')
-  const commonItems = items.filter((item) => item.clinical_priority !== 'urgent' && item.clinical_priority !== 'priority')
-
-  async function openDisplayMode() {
-    setDisplayMode(true)
-    setDisplayError('')
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      try {
-        await document.documentElement.requestFullscreen()
-      } catch (fullscreenError) {
-        setDisplayError(fullscreenError instanceof Error ? fullscreenError.message : 'Não foi possível ativar a tela cheia.')
-      }
-    }
-  }
-
-  async function closeDisplayMode() {
-    setDisplayMode(false)
-    setDisplayError('')
-    if (document.fullscreenElement) {
-      try {
-        await document.exitFullscreen()
-      } catch (fullscreenError) {
-        setError(fullscreenError instanceof Error ? fullscreenError.message : 'Não foi possível sair da tela cheia.')
-      }
-    }
-  }
+  const priorityItems = items.filter((item) => item.queue_type === 'priority')
+  const commonItems = items.filter((item) => item.queue_type === 'common')
 
   function openKioskWindow() {
     const kioskWindow = window.open('/painel-sala-espera', '_blank', 'noopener,noreferrer')
@@ -700,25 +712,51 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   }
 
   if (kioskMode) {
-    return <main className="waiting-room-kiosk" aria-label="Painel da sala de espera">
-      <header><div><p className="eyebrow">SANTA CASA PEDRO OSÓRIO</p><h1>Painel da sala de espera</h1><p>Chamadas por ordem de chegada</p></div><div className="waiting-room-kiosk-tools"><span>{kioskAlertsEnabled ? 'Alertas ativos' : 'Ative voz e som para este computador'}</span><button className="button button-secondary" type="button" onClick={() => void enableKioskAlerts()}>{kioskAlertsEnabled ? 'Som e voz ativos' : 'Ativar voz e som'}</button></div></header>
+    const calledFor = (queue: WaitingRoomItem[]) => queue
+      .filter((item) => item.status === 'called' || item.status === 'in_service')
+      .sort((left, right) => (right.updated_at ?? right.arrived_at).localeCompare(left.updated_at ?? left.arrived_at))[0]
+    const waitingFor = (queue: WaitingRoomItem[]) => queue
+      .filter((item) => item.status === 'waiting')
+      .sort((left, right) => left.arrived_at.localeCompare(right.arrived_at))[0]
+    const kioskGroups = [
+      { label: 'Chamados agora', items: [calledFor(priorityItems), calledFor(commonItems)] },
+      { label: 'Próximos aguardando', items: [waitingFor(priorityItems), waitingFor(commonItems)] },
+    ]
+    const displayedFirstNames = new Set<string>()
+    return <main className="waiting-room-kiosk" aria-label="Chamadas da Santa Casa Pedro Osório">
+      <header>
+        <div className="waiting-room-kiosk-brand">
+          <img src="/scpo-connect-icon.png" alt="" />
+          <div><h1>Santa Casa de Pedro Osório</h1><strong>Aguarde ser atendido</strong><span>Chamadas por nome e senha</span></div>
+        </div>
+        <div className="waiting-room-kiosk-tools">
+          <time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(clock)}</time>
+          {!kioskAlertsEnabled && <button className="button button-secondary" type="button" onClick={() => void enableKioskAlerts()}>Ativar áudio</button>}
+        </div>
+      </header>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
-      {loading ? <p className="waiting-room-display-empty">Carregando chamadas…</p> : <div className="waiting-room-kiosk-groups">
-        {[
-          { label: 'Prioritários', className: 'priority', queue: priorityItems },
-          { label: 'Comuns', className: 'common', queue: commonItems },
-        ].map(({ label, className, queue }) => <section className={`waiting-room-kiosk-group waiting-room-kiosk-group-${className}`} key={className}>
+      {loading ? <p className="waiting-room-display-empty">Carregando chamadas…</p> : <div className="waiting-room-kiosk-groups" aria-live="polite">
+        {kioskGroups.map(({ label, items: groupItems }) => <section className="waiting-room-kiosk-group" key={label}>
           <h2>{label}</h2>
-          {queue.length ? <div className="waiting-room-display-grid">{queue.map((item) => <article className={`waiting-room-display-card waiting-room-display-card-${item.status}`} key={`${item.type}-${item.id}`}><span>{item.code}</span><strong>{item.patient_name.trim().split(/\s+/)[0]}</strong><small>{item.status === 'called' ? 'DIRIJA-SE À RECEPÇÃO' : 'AGUARDANDO'}</small></article>)}</div> : <p className="waiting-room-display-empty">Nenhuma chamada neste momento.</p>}
+          <div className="waiting-room-kiosk-slots">
+            {groupItems.map((item, index) => {
+              const queueClass = index === 0 ? 'priority' : 'common'
+              if (item?.first_name) displayedFirstNames.add(item.first_name)
+              return <article className={`waiting-room-kiosk-card waiting-room-kiosk-card-${queueClass}`} key={queueClass}>
+                {item ? <><strong>{item.code}</strong><b>{item.first_name}</b></> : <p>—</p>}
+              </article>
+            })}
+          </div>
         </section>)}
+        {!displayedFirstNames.size && <p className="waiting-room-display-empty">Nenhum paciente aguardando chamada.</p>}
       </div>}
-      <footer>Atualização automática a cada 15 segundos · Painel sem informações clínicas.</footer>
+      <footer><time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(clock).replace(/^./, (char) => char.toUpperCase())}</time></footer>
     </main>
   }
 
   return <>
   <section className="waiting-room-board patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">A fila atualiza automaticamente a cada 15 segundos. O painel público separa senhas comuns e prioritárias e exibe apenas a senha e o primeiro nome.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Abrir quiosque em nova janela</button><button className="button button-secondary" type="button" onClick={() => void openDisplayMode()}>Abrir tela cheia</button></div></div>
+    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">Chame o próximo paciente automaticamente ou escolha manualmente a fila comum ou prioritária. A tela pública abre sem sessão de operador em <code>/painel-sala-espera</code>.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Abrir quiosque em nova janela</button></div></div>
     {canUpdate && <div className="waiting-room-call-controls"><div><strong>Chamar próximo paciente</strong><span>{normalCallsSincePriority} de {normalBeforePriority} chamada(s) comum(ns) desde a última prioritária</span></div><div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('automatic')}>{updating === 'next' ? 'Chamando…' : 'Próximo automático'}</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('common')}>Chamar comum</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('priority')}>Chamar prioritário</button></div><form className="waiting-room-cadence" onSubmit={(event) => void saveCallCadence(event)}><label className="field"><span className="field-label">Comuns antes de prioritário</span><input type="number" min={1} max={20} value={normalBeforePriority} onChange={(event) => setNormalBeforePriority(Number(event.target.value))} /></label><button className="button button-secondary" type="submit" disabled={savingCadence || normalBeforePriority < 1 || normalBeforePriority > 20}>{savingCadence ? 'Salvando…' : 'Salvar alternância'}</button></form></div>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
@@ -729,12 +767,6 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       {called.length > 0 && <section><h3>Chamados</h3><div className="waiting-room-cards">{called.map((item) => <article className="waiting-room-card waiting-room-card-called" key={`${item.type}-${item.id}`}><span className="waiting-room-code">{item.code}</span><strong>{item.patient_name}</strong><small>Chamado · {dateTime(item.arrived_at)}</small>{'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar por voz</button>}</article>)}</div></section>}
     </div>}
   </section>
-  {displayMode && <main className="waiting-room-display" role="dialog" aria-label="Painel de chamadas da sala de espera" aria-live="polite">
-    <header><div><p className="eyebrow">SCPO CONNECT</p><h1>Chamadas</h1></div><button className="button button-secondary" type="button" onClick={() => void closeDisplayMode()}>Sair do painel</button></header>
-    {displayError && <ToastMessage variant="error">{displayError}</ToastMessage>}
-    {loading ? <p className="waiting-room-display-empty">Atualizando chamadas…</p> : items.length ? <div className="waiting-room-display-grid">{items.map((item) => <article className={`waiting-room-display-card waiting-room-display-card-${item.status}`} key={`${item.type}-${item.id}`}><span>{item.code}</span><strong>{item.patient_name.trim().split(/\s+/)[0]}</strong><small>{item.status === 'called' ? 'DIRIJA-SE À RECEPÇÃO' : 'AGUARDANDO CHAMADA'}</small></article>)}</div> : <p className="waiting-room-display-empty">Não há chamadas pendentes.</p>}
-    <footer>O painel atualiza automaticamente. Para atendimento, dirija-se à recepção.</footer>
-  </main>}
   </>
 }
 
