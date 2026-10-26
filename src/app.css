@@ -1581,10 +1581,10 @@ html[data-theme="dark"] .sidebar {
 .waiting-room-code.priority { color: var(--red); }
 .waiting-room-code.common { color: var(--blue-dark); }
 .waiting-room-kiosk-current { display: grid; min-height: 0; place-items: center; }
-.waiting-room-kiosk-current .waiting-room-kiosk-card { width: min(100%, 1500px); min-height: min(58vh, 680px); grid-template-columns: auto minmax(0, 1fr); justify-items: start; gap: clamp(12px, 2.5vw, 30px); padding: clamp(22px, 5vw, 72px); border-top-width: 0; border-left: 12px solid var(--blue); text-align: left; }
+.waiting-room-kiosk-current .waiting-room-kiosk-card { container-type: inline-size; width: min(100%, 1500px); min-height: min(58vh, 680px); grid-template-columns: minmax(0, 1fr); justify-items: center; gap: clamp(12px, 2.5vw, 30px); padding: clamp(22px, 5vw, 72px); border-top-width: 0; border-left: 12px solid var(--blue); text-align: center; }
 .waiting-room-kiosk-current .waiting-room-kiosk-card-priority { border-left-color: var(--red); }
-.waiting-room-kiosk-current .waiting-room-kiosk-card > strong { grid-row: 2; font-size: clamp(58px, 12vw, 180px); line-height: 1; }
-.waiting-room-kiosk-current .waiting-room-kiosk-card > b { grid-row: 2; font-size: clamp(48px, 9vw, 144px); }
+.waiting-room-kiosk-current .waiting-room-kiosk-card > strong { grid-row: auto; font-size: clamp(58px, 12vw, 180px); line-height: 1; }
+.waiting-room-kiosk-current .waiting-room-kiosk-card > b { grid-row: auto; max-width: 100%; overflow: hidden; font-size: clamp(48px, 9vw, 144px); text-overflow: ellipsis; white-space: nowrap; }
 .waiting-room-kiosk-priority { grid-column: 1 / -1; padding: 8px 14px; border-radius: 5px; background: var(--blue-pale); color: var(--blue-dark); font-size: clamp(16px, 2.2vw, 28px); font-weight: 700; }
 .waiting-room-kiosk-priority.priority { background: #fff1ef; color: #a62f27; }
 .waiting-room-display-empty { margin: 0; color: var(--muted); font-size: clamp(24px, 4vw, 54px); text-align: center; }
@@ -1611,7 +1611,7 @@ html[data-theme="dark"] .sidebar {
   .waiting-room-operator-row { grid-template-columns: auto minmax(0, 1fr); }
   .waiting-room-operator-row > small { grid-column: 2; text-align: left; }
   .waiting-room-operator-row .waiting-room-actions { justify-content: flex-start; }
-  .waiting-room-kiosk-current .waiting-room-kiosk-card { min-height: 45vh; grid-template-columns: 1fr; justify-items: center; border-left-width: 8px; text-align: center; }
+  .waiting-room-kiosk-current .waiting-room-kiosk-card { min-height: 45vh; grid-template-columns: minmax(0, 1fr); justify-items: center; border-left-width: 8px; text-align: center; }
   .waiting-room-kiosk-current .waiting-room-kiosk-card > strong,
   .waiting-room-kiosk-current .waiting-room-kiosk-card > b { grid-row: auto; }
   .waiting-room-kiosk-current .waiting-room-kiosk-card > strong { font-size: clamp(50px, 14vw, 100px); }
@@ -1624,15 +1624,29 @@ html[data-theme="dark"] .sidebar {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-summary-grid, .waiting-room-counts) > article {
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article {
   animation: info-card-enter 260ms ease both;
 }
-:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-summary-grid, .waiting-room-counts) > article:nth-child(2) { animation-delay: 35ms; }
-:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-summary-grid, .waiting-room-counts) > article:nth-child(3) { animation-delay: 70ms; }
-:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-summary-grid, .waiting-room-counts) > article:nth-child(4) { animation-delay: 105ms; }
-:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-summary-grid, .waiting-room-counts) > article:nth-child(5) { animation-delay: 140ms; }
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article {
+  min-height: 82px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:hover {
+  transform: translateY(-2px);
+  border-color: #a9c6d3;
+  box-shadow: var(--shadow);
+}
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(2) { animation-delay: 35ms; }
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(3) { animation-delay: 70ms; }
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(4) { animation-delay: 105ms; }
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(5) { animation-delay: 140ms; }
 @media (prefers-reduced-motion: reduce) {
-  :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-summary-grid, .waiting-room-counts) > article { animation: none; }
+  :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article { animation: none; transition: none; }
 }
 @media (max-width: 520px) { .xray-page .laboratory-exam-grid { grid-template-columns: 1fr; } }
 

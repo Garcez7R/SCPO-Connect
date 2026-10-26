@@ -423,8 +423,11 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   const previousCalledRef = useRef<Set<string> | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const kioskAlertsEnabledRef = useRef(false)
+  const queueRefreshInProgressRef = useRef(false)
 
   const loadQueue = useCallback(async () => {
+    if (queueRefreshInProgressRef.current) return
+    queueRefreshInProgressRef.current = true
     try {
       if (kioskMode) {
         const response = await fetch('/api/v1/reception/public/queue', { cache: 'no-store' })
@@ -558,13 +561,14 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Não foi possível atualizar a fila de chamadas.')
     } finally {
+      queueRefreshInProgressRef.current = false
       setLoading(false)
     }
   }, [kioskMode])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadQueue(), 0)
-    const interval = window.setInterval(() => void loadQueue(), 15_000)
+    const interval = window.setInterval(() => void loadQueue(), 5_000)
     const clockInterval = kioskMode ? window.setInterval(() => setClock(new Date()), 1000) : undefined
     return () => {
       window.clearTimeout(timer)
@@ -736,10 +740,10 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
           : currentCall
             ? <article className={`waiting-room-kiosk-card waiting-room-kiosk-card-${currentCall.queue_type}`}>
               <span className={`waiting-room-kiosk-priority ${currentCall.queue_type}`}>
-                {currentCall.queue_type === 'priority' ? 'Atendimento prioritário' : 'Atendimento comum'}
+                {currentCall.queue_type === 'priority' ? 'Atendimento prioritário' : 'Atendimento'}
               </span>
               <strong>{currentCall.code}</strong>
-              <b>{currentCall.first_name ?? currentCall.patient_name.trim().split(/\s+/)[0]}</b>
+              <b style={{ fontSize: `clamp(16px, calc(72cqi / ${Math.max((currentCall.first_name ?? currentCall.patient_name.trim().split(/\s+/)[0]).length, 1)}), 144px)` }}>{currentCall.first_name ?? currentCall.patient_name.trim().split(/\s+/)[0]}</b>
             </article>
             : <p className="waiting-room-display-empty">Aguarde. Em breve uma chamada será exibida.</p>}
       </section>

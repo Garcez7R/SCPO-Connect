@@ -139,13 +139,13 @@ function TrendChart({
 }
 
 export default function VitalTrendsDashboard({ patientReference, patientName }: { patientReference: string; patientName?: string }) {
-  const [period, setPeriod] = useState<'6' | '24' | '168' | '720' | 'custom'>('168')
+  const [period, setPeriod] = useState<'' | '6' | '24' | '168' | '720' | 'custom'>('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [pressureView, setPressureView] = useState<PressureView>('both')
   const [trendsView, setTrendsView] = useState<TrendsView>('charts')
   const [data, setData] = useState<TrendResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null)
   const incompleteRange = period === 'custom' && (!fromDate || !toDate)
@@ -155,6 +155,7 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
     if (period === 'custom' && (incompleteRange || invalidRange)) {
       return
     }
+    if (!period) return
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setLoading(true)
@@ -207,7 +208,7 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
     : [pressureView === 'systolic' ? series.systolic : series.diastolic]
   const periodLabel = data
     ? `${dateTime(data.range_start)} a ${dateTime(data.range_end)}`
-    : 'Período selecionado'
+    : period ? 'Período selecionado' : 'Período não selecionado'
 
   function printTable() {
     const popup = window.open('', '_blank', 'width=1100,height=800')
@@ -256,11 +257,11 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
   }
 
   return <section className="vital-trends-dashboard" aria-label="Painel longitudinal de sinais vitais">
-    <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>O eixo horizontal representa data e horário da aferição; o vertical representa o valor medido. A visualização não interpreta valores nem recomenda condutas.</p></div><div className="vital-trends-period"><label className="field"><span className="field-label">Período</span><select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option value="6">Últimas 6 horas</option><option value="24">Últimas 24 horas</option><option value="168">Últimos 7 dias</option><option value="720">Últimos 30 dias</option><option value="custom">Selecionar período</option></select></label>{period === 'custom' && <><label className="field"><span className="field-label">De (data e hora)</span><input type="datetime-local" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até (data e hora)</span><input type="datetime-local" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label></>}</div></div>
+    <div className="vital-trends-heading"><div><p className="eyebrow">EVOLUÇÃO LONGITUDINAL</p><h2>Painel de sinais vitais</h2><p>O eixo horizontal representa data e horário da aferição; o vertical representa o valor medido. A visualização não interpreta valores nem recomenda condutas.</p></div><div className="vital-trends-period"><label className="field"><span className="field-label">Período</span><select value={period} onChange={(event) => setPeriod(event.target.value as typeof period)}><option value="">Selecione um período</option><option value="6">Últimas 6 horas</option><option value="24">Últimas 24 horas</option><option value="168">Últimos 7 dias</option><option value="720">Últimos 30 dias</option><option value="custom">Selecionar período</option></select></label>{period === 'custom' && <><label className="field"><span className="field-label">De (data e hora)</span><input type="datetime-local" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até (data e hora)</span><input type="datetime-local" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label></>}</div></div>
     {incompleteRange && <p className="field-hint">Informe a data e a hora iniciais e finais para consultar o período.</p>}
     {invalidRange && <ToastMessage variant="error">A data e hora inicial devem ser anteriores ou iguais à data e hora final.</ToastMessage>}
     {!incompleteRange && !invalidRange && error && <ToastMessage variant="error">{error}</ToastMessage>}
-    {incompleteRange ? <div className="history-empty">Selecione o período completo para consultar as medições.</div> : invalidRange ? null : loading ? <div className="history-empty">Carregando evolução…</div> : <>
+    {!period ? <div className="history-empty">Selecione um período para consultar as medições.</div> : incompleteRange ? <div className="history-empty">Selecione o período completo para consultar as medições.</div> : invalidRange ? null : loading ? <div className="history-empty">Carregando evolução…</div> : <>
       <div className="vital-trends-meta"><span>{recordCount} {recordCount === 1 ? 'coleta' : 'coletas'} no período</span><span>Atualizado em {data ? dateTime(data.generated_at) : '—'}</span></div>
       {recordCount === 0 ? <div className="history-empty"><Activity size={20} /><span>Não há sinais registrados neste período.</span></div> : <>
         <p className="vital-trends-gap-note">Os pontos são posicionados pelo horário de aferição. Os intervalos entre eles representam tempo sem coleta registrada e não indicam estabilidade.</p>
