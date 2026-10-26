@@ -759,12 +759,12 @@ async def delete_user(
         if not service_token:
             raise HTTPException(status_code=503, detail="Não foi possível remover o perfil médico associado")
         try:
-            profile_response = httpx.delete(
-                f"{nursing_url}/internal/v1/physicians/profiles/{user.id}",
-                headers={"X-Service-Token": service_token},
-                timeout=3.0,
-            )
-            profile_response.raise_for_status()
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                profile_response = await client.delete(
+                    f"{nursing_url}/internal/v1/physicians/profiles/{user.id}",
+                    headers={"X-Service-Token": service_token},
+                )
+                profile_response.raise_for_status()
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=503, detail="Não foi possível remover o perfil médico associado") from exc
     await record_audit_event(principal, user.id, "user_deleted", db)

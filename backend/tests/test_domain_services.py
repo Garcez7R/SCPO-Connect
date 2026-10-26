@@ -360,6 +360,43 @@ def test_app_admin_can_delete_non_superuser_account(
     assert [user["username"] for user in access.list_users(request, db)["users"]] == ["admin"]
 
 
+def test_system_superuser_can_delete_non_superuser_account_but_not_themselves(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    root = access._new_user("rgarcez", "Superadministrador", ["management"], access._all_permissions())
+    root.is_superuser = True
+    target = access._new_user("nurse", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
+    db.add_all([root, target])
+    db.commit()
+    token = issue_session(root.id, "active", root.session_version)
+
+    def request_for(user_id: str) -> Request:
+        return Request({
+            "type": "http",
+            "method": "DELETE",
+            "path": f"/api/v1/access/users/{user_id}",
+            "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+            "query_string": b"",
+        })
+
+    async def record_audit(*_args) -> None:
+        return None
+
+    monkeypatch.setattr(access, "record_audit_event", record_audit)
+
+    result = asyncio.run(access.delete_user(target.id, request_for(target.id), db))
+
+    assert result["message"] == "Conta excluída"
+    assert db.get(access.AppUser, target.id) is None
+    assert [user["username"] for user in access.list_system_admin_users(request_for(target.id), db)["users"]] == []
+    with pytest.raises(HTTPException) as cannot_delete_self:
+        asyncio.run(access.delete_user(root.id, request_for(root.id), db))
+    assert cannot_delete_self.value.status_code == 403
+
+
 def test_session_refresh_keeps_the_original_expiration(
     domain_database: dict[str, Session],
     monkeypatch: pytest.MonkeyPatch,

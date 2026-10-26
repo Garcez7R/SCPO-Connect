@@ -3650,6 +3650,7 @@ function SystemAdminPage({ userId }: { userId: string }) {
   const [users, setUsers] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState('')
   const [error, setError] = useState('')
   const [resetAccounts, setResetAccounts] = useState<{ username: string; temporary_password: string }[]>([])
   const loadUsers = useCallback(async () => {
@@ -3701,11 +3702,26 @@ function SystemAdminPage({ userId }: { userId: string }) {
       setBusy(false)
     }
   }
+  async function deleteSystemUser(user: Account) {
+    if (!window.confirm(`Excluir permanentemente a conta ${user.username} (${user.name})? Esta ação não pode ser desfeita.`)) return
+    setBusy(true)
+    setDeletingUserId(user.id)
+    setError('')
+    try {
+      await readApiResponse(await fetch(`/api/v1/access/users/${encodeURIComponent(user.id)}`, { method: 'DELETE' }))
+      await loadUsers()
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Não foi possível excluir a conta.')
+    } finally {
+      setBusy(false)
+      setDeletingUserId('')
+    }
+  }
   return <section className="system-admin-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema"><button className={`button ${tab === 'backup' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'backup'} onClick={() => setTab('backup')}>Backup</button><button className={`button ${tab === 'recovery' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'recovery'} onClick={() => setTab('recovery')}>Recuperação de acesso</button></div>
     {tab === 'backup' && <BackupExportPanel />}
-    {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel"><div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha e o MFA atuais serão revogados. Cada usuário receberá uma senha temporária aleatória, de uso único, e deverá configurar novos fatores de autenticação.</p></div></div><div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · a conta superadministradora é sempre excluída</span><button className="button button-danger" type="button" onClick={() => void resetAllCredentials()} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>Mostradas somente nesta sessão. Copie e entregue cada senha ao titular por canal seguro; não feche nem atualize a página antes de registrá-las.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}{!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((user) => <article key={user.id}><span>{user.name} · {user.username}{user.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(user)} disabled={busy}>Redefinir senha e MFA</button></article>)}</div></details>}</section>}
+    {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel"><div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha e o MFA atuais serão revogados. Cada usuário receberá uma senha temporária aleatória, de uso único, e deverá configurar novos fatores de autenticação.</p></div></div><div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · a conta superadministradora é sempre excluída</span><button className="button button-danger" type="button" onClick={() => void resetAllCredentials()} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>Mostradas somente nesta sessão. Copie e entregue cada senha ao titular por canal seguro; não feche nem atualize a página antes de registrá-las.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}{!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((account) => <article key={account.id}><span>{account.name} · {account.username}{account.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(account)} disabled={busy}>Redefinir senha e MFA</button><button className="button button-danger" type="button" onClick={() => void deleteSystemUser(account)} disabled={busy}>{deletingUserId === account.id ? 'Excluindo…' : 'Excluir conta'}</button></article>)}</div></details>}</section>}
   </section>
 }
 

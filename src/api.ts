@@ -11,7 +11,7 @@ function readableApiError(detail: unknown): string {
       activity_type: 'Modalidade',
       activity_report: 'Relatório da atividade',
       asset_tag: 'Número patrimonial',
-      field: 'Campo informado',
+      field: 'Dados da solicitação',
       due_date: 'Próxima data',
       ends_at: 'Término',
       location: 'Local',
@@ -19,6 +19,8 @@ function readableApiError(detail: unknown): string {
       patient_reference: 'Paciente',
       participant_references: 'Participantes',
       participants: 'Participantes',
+      attendance: 'Presença',
+      professional_activity: 'Atividade profissional',
       procedure: 'Procedimento',
       starts_at: 'Início',
       status: 'Situação',
@@ -29,8 +31,10 @@ function readableApiError(detail: unknown): string {
     const issues = detail.flatMap((issue) => {
       if (!issue || typeof issue !== 'object') return []
       const item = issue as { loc?: unknown[]; msg?: unknown }
-      const field = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').at(-1) : undefined
-      const label = typeof field === 'string' ? fieldLabels[field] ?? field.replaceAll('_', ' ') : 'Campo'
+      const field = Array.isArray(item.loc)
+        ? item.loc.filter((part): part is string => typeof part === 'string' && part !== 'body').at(-1)
+        : undefined
+      const label = typeof field === 'string' ? fieldLabels[field] ?? field.replaceAll('_', ' ') : 'Dados da solicitação'
       const message = typeof item.msg === 'string' ? item.msg : 'valor inválido'
       const translatedMessage = /^field required$/i.test(message)
         ? `Campo obrigatório: ${label}.`

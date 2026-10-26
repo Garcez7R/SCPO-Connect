@@ -68,7 +68,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding-right: 10px;
   padding-left: 10px;
 }
-.sidebar::before { position: absolute; z-index: 0; right: 0; bottom: 18px; width: 100%; height: min(58%, 480px); background: url("/sidebar-health-watermark.svg") right 8px bottom / min(100%, 250px) auto no-repeat; content: ""; opacity: .14; pointer-events: none; }
+.sidebar::before { position: absolute; z-index: 0; inset: 0; background: url("/sidebar-health-watermark.svg") 10px 14px / 88px 88px repeat; content: ""; opacity: .22; pointer-events: none; }
 .sidebar > * { position: relative; z-index: 1; }
 .sidebar::-webkit-scrollbar { width: 5px; }
 .sidebar::-webkit-scrollbar-thumb { border-radius: 5px; background: #cbd7de; }
@@ -1649,7 +1649,7 @@ html[data-theme="dark"] .sidebar {
     linear-gradient(160deg, rgb(49 78 88 / 20%), transparent 42%),
     var(--surface);
 }
-html[data-theme="dark"] .sidebar::before { opacity: .10; }
+html[data-theme="dark"] .sidebar::before { opacity: .16; }
 .waiting-room-lists { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .waiting-room-operator-column { display: grid; min-width: 0; gap: 10px; }
 .waiting-room-operator-column > h3 { margin: 0; color: var(--ink); font-size: 15px; }
