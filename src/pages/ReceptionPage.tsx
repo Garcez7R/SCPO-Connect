@@ -409,16 +409,38 @@ const priorityOrder: Record<EmergencyArrival['clinical_priority'], number> = {
   unassigned: 3,
 }
 
+function readScreensaverPreference() {
+  try {
+    return {
+      enabled: window.localStorage.getItem('scpo-reception-screensaver-enabled') === 'true',
+      error: '',
+    }
+  } catch (storageError) {
+    return {
+      enabled: false,
+      error: storageError instanceof Error
+        ? `Não foi possível ler a configuração da proteção de tela: ${storageError.message}`
+        : 'Não foi possível ler a configuração da proteção de tela.',
+    }
+  }
+}
+
 function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boolean; kioskMode?: boolean }) {
+  const screensaverStorageKey = 'scpo-reception-screensaver-enabled'
+  const [screensaverPreference] = useState(readScreensaverPreference)
   const [items, setItems] = useState<WaitingRoomItem[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState('')
   const [isCallHighlighting, setIsCallHighlighting] = useState(false)
   const [clock, setClock] = useState(() => new Date())
+  const [screensaverEnabled, setScreensaverEnabled] = useState(screensaverPreference.enabled)
+  const [screensaverImages, setScreensaverImages] = useState<string[]>([])
+  const [screensaverImageIndex, setScreensaverImageIndex] = useState(0)
+  const [lastNewCallAt, setLastNewCallAt] = useState(() => Date.now())
   const [normalBeforePriority, setNormalBeforePriority] = useState(3)
   const [normalCallsSincePriority, setNormalCallsSincePriority] = useState(0)
   const [savingCadence, setSavingCadence] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(screensaverPreference.error)
   const [notice, setNotice] = useState('')
   const previousCalledRef = useRef<Set<string> | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -434,6 +456,60 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
     if (highlightTimerRef.current !== null) window.clearTimeout(highlightTimerRef.current)
     highlightTimerRef.current = window.setTimeout(() => setIsCallHighlighting(false), 1400)
   }, [])
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === screensaverStorageKey) setScreensaverEnabled(event.newValue === 'true')
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    fetch('/reception-screensaver/manifest.json', { cache: 'no-store' })
+      .then((response) => readApiResponse<{ images?: unknown }>(response))
+      .then((manifest) => {
+        if (!Array.isArray(manifest.images) || !manifest.images.every((image) =>
+          typeof image === 'string'
+          && /^\/reception-screensaver\/[^/]+\.(?:avif|jpe?g|png|webp)$/i.test(image),
+        )) {
+          throw new Error('O manifesto da proteção de tela contém uma lista de imagens inválida.')
+        }
+        if (active) setScreensaverImages(manifest.images)
+      })
+      .catch((manifestError) => {
+        if (active) setError(manifestError instanceof Error ? manifestError.message : 'Não foi possível carregar as imagens da proteção de tela.')
+      })
+    return () => { active = false }
+  }, [])
+
+  function toggleScreensaver() {
+    try {
+      const enabled = !screensaverEnabled
+      window.localStorage.setItem(screensaverStorageKey, String(enabled))
+      setScreensaverEnabled(enabled)
+    } catch (storageError) {
+      setError(storageError instanceof Error ? `Não foi possível salvar a configuração da proteção de tela: ${storageError.message}` : 'Não foi possível salvar a configuração da proteção de tela.')
+    }
+  }
+
+  const screensaverActive = kioskMode
+    && screensaverEnabled
+    && screensaverImages.length > 0
+    && clock.getTime() - lastNewCallAt >= 5 * 60 * 1000
+
+  useEffect(() => {
+    if (!screensaverActive || screensaverImages.length < 2) return
+    const chooseNextImage = () => setScreensaverImageIndex((current) => {
+      let next = current
+      while (next === current) next = Math.floor(Math.random() * screensaverImages.length)
+      return next
+    })
+    chooseNextImage()
+    const interval = window.setInterval(chooseNextImage, 12_000)
+    return () => window.clearInterval(interval)
+  }, [screensaverActive, screensaverImages.length])
 
   const playKioskAlert = useCallback(() => {
     const context = audioContextRef.current ?? new window.AudioContext()
@@ -508,12 +584,15 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   }, [playKioskAlert, speakCall])
 
   const enqueueAnnouncements = useCallback((calls: WaitingRoomItem[], highlight: boolean) => {
-    if (highlight) highlightNewCall()
+    if (highlight) {
+      highlightNewCall()
+      if (kioskMode) setLastNewCallAt(Date.now())
+    }
     calls.forEach((item) => {
       announcementQueueRef.current.push({ item, repeatAfterMs: 3000 }, { item })
     })
     void processAnnouncementQueue()
-  }, [highlightNewCall, processAnnouncementQueue])
+  }, [highlightNewCall, kioskMode, processAnnouncementQueue])
 
   const loadQueue = useCallback(async () => {
     if (queueRefreshInProgressRef.current) return
@@ -758,11 +837,14 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         </div>
         <div className="waiting-room-kiosk-tools">
           <time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(clock)}</time>
+          <button className="button button-secondary waiting-room-screensaver-toggle" type="button" onClick={toggleScreensaver} disabled={!screensaverImages.length} aria-pressed={screensaverEnabled}>{screensaverEnabled ? 'Proteção de tela ativa' : 'Ativar proteção de tela'}</button>
         </div>
       </header>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       <section className="waiting-room-kiosk-current" aria-live="polite" aria-atomic="true">
-        {loading && !items.length
+        {screensaverActive
+          ? <img className="waiting-room-screensaver-image" src={screensaverImages[screensaverImageIndex]} alt="Imagem institucional da sala de espera" />
+          : loading && !items.length
           ? <p className="waiting-room-display-empty">Carregando chamada…</p>
           : currentCall
             ? <article className={`waiting-room-kiosk-card waiting-room-kiosk-card-${currentCall.queue_type}`}>
@@ -780,7 +862,8 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
 
   return <>
   <section className="waiting-room-board patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">Chame o próximo paciente automaticamente ou escolha alguém específico nas filas comum e prioritária. A tela pública abre sem sessão de operador em <code>/painel</code>.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Painel</button></div></div>
+    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">Chame o próximo paciente automaticamente ou escolha alguém específico nas filas comum e prioritária. A tela pública abre sem sessão de operador em <code>/painel</code>.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={toggleScreensaver} disabled={!screensaverImages.length} aria-pressed={screensaverEnabled}>{screensaverEnabled ? 'Proteção de tela ativa' : 'Ativar proteção de tela'}</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Painel</button></div></div>
+    {!screensaverImages.length && <p className="field-hint">Para habilitar a proteção de tela, adicione imagens institucionais aprovadas em <code>public/reception-screensaver/</code> e reinicie o painel.</p>}
     {canUpdate && <div className="waiting-room-call-controls"><div><strong>Chamar próximo paciente</strong><span>{normalCallsSincePriority} de {normalBeforePriority} chamada(s) comum(ns) desde a última prioritária</span></div><div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('automatic')}>{updating === 'next' ? 'Chamando…' : 'Próximo automático'}</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('common')}>Chamar comum</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('priority')}>Chamar prioritário</button></div><form className="waiting-room-cadence" onSubmit={(event) => void saveCallCadence(event)}><label className="field"><span className="field-label">Comuns antes de prioritário</span><input type="number" min={1} max={20} value={normalBeforePriority} onChange={(event) => setNormalBeforePriority(Number(event.target.value))} /></label><button className="button button-secondary" type="submit" disabled={savingCadence || normalBeforePriority < 1 || normalBeforePriority > 20}>{savingCadence ? 'Salvando…' : 'Salvar alternância'}</button></form></div>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}

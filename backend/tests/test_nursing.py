@@ -275,6 +275,27 @@ def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
     )
     assert history["total"] == 1
     assert history["encounters"][0]["id"] == created["id"]
+    manager = DemoPrincipal(
+        "manager-id", "manager", "Gestor de teste", "management",
+        ["management"], {"management": ["consultar"]},
+    )
+    resolved_labels = nursing.resolve_management_audit_target_labels(
+        nursing.AuditTargetLabelsPayload(
+            targets=[
+                nursing.AuditTargetReference(
+                    module="reception",
+                    action="outpatient_encounter_created",
+                    target_id=str(created["id"]),
+                ),
+            ]
+        ),
+        manager,
+        nursing_db,
+    )
+    assert resolved_labels["labels"] == {
+        f"reception:outpatient_encounter_created:{created['id']}":
+            "Atendimento ambulatorial · Paciente ambulatorial",
+    }
     queue = nursing.list_emergency_arrivals(
         receptionist, nursing_db, limit=25, offset=0
     )
@@ -753,6 +774,10 @@ def test_nursing_triage_snapshots_are_append_only_and_feed_physician_queue(
         nursing_db, principal=nurse, triaged_only=True
     )
     assert untriaged["arrivals"] == []
+    nursing_queue = nursing.list_triage_arrivals(
+        nursing_db, principal=nurse, triaged_only=False
+    )
+    assert len(nursing_queue["arrivals"]) == 1
 
     with pytest.raises(HTTPException) as future_measurement:
         nursing.create_nursing_triage(
@@ -796,11 +821,49 @@ def test_nursing_triage_snapshots_are_append_only_and_feed_physician_queue(
     assert nursing_db.query(nursing.NursingTriage).filter_by(arrival_id=arrival["id"]).count() == 2
     assert nursing_db.get(nursing.Patient, patient["reference"]).allergies == ""
 
+    nursing_queue = nursing.list_triage_arrivals(
+        nursing_db, principal=nurse, triaged_only=False
+    )
+    assert nursing_queue["arrivals"] == []
     physician_queue = nursing.list_triage_arrivals(
         nursing_db, principal=nurse, triaged_only=True
     )
     assert len(physician_queue["arrivals"]) == 1
     assert physician_queue["arrivals"][0]["triage"]["id"] == updated["triage"]["id"]
+
+    manager = DemoPrincipal(
+        "manager-id", "manager", "Gestor de teste", "management",
+        ["management"], {"management": ["consultar"]},
+    )
+    triage_report = nursing.list_management_triage_report(
+        manager, nursing_db, limit=10, offset=0
+    )
+    assert triage_report["total"] == 2
+    assert triage_report["triages"][0]["patient_name"] == "Paciente de teste"
+    assert triage_report["triages"][-1]["conditions_treatments"] == "Hipertensão relatada"
+
+    resolved_labels = nursing.resolve_management_audit_target_labels(
+        nursing.AuditTargetLabelsPayload(
+            targets=[
+                nursing.AuditTargetReference(
+                    module="nursing",
+                    action="nursing_triage_recorded",
+                    target_id=str(arrival["id"]),
+                ),
+                nursing.AuditTargetReference(
+                    module="nursing",
+                    action="patient_vitals_recorded",
+                    target_id=str(patient["reference"]),
+                ),
+            ]
+        ),
+        manager,
+        nursing_db,
+    )
+    assert resolved_labels["labels"] == {
+        f"nursing:nursing_triage_recorded:{arrival['id']}": "Triagem · Paciente de teste",
+        f"nursing:patient_vitals_recorded:{patient['reference']}": "Paciente · Paciente de teste",
+    }
 
     arrival_record = nursing_db.get(nursing.EmergencyArrival, arrival["id"])
     assert arrival_record is not None

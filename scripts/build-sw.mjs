@@ -29,7 +29,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(request).catch(async () => (await caches.match('/offline.html')) || Response.error()));
     return;
   }
-  if (!/\\.(?:js|css|png|svg|woff2?)$/.test(url.pathname)) return;
+  if (!/\\.(?:js|css|avif|jpe?g|png|svg|webp|woff2?)$/.test(url.pathname)) return;
   event.respondWith((async () => {
     const cached = await caches.match(request);
     if (cached) return cached;

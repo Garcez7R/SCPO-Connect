@@ -1624,6 +1624,7 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
   .waiting-room-kiosk-brand strong { font-size: clamp(18px, 4.5vw, 25px); }
   .waiting-room-kiosk-brand span { font-size: 14px; }
   .waiting-room-kiosk-tools time { font-size: 20px; }
+  .waiting-room-screensaver-toggle { max-width: 100%; }
   .waiting-room-kiosk-groups { grid-template-columns: 1fr; }
   .waiting-room-kiosk-card { min-height: clamp(125px, 20vh, 190px); }
 }
@@ -1631,6 +1632,7 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
   .waiting-room-kiosk { gap: 12px; padding: 14px; }
   .waiting-room-kiosk > header { flex-direction: column; }
   .waiting-room-kiosk-tools { align-self: flex-end; }
+  .waiting-room-screensaver-image { max-height: 60vh; }
   .waiting-room-kiosk-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .waiting-room-kiosk-card { min-height: 125px; }
   .waiting-room-kiosk-card > strong { font-size: clamp(30px, 9vw, 44px); }
@@ -1662,6 +1664,8 @@ html[data-theme="dark"] .sidebar::before { opacity: .16; }
 .waiting-room-code.priority { color: var(--red); }
 .waiting-room-code.common { color: var(--blue-dark); }
 .waiting-room-kiosk-current { display: grid; min-height: 0; place-items: center; }
+.waiting-room-screensaver-toggle { max-width: 240px; min-height: 38px; font-size: 14px; }
+.waiting-room-screensaver-image { display: block; width: 100%; height: 100%; max-height: min(70vh, 900px); object-fit: contain; border-radius: 12px; background: var(--surface); }
 .waiting-room-kiosk-call-highlight::after { position: fixed; z-index: 1000; inset: 0; background: rgb(255 191 0 / 48%); content: ""; pointer-events: none; animation: waiting-room-call-flash 1400ms ease-out both; }
 @keyframes waiting-room-call-flash { 0%, 100% { opacity: 0; } 12% { opacity: 1; } 42% { opacity: .55; } }
 .waiting-room-kiosk-current .waiting-room-kiosk-card { container-type: inline-size; width: min(100%, 1500px); min-height: min(58vh, 680px); grid-template-columns: minmax(0, 1fr); justify-items: center; gap: clamp(12px, 2.5vw, 30px); padding: clamp(22px, 5vw, 72px); border-top-width: 0; border-left: 12px solid var(--blue); text-align: center; }
@@ -1932,6 +1936,7 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
   .waiting-room-kiosk-groups, .waiting-room-kiosk-slots { grid-template-columns: 1fr; }
   .waiting-room-kiosk-card { min-height: clamp(135px, 20vh, 220px); }
   .waiting-room-kiosk-tools time { font-size: 22px; }
+  .waiting-room-screensaver-image { max-height: 58vh; }
   .pharmacy-movement-row { grid-template-columns: 1fr 1fr; }
   .pharmacy-movement-author { grid-column: 1 / -1; text-align: left; }
 }

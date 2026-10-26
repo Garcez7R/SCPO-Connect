@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/build-reception-screensaver-manifest.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/build-reception-screensaver-manifest.mjs",
     "build": "tsc && vite build && node scripts/build-sw.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

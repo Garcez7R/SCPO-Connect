@@ -12,6 +12,7 @@ node_modules
 dist
 dist-ssr
 *.local
+public/reception-screensaver/manifest.json
 !Caddyfile.local
 .venv/
 .pytest_cache/

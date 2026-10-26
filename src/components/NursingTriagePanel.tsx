@@ -125,8 +125,9 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
           }),
         }),
       )
-      setArrivals((current) => current.map((item) => item.arrival_id === updated.arrival_id ? updated : item))
-      setForm(toForm(updated))
+      setArrivals((current) => current.filter((item) => item.arrival_id !== updated.arrival_id))
+      setSelectedArrivalId('')
+      setForm(emptyTriageForm())
       setNotice('Triagem registrada para este atendimento; o Médico já pode consultá-la.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar a triagem.')
@@ -135,7 +136,7 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
     }
   }
 
-  const pendingCount = arrivals.filter((arrival) => !arrival.triage).length
+  const priorityCount = arrivals.filter((arrival) => arrival.queue_type === 'priority').length
 
   return <section className="nursing-triage-panel">
     <div className="section-heading">
@@ -145,7 +146,7 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
     <div className="clinical-note"><UserRound size={17} /><span>Este registro não altera o cadastro do paciente, não cria diagnósticos nem classifica risco automaticamente. Siga o protocolo institucional de triagem.</span></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-    <div className="nursing-triage-summary"><strong>{arrivals.length}</strong><span>atendimentos abertos</span><strong>{pendingCount}</strong><span>sem triagem registrada</span></div>
+    <div className="nursing-triage-summary"><strong>{arrivals.length}</strong><span>aguardando triagem</span><strong>{priorityCount}</strong><span>prioritários na fila</span></div>
     {loading ? <p className="history-empty">Carregando chegadas da Recepção…</p> : !arrivals.length
       ? <p className="history-empty">Não há chegadas em andamento para triar.</p>
       : <div className="nursing-triage-layout">

@@ -2427,6 +2427,8 @@ def list_triage_arrivals(
     )
     if triaged_only:
         query = query.where(NursingTriage.id.is_not(None))
+    else:
+        query = query.where(NursingTriage.id.is_(None))
     records = db.execute(
         query.order_by(
             case(
@@ -2528,6 +2530,127 @@ def list_physician_triage_arrivals(
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     return list_triage_arrivals(db, principal=principal, triaged_only=True)
+
+
+@app.get("/api/v1/management/reports/triages")
+def list_management_triage_report(
+    principal: Annotated[
+        DemoPrincipal,
+        Depends(require_demo_role("management", "admin", "oversight")),
+    ],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    query = (
+        select(NursingTriage, EmergencyArrival)
+        .join(EmergencyArrival, EmergencyArrival.id == NursingTriage.arrival_id)
+        .order_by(NursingTriage.created_at.desc(), NursingTriage.id.desc())
+    )
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    records = db.execute(query.limit(limit).offset(offset)).all()
+    emit_audit_event(
+        principal,
+        "management",
+        "nursing_triage_report_read",
+        "triage_history",
+        db=db,
+    )
+    return {
+        "triages": [
+            {
+                "id": triage.id,
+                "arrival_id": arrival.id,
+                "patient_reference": triage.patient_reference,
+                "patient_name": arrival.patient_name,
+                "arrival_reason": arrival.reason,
+                "queue_type": arrival.queue_type,
+                "allergies_status": triage.allergies_status,
+                "allergies": triage.allergies,
+                "conditions_treatments": triage.conditions_treatments,
+                "vital_values": triage.vital_values,
+                "glucose_unit": triage.glucose_unit,
+                "measured_at": triage.measured_at.isoformat() if triage.measured_at else None,
+                "registered_by": triage.actor_name,
+                "created_at": triage.created_at.isoformat(),
+            }
+            for triage, arrival in records
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+class AuditTargetReference(BaseModel):
+    module: str = Field(min_length=1, max_length=40)
+    action: str = Field(min_length=1, max_length=80)
+    target_id: str = Field(min_length=1, max_length=128)
+
+
+class AuditTargetLabelsPayload(BaseModel):
+    targets: list[AuditTargetReference] = Field(max_length=100)
+
+
+@app.post("/api/v1/management/audit/target-labels")
+def resolve_management_audit_target_labels(
+    payload: AuditTargetLabelsPayload,
+    principal: Annotated[
+        DemoPrincipal,
+        Depends(require_demo_role("management", "admin", "oversight")),
+    ],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, dict[str, str]]:
+    target_ids = {target.target_id for target in payload.targets}
+    labels: dict[str, str] = {}
+    patient_rows = db.scalars(
+        select(Patient).where(Patient.reference.in_(target_ids))
+    ).all() if target_ids else []
+    patient_labels = {patient.reference: f"Paciente · {patient.name}" for patient in patient_rows}
+
+    triage_arrival_ids = {
+        target.target_id
+        for target in payload.targets
+        if target.module == "nursing" and target.action == "nursing_triage_recorded"
+    }
+    arrival_rows = db.scalars(
+        select(EmergencyArrival).where(EmergencyArrival.id.in_(triage_arrival_ids))
+    ).all() if triage_arrival_ids else []
+    arrival_labels = {
+        arrival.id: f"Triagem · {arrival.patient_name}"
+        for arrival in arrival_rows
+    }
+
+    encounter_ids = {
+        int(target.target_id)
+        for target in payload.targets
+        if target.module == "reception"
+        and target.action == "outpatient_encounter_created"
+        and target.target_id.isdecimal()
+    }
+    encounter_rows = db.scalars(
+        select(OutpatientEncounter).where(OutpatientEncounter.id.in_(encounter_ids))
+    ).all() if encounter_ids else []
+    encounter_labels = {
+        str(encounter.id): (
+            f"Atendimento ambulatorial · "
+            f"{encounter.patient_snapshot.get('name', 'Paciente sem nome')}"
+        )
+        for encounter in encounter_rows
+    }
+
+    for target in payload.targets:
+        key = f"{target.module}:{target.action}:{target.target_id}"
+        label = (
+            arrival_labels.get(target.target_id)
+            if target.module == "nursing" and target.action == "nursing_triage_recorded"
+            else encounter_labels.get(target.target_id)
+            if target.module == "reception" and target.action == "outpatient_encounter_created"
+            else patient_labels.get(target.target_id)
+        )
+        if label:
+            labels[key] = label
+    return {"labels": labels}
 
 
 @app.get("/api/v1/reception/public/queue")
@@ -3110,7 +3233,10 @@ def update_reception_appointment_status(
 
 @app.get("/api/v1/reception/encounters")
 def list_outpatient_encounters(
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception", "nursing", "management"))],
+    principal: Annotated[
+        DemoPrincipal,
+        Depends(require_demo_role("reception", "nursing", "management", "admin", "oversight")),
+    ],
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

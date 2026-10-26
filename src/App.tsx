@@ -72,8 +72,8 @@ const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds
 const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária', triage: 'Triagem' }
 const adminTabValues = ['users', 'reports', 'audit'] as const
 const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Administração do aplicativo', reports: 'Relatórios', audit: 'Auditoria de ações' }
-const managementTabValues = ['overview', 'tasks', 'beds', 'governance', 'shortcuts'] as const
-const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', governance: 'Governança', shortcuts: 'Acesso rápido' }
+const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'governance', 'shortcuts'] as const
+const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios' }
 const systemAdminTabValues = ['backup', 'recovery'] as const
@@ -2736,7 +2736,7 @@ function AdminPage({ user }: { user: AuthUser }) {
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
     {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
     {resetPasswordTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !resettingPassword) { setResetPasswordTarget(null); setTemporaryPassword('') } }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-reset-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CREDENCIAIS</p><h2 id="credential-reset-title">{temporaryPassword ? 'Senha temporária gerada' : 'Redefinir senha?'}</h2></div></div>{temporaryPassword ? <><p>A senha atual e as sessões foram invalidadas. Entregue esta senha temporária diretamente a <strong>{resetPasswordTarget.name}</strong> por canal seguro. A troca será obrigatória no próximo acesso; o MFA permanece configurado.</p><code className="credential-reset-value">{temporaryPassword}</code><div className="form-actions"><button className="button button-primary" type="button" onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Concluir</button></div></> : <><p>Será gerada uma senha de uso único para <strong>{resetPasswordTarget.name}</strong>. A senha atual e todas as sessões serão invalidadas; a troca será obrigatória no próximo acesso. O MFA permanecerá configurado.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={resettingPassword} onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Cancelar</button><button className="button button-danger" type="button" disabled={resettingPassword} onClick={() => void confirmPasswordReset()}>{resettingPassword ? 'Redefinindo…' : 'Confirmar redefinição'}</button></div></>}</section></div>}
-    {deleteUserTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingUser) setDeleteUserTarget(null) }}><section className="patient-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-user-title"><div><p className="eyebrow">ADMINISTRAÇÃO · CONTAS</p><h2 id="delete-user-title">Excluir usuário?</h2></div><p>A conta de <strong>{deleteUserTarget.name}</strong> e seu acesso serão removidos. Essa ação não pode ser desfeita.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={deletingUser} onClick={() => setDeleteUserTarget(null)}>Cancelar</button><button className="button button-danger" type="button" disabled={deletingUser} onClick={() => void confirmUserDelete()}>{deletingUser ? 'Excluindo…' : 'Excluir conta'}</button></div></section></div>}
+    {deleteUserTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingUser) setDeleteUserTarget(null) }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-user-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CONTAS</p><h2 id="delete-user-title">Excluir usuário?</h2></div></div><p>A conta de <strong>{deleteUserTarget.name}</strong> e seu acesso serão removidos permanentemente. O histórico de auditoria permanece preservado. Essa ação não pode ser desfeita.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={deletingUser} onClick={() => setDeleteUserTarget(null)}>Cancelar</button><button className="button button-danger" type="button" disabled={deletingUser} onClick={() => void confirmUserDelete()}>{deletingUser ? 'Excluindo…' : 'Confirmar exclusão'}</button></div></section></div>}
   </section>
 }
 
@@ -3110,6 +3110,8 @@ const adminReportSources = [
   { id: 'patient-status', label: 'Administração · acompanhamento de pacientes', endpoint: '/api/v1/management/patient-status', collection: 'statuses' },
   { id: 'stock', label: 'Farmácia · alertas de estoque', endpoint: '/api/v1/pharmacy/stock-alerts', collection: 'alerts' },
   { id: 'arrivals', label: 'Recepção · chegadas', endpoint: '/api/v1/reception/arrivals', collection: 'arrivals' },
+  { id: 'triages', label: 'Enfermagem · triagens', endpoint: '/api/v1/management/reports/triages', collection: 'triages' },
+  { id: 'outpatient', label: 'Recepção · atendimentos ambulatoriais', endpoint: '/api/v1/reception/encounters', collection: 'encounters' },
   { id: 'nutrition', label: 'Nutrição · avaliações', endpoint: '/api/v1/nursing/nutrition', collection: 'records' },
   { id: 'therapy', label: 'Oficina Terapêutica · atividades', endpoint: '/api/v1/therapy/activities', collection: 'activities' },
   { id: 'social', label: 'Serviço Social · encaminhamentos', endpoint: '/api/v1/social/referrals', collection: 'referrals' },
@@ -3129,6 +3131,8 @@ const adminReportPageSizes: Partial<Record<(typeof adminReportSources)[number]['
   nutrition: 100,
   therapy: 200,
   arrivals: 100,
+  triages: 100,
+  outpatient: 100,
   hygiene: 500,
 }
 
@@ -3177,6 +3181,89 @@ function reportRecordText(record: AdminReportRecord, keys: string[]): string {
     if (typeof value === 'string' && value.trim()) return value
     if (typeof value === 'number') return String(value)
     if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
+  }
+  return ''
+}
+
+function reportPatientName(record: AdminReportRecord): string {
+  const directName = reportRecordText(record, ['patient_name', 'name'])
+  if (directName) return directName
+  const snapshot = record.patient_snapshot
+  return typeof snapshot === 'object' && snapshot !== null && !Array.isArray(snapshot)
+    ? reportRecordText(snapshot as AdminReportRecord, ['name'])
+    : ''
+}
+
+function reportClinicalDetails(record: AdminReportRecord, sourceId: string): string {
+  if (sourceId === 'triages') {
+    const allergiesStatus = reportRecordText(record, ['allergies_status'])
+    const allergyLabel = allergiesStatus === 'known' ? 'Alergia conhecida'
+      : allergiesStatus === 'none_known' ? 'Sem alergia conhecida'
+        : allergiesStatus === 'unknown' ? 'Alergias não verificadas' : ''
+    const vitalValues = record.vital_values
+    const vitalLabels: Record<string, string> = {
+      pressure: 'Pressão arterial',
+      heartRate: 'Frequência cardíaca',
+      respiratoryRate: 'Frequência respiratória',
+      saturation: 'Saturação',
+      temperature: 'Temperatura',
+      glucose: 'Glicemia',
+    }
+    const vitals = typeof vitalValues === 'object' && vitalValues !== null && !Array.isArray(vitalValues)
+      ? Object.entries(vitalValues).filter(([, value]) => typeof value === 'string' && value.trim()).map(([key, value]) => `${vitalLabels[key] ?? key}: ${value}`).join(', ')
+      : ''
+    return [
+      reportRecordText(record, ['arrival_reason']) && `Motivo: ${reportRecordText(record, ['arrival_reason'])}`,
+      allergyLabel,
+      reportRecordText(record, ['allergies']) && `Alergias: ${reportRecordText(record, ['allergies'])}`,
+      reportRecordText(record, ['conditions_treatments']) && `Condições/tratamentos: ${reportRecordText(record, ['conditions_treatments'])}`,
+      vitals && `Sinais vitais: ${vitals}`,
+      reportRecordText(record, ['measured_at']) && `Aferidos em: ${dateTime(reportRecordText(record, ['measured_at']))}`,
+      reportRecordText(record, ['registered_by']) && `Registrado por: ${reportRecordText(record, ['registered_by'])}`,
+    ].filter(Boolean).join(' · ')
+  }
+  if (sourceId === 'outpatient') {
+    const encounterTypes: Record<string, string> = {
+      outpatient: 'Ambulatorial',
+      urgent_emergency: 'Urgência / emergência',
+      first_consultation: 'Primeira consulta',
+      return: 'Retorno',
+      emergency_referral: 'Urgência / emergência / referência',
+      reference_consultation: 'Consulta de referência',
+    }
+    const referralTypes: Record<string, string> = {
+      discharge: 'Alta',
+      return_same_unit: 'Retorno na mesma unidade',
+      exams: 'Exames',
+      specialty: 'Ambulatório especializado',
+      hospital: 'Hospital',
+      emergency: 'Pronto-socorro',
+    }
+    const programs = Array.isArray(record.programs)
+      ? record.programs.map(String).join(', ')
+      : ''
+    const activityRows = Array.isArray(record.activity_rows)
+      ? record.activity_rows.map((entry) => {
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return ''
+        const activity = reportRecordText(entry as AdminReportRecord, ['professional_activity'])
+        const procedure = reportRecordText(entry as AdminReportRecord, ['procedure'])
+        return [activity, procedure].filter(Boolean).join(' · ')
+      }).filter(Boolean).join(' | ')
+      : ''
+    const encounterType = reportRecordText(record, ['encounter_type'])
+    const referral = reportRecordText(record, ['referral'])
+    return [
+      encounterType && `Tipo: ${encounterTypes[encounterType] ?? encounterType}`,
+      reportRecordText(record, ['physician_name']) && `Profissional: ${reportRecordText(record, ['physician_name'])}`,
+      reportRecordText(record, ['examination']) && `Exame/conduta: ${reportRecordText(record, ['examination'])}`,
+      activityRows && `Atividades/procedimentos: ${activityRows}`,
+      reportRecordText(record, ['group_name']) && `Grupo: ${reportRecordText(record, ['group_name'])}`,
+      programs && `Programas: ${programs}`,
+      reportRecordText(record, ['diagnostic_hypothesis']) && `Hipótese: ${reportRecordText(record, ['diagnostic_hypothesis'])}`,
+      reportRecordText(record, ['antibiotic_prescription']) && `Prescrição: ${reportRecordText(record, ['antibiotic_prescription'])}`,
+      referral && `Encaminhamento: ${referralTypes[referral] ?? referral}`,
+      reportRecordText(record, ['created_by']) && `Registrado por: ${reportRecordText(record, ['created_by'])}`,
+    ].filter(Boolean).join(' · ')
   }
   return ''
 }
@@ -3237,7 +3324,7 @@ function AdminPatientStatusRow({ record, onSaved }: { record: AdminReportRecord;
   </article>
 }
 
-function AdminReportsCenter() {
+function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management' }) {
   const reportPageSize = 50
   const [sourceId, setSourceId] = useState<string>('')
   const [reportPage, setReportPage] = useState(0)
@@ -3249,7 +3336,10 @@ function AdminReportsCenter() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
-  const visibleSources = adminReportSources
+  const managementReportSourceIds = ['arrivals', 'hourly-rounds', 'patient-status', 'triages', 'outpatient']
+  const visibleSources = scope === 'management'
+    ? adminReportSources.filter((item) => managementReportSourceIds.includes(item.id))
+    : adminReportSources
   const source = visibleSources.find((item) => item.id === sourceId) ?? visibleSources[0]
 
   const loadReport = useCallback(async () => {
@@ -3325,15 +3415,17 @@ function AdminReportsCenter() {
   const visibleRows = filteredRows.slice(currentReportPage * reportPageSize, (currentReportPage + 1) * reportPageSize)
   const recordsWithDate = rows.filter((row) => reportRowDate(row)).length
   const printData: PrintRow[] = filteredRows.map((record, index) => {
-    const patient = reportRecordText(record, ['patient_name', 'name'])
-    const title = reportRecordText(record, ['title', 'item_name', 'medication_name', 'patient_name', 'name', 'request_type']) || `${source.label} · ${index + 1}`
+    const patient = reportPatientName(record)
+    const title = reportRecordText(record, ['title', 'item_name', 'medication_name', 'patient_name', 'name', 'request_type'])
+      || patient
+      || `${source.label} · ${index + 1}`
     const fields: [string, string][] = [
       ['Situação', reportStatusText(record) || 'Não informada'],
       ['Paciente', patient],
       ['Quarto / leito', [reportRecordText(record, ['room']), reportRecordText(record, ['bed'])].filter(Boolean).join(' / ')],
-      ['Área / modalidade', reportRecordText(record, ['department', 'activity_type', 'modality', 'service_type', 'category'])],
-      ['Responsável', reportRecordText(record, ['actor_name', 'created_by_name', 'prescriber_name', 'requester_name'])],
-      ['Resumo', reportRecordText(record, ['description', 'purpose', 'notes', 'activity_report', 'instructions'])],
+      ['Área / modalidade', reportRecordText(record, ['department', 'activity_type', 'modality', 'service_type', 'category', 'encounter_type'])],
+      ['Responsável', reportRecordText(record, ['actor_name', 'created_by_name', 'prescriber_name', 'requester_name', 'registered_by', 'physician_name'])],
+      ['Resumo', reportClinicalDetails(record, sourceId) || reportRecordText(record, ['description', 'purpose', 'notes', 'activity_report', 'instructions', 'conditions_treatments', 'diagnostic_hypothesis'])],
     ]
     if (sourceId === 'hourly-rounds') {
       fields.push(
@@ -3381,10 +3473,12 @@ function AdminReportsCenter() {
         if (sourceId === 'patient-status') {
           return <AdminPatientStatusRow key={reportRecordText(record, ['patient_reference'])} record={record} onSaved={() => void loadReport()} />
         }
-        const title = reportRecordText(record, ['title', 'item_name', 'medication_name', 'patient_name', 'name', 'request_type']) || `${source.label} · ${index + 1}`
+        const title = reportRecordText(record, ['title', 'item_name', 'medication_name', 'patient_name', 'name', 'request_type']) || reportPatientName(record) || `${source.label} · ${index + 1}`
         const status = reportStatusText(record)
         const detail = [
-          reportRecordText(record, ['description', 'purpose', 'department', 'activity_type', 'modality', 'service_type', 'dose']),
+          sourceId === 'triages' || sourceId === 'outpatient'
+            ? reportClinicalDetails(record, sourceId)
+            : reportRecordText(record, ['description', 'purpose', 'department', 'activity_type', 'modality', 'service_type', 'dose']),
           sourceId === 'hourly-rounds' ? `${reportRecordText(record, ['checked_count'])}/${reportRecordText(record, ['patient_count'])} verificações · ${reportRecordText(record, ['exception_count'])} exceções` : '',
         ].filter(Boolean).join(' · ')
         const roundPatients = sourceId === 'hourly-rounds' && Array.isArray(record.patients)
@@ -3487,12 +3581,14 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
       <button className={`button ${tab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}><Activity size={16} /> Visão geral</button>
       <button className={`button ${tab === 'tasks' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}><ClipboardList size={16} /> Pendências</button>
       <button className={`button ${tab === 'beds' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}><Building2 size={16} /> Unidades e leitos</button>
+      <button className={`button ${tab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}><ClipboardList size={16} /> Relatórios</button>
       <button className={`button ${tab === 'governance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'governance'} onClick={() => setTab('governance')}><ShieldCheck size={16} /> Governança</button>
       <button className={`button ${tab === 'shortcuts' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'shortcuts'} onClick={() => setTab('shortcuts')}><ArrowRight size={16} /> Acesso rápido</button>
     </div>
     {tab === 'overview' && <ExecutiveDashboard />}
     {tab === 'tasks' && <Suspense fallback={<div className="history-empty" role="status">Carregando pendências operacionais…</div>}><OperationalTaskCenter user={user} onNavigate={onNavigate} /></Suspense>}
     {tab === 'beds' && <HospitalBedManagement />}
+    {tab === 'reports' && <AdminReportsCenter scope="management" />}
     {tab === 'governance' && <Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel userId={user.id} /></Suspense>}
     {tab === 'shortcuts' && <section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section>}
   </section>
@@ -3623,15 +3719,35 @@ function localizedAuditAction(action: string) {
 
 function AuditLogPanel() {
   const [events, setEvents] = useState<AuditEvent[]>([])
+  const [targetLabels, setTargetLabels] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [targetLabelError, setTargetLabelError] = useState('')
   const loadEvents = useCallback(async () => {
     setLoading(true)
     try {
       const response = await fetch('/api/v1/audit/events')
       const data = await readApiResponse<{ events?: AuditEvent[] }>(response)
-      setEvents(data.events ?? [])
+      const loadedEvents = data.events ?? []
+      setEvents(loadedEvents)
+      setTargetLabels({})
       setError('')
+      try {
+        const labelsResponse = await fetch('/api/v1/management/audit/target-labels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targets: loadedEvents.map(({ module, action, target_id }) => ({ module, action, target_id })),
+          }),
+        })
+        const labelsData = await readApiResponse<{ labels?: Record<string, string> }>(labelsResponse)
+        setTargetLabels(labelsData.labels ?? {})
+        setTargetLabelError('')
+      } catch (labelLoadError) {
+        setTargetLabelError(labelLoadError instanceof Error
+          ? `Os registros foram carregados, mas não foi possível identificar alguns destinos: ${labelLoadError.message}`
+          : 'Os registros foram carregados, mas não foi possível identificar alguns destinos.')
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a auditoria.')
     } finally {
@@ -3642,7 +3758,18 @@ function AuditLogPanel() {
     const timer = window.setTimeout(() => void loadEvents(), 0)
     return () => window.clearTimeout(timer)
   }, [loadEvents])
-  return <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Registros de auditoria</h2><p className="welcome-copy">Eventos administrativos recentes, sem conteúdo clínico detalhado.</p></div><button className="button button-secondary" type="button" onClick={() => void loadEvents()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar registros'}</button></div>{error ? <ToastMessage variant="error">{error}</ToastMessage> : loading && !events.length ? <div className="history-empty">Carregando registros…</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {roleLabels[event.actor_role as ProfileId] ?? 'Equipe autorizada'}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{localizedAuditAction(event.action)}</strong></span><span><small>Módulo</small><strong>{moduleLabels[event.module] ?? 'Sistema'}</strong></span><span><small>Registro</small><strong>{event.target_id}</strong></span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section>
+  const knownAuditTargets: Record<string, string> = {
+    all: 'Todos os registros',
+    hospital_summary: 'Resumo hospitalar',
+    patient_registry: 'Cadastro de pacientes',
+    triage_history: 'Histórico de triagens',
+    triage_queue: 'Fila de triagem',
+  }
+  const auditTargetLabel = (event: AuditEvent) => {
+    const key = `${event.module}:${event.action}:${event.target_id}`
+    return targetLabels[key] ?? knownAuditTargets[event.target_id] ?? 'Registro relacionado'
+  }
+  return <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Registros de auditoria</h2><p className="welcome-copy">Eventos administrativos recentes, sem conteúdo clínico detalhado.</p></div><button className="button button-secondary" type="button" onClick={() => void loadEvents()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar registros'}</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{targetLabelError && <ToastMessage variant="error">{targetLabelError}</ToastMessage>}{loading && !events.length ? <div className="history-empty">Carregando registros…</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {roleLabels[event.actor_role as ProfileId] ?? 'Equipe autorizada'}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{localizedAuditAction(event.action)}</strong></span><span><small>Módulo</small><strong>{moduleLabels[event.module] ?? 'Sistema'}</strong></span><span><small>Registro</small><strong>{auditTargetLabel(event)}</strong>{!targetLabels[`${event.module}:${event.action}:${event.target_id}`] && !knownAuditTargets[event.target_id] && <small>Identificador interno: {event.target_id.length > 16 ? `${event.target_id.slice(0, 12)}…` : event.target_id}</small>}</span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section>
 }
 
 function SystemAdminPage({ userId }: { userId: string }) {
