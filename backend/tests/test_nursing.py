@@ -731,6 +731,101 @@ def test_emergency_arrival_queue_can_be_filtered_by_creation_period(
     assert [arrival["id"] for arrival in queue["arrivals"]] == [current_arrival["id"]]
 
 
+def test_nursing_triage_snapshots_are_append_only_and_feed_physician_queue(
+    nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    receptionist = DemoPrincipal(
+        "reception-id", "reception", "Recepcionista", "reception",
+        ["reception"], {"reception": ["consultar", "criar", "alterar"]},
+    )
+    patient = create_patient(nursing_db, nurse)
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_reference=str(patient["reference"]),
+            patient_name=str(patient["name"]),
+            reason="Avaliação clínica",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    untriaged = nursing.list_triage_arrivals(
+        nursing_db, principal=nurse, triaged_only=True
+    )
+    assert untriaged["arrivals"] == []
+
+    with pytest.raises(HTTPException) as future_measurement:
+        nursing.create_nursing_triage(
+            str(arrival["id"]),
+            nursing.NursingTriagePayload(
+                vital_values={"temperature": "36.5"},
+                measured_at=datetime.now(UTC) + timedelta(hours=1),
+            ),
+            nurse,
+            nursing_db,
+        )
+    assert future_measurement.value.status_code == 422
+
+    first = nursing.create_nursing_triage(
+        str(arrival["id"]),
+        nursing.NursingTriagePayload(
+            allergies_status="known",
+            allergies="Penicilina",
+            conditions_treatments="Hipertensão relatada",
+            vital_values={"saturation": "98", "pressure": "120/80"},
+        ),
+        nurse,
+        nursing_db,
+    )
+    assert first["triage"]["allergies"] == "Penicilina"
+    assert first["triage"]["vital_values"] == {
+        "saturation": "98",
+        "pressure": "120/80",
+    }
+
+    updated = nursing.create_nursing_triage(
+        str(arrival["id"]),
+        nursing.NursingTriagePayload(
+            allergies_status="none_known",
+            vital_values={"temperature": "36.5"},
+        ),
+        nurse,
+        nursing_db,
+    )
+    assert updated["triage"]["id"] > first["triage"]["id"]
+    assert nursing_db.query(nursing.NursingTriage).filter_by(arrival_id=arrival["id"]).count() == 2
+    assert nursing_db.get(nursing.Patient, patient["reference"]).allergies == ""
+
+    physician_queue = nursing.list_triage_arrivals(
+        nursing_db, principal=nurse, triaged_only=True
+    )
+    assert len(physician_queue["arrivals"]) == 1
+    assert physician_queue["arrivals"][0]["triage"]["id"] == updated["triage"]["id"]
+
+    arrival_record = nursing_db.get(nursing.EmergencyArrival, arrival["id"])
+    assert arrival_record is not None
+    arrival_record.status = "discharged"
+    nursing_db.commit()
+    with pytest.raises(HTTPException) as closed_arrival:
+        nursing.create_nursing_triage(
+            str(arrival["id"]),
+            nursing.NursingTriagePayload(),
+            nurse,
+            nursing_db,
+        )
+    assert closed_arrival.value.status_code == 409
+
+
+def test_nursing_triage_rejects_invalid_allergies_and_vital_fields() -> None:
+    with pytest.raises(ValidationError):
+        nursing.NursingTriagePayload(
+            allergies_status="known",
+            allergies="",
+        )
+    with pytest.raises(ValidationError):
+        nursing.NursingTriagePayload(vital_values={"unexpected": "value"})
+
+
 def test_emergency_arrival_converts_existing_patient_to_inpatient_bed(
     nursing_db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

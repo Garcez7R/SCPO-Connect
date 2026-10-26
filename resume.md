@@ -185,3 +185,20 @@ O estado atual está funcional e coerente para demonstração, mas ainda exige p
 ### Ainda pendente
 - A homologação P0/P1/P2 descrita acima continua necessária com TI e usuários de teste autorizados; build e lint não substituem validação dos fluxos em runtime.
 - Confirmar no ambiente de apresentação o comportamento de chamadas, layout responsivo/temas, permissões e fluxos clínicos integrados com dados fictícios.
+
+## Implementação da triagem de Enfermagem
+
+### Concluído nesta rodada
+- Criada a aba “Triagem” da Enfermagem usando as chegadas ativas da fila da Recepção. A equipe registra o estado de alergias, alergias confirmadas/relatadas, condições ou tratamentos informados e sinais vitais aferidos.
+- Cada gravação é um snapshot do atendimento, append-only, com autoria e horário. Não altera alergias do cadastro global, não cria diagnóstico e não classifica risco automaticamente.
+- Criada a fila “Aguardando avaliação” no módulo Médico, separada da guia de pacientes cadastrados, exibindo o snapshot mais recente e permitindo abrir a ficha clínica quando a chegada estiver vinculada a um paciente.
+- Escopo confirmado pelo usuário: somente chegadas ativas da fila da Recepção; agendamentos marcados como “chegou” não são incluídos nesta entrega.
+- Adicionada a migração `0047_nursing_triage`; a checagem de versão dos serviços agora reconhece essa revisão. A tabela de triagens é criada somente no banco Nursing.
+- Adicionados testes de validação, revisões append-only, seleção do snapshot mais recente, fila médica, bloqueio de chegadas encerradas e isolamento da migração por serviço.
+
+### Validação
+- `npm run lint`, `npm run typecheck` e `npm run build` passaram. O build continua exibindo o aviso conhecido do chunk JavaScript acima de 500 kB.
+- Ruff passou nos arquivos Python alterados.
+- `uv run pytest backend/tests -q` passou: 129 testes.
+- A validação de runtime com usuários autorizados e dados fictícios continua pendente; as verificações locais não substituem homologação clínica.
+- Commit e push desta entrega ainda pendentes.

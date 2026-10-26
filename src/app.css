@@ -1007,6 +1007,50 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .patient-registry-tabs { margin-bottom: 0; }
 .patient-registry-page .patient-list-panel { min-width: 0; }
 .nursing-medication-panel { display: grid; gap: 15px; margin-top: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); }
+.nursing-triage-panel { display: grid; gap: 14px; margin-top: 16px; }
+.nursing-triage-panel > .section-heading { margin: 0; }
+.nursing-triage-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.nursing-triage-summary strong { color: var(--blue-dark); font-size: 20px; }
+.nursing-triage-summary span { color: var(--muted); font-size: 12px; }
+.nursing-triage-layout { display: grid; grid-template-columns: minmax(220px, .72fr) minmax(0, 1.28fr); align-items: start; gap: 14px; }
+.nursing-triage-arrivals { display: grid; max-height: 72vh; gap: 8px; overflow: auto; padding-right: 3px; }
+.nursing-triage-arrival { display: grid; min-width: 0; justify-items: start; gap: 6px; padding: 12px; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 7px; background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; }
+.nursing-triage-arrival.priority { border-left-color: var(--red); }
+.nursing-triage-arrival.is-selected { border-color: var(--blue); background: var(--blue-pale); box-shadow: 0 0 0 2px rgb(36 107 142 / 10%); }
+.nursing-triage-arrival > strong { font-size: 14px; overflow-wrap: anywhere; }
+.nursing-triage-arrival > span:not(.waiting-room-code), .nursing-triage-arrival > small { color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.nursing-triage-arrival .waiting-room-code { font-size: 11px; font-weight: 700; }
+.nursing-triage-complete { color: var(--green) !important; font-weight: 600; }
+.nursing-triage-pending { color: #80570d !important; font-weight: 600; }
+.nursing-triage-form { display: grid; min-width: 0; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); }
+.nursing-triage-form > .section-heading { margin: 0; }
+.nursing-triage-form > .section-heading h3 { margin: 0 0 5px; overflow-wrap: anywhere; }
+.nursing-triage-form .field textarea { min-height: 78px; padding: 9px 10px; resize: vertical; line-height: 1.45; }
+.nursing-triage-vitals { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 7px; }
+.nursing-triage-vitals legend { padding: 0 5px; color: var(--ink); font-size: 12px; font-weight: 700; }
+.nursing-triage-form > .button { min-height: 46px; justify-content: center; }
+.physician-tabs { margin: 14px 0; }
+.physician-triage-queue { display: grid; gap: 14px; }
+.physician-triage-queue > .section-heading { margin: 0; }
+.physician-triage-list { display: grid; gap: 12px; }
+.physician-triage-card { display: grid; min-width: 0; gap: 12px; padding: 15px; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 8px; background: var(--surface); }
+.physician-triage-heading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.physician-triage-heading > div { display: grid; min-width: 0; gap: 4px; }
+.physician-triage-heading .eyebrow { font-size: 9px; }
+.physician-triage-heading h3 { margin: 0; color: var(--ink); font-size: 16px; overflow-wrap: anywhere; }
+.physician-triage-heading > div > span { color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.physician-triage-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.physician-triage-details section { display: grid; min-width: 0; align-content: start; gap: 6px; padding: 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--page); }
+.physician-triage-details section:last-child { grid-column: 1 / -1; }
+.physician-triage-details section > strong { color: var(--ink); font-size: 11px; }
+.physician-triage-details section > span, .physician-triage-details small { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.physician-triage-details ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 16px; margin: 0; padding-left: 18px; color: var(--ink); font-size: 12px; }
+.physician-triage-meta { margin: 0; color: var(--muted); font-size: 10px; }
+.physician-triage-card > .button { justify-self: start; min-height: 44px; }
+html[data-theme="dark"] .nursing-triage-arrival.is-selected { border-color: var(--blue-dark); background: #203743; }
+html[data-theme="dark"] .nursing-triage-vitals,
+html[data-theme="dark"] .physician-triage-details section { border-color: var(--line); background: #17232b; }
+html[data-theme="dark"] .nursing-triage-pending { color: #efc16e !important; }
 .nursing-medication-history { display: grid; gap: 9px; }
 .nursing-medication-history > article { display: grid; min-width: 0; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); color: var(--ink); }
 .nursing-medication-history > article > span, .nursing-medication-history > article > small { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
@@ -1069,6 +1113,15 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
   .nursing-medication-panel { gap: 12px; padding: 14px; }
   .nursing-medication-panel > .section-heading { align-items: stretch; flex-direction: column; }
   .nursing-medication-panel > .section-heading > .button { width: 100%; justify-content: center; }
+  .nursing-triage-layout { grid-template-columns: 1fr; }
+  .nursing-triage-arrivals { max-height: 34vh; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nursing-triage-form { padding: 12px; }
+  .nursing-triage-summary { grid-template-columns: auto minmax(0, 1fr); }
+  .physician-triage-heading { flex-direction: column; }
+  .physician-triage-details { grid-template-columns: 1fr; }
+  .physician-triage-details section:last-child { grid-column: auto; }
+  .physician-triage-details ul { grid-template-columns: 1fr; }
+  .physician-triage-card > .button { width: 100%; justify-content: center; }
   .hourly-round-groups { grid-template-columns: 1fr; }
   .hourly-round-group { padding: 10px; }
   .hourly-round-records { grid-template-columns: 1fr; }
@@ -1085,6 +1138,11 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
   .patient-history-page .vital-extra-details { padding: 12px; }
   .patient-history-page .patient-history-summary { grid-template-columns: auto minmax(0, 1fr); padding: 12px; }
   .patient-history-page .patient-history-summary .module-total { grid-column: 1 / -1; }
+}
+@media (max-width: 440px) {
+  .nursing-triage-arrivals { grid-template-columns: 1fr; }
+  .nursing-triage-arrival { min-height: 44px; }
+  .nursing-triage-form .field-grid-two { grid-template-columns: 1fr; }
 }
 @media (max-width: 420px) {
   .admin-report-controls { grid-template-columns: 1fr; }

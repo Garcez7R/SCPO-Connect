@@ -68,8 +68,8 @@ type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursi
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 const sessionDurationMs = 12 * 60 * 60 * 1000
-const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds'] as const
-const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária' }
+const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds', 'triage'] as const
+const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária', triage: 'Triagem' }
 const adminTabValues = ['users', 'reports', 'audit'] as const
 const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Administração do aplicativo', reports: 'Relatórios', audit: 'Auditoria de ações' }
 const managementTabValues = ['overview', 'tasks', 'beds', 'governance', 'shortcuts'] as const
@@ -185,6 +185,7 @@ type NutritionRecordData = { id: number; patient_reference: string; assessment_d
 type NutritionPlan = { allergies: string; assessment_date: string | null; diet_type: string; restrictions: string; fasting_at: string | null; fasting_reason: string }
 
 const ReceptionPage = lazy(() => import('./pages/ReceptionPage'))
+const NursingTriagePanel = lazy(() => import('./components/NursingTriagePanel'))
 const WaitingRoomKioskPage = lazy(() =>
   import('./pages/ReceptionPage').then((module) => ({
     default: module.WaitingRoomKioskPage,
@@ -1994,15 +1995,19 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   return (
     <section className="nursing-page page-enter">
       <div className="page-title-row"><span className="module-icon module-icon-nursing"><HeartPulse size={23} /></span><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><div className="nursing-vitals-action"><span className="module-icon"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button></div><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
-      <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><span className="entry-status">{treatmentTrackLabel(patients.find((patient) => patient.reference === patientRef)?.treatment_track)}</span><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
-      <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
+      {nursingTab !== 'triage' && <>
+        <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><span className="entry-status">{treatmentTrackLabel(patients.find((patient) => patient.reference === patientRef)?.treatment_track)}</span><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+        <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
+      </>}
       <div className="admin-tabs module-tabs nursing-tabs" role="tablist" aria-label="Seções de Enfermagem">
         <button className={`button ${nursingTab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'overview'} onClick={() => setNursingTab('overview')}>Visão geral</button>
         <button className={`button ${nursingTab === 'vitals' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'vitals'} onClick={() => setNursingTab('vitals')}>Sinais vitais</button>
         <button className={`button ${nursingTab === 'medications' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'medications'} onClick={() => setNursingTab('medications')}>Medicações</button>
         <button className={`button ${nursingTab === 'safety' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'safety'} onClick={() => setNursingTab('safety')}>Fila e segurança</button>
         <button className={`button ${nursingTab === 'rounds' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'rounds'} onClick={() => setNursingTab('rounds')}>Verificação horária</button>
+        <button className={`button ${nursingTab === 'triage' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'triage'} onClick={() => setNursingTab('triage')}>Triagem</button>
       </div>
+      {nursingTab === 'triage' && <Suspense fallback={<div className="history-empty" role="status">Carregando fila de triagem…</div>}><NursingTriagePanel canUpdate={user.permissions.nursing?.includes('criar') ?? false} /></Suspense>}
       {nursingTab === 'medications' && <>
       {medicationError && <ToastMessage variant="error">{medicationError}</ToastMessage>}
       <section className="nursing-medication-panel">

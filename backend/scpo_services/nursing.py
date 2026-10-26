@@ -259,6 +259,30 @@ class EmergencyArrival(Base):
     reported_allergies: Mapped[str] = mapped_column(String(500), nullable=False, default="")
 
 
+class NursingTriage(Base):
+    __tablename__ = "nursing_triages"
+    __table_args__ = (
+        Index("ix_nursing_triages_arrival_created", "arrival_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    arrival_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("emergency_arrivals.id", ondelete="RESTRICT"), nullable=False
+    )
+    patient_reference: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("patients.reference", ondelete="SET NULL"), nullable=True
+    )
+    allergies_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    allergies: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    conditions_treatments: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    vital_values: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    glucose_unit: Mapped[str] = mapped_column(String(12), nullable=False, default="mg/dL")
+    measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ReceptionQueueSettings(Base):
     __tablename__ = "reception_queue_settings"
 
@@ -570,6 +594,41 @@ class EmergencyArrivalPayload(BaseModel):
         if len(value) < 3:
             raise ValueError("Informe o motivo da procura")
         return value
+
+
+class NursingTriagePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    allergies_status: Literal["unknown", "none_known", "known"] = "unknown"
+    allergies: str = Field(default="", max_length=1000)
+    conditions_treatments: str = Field(default="", max_length=2000)
+    vital_values: dict[str, str] = Field(default_factory=dict)
+    glucose_unit: Literal["mg/dL", "mmol/L"] = "mg/dL"
+    measured_at: datetime | None = None
+
+    @field_validator("allergies", "conditions_treatments")
+    @classmethod
+    def trim_triage_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("vital_values")
+    @classmethod
+    def validate_triage_vitals(cls, values: dict[str, str]) -> dict[str, str]:
+        return validate_vital_values(values, TRIAGE_VITAL_FIELDS)
+
+    @field_validator("measured_at")
+    @classmethod
+    def validate_measured_at(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("O horário da aferição deve incluir fuso horário")
+        return value
+
+    @model_validator(mode="after")
+    def validate_allergies(self) -> "NursingTriagePayload":
+        if self.allergies_status == "known" and not self.allergies:
+            raise ValueError("Descreva a alergia relatada ou confirmada")
+        if self.allergies_status != "known" and self.allergies:
+            raise ValueError("Descreva alergias somente quando o status for 'known'")
+        return self
 
 
 class ReceptionQueueSettingsPayload(BaseModel):
@@ -1435,6 +1494,8 @@ def reconcile_legacy_patient_bed(
     }
 NURSING_ROLE = require_demo_role("nursing")
 NURSING_VITALS_READ = require_demo_role("nursing", "physician", "management", "admin", "oversight")
+NURSING_TRIAGE_READ = require_demo_role("nursing", "management", "admin", "oversight")
+PHYSICIAN_TRIAGE_READ = require_demo_role("physician", "management", "admin", "oversight")
 NUTRITION_ROLE = require_demo_role("nutrition")
 NUTRITION_REPORT_ACCESS = require_demo_role("nutrition", "management", "admin", "oversight")
 VALUE_FIELDS = {
@@ -1464,6 +1525,31 @@ VALUE_FIELDS = {
 }
 NUMERIC_FIELDS = {"saturation", "heartRate", "respiratoryRate", "temperature", "glucose", "pain"}
 VITAL_FIELDS = {"saturation", "pressure", "heartRate", "respiratoryRate", "temperature", "glucose"}
+TRIAGE_VITAL_FIELDS = {"saturation", "pressure", "heartRate", "respiratoryRate", "temperature", "glucose"}
+
+
+def validate_vital_values(values: dict[str, str], allowed_fields: set[str]) -> dict[str, str]:
+    unexpected = values.keys() - allowed_fields
+    if unexpected:
+        raise ValueError("Campo não permitido")
+    for field, value in values.items():
+        if len(value) > (2000 if field == "examResult" else 1000):
+            raise ValueError("Campo excede o limite permitido")
+        if field in NUMERIC_FIELDS and value and not re.fullmatch(r"\d{1,6}(?:[.,]\d{1,4})?", value):
+            raise ValueError("Informe um valor numérico válido")
+        if field == "pressure" and value and not re.fullmatch(r"\d{1,4}/\d{1,4}", value):
+            raise ValueError("Formato inválido para pressão arterial")
+        allowed_choices = {
+            "venousCondition": {"venoso periférico", "jugular", "central"},
+            "urine": {"Sim", "Não"},
+            "bowel": {"Sim", "Não", "registrada", "não se aplica"},
+            "bowelTube": {"Sim", "Não"},
+        }.get(field)
+        if value and allowed_choices is not None and value not in allowed_choices:
+            raise ValueError("Opção inválida para o campo selecionado")
+    if len(values.get("notes", "")) > 1000:
+        raise ValueError("Observações excedem o limite permitido")
+    return values
 
 
 class PatientPayload(BaseModel):
@@ -1759,35 +1845,7 @@ class VitalPayload(BaseModel):
     @field_validator("values")
     @classmethod
     def validate_values(cls, values: dict[str, str]) -> dict[str, str]:
-        unexpected = values.keys() - VALUE_FIELDS
-        if unexpected:
-            raise ValueError("Campo não permitido")
-        for field, value in values.items():
-            if len(value) > (2000 if field == "examResult" else 1000):
-                raise ValueError("Campo excede o limite permitido")
-            if (
-                field in NUMERIC_FIELDS
-                and value
-                and not re.fullmatch(r"\d{1,6}(?:[.,]\d{1,4})?", value)
-            ):
-                raise ValueError("Informe um valor numérico válido")
-            if (
-                field == "pressure"
-                and value
-                and not re.fullmatch(r"\d{1,4}/\d{1,4}", value)
-            ):
-                raise ValueError("Formato inválido para pressão arterial")
-            allowed_choices = {
-                "venousCondition": {"venoso periférico", "jugular", "central"},
-                "urine": {"Sim", "Não"},
-                "bowel": {"Sim", "Não", "registrada", "não se aplica"},
-                "bowelTube": {"Sim", "Não"},
-            }.get(field)
-            if value and allowed_choices is not None and value not in allowed_choices:
-                raise ValueError("Opção inválida para o campo selecionado")
-        if len(values.get("notes", "")) > 1000:
-            raise ValueError("Observações excedem o limite permitido")
-        return values
+        return validate_vital_values(values, VALUE_FIELDS)
 
     @field_validator("not_applicable")
     @classmethod
@@ -2303,6 +2361,173 @@ def list_emergency_arrivals(
         "offset": offset,
         "status_counts": {key: count for key, count in grouped_counts},
     }
+
+
+def serialize_nursing_triage(
+    arrival: EmergencyArrival,
+    triage: NursingTriage | None,
+    patient: Patient | None,
+    *,
+    include_patient_allergies: bool,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "arrival_id": arrival.id,
+        "patient_reference": arrival.patient_reference,
+        "patient_name": arrival.patient_name,
+        "arrival_mode": arrival.arrival_mode,
+        "reason": arrival.reason,
+        "status": arrival.status,
+        "queue_type": arrival.queue_type,
+        "created_at": arrival.created_at.isoformat(),
+        "allergy_report_status": arrival.allergy_report_status,
+        "reported_allergies": arrival.reported_allergies,
+        "triage": None,
+    }
+    if include_patient_allergies:
+        result["patient_allergies_status"] = patient.allergies_status if patient else "unknown"
+        result["patient_allergies"] = patient.allergies if patient else ""
+    if triage:
+        result["triage"] = {
+            "id": triage.id,
+            "allergies_status": triage.allergies_status,
+            "allergies": triage.allergies,
+            "conditions_treatments": triage.conditions_treatments,
+            "vital_values": triage.vital_values,
+            "glucose_unit": triage.glucose_unit,
+            "measured_at": triage.measured_at.isoformat() if triage.measured_at else None,
+            "registered_by": triage.actor_name,
+            "registered_at": triage.created_at.isoformat(),
+        }
+    return result
+
+
+def list_triage_arrivals(
+    db: Session,
+    *,
+    principal: DemoPrincipal,
+    triaged_only: bool,
+) -> dict[str, object]:
+    latest_triage = (
+        select(
+            NursingTriage.arrival_id.label("arrival_id"),
+            func.max(NursingTriage.id).label("triage_id"),
+        )
+        .group_by(NursingTriage.arrival_id)
+        .subquery()
+    )
+    query = (
+        select(EmergencyArrival, NursingTriage, Patient)
+        .outerjoin(
+            latest_triage,
+            latest_triage.c.arrival_id == EmergencyArrival.id,
+        )
+        .outerjoin(NursingTriage, NursingTriage.id == latest_triage.c.triage_id)
+        .outerjoin(Patient, Patient.reference == EmergencyArrival.patient_reference)
+        .where(EmergencyArrival.status.in_(("waiting", "called", "in_service")))
+    )
+    if triaged_only:
+        query = query.where(NursingTriage.id.is_not(None))
+    records = db.execute(
+        query.order_by(
+            case(
+                (EmergencyArrival.queue_type == "priority", 0),
+                else_=1,
+            ),
+            EmergencyArrival.created_at.asc(),
+            EmergencyArrival.id.desc(),
+        ).limit(100)
+    ).all()
+    emit_audit_event(
+        principal,
+        "nursing" if not triaged_only else "physician",
+        "nursing_triage_queue_read",
+        "triage_queue",
+        db=db,
+    )
+    return {
+        "arrivals": [
+            serialize_nursing_triage(
+                arrival,
+                triage,
+                patient,
+                include_patient_allergies=can_view_patient_allergies(principal),
+            )
+            for arrival, triage, patient in records
+        ]
+    }
+
+
+@app.get("/api/v1/nursing/triage/arrivals")
+def list_nursing_triage_arrivals(
+    principal: Annotated[DemoPrincipal, Depends(NURSING_TRIAGE_READ)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    return list_triage_arrivals(db, principal=principal, triaged_only=False)
+
+
+@app.post("/api/v1/nursing/reception-arrivals/{arrival_id}/triage", status_code=201)
+def create_nursing_triage(
+    arrival_id: str,
+    payload: NursingTriagePayload,
+    principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    arrival = db.get(EmergencyArrival, arrival_id)
+    if arrival is None:
+        raise HTTPException(status_code=404, detail="Chegada da Recepção não encontrada")
+    if arrival.status not in {"waiting", "called", "in_service"}:
+        raise HTTPException(status_code=409, detail="Esta chegada não está mais em atendimento")
+    recorded_at = datetime.now(UTC)
+    if payload.measured_at and payload.measured_at.astimezone(UTC) > recorded_at:
+        raise HTTPException(status_code=422, detail="O horário da aferição não pode estar no futuro")
+    if payload.measured_at and not any(value.strip() for value in payload.vital_values.values()):
+        raise HTTPException(status_code=422, detail="Informe ao menos um sinal vital para registrar o horário")
+    saturation = payload.vital_values.get("saturation", "").replace(",", ".")
+    if saturation and not 0 <= float(saturation) <= 100:
+        raise HTTPException(status_code=422, detail="A saturação deve estar entre 0 e 100%")
+    pressure = payload.vital_values.get("pressure", "")
+    if pressure:
+        systolic, diastolic = (int(value) for value in pressure.split("/"))
+        if systolic == 0 or diastolic == 0:
+            raise HTTPException(status_code=422, detail="Informe os dois componentes da pressão arterial")
+    triage = NursingTriage(
+        arrival_id=arrival.id,
+        patient_reference=arrival.patient_reference,
+        allergies_status=payload.allergies_status,
+        allergies=payload.allergies,
+        conditions_treatments=payload.conditions_treatments,
+        vital_values=payload.vital_values,
+        glucose_unit=payload.glucose_unit,
+        measured_at=(payload.measured_at or recorded_at) if payload.vital_values else None,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        created_at=recorded_at,
+    )
+    db.add(triage)
+    emit_audit_event(
+        principal,
+        "nursing",
+        "nursing_triage_recorded",
+        arrival.id,
+        db=db,
+    )
+    db.commit()
+    db.refresh(triage)
+    patient = db.get(Patient, arrival.patient_reference) if arrival.patient_reference else None
+    return serialize_nursing_triage(
+        arrival,
+        triage,
+        patient,
+        include_patient_allergies=can_view_patient_allergies(principal),
+    )
+
+
+@app.get("/api/v1/physicians/triage/arrivals")
+def list_physician_triage_arrivals(
+    principal: Annotated[DemoPrincipal, Depends(PHYSICIAN_TRIAGE_READ)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    return list_triage_arrivals(db, principal=principal, triaged_only=True)
 
 
 @app.get("/api/v1/reception/public/queue")

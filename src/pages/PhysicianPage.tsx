@@ -5,6 +5,7 @@ import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
+import PhysicianTriageQueue from '../components/PhysicianTriageQueue'
 import { printExternalPrescription, printMedicationAdministrationLabels, printMedicationScheduleSheet } from '../printClinicalForm'
 
 type Patient = {
@@ -62,6 +63,7 @@ function PhysicianPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [patientReference, setPatientReference] = useState('')
+  const [physicianTab, setPhysicianTab] = useState<'triage' | 'patients'>('triage')
   const [form, setForm] = useState<PrescriptionForm>(emptyForm)
   const [loading, setLoading] = useState(true)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -156,7 +158,7 @@ function PhysicianPage() {
   }
 
   return <section className="page-enter physician-page">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ASSISTÊNCIA MÉDICA</p><h1>Médico</h1><p className="welcome-copy">Consulta clínica, evolução de sinais vitais e prescrições internas integradas.</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ASSISTÊNCIA MÉDICA</p><h1>Médico</h1><p className="welcome-copy">Fila de atendimentos triados, ficha clínica, sinais vitais e prescrições internas.</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span></div>
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {error && !loading && <button className="button button-secondary physician-retry" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><RefreshCw size={15} /> Tentar carregar novamente</button>}
@@ -165,6 +167,16 @@ function PhysicianPage() {
         <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfil do prescritor</h2><p className="welcome-copy">Nome e CRM/UF vinculados às prescrições e à receita impressa.</p></div></div>
         {profile ? <div className="physician-profile-summary"><strong>{profile.name}</strong><span>CRM {profile.crm}/{profile.crm_state}</span></div> : <div className="admin-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira seu nome e CRM/UF antes de registrar prescrições.</span></div></div>}
       </section>
+      <div className="admin-tabs module-tabs physician-tabs" role="tablist" aria-label="Atendimentos médicos">
+        <button className={`button ${physicianTab === 'triage' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'triage'} onClick={() => setPhysicianTab('triage')}>Aguardando avaliação</button>
+        <button className={`button ${physicianTab === 'patients' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'patients'} onClick={() => setPhysicianTab('patients')}>Pacientes cadastrados</button>
+      </div>
+      {physicianTab === 'triage' && <PhysicianTriageQueue onOpenPatient={(reference) => {
+        setPatientReference(reference)
+        setForm((current) => ({ ...current, patient_reference: reference }))
+        setPhysicianTab('patients')
+      }} />}
+      {physicianTab === 'patients' && <>
       <div className="form-grid physician-patient-picker">
         <PatientSelect label="Paciente para consulta" patients={patients} value={patientReference} onChange={(reference) => { setPatientReference(reference); setForm((current) => ({ ...current, patient_reference: reference })) }} optionLabel={(patient) => `${patient.name} · quarto ${patient.room || '—'} · leito ${patient.bed || '—'}`} />
       </div>
@@ -222,6 +234,7 @@ function PhysicianPage() {
         </section>
       </>}
       {!patientReference && <div className="history-empty">Selecione um paciente para visualizar alergias, sinais vitais, prescrições e dados clínicos.</div>}
+      </>}
     </>}
   </section>
 }
