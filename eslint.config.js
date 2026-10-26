@@ -21,7 +21,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'e2e/**/*.mjs', 'playwright.config.mjs'],
     languageOptions: { globals: globals.node },
   },
 )

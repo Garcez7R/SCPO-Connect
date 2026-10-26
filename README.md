@@ -42,7 +42,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Gestão e Administração: relatórios históricos paginados incluem triagens de Enfermagem e atendimentos ambulatoriais da Recepção, com busca por paciente, filtros por período e impressão conforme permissões.
 - Sala de espera: abra `/painel` (também compatível com `/painel-sala-espera`) em um computador dedicado; a tela não exige sessão de operador e não expira com a sessão da Recepção. Mostra somente a chamada atual, com primeiro nome, senha sequencial `Cxxx`/`Pxxx` e identificação visível quando prioritária; as senhas reiniciam à meia-noite de Brasília.
 - Quiosque: configure o navegador do computador dedicado para iniciar em `https://SEU_HOST/painel` em modo quiosque. Para Chromium/Chrome gerenciado, a opção `--autoplay-policy=no-user-gesture-required` permite tentar ativar voz e toque ao iniciar; políticas do navegador/sistema ainda podem exigir clicar em **Ativar áudio** uma vez. Um toque sonoro curto antecede a chamada por voz.
-- Proteção de tela da Recepção: no painel do operador ou na tela pública, ative a opção correspondente. Após cinco minutos sem chamada nova, a tela pública alterna imagens de `public/reception-screensaver/`; uma chamada interrompe os slides imediatamente na próxima atualização da fila (até cinco segundos). Use apenas imagens institucionais aprovadas, sem pacientes, dados pessoais ou informações clínicas. Formatos aceitos: JPG/JPEG, PNG, WebP e AVIF; o manifesto é gerado automaticamente em desenvolvimento e build.
+- Proteção de tela da Recepção: configure e ative na subaba **Proteção de tela** do módulo Recepção → Painel de chamadas. Para adicionar imagens, salve arquivos institucionais aprovados em `public/reception-screensaver/` no app e reinicie o servidor local ou gere/publique uma nova versão. Após cinco minutos sem chamada nova, a tela pública alterna imagens; uma chamada interrompe os slides imediatamente na próxima atualização da fila (até cinco segundos). Use somente imagens sem pacientes, dados pessoais ou informações clínicas. Formatos aceitos: JPG/JPEG, PNG, WebP e AVIF; o manifesto é gerado automaticamente em desenvolvimento e build. A tela pública `/painel` não exibe controles de configuração.
 - Ordens de Manutenção e Higienização: numeração sequencial compartilhada de sete dígitos, sem prefixos nem datas.
 - Cadastro do paciente: status explícito de alergia (não verificado, sem alergia conhecida ou alergia conhecida), alerta visual nos fluxos clínicos e opção de responsável não aplicável ou autorreferência do paciente.
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
@@ -59,6 +59,10 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Saudação de bom dia, boa tarde ou boa noite conforme o horário de Brasília.
 
 Na Farmácia, a atualização do catálogo Anvisa/CMED é manual e consulta a lista pública de preços de medicamentos apenas para sugerir GTIN, nome, princípio ativo, apresentação, fabricante e referência de registro. A sugestão só preenche o rascunho após ação do usuário; não cria produto/lote nem movimenta saldo. A base não confirma autenticidade, registro ativo ou adequação clínica e não substitui a conferência da equipe.
+
+## Testes E2E
+
+Execute `npx playwright install chromium` uma vez e depois `npm run test:e2e` para validar no navegador o fluxo Recepção → Triagem de Enfermagem → fila Médica. O comando inicia as APIs locais com bancos SQLite temporários, sobe o frontend Vite, configura uma conta sintética por bootstrap e MFA e remove o diretório de dados temporário ao terminar. Os testes usam apenas dados fictícios e não acessam o banco de demonstração nem a produção. É necessário ter `uv` disponível; traces e capturas de falha ficam em `test-results/`.
 
 ### Áreas de trabalho
 

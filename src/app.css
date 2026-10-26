@@ -139,6 +139,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .topbar {
   position: sticky;
   z-index: 10;
+  isolation: isolate;
   top: 0;
   display: flex;
   min-height: 64px;
@@ -150,6 +151,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: rgba(255, 255, 255, .96);
   backdrop-filter: blur(8px);
 }
+.topbar::before { position: absolute; z-index: 0; inset: 0; background: url("/sidebar-health-watermark.svg") 12px 8px / 116px 116px repeat; content: ""; opacity: .1; pointer-events: none; }
+.topbar > * { position: relative; z-index: 1; }
 .topbar-left, .topbar-right, .breadcrumbs { display: flex; align-items: center; }
 .breadcrumbs { gap: 10px; color: var(--muted); font-size: 12px; }
 .breadcrumbs strong { color: var(--ink); font-weight: 600; }
@@ -1257,7 +1260,9 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 @media (prefers-reduced-motion: reduce) { .beta-dialog-icon img, .module-card .module-icon > svg { animation: none !important; transition: none !important; } }
 @media (prefers-reduced-motion: reduce) { .brand-image { transition: none; } .brand-trigger:hover .brand-image { transform: none; } }
 
-.about-page { max-width: 1440px; margin-inline: auto; }
+.about-page { position: relative; isolation: isolate; max-width: 1440px; margin-inline: auto; }
+.about-page::before { position: absolute; z-index: 0; inset: 0; background: url("/sidebar-health-watermark.svg") 14px 14px / 176px 176px repeat; content: ""; opacity: .1; pointer-events: none; }
+.about-page > * { position: relative; z-index: 1; }
 .about-legal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
 .about-version { margin: 16px 0; }
 .about-version h2 { margin: 2px 0 6px; font-size: 18px; }
@@ -1554,6 +1559,8 @@ html[data-theme="dark"] body { background: var(--page); color: var(--ink); }
 html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .nutrition-context-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .interprofessional-share-card, .hygiene-panel, .hygiene-summary article, .hygiene-request-card, .hygiene-bed-link, .xray-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .hygiene-bed-link span { color: var(--muted); }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
+html[data-theme="dark"] .topbar::before { opacity: .12; }
+html[data-theme="dark"] .about-page::before { opacity: .13; }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
 html[data-theme="dark"] .psychology-privacy { border-color: #355d70; background: #203743; color: #b5e3f5; }
 html[data-theme="dark"] .psychology-prescription-guidance { border-color: #51456c; background: #302a3c; color: #d4c6f0; }

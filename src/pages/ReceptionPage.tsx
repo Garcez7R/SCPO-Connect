@@ -441,6 +441,7 @@ function readScreensaverPreference() {
 
 function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boolean; kioskMode?: boolean }) {
   const screensaverStorageKey = 'scpo-reception-screensaver-enabled'
+  const [callBoardTab, setCallBoardTab] = useState<'board' | 'screensaver'>('board')
   const [screensaverPreference] = useState(readScreensaverPreference)
   const [items, setItems] = useState<WaitingRoomItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -851,7 +852,6 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         </div>
         <div className="waiting-room-kiosk-tools">
           <time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(clock)}</time>
-          <button className="button button-secondary waiting-room-screensaver-toggle" type="button" onClick={toggleScreensaver} disabled={!screensaverImages.length} aria-pressed={screensaverEnabled}>{screensaverEnabled ? 'Proteção de tela ativa' : 'Ativar proteção de tela'}</button>
         </div>
       </header>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
@@ -876,8 +876,21 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
 
   return <>
   <section className="waiting-room-board patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">Chame o próximo paciente automaticamente ou escolha alguém específico nas filas comum e prioritária. A tela pública abre sem sessão de operador em <code>/painel</code>.</p></div><div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={toggleScreensaver} disabled={!screensaverImages.length} aria-pressed={screensaverEnabled}>{screensaverEnabled ? 'Proteção de tela ativa' : 'Ativar proteção de tela'}</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Painel</button></div></div>
-    {!screensaverImages.length && <p className="field-hint">Para habilitar a proteção de tela, adicione imagens institucionais aprovadas em <code>public/reception-screensaver/</code> e reinicie o painel.</p>}
+    <div className="section-heading"><div><p className="eyebrow">SALA DE ESPERA</p><h2>Painel de chamadas</h2><p className="welcome-copy">Chame o próximo paciente automaticamente ou escolha alguém específico nas filas comum e prioritária. A tela pública abre sem sessão de operador em <code>/painel</code>.</p></div>{callBoardTab === 'board' && <div className="waiting-room-actions"><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>Atualizar</button><button className="button button-secondary" type="button" onClick={openKioskWindow}>Painel</button></div>}</div>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Painel de chamadas e proteção de tela">
+      <button className={`button ${callBoardTab === 'board' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={callBoardTab === 'board'} onClick={() => setCallBoardTab('board')}>Chamadas</button>
+      <button className={`button ${callBoardTab === 'screensaver' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={callBoardTab === 'screensaver'} onClick={() => setCallBoardTab('screensaver')}>Proteção de tela</button>
+    </div>
+    {callBoardTab === 'screensaver' && <section className="patient-list-panel waiting-room-screensaver-settings" role="tabpanel">
+      <div className="section-heading"><div><p className="eyebrow">PAINEL PÚBLICO</p><h3>Proteção de tela</h3><p className="welcome-copy">Após cinco minutos sem uma chamada nova, o painel público exibe imagens institucionais aleatórias. Uma chamada interrompe a apresentação e volta a mostrar o atendimento.</p></div></div>
+      <div className="waiting-room-screensaver-status"><strong>{screensaverEnabled ? 'Ativada' : 'Desativada'}</strong><span>{screensaverImages.length} imagem(ns) disponível(is)</span></div>
+      <div className="waiting-room-actions"><button className="button button-primary waiting-room-screensaver-toggle" type="button" onClick={toggleScreensaver} disabled={!canUpdate || !screensaverImages.length} aria-pressed={screensaverEnabled}>{screensaverEnabled ? 'Desativar proteção de tela' : 'Ativar proteção de tela'}</button></div>
+      {!canUpdate && <p className="field-hint">Seu perfil pode consultar a configuração, mas não pode alterá-la.</p>}
+      {!screensaverImages.length && <p className="field-hint">Nenhuma imagem foi encontrada. Adicione imagens institucionais aprovadas à pasta <code>public/reception-screensaver/</code> do app e reinicie o servidor local ou gere e publique uma nova versão. Formatos aceitos: JPG, JPEG, PNG, WebP e AVIF.</p>}
+      {screensaverImages.length > 0 && <p className="field-hint">As imagens disponíveis são carregadas de <code>public/reception-screensaver/</code>. Para adicionar ou remover arquivos, atualize essa pasta no app; o manifesto é gerado automaticamente ao iniciar em desenvolvimento e durante o build.</p>}
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    </section>}
+    {callBoardTab === 'board' && <>
     {canUpdate && <div className="waiting-room-call-controls"><div><strong>Chamar próximo paciente</strong><span>{normalCallsSincePriority} de {normalBeforePriority} chamada(s) comum(ns) desde a última prioritária</span></div><div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('automatic')}>{updating === 'next' ? 'Chamando…' : 'Próximo automático'}</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('common')}>Chamar comum</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('priority')}>Chamar prioritário</button></div><form className="waiting-room-cadence" onSubmit={(event) => void saveCallCadence(event)}><label className="field"><span className="field-label">Comuns antes de prioritário</span><input type="number" min={1} max={20} value={normalBeforePriority} onChange={(event) => setNormalBeforePriority(Number(event.target.value))} /></label><button className="button button-secondary" type="submit" disabled={savingCadence || normalBeforePriority < 1 || normalBeforePriority > 20}>{savingCadence ? 'Salvando…' : 'Salvar alternância'}</button></form></div>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
@@ -899,6 +912,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         </section>
       })}
     </div>}
+    </>}
   </section>
   </>
 }
