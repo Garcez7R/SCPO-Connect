@@ -1355,19 +1355,33 @@ function TherapyPage({ profile }: { profile: Profile }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (form.title.trim().length < 3) { setError('Informe um nome de atividade com pelo menos 3 caracteres.'); return }
-    if (!form.activity_type) { setError('Selecione a modalidade da atividade.'); return }
-    if (form.location.trim().length < 2) { setError('Informe o local da atividade.'); return }
+    const title = form.title.trim()
+    const activityType = form.activity_type.trim()
+    const location = form.location.trim()
+    const participantReferences = [...new Set((form.participant_references ?? []).map((reference) => reference.trim()).filter(Boolean))]
+    if (title.length < 3) { setError('Informe um nome de atividade com pelo menos 3 caracteres.'); return }
+    if (!activityType) { setError('Selecione a modalidade da atividade.'); return }
+    if (location.length < 2) { setError('Informe o local da atividade.'); return }
     if (!form.starts_at || !Number.isFinite(new Date(form.starts_at).getTime())) { setError('Informe uma data e hora de início válidas.'); return }
     setSaving(true); setError(''); setNotice('')
     try {
-      const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, starts_at: new Date(form.starts_at).toISOString(), ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null, patient_reference: form.patient_reference || null }) })
+      const payload = {
+        title,
+        activity_type: activityType,
+        description: form.description.trim(),
+        location,
+        starts_at: new Date(form.starts_at).toISOString(),
+        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
+        patient_reference: form.patient_reference?.trim() || null,
+        participant_references: participantReferences,
+      }
+      const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await readApiResponse<TherapyActivity>(response)
       if (new Date(data.starts_at).getFullYear() === month.getFullYear() && new Date(data.starts_at).getMonth() === month.getMonth()) { setActivities((items) => [...items, data].sort((a, b) => a.starts_at.localeCompare(b.starts_at))); setReportDrafts((items) => ({ ...items, [data.id]: data.activity_report ?? '' })); setReportStatuses((items) => ({ ...items, [data.id]: data.status })) }
       setForm({ title: '', activity_type: '', description: '', location: 'Oficina Terapêutica', starts_at: '', ends_at: '', patient_reference: '', participant_references: [] }); setNewParticipantReference(''); setShowForm(false); setNotice('Atividade incluída na agenda.')
     } catch (submitError) {
       const message = readableApiError(submitError)
-      setError(message === 'Campo obrigatório: Dados da solicitação.'
+      setError(message === 'Campo obrigatório: Dados da solicitação.' || message === 'Campo obrigatório: campo.'
         ? 'A API recebeu a solicitação sem identificar os campos. Confira nome da atividade, modalidade, início e local; se persistir, atualize a página e avise o suporte.'
         : message)
     } finally { setSaving(false) }

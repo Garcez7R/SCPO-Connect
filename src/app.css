@@ -187,6 +187,8 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .section-heading .eyebrow, .users-heading .eyebrow, .panel-heading .eyebrow { margin-bottom: 5px; }
 .module-total { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
+.dashboard-page .module-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.dashboard-page .module-card { min-height: 148px; }
 .module-card {
   position: relative;
   display: flex;
@@ -422,6 +424,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
   .topbar { padding-right: 25px; padding-left: 25px; }
   .app-footer { padding-right: 25px; padding-left: 25px; }
   .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-page .module-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .field-grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .permission-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1242,8 +1245,10 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .beta-celebration-backdrop { position: absolute; inset: 0; background: rgba(18, 37, 49, .54); animation: beta-backdrop-in .2s ease-out both; }
 .beta-confetti-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .beta-confetti-piece { position: absolute; top: -4vh; display: block; opacity: 0; animation: beta-confetti-fall 4.6s cubic-bezier(.18, .58, .4, .98) both; }
-.beta-dialog { position: relative; z-index: 1; display: grid; width: min(100%, 390px); justify-items: center; gap: 10px; padding: 32px 28px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgba(14, 34, 48, .25); text-align: center; animation: beta-dialog-in .32s cubic-bezier(.16, 1, .3, 1) both; }
-.beta-dialog-close { position: absolute; top: 12px; right: 12px; }
+.beta-dialog { position: relative; z-index: 1; isolation: isolate; display: grid; width: min(100%, 390px); justify-items: center; gap: 10px; overflow: hidden; padding: 32px 28px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgba(14, 34, 48, .25); text-align: center; animation: beta-dialog-in .32s cubic-bezier(.16, 1, .3, 1) both; }
+.beta-dialog::before { position: absolute; z-index: 0; inset: 0; background: url("/sidebar-health-watermark.svg") 12px 12px / 116px 116px repeat; content: ""; opacity: .14; pointer-events: none; }
+.beta-dialog > * { position: relative; z-index: 1; }
+.beta-dialog-close { position: absolute; z-index: 2; top: 12px; right: 12px; }
 .beta-dialog-icon { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 14px; background: #eaf3f7; color: var(--blue-dark); }
 .beta-dialog-icon img { display: block; width: 48px; height: 48px; object-fit: contain; }
 .beta-dialog-icon img { animation: beta-icon-rise .9s cubic-bezier(.16, 1, .3, 1) both; }
@@ -1560,6 +1565,7 @@ html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .act
 html[data-theme="dark"] .hygiene-bed-link span { color: var(--muted); }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] .topbar::before { opacity: .12; }
+html[data-theme="dark"] .beta-dialog::before { opacity: .16; }
 html[data-theme="dark"] .about-page::before { opacity: .13; }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }
 html[data-theme="dark"] .psychology-privacy { border-color: #355d70; background: #203743; color: #b5e3f5; }
@@ -1666,6 +1672,7 @@ html[data-theme="dark"] .sidebar::before { opacity: .16; }
 .waiting-room-operator-row { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto; align-items: center; gap: 9px 14px; padding: 11px 13px; border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 7px; background: var(--surface); }
 .waiting-room-operator-row.is-called { border-left-color: var(--green); }
 .waiting-room-operator-row > strong { min-width: 0; color: var(--ink); text-align: left; overflow-wrap: anywhere; }
+.waiting-room-reannounce { justify-self: start; }
 .waiting-room-operator-row > small { color: var(--muted); text-align: right; }
 .waiting-room-operator-row .waiting-room-actions { grid-column: 1 / -1; justify-content: flex-end; }
 .waiting-room-code.priority { color: var(--red); }
@@ -1985,9 +1992,9 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
 .outpatient-encounter-form .section-heading, .outpatient-history-panel .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .outpatient-encounter-form .section-heading h2, .outpatient-history-panel .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
 .outpatient-encounter-form .section-heading .welcome-copy { margin: 6px 0 0; }
-.outpatient-patient-choice { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.outpatient-patient-choice { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .outpatient-queue-type { max-width: 520px; }
-.outpatient-new-patient-toggle { min-height: 43px; white-space: nowrap; }
+.outpatient-new-patient-toggle { min-height: 43px; align-self: end; white-space: nowrap; }
 .outpatient-new-patient-heading { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 12px; }
 .outpatient-new-patient-heading > div { display: grid; gap: 4px; }
 .outpatient-new-patient-heading strong { color: var(--ink); font-size: 13px; }
@@ -2015,6 +2022,7 @@ html[data-theme="dark"] :is(.outpatient-encounter-form, .outpatient-history-pane
   .waiting-room-cadence { align-items: stretch; flex-direction: column; }
   .waiting-room-cadence .field { width: 100%; }
   .outpatient-new-patient-toggle { justify-self: start; }
+  .dashboard-page .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .outpatient-encounter-card { grid-template-columns: 1fr auto; }
   .outpatient-encounter-card > span { grid-column: 1; }
   .outpatient-encounter-card .button { grid-column: 2; grid-row: 1 / span 2; }

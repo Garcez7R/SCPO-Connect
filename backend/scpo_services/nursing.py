@@ -1,13 +1,16 @@
 import re
 import uuid
+import os
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 from decimal import Decimal, InvalidOperation
 from enum import IntEnum
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
     JSON,
@@ -257,6 +260,7 @@ class EmergencyArrival(Base):
     clinical_priority_reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     allergy_report_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_asked")
     reported_allergies: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    announcement_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class NursingTriage(Base):
@@ -339,6 +343,7 @@ class ReceptionAppointment(Base):
     arrived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    announcement_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class PatientFlowEvent(Base):
@@ -2691,7 +2696,7 @@ def list_public_reception_queue(
         )
     ).all()
 
-    queue_entries: list[tuple[datetime, str, str, str, str, str, datetime]] = []
+    queue_entries: list[tuple[datetime, str, str, str, str, str, datetime, int]] = []
     for arrival in arrivals:
         queue_type = (
             "priority"
@@ -2708,6 +2713,7 @@ def list_public_reception_queue(
                 queue_type,
                 "arrival",
                 arrival.updated_at,
+                arrival.announcement_version,
             )
         )
     for appointment, patient_name in appointment_rows:
@@ -2722,13 +2728,14 @@ def list_public_reception_queue(
                 "common",
                 "appointment",
                 appointment.updated_at,
+                appointment.announcement_version,
             )
         )
 
     queue_entries.sort(key=lambda item: (item[0], item[1]))
     sequence_by_queue = {"common": 0, "priority": 0}
     public_items: list[dict[str, str]] = []
-    for arrived_at, item_id, patient_name, status, queue_type, item_type, updated_at in queue_entries:
+    for arrived_at, item_id, patient_name, status, queue_type, item_type, updated_at, announcement_version in queue_entries:
         sequence_by_queue[queue_type] += 1
         prefix = "P" if queue_type == "priority" else "C"
         if status not in {"waiting", "arrived", "called", "in_service"}:
@@ -2744,9 +2751,159 @@ def list_public_reception_queue(
                 "queue_type": queue_type,
                 "arrived_at": arrived_at.isoformat(),
                 "updated_at": updated_at.isoformat(),
+                "announcement_version": str(announcement_version),
             }
         )
     return {"items": public_items, "generated_at": datetime.now(UTC).isoformat()}
+
+
+SCREENSAVER_IMAGE_TYPES = {
+    "image/avif": (".avif", "avif"),
+    "image/jpeg": (".jpg", "jpeg"),
+    "image/png": (".png", "png"),
+    "image/webp": (".webp", "webp"),
+}
+SCREENSAVER_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+
+
+def reception_screensaver_directory() -> Path:
+    configured_directory = os.getenv("SCPO_RECEPTION_SCREENSAVER_DIR")
+    if configured_directory:
+        return Path(configured_directory).expanduser().resolve()
+    local_data_directory = os.getenv("SCPO_LOCAL_DATA_DIR")
+    if local_data_directory:
+        return (Path(local_data_directory).expanduser() / "reception-screensaver").resolve()
+    return (Path(__file__).resolve().parents[2] / "data" / "reception-screensaver").resolve()
+
+
+def screensaver_image_files() -> list[Path]:
+    directory = reception_screensaver_directory()
+    directory.mkdir(parents=True, exist_ok=True)
+    return sorted(
+        (
+            path
+            for path in directory.iterdir()
+            if path.is_file() and path.suffix.lower() in {item[0] for item in SCREENSAVER_IMAGE_TYPES.values()}
+        ),
+        key=lambda path: path.name,
+    )
+
+
+def is_valid_screensaver_image(image_type: str, content: bytes) -> bool:
+    if image_type == "image/jpeg":
+        return content.startswith(b"\xff\xd8\xff")
+    if image_type == "image/png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if image_type == "image/webp":
+        return len(content) >= 12 and content.startswith(b"RIFF") and content[8:12] == b"WEBP"
+    if image_type == "image/avif":
+        return len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in {b"avif", b"avis", b"mif1"}
+    return False
+
+
+@app.get("/api/v1/reception/public/screensaver/images")
+def list_public_screensaver_images() -> dict[str, list[dict[str, str]]]:
+    try:
+        images = screensaver_image_files()
+    except OSError as error:
+        raise HTTPException(status_code=500, detail="Não foi possível consultar as imagens da proteção de tela") from error
+    return {
+        "images": [
+            {
+                "filename": image.name,
+                "url": f"/api/v1/reception/public/screensaver/images/{image.name}",
+            }
+            for image in images
+        ]
+    }
+
+
+@app.get("/api/v1/reception/public/screensaver/images/{filename}")
+def get_public_screensaver_image(filename: str) -> FileResponse:
+    if not re.fullmatch(r"[a-f0-9]{32}\.(?:avif|jpg|png|webp)", filename):
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    image_path = reception_screensaver_directory() / filename
+    if not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    media_type = next(
+        (media_type for media_type, (extension, _) in SCREENSAVER_IMAGE_TYPES.items() if extension == image_path.suffix),
+        None,
+    )
+    if media_type is None:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    return FileResponse(
+        image_path,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.post("/api/v1/reception/screensaver/images", status_code=201)
+async def upload_reception_screensaver_image(
+    request: Request,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, str]:
+    image_type = request.headers.get("content-type", "").split(";", maxsplit=1)[0].strip().lower()
+    image_details = SCREENSAVER_IMAGE_TYPES.get(image_type)
+    if image_details is None:
+        raise HTTPException(status_code=415, detail="Formato não aceito. Envie JPG, PNG, WebP ou AVIF.")
+
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > SCREENSAVER_IMAGE_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Cada imagem deve ter no máximo 8 MB.")
+    if not is_valid_screensaver_image(image_type, content):
+        raise HTTPException(status_code=422, detail="O arquivo não corresponde a uma imagem válida do formato informado.")
+
+    extension, audit_label = image_details
+    filename = f"{uuid.uuid4().hex}{extension}"
+    directory = reception_screensaver_directory()
+    image_path = directory / filename
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        image_path.write_bytes(content)
+        emit_audit_event(principal, "reception", "screensaver_image_uploaded", filename, db=db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            image_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            raise RuntimeError("Não foi possível finalizar ou limpar o upload da imagem.") from cleanup_error
+        raise
+    return {
+        "filename": filename,
+        "url": f"/api/v1/reception/public/screensaver/images/{filename}",
+        "format": audit_label,
+    }
+
+
+@app.delete("/api/v1/reception/screensaver/images/{filename}", status_code=204)
+def delete_reception_screensaver_image(
+    filename: str,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> Response:
+    if not re.fullmatch(r"[a-f0-9]{32}\.(?:avif|jpg|png|webp)", filename):
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    image_path = reception_screensaver_directory() / filename
+    if not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    content = image_path.read_bytes()
+    image_path.unlink()
+    try:
+        emit_audit_event(principal, "reception", "screensaver_image_deleted", filename, db=db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            image_path.write_bytes(content)
+        except OSError as restore_error:
+            raise RuntimeError("A exclusão falhou e não foi possível restaurar a imagem; contate o suporte.") from restore_error
+        raise
+    return Response(status_code=204)
 
 
 def get_reception_queue_settings(db: Session) -> ReceptionQueueSettings:
