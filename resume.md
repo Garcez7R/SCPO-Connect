@@ -176,6 +176,8 @@ O estado atual está funcional e coerente para demonstração, mas ainda exige p
 ### Ajustes concluídos nesta retomada
 - O painel longitudinal de sinais vitais agora inicia sem período selecionado e só consulta a API após uma escolha explícita. O estado inicial não depende de `setState` dentro de um effect; o lint React e o build passaram.
 - A chamada pública exibe “Atendimento” para a fila comum e mantém “Atendimento prioritário” para a fila prioritária; o nome é dimensionado para caber no cartão.
+- Nova chamada no painel público produz um flash âmbar breve e inicia automaticamente toque + locução “Senha [código]. [nome]. Dirija-se ao atendimento.”; a sequência repete uma única vez após 3 segundos, sem sobrepor a locução anterior. O painel não anuncia novamente as chamadas já ativas ao abrir.
+- O botão do operador foi simplificado para “Reanunciar aqui”, reproduzindo o mesmo toque/locução com uma repetição; removido o botão separado “Chamar com voz” para evitar duplicidade de áudio entre operador e painel.
 - A atualização da fila de chamadas passou a ocorrer a cada 5 segundos, sem sobrepor requisições; o painel de Enfermagem também exibe a localização junto ao nome do paciente.
 - Cartões de indicadores de Gestão, Oficina Terapêutica e outros resumos receberam estilo consistente e respeitam `prefers-reduced-motion`.
 - Validações executadas: `npm run lint`, `npm run typecheck` e `npm run build` passaram. O build ainda reporta o aviso conhecido de chunk acima de 500 kB.

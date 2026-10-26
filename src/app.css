@@ -1581,12 +1581,17 @@ html[data-theme="dark"] .sidebar {
 .waiting-room-code.priority { color: var(--red); }
 .waiting-room-code.common { color: var(--blue-dark); }
 .waiting-room-kiosk-current { display: grid; min-height: 0; place-items: center; }
+.waiting-room-kiosk-call-highlight::after { position: fixed; z-index: 1000; inset: 0; background: rgb(255 191 0 / 48%); content: ""; pointer-events: none; animation: waiting-room-call-flash 1400ms ease-out both; }
+@keyframes waiting-room-call-flash { 0%, 100% { opacity: 0; } 12% { opacity: 1; } 42% { opacity: .55; } }
 .waiting-room-kiosk-current .waiting-room-kiosk-card { container-type: inline-size; width: min(100%, 1500px); min-height: min(58vh, 680px); grid-template-columns: minmax(0, 1fr); justify-items: center; gap: clamp(12px, 2.5vw, 30px); padding: clamp(22px, 5vw, 72px); border-top-width: 0; border-left: 12px solid var(--blue); text-align: center; }
 .waiting-room-kiosk-current .waiting-room-kiosk-card-priority { border-left-color: var(--red); }
 .waiting-room-kiosk-current .waiting-room-kiosk-card > strong { grid-row: auto; font-size: clamp(58px, 12vw, 180px); line-height: 1; }
 .waiting-room-kiosk-current .waiting-room-kiosk-card > b { grid-row: auto; max-width: 100%; overflow: hidden; font-size: clamp(48px, 9vw, 144px); text-overflow: ellipsis; white-space: nowrap; }
 .waiting-room-kiosk-priority { grid-column: 1 / -1; padding: 8px 14px; border-radius: 5px; background: var(--blue-pale); color: var(--blue-dark); font-size: clamp(16px, 2.2vw, 28px); font-weight: 700; }
 .waiting-room-kiosk-priority.priority { background: #fff1ef; color: #a62f27; }
+@media (prefers-reduced-motion: reduce) {
+  .waiting-room-kiosk-call-highlight::after { animation: none; opacity: .18; }
+}
 .waiting-room-display-empty { margin: 0; color: var(--muted); font-size: clamp(24px, 4vw, 54px); text-align: center; }
 .about-page { display: flex; min-height: calc(100vh - 150px); flex-direction: column; }
 .about-legal-grid { flex: 1; align-content: start; }

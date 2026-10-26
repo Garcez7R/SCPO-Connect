@@ -413,7 +413,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   const [items, setItems] = useState<WaitingRoomItem[]>([])
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState('')
-  const [kioskAlertsEnabled, setKioskAlertsEnabled] = useState(false)
+  const [isCallHighlighting, setIsCallHighlighting] = useState(false)
   const [clock, setClock] = useState(() => new Date())
   const [normalBeforePriority, setNormalBeforePriority] = useState(3)
   const [normalCallsSincePriority, setNormalCallsSincePriority] = useState(0)
@@ -422,8 +422,98 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   const [notice, setNotice] = useState('')
   const previousCalledRef = useRef<Set<string> | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
-  const kioskAlertsEnabledRef = useRef(false)
   const queueRefreshInProgressRef = useRef(false)
+  const announcementQueueRef = useRef<Array<{ item: WaitingRoomItem; repeatAfterMs?: number }>>([])
+  const announcementInProgressRef = useRef(false)
+  const announcementDelayTimerRef = useRef<number | null>(null)
+  const highlightTimerRef = useRef<number | null>(null)
+  const disposedRef = useRef(false)
+
+  const highlightNewCall = useCallback(() => {
+    setIsCallHighlighting(true)
+    if (highlightTimerRef.current !== null) window.clearTimeout(highlightTimerRef.current)
+    highlightTimerRef.current = window.setTimeout(() => setIsCallHighlighting(false), 1400)
+  }, [])
+
+  const playKioskAlert = useCallback(() => {
+    const context = audioContextRef.current ?? new window.AudioContext()
+    audioContextRef.current = context
+    return context.resume().then(() => {
+      if (context.state !== 'running') throw new Error('O áudio está bloqueado neste navegador.')
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      oscillator.type = 'sine'
+      oscillator.frequency.value = 880
+      gain.gain.setValueAtTime(0.16, context.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.7)
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      return new Promise<void>((resolve) => {
+        oscillator.onended = () => resolve()
+        oscillator.start()
+        oscillator.stop(context.currentTime + 0.7)
+      })
+    })
+  }, [])
+
+  const speakCall = useCallback((item: WaitingRoomItem) => {
+    if (!('speechSynthesis' in window)) {
+      setError('Este navegador não oferece anúncio por voz. A chamada visual continua disponível.')
+      return Promise.resolve()
+    }
+    const patientName = item.first_name ?? item.patient_name.trim().split(/\s+/)[0]
+    const utterance = new SpeechSynthesisUtterance(`Senha ${item.code}. ${patientName}. Dirija-se ao atendimento.`)
+    utterance.lang = 'pt-BR'
+    return new Promise<void>((resolve) => {
+      utterance.onend = () => resolve()
+      utterance.onerror = () => {
+        if (!disposedRef.current) setError('O navegador não conseguiu reproduzir o anúncio por voz.')
+        resolve()
+      }
+      try {
+        window.speechSynthesis.speak(utterance)
+      } catch (speechError) {
+        if (!disposedRef.current) setError(speechError instanceof Error ? speechError.message : 'O navegador não conseguiu reproduzir o anúncio por voz.')
+        resolve()
+      }
+    })
+  }, [])
+
+  const processAnnouncementQueue = useCallback(async () => {
+    if (announcementInProgressRef.current) return
+    announcementInProgressRef.current = true
+    try {
+      while (announcementQueueRef.current.length && !disposedRef.current) {
+        const next = announcementQueueRef.current.shift()
+        if (!next) continue
+        if (disposedRef.current) break
+        const announcementStartedAt = Date.now()
+        try {
+          await playKioskAlert()
+        } catch (audioError) {
+          if (!disposedRef.current) setError(audioError instanceof Error ? audioError.message : 'O navegador não conseguiu reproduzir o sinal sonoro.')
+        }
+        if (!disposedRef.current) await speakCall(next.item)
+        const remainingRepeatDelay = (next.repeatAfterMs ?? 0) - (Date.now() - announcementStartedAt)
+        if (remainingRepeatDelay > 0 && !disposedRef.current) {
+          await new Promise<void>((resolve) => {
+            announcementDelayTimerRef.current = window.setTimeout(resolve, remainingRepeatDelay)
+          })
+          announcementDelayTimerRef.current = null
+        }
+      }
+    } finally {
+      announcementInProgressRef.current = false
+    }
+  }, [playKioskAlert, speakCall])
+
+  const enqueueAnnouncements = useCallback((calls: WaitingRoomItem[], highlight: boolean) => {
+    if (highlight) highlightNewCall()
+    calls.forEach((item) => {
+      announcementQueueRef.current.push({ item, repeatAfterMs: 3000 }, { item })
+    })
+    void processAnnouncementQueue()
+  }, [highlightNewCall, processAnnouncementQueue])
 
   const loadQueue = useCallback(async () => {
     if (queueRefreshInProgressRef.current) return
@@ -435,17 +525,12 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         const publicItems = data.items ?? []
         const calledNow = new Set(publicItems.filter((item) => item.status === 'called' || item.status === 'in_service').map((item) => `${item.type}-${item.id}`))
         const previousCalled = previousCalledRef.current
-        if (previousCalled && kioskAlertsEnabledRef.current) {
+        if (previousCalled) {
           const newCalls = publicItems.filter((item) =>
             (item.status === 'called' || item.status === 'in_service')
             && !previousCalled.has(`${item.type}-${item.id}`),
           )
-          if (newCalls.length) {
-            playKioskAlert()
-            newCalls.forEach((item, index) => {
-              window.setTimeout(() => announce(item), 500 + index * 2500)
-            })
-          }
+          if (newCalls.length) enqueueAnnouncements(newCalls, true)
         }
         previousCalledRef.current = calledNow
         setItems(publicItems.map((item) => ({
@@ -537,16 +622,6 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         return { ...item, code: `${queue}${String(nextNumber).padStart(3, '0')}` }
       })
       const calledNow = new Set(numberedItems.filter((item) => item.status === 'called').map((item) => `${item.type}-${item.id}`))
-      const previousCalled = previousCalledRef.current
-      if (previousCalled && kioskAlertsEnabledRef.current) {
-        const newCalls = numberedItems.filter((item) =>
-          item.status === 'called' && !previousCalled.has(`${item.type}-${item.id}`),
-        )
-        if (newCalls.length) {
-          playKioskAlert()
-          newCalls.forEach((item) => announce(item))
-        }
-      }
       previousCalledRef.current = calledNow
       const queueSettingsResponse = await fetch('/api/v1/reception/queue-settings')
       const queueSettings = await readApiResponse<{ normal_before_priority: number; normal_calls_since_priority: number }>(queueSettingsResponse)
@@ -564,7 +639,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       queueRefreshInProgressRef.current = false
       setLoading(false)
     }
-  }, [kioskMode])
+  }, [enqueueAnnouncements, kioskMode])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadQueue(), 0)
@@ -577,69 +652,23 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
     }
   }, [kioskMode, loadQueue])
 
-  useEffect(() => () => {
-    void audioContextRef.current?.close()
+  useEffect(() => {
+    disposedRef.current = false
+    return () => {
+      disposedRef.current = true
+      if (announcementDelayTimerRef.current !== null) window.clearTimeout(announcementDelayTimerRef.current)
+      if (highlightTimerRef.current !== null) window.clearTimeout(highlightTimerRef.current)
+      announcementQueueRef.current = []
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+      void audioContextRef.current?.close()
+    }
   }, [])
 
-  useEffect(() => {
-    if (!kioskMode) return
-    const context = new window.AudioContext()
-    audioContextRef.current = context
-    void context.resume().then(() => {
-      if (context.state === 'running') {
-        kioskAlertsEnabledRef.current = true
-        setKioskAlertsEnabled(true)
-      }
-    }).catch(() => {
-      kioskAlertsEnabledRef.current = false
-      setKioskAlertsEnabled(false)
-    })
-  }, [kioskMode])
-
-  function announce(item: WaitingRoomItem) {
-    if (!('speechSynthesis' in window)) {
-      setNotice('Este navegador não oferece anúncio por voz. A chamada visual continua disponível.')
-      return false
-    }
-    window.speechSynthesis.cancel()
-    const priorityText = item.queue_type === 'priority' ? 'Atendimento prioritário. ' : ''
-    const utterance = new SpeechSynthesisUtterance(`${priorityText}Senha ${item.code}. ${item.first_name ?? item.patient_name.trim().split(/\s+/)[0]}. Dirija-se ao atendimento.`)
-    utterance.lang = 'pt-BR'
-    utterance.onerror = () => setError('O navegador não conseguiu reproduzir o anúncio por voz.')
-    window.speechSynthesis.speak(utterance)
-    return true
+  function reannounce(item: WaitingRoomItem) {
+    enqueueAnnouncements([item], false)
   }
 
-  function playKioskAlert() {
-    const context = audioContextRef.current
-    if (!context) return
-    const oscillator = context.createOscillator()
-    const gain = context.createGain()
-    oscillator.type = 'sine'
-    oscillator.frequency.value = 880
-    gain.gain.setValueAtTime(0.16, context.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.7)
-    oscillator.connect(gain)
-    gain.connect(context.destination)
-    oscillator.start()
-    oscillator.stop(context.currentTime + 0.7)
-  }
-
-  async function enableKioskAlerts() {
-    try {
-      const context = audioContextRef.current ?? new window.AudioContext()
-      await context.resume()
-      audioContextRef.current = context
-      kioskAlertsEnabledRef.current = true
-      setKioskAlertsEnabled(true)
-      setNotice('Alertas sonoros e chamadas por voz ativados neste computador.')
-      setError('')
-    } catch (audioError) {
-      setError(audioError instanceof Error ? audioError.message : 'Não foi possível ativar os alertas deste navegador.')
-    }
-  }
-
-  async function callPatient(item: WaitingRoomItem, withVoice: boolean) {
+  async function callPatient(item: WaitingRoomItem) {
     setUpdating(`${item.type}-${item.id}`)
     setError('')
     setNotice('')
@@ -652,9 +681,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'called' }),
       }))
-      if (withVoice) playKioskAlert()
-      const voiceAvailable = withVoice ? announce(item) : true
-      setNotice(`${item.code} · ${item.patient_name} foi chamado.${withVoice && !voiceAvailable ? ' O navegador não oferece anúncio por voz.' : ''}`)
+      setNotice(`${item.code} · ${item.patient_name} foi chamado. O painel público anunciará a chamada automaticamente.`)
       await loadQueue()
     } catch (callError) {
       setError(callError instanceof Error ? callError.message : 'Não foi possível chamar o paciente.')
@@ -722,7 +749,8 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
     const currentCall = [calledFor(priorityItems), calledFor(commonItems)]
       .filter((item): item is WaitingRoomItem => Boolean(item))
       .sort((left, right) => (right.updated_at ?? right.arrived_at).localeCompare(left.updated_at ?? left.arrived_at))[0]
-    return <main className="waiting-room-kiosk" aria-label="Chamadas da Santa Casa Pedro Osório">
+    const currentCallName = currentCall?.first_name ?? currentCall?.patient_name.trim().split(/\s+/)[0] ?? ''
+    return <main className={`waiting-room-kiosk${isCallHighlighting ? ' waiting-room-kiosk-call-highlight' : ''}`} aria-label="Chamadas da Santa Casa Pedro Osório">
       <header>
         <div className="waiting-room-kiosk-brand">
           <img src="/scpo-connect-icon.png" alt="" />
@@ -730,7 +758,6 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
         </div>
         <div className="waiting-room-kiosk-tools">
           <time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(clock)}</time>
-          {!kioskAlertsEnabled && <button className="button button-secondary" type="button" onClick={() => void enableKioskAlerts()}>Ativar áudio</button>}
         </div>
       </header>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
@@ -743,7 +770,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
                 {currentCall.queue_type === 'priority' ? 'Atendimento prioritário' : 'Atendimento'}
               </span>
               <strong>{currentCall.code}</strong>
-              <b style={{ fontSize: `clamp(16px, calc(72cqi / ${Math.max((currentCall.first_name ?? currentCall.patient_name.trim().split(/\s+/)[0]).length, 1)}), 144px)` }}>{currentCall.first_name ?? currentCall.patient_name.trim().split(/\s+/)[0]}</b>
+              <b style={{ fontSize: `clamp(12px, calc(72cqi / ${Math.max([...currentCallName].length, 1)}), 144px)` }}>{currentCallName}</b>
             </article>
             : <p className="waiting-room-display-empty">Aguarde. Em breve uma chamada será exibida.</p>}
       </section>
@@ -769,8 +796,8 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
             <span className={`waiting-room-code ${queueType}`}>{item.code}</span>
             <strong>{item.patient_name}</strong>
             <small>{item.status === 'called' ? 'Chamado' : 'Aguardando'} · {dateTime(item.arrived_at)}</small>
-            {canUpdate && item.status === 'waiting' && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callPatient(item, false)}>Chamar este paciente</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callPatient(item, true)}>Chamar com voz</button></div>}
-            {canUpdate && item.status === 'called' && 'speechSynthesis' in window && <button className="button button-secondary" type="button" onClick={() => announce(item)}>Reanunciar</button>}
+            {canUpdate && item.status === 'waiting' && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callPatient(item)}>Chamar este paciente</button></div>}
+            {canUpdate && item.status === 'called' && <button className="button button-secondary" type="button" onClick={() => reannounce(item)}>Reanunciar aqui</button>}
           </article>)}</div>
         </section>
       })}
