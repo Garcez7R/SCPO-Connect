@@ -1016,6 +1016,19 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .hourly-round-group { display: grid; min-width: 0; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; }
 .hourly-round-group > h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; font-size: 13px; }
 .hourly-round-group > h3 span { color: var(--muted); font-size: 11px; }
+.hourly-round-patient { gap: 12px !important; padding: 14px !important; }
+.hourly-round-patient-heading { display: grid; gap: 4px; color: var(--ink); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.hourly-round-patient-heading > span { color: var(--muted); font-size: 12px; font-weight: 500; }
+.hourly-round-records { display: grid; grid-template-columns: minmax(170px, .72fr) minmax(0, 1.28fr); gap: 10px; }
+.hourly-round-record { display: grid; min-width: 0; align-content: start; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.hourly-round-record > div:first-child { display: grid; justify-items: start; gap: 7px; }
+.hourly-round-record .field-label { font-size: 11px; }
+.hourly-round-record-risk { border-top: 3px solid var(--red); }
+.hourly-round-record-check { border-top: 3px solid var(--blue); }
+.hourly-round-record-meta { color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
+.hourly-round-record .nursing-overview-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.hourly-round-record .button { min-height: 44px; justify-content: center; white-space: normal; }
+.hourly-round-record .field-grid { grid-column: 1 / -1; }
 .hourly-round-group-risk { border-top: 4px solid var(--red); }
 .hourly-round-group-clear { border-top: 4px solid var(--green); }
 .hourly-round-patient-risk { border-left: 4px solid var(--red) !important; }
@@ -1027,6 +1040,7 @@ html[data-theme="dark"] .hourly-round-patient-risk { border-left-color: #e77d85 
 html[data-theme="dark"] .hourly-round-patient-clear { border-left-color: #67b98b !important; }
 html[data-theme="dark"] .hourly-round-risk-tag-active { background: #44272a; color: #f3a4a8; }
 html[data-theme="dark"] .hourly-round-risk-tag-clear { background: #21372d; color: #a2dfbb; }
+html[data-theme="dark"] .hourly-round-record { border-color: var(--line); background: var(--page); }
 .hourly-round-status { display: inline-flex; width: fit-content; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 1.4; }
 .hourly-round-status-pending, .hourly-round-status-round-open { background: #fff4df; color: #80570d; }
 .hourly-round-status-checked, .hourly-round-status-round-completed { background: #eaf5ef; color: #2e6a4c; }
@@ -1052,6 +1066,11 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
   .nursing-medication-panel { gap: 12px; padding: 14px; }
   .nursing-medication-panel > .section-heading { align-items: stretch; flex-direction: column; }
   .nursing-medication-panel > .section-heading > .button { width: 100%; justify-content: center; }
+  .hourly-round-groups { grid-template-columns: 1fr; }
+  .hourly-round-group { padding: 10px; }
+  .hourly-round-records { grid-template-columns: 1fr; }
+  .hourly-round-record .nursing-overview-actions { grid-template-columns: 1fr; }
+  .hourly-round-record .button { width: 100%; }
   .physician-profile-inline .section-heading { align-items: stretch; flex-direction: column; }
   .physician-profile-inline .section-heading > .button { width: 100%; justify-content: center; }
   .admin-report-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }

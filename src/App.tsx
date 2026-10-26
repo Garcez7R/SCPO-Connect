@@ -1779,20 +1779,27 @@ function NursingHourlyRoundsPanel({ canUpdate }: { canUpdate: boolean }) {
             <h3>{label} <span>{groupPatients.length}</span></h3>
             <div className="nursing-medication-history">
           {groupPatients.map((patient) => <article className={`hourly-round-patient ${patient.elopement_risk ? 'hourly-round-patient-risk' : 'hourly-round-patient-clear'}`} key={patient.patient_reference}>
-            <strong>{patient.patient_name} · Quarto {patient.room} · Leito {patient.bed}</strong>
-            <span className={`hourly-round-risk-tag ${patient.elopement_risk ? 'hourly-round-risk-tag-active' : 'hourly-round-risk-tag-clear'}`}>{patient.elopement_risk ? 'Risco de evasão' : 'Sem risco de evasão'}</span>
-            <span className={`hourly-round-status hourly-round-status-${patient.status}`}>{hourlyRoundStatusLabels[patient.status]}{patient.status === 'exception' && patient.exception_type ? ` · ${hourlyRoundExceptionLabels[patient.exception_type] ?? patient.exception_type}` : ''} · {patient.checked_by_name || 'Sem responsável registrado'}{patient.checked_at ? ` · ${dateTime(patient.checked_at)}` : ''}</span>
-            {patient.note && <small>{patient.note}</small>}
-            {canUpdate && <div className="nursing-overview-actions">
-              <button className="button button-secondary" type="button" disabled={busy} onClick={() => void updateElopementRisk(patient, !patient.elopement_risk)}>{patient.elopement_risk ? 'Registrar sem risco' : 'Marcar risco de evasão'}</button>
-              <button className="button button-secondary" type="button" disabled={busy} onClick={() => void updatePatient(patient, { status: 'checked' })}>Registrar conferência</button>
-              <button className="button button-secondary" type="button" disabled={busy} onClick={() => { setExceptionPatient((selected) => selected === patient.patient_reference ? '' : patient.patient_reference); setExceptionNote('') }}>Registrar ocorrência</button>
-            </div>}
-            {canUpdate && exceptionPatient === patient.patient_reference && <form className="field-grid field-grid-two" onSubmit={(event) => { event.preventDefault(); void updatePatient(patient, { status: 'exception', exception_type: exceptionType, note: exceptionNote.trim() }) }}>
-              <label className="field"><span className="field-label">Tipo de ocorrência</span><select value={exceptionType} onChange={(event) => setExceptionType(event.target.value)}><option value="away">Ausente / em atendimento externo</option><option value="location">Em outro local da instituição</option><option value="not_found">Não localizado</option><option value="other">Outro</option></select></label>
-              <label className="field"><span className="field-label">Descrição breve</span><input required minLength={3} maxLength={500} value={exceptionNote} onChange={(event) => setExceptionNote(event.target.value)} /></label>
-              <button className="button button-primary" type="submit" disabled={busy || exceptionNote.trim().length < 3}>{busy ? 'Salvando…' : 'Salvar ocorrência'}</button>
-            </form>}
+            <strong className="hourly-round-patient-heading">{patient.patient_name}<span>Quarto {patient.room} · Leito {patient.bed}</span></strong>
+            <div className="hourly-round-records">
+              <section className="hourly-round-record hourly-round-record-risk" aria-label="Acompanhamento do risco de evasão">
+                <div><span className="field-label">Risco de evasão</span><span className={`hourly-round-risk-tag ${patient.elopement_risk ? 'hourly-round-risk-tag-active' : 'hourly-round-risk-tag-clear'}`}>{patient.elopement_risk ? 'Com risco' : 'Sem risco'}</span></div>
+                {canUpdate && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void updateElopementRisk(patient, !patient.elopement_risk)}>{patient.elopement_risk ? 'Alterar para sem risco' : 'Marcar risco de evasão'}</button>}
+              </section>
+              <section className="hourly-round-record hourly-round-record-check" aria-label="Verificação horária">
+                <div><span className="field-label">Verificação desta hora</span><span className={`hourly-round-status hourly-round-status-${patient.status}`}>{hourlyRoundStatusLabels[patient.status]}{patient.status === 'exception' && patient.exception_type ? ` · ${hourlyRoundExceptionLabels[patient.exception_type] ?? patient.exception_type}` : ''}</span></div>
+                <span className="hourly-round-record-meta">{patient.checked_by_name || 'Sem responsável registrado'}{patient.checked_at ? ` · ${dateTime(patient.checked_at)}` : ''}</span>
+                {patient.note && <small>{patient.note}</small>}
+                {canUpdate && <div className="nursing-overview-actions">
+                  <button className="button button-primary" type="button" disabled={busy} onClick={() => void updatePatient(patient, { status: 'checked' })}>Registrar conferência</button>
+                  <button className="button button-secondary" type="button" disabled={busy} onClick={() => { setExceptionPatient((selected) => selected === patient.patient_reference ? '' : patient.patient_reference); setExceptionNote('') }}>{exceptionPatient === patient.patient_reference ? 'Cancelar ocorrência' : 'Registrar ocorrência'}</button>
+                </div>}
+                {canUpdate && exceptionPatient === patient.patient_reference && <form className="field-grid field-grid-two" onSubmit={(event) => { event.preventDefault(); void updatePatient(patient, { status: 'exception', exception_type: exceptionType, note: exceptionNote.trim() }) }}>
+                  <label className="field"><span className="field-label">Tipo de ocorrência</span><select value={exceptionType} onChange={(event) => setExceptionType(event.target.value)}><option value="away">Ausente / em atendimento externo</option><option value="location">Em outro local da instituição</option><option value="not_found">Não localizado</option><option value="other">Outro</option></select></label>
+                  <label className="field"><span className="field-label">Descrição breve</span><input required minLength={3} maxLength={500} value={exceptionNote} onChange={(event) => setExceptionNote(event.target.value)} /></label>
+                  <button className="button button-primary" type="submit" disabled={busy || exceptionNote.trim().length < 3}>{busy ? 'Salvando…' : 'Salvar ocorrência'}</button>
+                </form>}
+              </section>
+            </div>
           </article>)}
             </div>
           </section>)}
