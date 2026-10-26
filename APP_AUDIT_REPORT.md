@@ -62,3 +62,17 @@ O chunk principal permanece acima do limite informativo de 500 kB do Vite. O arq
 ## Limites desta revisão
 
 Esta revisão encontrou problemas e verificou as superfícies automatizáveis disponíveis no repositório, mas não prova que todas as combinações de perfil, módulo, aba e estado operacional foram exercitadas. Nenhum serviço implantado foi acessado ou alterado. A homologação institucional, a checagem de permissões em runtime e a avaliação de retenção/auditoria continuam necessárias antes de uso com dados reais.
+
+## Complemento: fila, pacientes e relatórios
+
+Nesta rodada, a fila do pronto atendimento passou a abrir em **Em andamento**, mantendo a consulta **Todas** paginada e com filtro de período opcional. A API continua entregando páginas limitadas, e o filtro `active` inclui somente chegadas aguardando, chamadas ou em atendimento; assim, a tela não precisa carregar todo o histórico para exibir o trabalho atual.
+
+No módulo Médico, os pacientes são consultados em páginas de 50, com separação entre registros com quarto e leito atribuídos e cadastros sem ambos. O filtro de perfil permite distinguir clínico, psiquiátrico e combinado, com identificação visual. A classificação de internação é baseada nos campos quarto/leito disponíveis no cadastro; deve ser conferida com a operação de leitos antes de ser tratada como censo hospitalar oficial.
+
+A triagem da Enfermagem e os atendimentos ambulatoriais já estavam disponíveis no centro de relatórios da Administração e na área de relatórios da Gestão Hospitalar. Foi confirmado que a primeira usa `/api/v1/management/reports/triages` e a segunda `/api/v1/reception/encounters`, com acesso ao histórico salvo; o item ambulatorial agora está identificado como **Ambulatório · consultas e atendimentos**. Os relatórios abrangem registros persistidos nesses fluxos, não constituem confirmação de que todo atendimento realizado fora deles esteja integrado.
+
+Na Oficina Terapêutica, o formulário valida localmente nome, modalidade, local e data/hora; a API também rejeita nome e local vazios após remover espaços. Quando o servidor retorna apenas “Dados da solicitação”, a interface orienta a revisar os campos principais em vez de repetir a mensagem genérica.
+
+Validações desta rodada: lint, typecheck e build do frontend; Ruff nos arquivos backend alterados; 48 testes direcionados de Enfermagem e relatórios da Oficina Terapêutica; e `git diff --check`. O build continua exibindo aviso de chunk principal acima de 500 kB (539,02 kB minificado; 148,49 kB gzip), sem falha de compilação.
+
+Continuam pendentes os itens já apontados acima: operação recuperável para exclusão distribuída de perfil médico, homologação das permissões e fluxos em runtime, e testes E2E. A classificação por quarto/leito também precisa de validação operacional para não ser confundida com a ocupação oficial de leitos.

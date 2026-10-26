@@ -149,8 +149,10 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [reason, setReason] = useState('')
   const [allergyReportStatus, setAllergyReportStatus] = useState<AllergyReportStatus>('not_asked')
   const [reportedAllergies, setReportedAllergies] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | EmergencyArrivalStatus>('all')
+  const [statusFilter, setStatusFilter] = useState<'active' | 'all' | EmergencyArrivalStatus>('active')
   const [query, setQuery] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [offset, setOffset] = useState(0)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -162,13 +164,24 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [notice, setNotice] = useState('')
   const canCreate = user.permissions.reception?.includes('criar') ?? false
   const canUpdate = user.permissions.reception?.includes('alterar') ?? false
+  const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
 
   async function loadArrivals(filter = statusFilter, search = query, pageOffset = 0) {
+    if (invalidPeriod) {
+      setError('A data inicial deve ser anterior ou igual à data final.')
+      return
+    }
     setLoading(true)
     try {
       const params = new URLSearchParams({ limit: '25', offset: String(pageOffset) })
       if (filter !== 'all') params.set('status', filter)
       if (search.trim()) params.set('q', search.trim())
+      if (fromDate) params.set('from_at', new Date(`${fromDate}T00:00:00`).toISOString())
+      if (toDate) {
+        const endDate = new Date(`${toDate}T00:00:00`)
+        endDate.setDate(endDate.getDate() + 1)
+        params.set('to_at', endDate.toISOString())
+      }
       const response = await fetch(`/api/v1/reception/arrivals?${params}`)
       const data = await readApiResponse<{ arrivals?: EmergencyArrival[]; total?: number; status_counts?: Partial<EmergencyArrivalCounts> }>(response)
       setArrivals(data.arrivals ?? [])
@@ -185,7 +198,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
     let current = true
     Promise.all([
       fetch('/api/v1/nursing/patients'),
-      fetch('/api/v1/reception/arrivals?limit=25&offset=0'),
+      fetch('/api/v1/reception/arrivals?limit=25&offset=0&status=active'),
       fetch('/api/v1/nursing/beds'),
     ]).then(async ([patientResponse, arrivalsResponse, bedResponse]) => {
       const [patientData, arrivalsData, bedData] = await Promise.all([
@@ -365,9 +378,10 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       <section className="patient-list-panel reception-queue-panel">
         <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila do pronto atendimento <span className="module-total">{total}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadArrivals(statusFilter, query, offset)} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
         <div className="service-tabs module-tabs" role="tablist" aria-label="Filtrar chegadas por situação">
-          {([['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`button ${statusFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
+          {([['active', 'Em andamento', counts.waiting + counts.called + counts.in_service], ['all', 'Todas', total], ...Object.entries(emergencyArrivalStatuses).map(([value, label]) => [value, label, counts[value as EmergencyArrivalStatus]] as [EmergencyArrivalStatus, string, number])] as ['active' | 'all' | EmergencyArrivalStatus, string, number][]).map(([value, label, count]) => <button className={`button ${statusFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={statusFilter === value} key={value} onClick={() => { setStatusFilter(value); void loadArrivals(value, query, 0) }}>{label}<span>{count}</span></button>)}
         </div>
-        <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><button className="button button-primary" type="submit" disabled={loading}><Search size={15} /> Buscar</button></form>
+        <form className="reception-search" onSubmit={(event) => { event.preventDefault(); void loadArrivals(statusFilter, query, 0) }}><label className="field"><span className="field-label">Buscar por nome ou motivo informado</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar uma chegada" /></span></label><label className="field"><span className="field-label">De (opcional)</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até (opcional)</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label><button className="button button-primary" type="submit" disabled={loading || invalidPeriod}><Search size={15} /> Buscar</button></form>
+        <p className="field-hint">A lista carrega até 25 atendimentos por página. “Em andamento” é o filtro inicial; em “Todas”, use o período e a paginação para consultar o histórico sem carregar tudo de uma vez.</p>
         {loading ? <div className="history-empty">Carregando fila do pronto atendimento…</div> : arrivals.length ? <div className="reception-arrival-list">{arrivals.map((arrival) => <details className="reception-arrival-details" key={arrival.id}>
             <summary className="reception-arrival-summary"><strong>{arrival.patient_name}</strong><span className={`work-order-status status-${arrival.status === 'waiting' ? 'open' : arrival.status === 'in_service' ? 'in_progress' : arrival.status}`}>{emergencyArrivalStatuses[arrival.status]}</span></summary>
             <div className="reception-arrival-card">

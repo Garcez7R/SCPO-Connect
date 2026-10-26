@@ -1918,6 +1918,7 @@ def list_patients(
     search: Annotated[str | None, Query(max_length=120)] = None,
     room: Annotated[str | None, Query(max_length=20)] = None,
     bed: Annotated[str | None, Query(max_length=20)] = None,
+    inpatient: bool | None = None,
     treatment_track: Literal["clinical", "psychiatric", "combined", "unclassified"] | None = None,
     status: Literal["all", "active", "inactive"] | None = None,
     sort: Literal["location", "name"] = "location",
@@ -1933,6 +1934,12 @@ def list_patients(
         query = query.where(Patient.active.is_(False))
     elif status != "all" and not include_inactive:
         query = query.where(Patient.active.is_(True))
+    if inpatient is True:
+        query = query.where(func.trim(Patient.room) != "", func.trim(Patient.bed) != "")
+    elif inpatient is False:
+        query = query.where(
+            or_(func.trim(Patient.room) == "", func.trim(Patient.bed) == "")
+        )
 
     if room:
         query = query.where(Patient.room == room)
@@ -2292,7 +2299,7 @@ def list_emergency_arrivals(
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
-    status: Literal["waiting", "called", "in_service", "completed", "cancelled", "admitted"] | None = None,
+    status: Literal["active", "waiting", "called", "in_service", "completed", "cancelled", "admitted"] | None = None,
     q: Annotated[str, Query(max_length=120)] = "",
     from_at: datetime | None = None,
     to_at: datetime | None = None,
@@ -2301,7 +2308,10 @@ def list_emergency_arrivals(
     if from_at and to_at and to_at <= from_at:
         raise HTTPException(status_code=422, detail="O fim do período deve ser posterior ao início")
     if status:
-        filters.append(EmergencyArrival.status == status)
+        if status == "active":
+            filters.append(EmergencyArrival.status.in_(("waiting", "called", "in_service")))
+        else:
+            filters.append(EmergencyArrival.status == status)
     if from_at:
         filters.append(EmergencyArrival.created_at >= from_at)
     if to_at:

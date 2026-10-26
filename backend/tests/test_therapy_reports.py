@@ -3,6 +3,7 @@ from collections.abc import Generator
 import pytest
 from alembic import command
 from alembic.config import Config
+from pydantic import ValidationError
 from scpo_services import therapy
 from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
 from scpo_services.nursing import Patient
@@ -138,6 +139,23 @@ def test_therapy_activity_tracks_and_reconciles_participant_attendance(
     assert therapy.list_activities(
         therapist, therapy_database, from_date=None, to_date=None, limit=100
     )["activities"][0]["participants"] == updated["participants"]
+
+
+def test_therapy_activity_rejects_blank_required_text_fields() -> None:
+    with pytest.raises(ValidationError, match="title"):
+        therapy.ActivityPayload(
+            title="   ",
+            activity_type="arte",
+            location="Sala",
+            starts_at="2026-10-14T14:00:00-03:00",
+        )
+    with pytest.raises(ValidationError, match="location"):
+        therapy.ActivityPayload(
+            title="Atividade válida",
+            activity_type="arte",
+            location="  ",
+            starts_at="2026-10-14T14:00:00-03:00",
+        )
 
 
 def test_therapy_roster_returns_only_operational_identity(

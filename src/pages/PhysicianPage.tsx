@@ -17,6 +17,7 @@ type Patient = {
   allergies?: string
   allergies_status?: 'unknown' | 'none_known' | 'known'
   active?: boolean
+  treatment_track?: 'clinical' | 'psychiatric' | 'combined' | 'unclassified'
 }
 type Profile = { user_id: string; name: string; crm: string; crm_state: string }
 type Prescription = {
@@ -60,10 +61,17 @@ const emptyForm: PrescriptionForm = {
 
 function PhysicianPage() {
   const [patients, setPatients] = useState<Patient[]>([])
+  const [patientTotal, setPatientTotal] = useState(0)
+  const [patientPage, setPatientPage] = useState(0)
+  const [patientSearch, setPatientSearch] = useState('')
+  const [patientListLoading, setPatientListLoading] = useState(false)
+  const [patientListError, setPatientListError] = useState('')
   const [profile, setProfile] = useState<Profile | null>(null)
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [patientReference, setPatientReference] = useState('')
   const [physicianTab, setPhysicianTab] = useState<'triage' | 'patients'>('triage')
+  const [patientGroup, setPatientGroup] = useState<'inpatients' | 'registered'>('inpatients')
+  const [treatmentTrackFilter, setTreatmentTrackFilter] = useState<'all' | NonNullable<Patient['treatment_track']>>('all')
   const [form, setForm] = useState<PrescriptionForm>(emptyForm)
   const [loading, setLoading] = useState(true)
   const [loadAttempt, setLoadAttempt] = useState(0)
@@ -71,9 +79,10 @@ function PhysicianPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
+  const visiblePatients = patients
   const selectedPatient = useMemo(
-    () => patients.find((patient) => patient.reference === patientReference),
-    [patients, patientReference],
+    () => visiblePatients.find((patient) => patient.reference === patientReference),
+    [visiblePatients, patientReference],
   )
 
   useEffect(() => {
@@ -91,7 +100,6 @@ function PhysicianPage() {
         }
       }
       await Promise.all([
-        loadResource<{ patients: Patient[] }>('/api/v1/nursing/patients', 'Cadastro de pacientes', (data) => setPatients(data.patients.filter((patient) => patient.active !== false))),
         loadResource<{ profile: Profile | null }>('/api/v1/physicians/profile', 'Perfil profissional', (data) => setProfile(data.profile)),
         loadResource<{ prescriptions: Prescription[] }>('/api/v1/physicians/prescriptions', 'Prescrições', (data) => setPrescriptions(data.prescriptions)),
       ])
@@ -105,6 +113,47 @@ function PhysicianPage() {
     void load()
     return () => { active = false }
   }, [loadAttempt])
+
+  useEffect(() => {
+    let active = true
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      async function loadPatients() {
+        setPatientListLoading(true)
+        try {
+          const params = new URLSearchParams({
+            limit: '50',
+            offset: String(patientPage * 50),
+            status: 'active',
+            inpatient: String(patientGroup === 'inpatients'),
+          })
+          if (treatmentTrackFilter !== 'all') params.set('treatment_track', treatmentTrackFilter)
+          if (patientSearch.trim()) params.set('search', patientSearch.trim())
+          const data = await readApiResponse<{ patients?: Patient[]; total?: number }>(
+            await fetch(`/api/v1/nursing/patients?${params}`, { signal: controller.signal }),
+          )
+          if (!active) return
+          setPatients(data.patients ?? [])
+          setPatientTotal(data.total ?? 0)
+          setPatientListError('')
+        } catch (loadError) {
+          if (active && !(loadError instanceof DOMException && loadError.name === 'AbortError')) {
+            setPatients([])
+            setPatientTotal(0)
+            setPatientListError(readableApiError(loadError))
+          }
+        } finally {
+          if (active) setPatientListLoading(false)
+        }
+      }
+      void loadPatients()
+    }, patientSearch.trim() ? 250 : 0)
+    return () => {
+      active = false
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+  }, [patientGroup, treatmentTrackFilter, patientPage, patientSearch, loadAttempt])
 
   async function createPrescription(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -157,6 +206,25 @@ function PhysicianPage() {
     bed: selectedPatient.bed,
   }
 
+  async function openPatientFromTriage(reference: string) {
+    setError('')
+    setPatientGroup('inpatients')
+    setTreatmentTrackFilter('all')
+    setPatientPage(0)
+    setPhysicianTab('patients')
+    try {
+      const patient = await readApiResponse<Patient>(
+        await fetch(`/api/v1/nursing/patients/${encodeURIComponent(reference)}`),
+      )
+      setPatientGroup(patient.room.trim() && patient.bed.trim() ? 'inpatients' : 'registered')
+      setPatientSearch(patient.name)
+      setPatientReference(reference)
+      setForm((current) => ({ ...current, patient_reference: reference }))
+    } catch (loadError) {
+      setError(readableApiError(loadError))
+    }
+  }
+
   return <section className="page-enter physician-page">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ASSISTÊNCIA MÉDICA</p><h1>Médico</h1><p className="welcome-copy">Fila de atendimentos triados, ficha clínica, sinais vitais e prescrições internas.</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span></div>
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
@@ -171,18 +239,31 @@ function PhysicianPage() {
         <button className={`button ${physicianTab === 'triage' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'triage'} onClick={() => setPhysicianTab('triage')}>Aguardando avaliação</button>
         <button className={`button ${physicianTab === 'patients' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'patients'} onClick={() => setPhysicianTab('patients')}>Pacientes cadastrados</button>
       </div>
-      {physicianTab === 'triage' && <PhysicianTriageQueue onOpenPatient={(reference) => {
-        setPatientReference(reference)
-        setForm((current) => ({ ...current, patient_reference: reference }))
-        setPhysicianTab('patients')
-      }} />}
+      {physicianTab === 'triage' && <PhysicianTriageQueue onOpenPatient={(reference) => void openPatientFromTriage(reference)} />}
       {physicianTab === 'patients' && <>
+      <div className="patient-list-panel physician-patient-groups">
+        <div className="admin-tabs module-tabs" role="tablist" aria-label="Separar pacientes cadastrados e internados">
+          <button className={`button ${patientGroup === 'inpatients' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={patientGroup === 'inpatients'} onClick={() => { setPatientGroup('inpatients'); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>Internados</button>
+          <button className={`button ${patientGroup === 'registered' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={patientGroup === 'registered'} onClick={() => { setPatientGroup('registered'); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>Cadastrados sem internação</button>
+        </div>
+        <div className="physician-patient-filters"><label className="field physician-care-filter"><span className="field-label">Perfil de cuidado</span><select value={treatmentTrackFilter} onChange={(event) => { setTreatmentTrackFilter(event.target.value as typeof treatmentTrackFilter); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}><option value="all">Todos os perfis</option><option value="clinical">Clínico</option><option value="psychiatric">Psiquiátrico</option><option value="combined">Clínico e psiquiátrico</option><option value="unclassified">Não classificado</option></select></label><label className="field physician-patient-search"><span className="field-label">Buscar paciente</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }} placeholder="Nome ou identificador" /></label></div>
+        <p className="field-hint">O perfil de cuidado é uma classificação operacional e não substitui diagnóstico.</p>
+        {patientListError && <ToastMessage variant="error">{patientListError}</ToastMessage>}
+        {patientListLoading && <p className="history-empty" role="status">Carregando pacientes…</p>}
+        {visiblePatients.length > 0 && <div className="physician-care-roster">{visiblePatients.map((patient) => {
+          const track = patient.treatment_track ?? 'unclassified'
+          const labels = { clinical: 'Cuidado clínico', psychiatric: 'Cuidado psiquiátrico', combined: 'Cuidado clínico e psiquiátrico', unclassified: 'Perfil não classificado' }
+          return <button className={`physician-care-roster-item physician-care-${track}${patient.reference === patientReference ? ' is-selected' : ''}`} key={patient.reference} type="button" onClick={() => { setPatientReference(patient.reference); setForm((current) => ({ ...current, patient_reference: patient.reference })) }}><span className={`physician-care-badge physician-care-${track}`}>{labels[track]}</span><strong>{patient.name}</strong><small>{patient.room && patient.bed ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem acomodação atribuída'}</small></button>
+        })}</div>}
+        {!patientListLoading && !patientListError && !visiblePatients.length && <p className="history-empty">{patientSearch.trim() ? 'Nenhum paciente corresponde à busca.' : patientGroup === 'inpatients' ? 'Nenhum paciente internado está disponível.' : 'Nenhum cadastro ativo sem internação está disponível.'}</p>}
+        {!patientListLoading && patientTotal > 50 && <nav className="history-pagination" aria-label="Paginação dos pacientes médicos"><span>Exibindo {patientPage * 50 + 1}–{Math.min((patientPage + 1) * 50, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={patientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}>Anterior</button><button className="button button-secondary" type="button" disabled={(patientPage + 1) * 50 >= patientTotal} onClick={() => setPatientPage((page) => page + 1)}>Próxima</button></div></nav>}
+      </div>
       <div className="form-grid physician-patient-picker">
-        <PatientSelect label="Paciente para consulta" patients={patients} value={patientReference} onChange={(reference) => { setPatientReference(reference); setForm((current) => ({ ...current, patient_reference: reference })) }} optionLabel={(patient) => `${patient.name} · quarto ${patient.room || '—'} · leito ${patient.bed || '—'}`} />
+        <PatientSelect label="Paciente para consulta" patients={visiblePatients} value={patientReference} onChange={(reference) => { setPatientReference(reference); setForm((current) => ({ ...current, patient_reference: reference })) }} optionLabel={(patient) => `${patient.name} · ${patient.room && patient.bed ? `internado · quarto ${patient.room} · leito ${patient.bed}` : 'cadastro ativo sem internação'}`} />
       </div>
       {selectedPatient && <>
         <section className="patient-list-panel">
-          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'} · Quarto {selectedPatient.room || '—'} · leito {selectedPatient.bed || '—'}</p></div></div>
+          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">{selectedPatient.room && selectedPatient.bed ? `Internado · Quarto ${selectedPatient.room} · leito ${selectedPatient.bed}` : 'Cadastro ativo sem internação'} · Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'}</p></div><span className={`physician-care-badge physician-care-${selectedPatient.treatment_track ?? 'unclassified'}`}>{({ clinical: 'Cuidado clínico', psychiatric: 'Cuidado psiquiátrico', combined: 'Cuidado clínico e psiquiátrico', unclassified: 'Perfil não classificado' })[selectedPatient.treatment_track ?? 'unclassified']}</span></div>
           {selectedPatient.allergies_status === 'known' && selectedPatient.allergies
             ? <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alergia registrada</strong><span>{selectedPatient.allergies}</span></div></div>
             : <div className={`clinical-alert ${selectedPatient.allergies_status === 'none_known' ? 'clinical-alert-clear' : 'clinical-alert-unknown'}`} role="status"><AlertTriangle size={18} /><div><strong>{selectedPatient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Alergias não verificadas'}</strong><span>Confirme as informações clínicas antes de prescrever.</span></div></div>}

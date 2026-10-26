@@ -1354,13 +1354,23 @@ function TherapyPage({ profile }: { profile: Profile }) {
   }, [month])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSaving(true); setError(''); setNotice('')
+    event.preventDefault()
+    if (form.title.trim().length < 3) { setError('Informe um nome de atividade com pelo menos 3 caracteres.'); return }
+    if (!form.activity_type) { setError('Selecione a modalidade da atividade.'); return }
+    if (form.location.trim().length < 2) { setError('Informe o local da atividade.'); return }
+    if (!form.starts_at || !Number.isFinite(new Date(form.starts_at).getTime())) { setError('Informe uma data e hora de início válidas.'); return }
+    setSaving(true); setError(''); setNotice('')
     try {
       const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, starts_at: new Date(form.starts_at).toISOString(), ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null, patient_reference: form.patient_reference || null }) })
       const data = await readApiResponse<TherapyActivity>(response)
       if (new Date(data.starts_at).getFullYear() === month.getFullYear() && new Date(data.starts_at).getMonth() === month.getMonth()) { setActivities((items) => [...items, data].sort((a, b) => a.starts_at.localeCompare(b.starts_at))); setReportDrafts((items) => ({ ...items, [data.id]: data.activity_report ?? '' })); setReportStatuses((items) => ({ ...items, [data.id]: data.status })) }
       setForm({ title: '', activity_type: '', description: '', location: 'Oficina Terapêutica', starts_at: '', ends_at: '', patient_reference: '', participant_references: [] }); setNewParticipantReference(''); setShowForm(false); setNotice('Atividade incluída na agenda.')
-    } catch (submitError) { setError(readableApiError(submitError)) } finally { setSaving(false) }
+    } catch (submitError) {
+      const message = readableApiError(submitError)
+      setError(message === 'Campo obrigatório: Dados da solicitação.'
+        ? 'A API recebeu a solicitação sem identificar os campos. Confira nome da atividade, modalidade, início e local; se persistir, atualize a página e avise o suporte.'
+        : message)
+    } finally { setSaving(false) }
   }
 
   function addActivityParticipant() {
@@ -3111,7 +3121,7 @@ const adminReportSources = [
   { id: 'stock', label: 'Farmácia · alertas de estoque', endpoint: '/api/v1/pharmacy/stock-alerts', collection: 'alerts' },
   { id: 'arrivals', label: 'Recepção · chegadas', endpoint: '/api/v1/reception/arrivals', collection: 'arrivals' },
   { id: 'triages', label: 'Enfermagem · triagens', endpoint: '/api/v1/management/reports/triages', collection: 'triages' },
-  { id: 'outpatient', label: 'Recepção · atendimentos ambulatoriais', endpoint: '/api/v1/reception/encounters', collection: 'encounters' },
+  { id: 'outpatient', label: 'Ambulatório · consultas e atendimentos', endpoint: '/api/v1/reception/encounters', collection: 'encounters' },
   { id: 'nutrition', label: 'Nutrição · avaliações', endpoint: '/api/v1/nursing/nutrition', collection: 'records' },
   { id: 'therapy', label: 'Oficina Terapêutica · atividades', endpoint: '/api/v1/therapy/activities', collection: 'activities' },
   { id: 'social', label: 'Serviço Social · encaminhamentos', endpoint: '/api/v1/social/referrals', collection: 'referrals' },

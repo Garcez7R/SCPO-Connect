@@ -82,6 +82,43 @@ def test_patient_identity_and_active_bed_are_unique(nursing_db: Session, nurse: 
     assert conflict.value.status_code == 409
 
 
+def test_patient_list_can_filter_inpatients_and_care_track(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    inpatient = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Paciente internado",
+            room="4",
+            bed="A",
+            treatment_track="psychiatric",
+        ),
+        nurse,
+        nursing_db,
+    )
+    registered = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Paciente cadastrado",
+            room="",
+            bed="",
+            treatment_track="clinical",
+        ),
+        nurse,
+        nursing_db,
+    )
+
+    inpatients = nursing.list_patients(
+        nurse, nursing_db, inpatient=True, treatment_track="psychiatric", limit=10
+    )
+    registered_patients = nursing.list_patients(
+        nurse, nursing_db, inpatient=False, treatment_track="clinical", limit=10
+    )
+
+    assert inpatients["total"] == 1
+    assert inpatients["patients"][0]["reference"] == inpatient["reference"]
+    assert registered_patients["total"] == 1
+    assert registered_patients["patients"][0]["reference"] == registered["reference"]
+
+
 def test_synthetic_vitals_dataset_can_be_seeded_and_removed(
     nursing_db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -867,6 +904,16 @@ def test_nursing_triage_snapshots_are_append_only_and_feed_physician_queue(
 
     arrival_record = nursing_db.get(nursing.EmergencyArrival, arrival["id"])
     assert arrival_record is not None
+    active_queue = nursing.list_emergency_arrivals(
+        receptionist, nursing_db, 25, 0, "active", ""
+    )
+    assert [item["id"] for item in active_queue["arrivals"]] == [arrival["id"]]
+    arrival_record.status = "completed"
+    nursing_db.commit()
+    active_queue = nursing.list_emergency_arrivals(
+        receptionist, nursing_db, 25, 0, "active", ""
+    )
+    assert active_queue["arrivals"] == []
     arrival_record.status = "discharged"
     nursing_db.commit()
     with pytest.raises(HTTPException) as closed_arrival:

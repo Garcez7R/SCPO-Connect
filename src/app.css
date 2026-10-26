@@ -2146,6 +2146,23 @@ html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
 .physician-page .page-title-row > svg { color: var(--blue); }
 .physician-page .patient-list-panel { display: grid; gap: 16px; }
 .physician-page .section-heading { margin: 0; }
+.physician-patient-groups { gap: 12px; }
+.physician-patient-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.physician-care-filter, .physician-patient-search { max-width: 420px; }
+.physician-care-roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; }
+.physician-care-roster-item { display: grid; justify-items: start; gap: 7px; min-width: 0; padding: 13px; border: 1px solid var(--line); border-left: 5px solid var(--muted); border-radius: 8px; background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; }
+.physician-care-roster-item.is-selected { outline: 2px solid var(--blue); outline-offset: 1px; }
+.physician-care-roster-item strong { overflow-wrap: anywhere; }
+.physician-care-roster-item small { color: var(--muted); }
+.physician-care-badge { display: inline-flex; width: fit-content; align-items: center; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.physician-care-clinical { border-left-color: #16764a; }
+.physician-care-badge.physician-care-clinical { background: #e4f4eb; color: #145d3b; }
+.physician-care-psychiatric { border-left-color: #6e54a3; }
+.physician-care-badge.physician-care-psychiatric { background: #eee8fa; color: #50377f; }
+.physician-care-combined { border-left-color: #b87516; }
+.physician-care-badge.physician-care-combined { background: #fff0d5; color: #734800; }
+.physician-care-unclassified { border-left-color: #77828b; }
+.physician-care-badge.physician-care-unclassified { background: var(--page); color: var(--muted); }
 .physician-profile-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--ink); }
 .physician-profile-summary span { color: var(--muted); }
 .physician-page .patient-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
@@ -2159,6 +2176,9 @@ html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
 html[data-theme="dark"] .physician-status-pending { background: #3b321d; color: #f2cf85; }
 html[data-theme="dark"] .physician-status-fulfilled { background: #243a2d; color: #a8dbb6; }
 html[data-theme="dark"] .physician-status-cancelled { background: #30353a; color: #c0c6cb; }
+html[data-theme="dark"] .physician-care-badge.physician-care-clinical { background: #203d2d; color: #a6ddb9; }
+html[data-theme="dark"] .physician-care-badge.physician-care-psychiatric { background: #342a48; color: #d0bdf2; }
+html[data-theme="dark"] .physician-care-badge.physician-care-combined { background: #47371f; color: #f1cb85; }
 html[data-theme="dark"] .physician-profile-summary { color: var(--ink); }
 .xray-page .laboratory-exam-fieldset { min-width: 0; }
 .xray-page .laboratory-exam-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
@@ -2172,6 +2192,7 @@ html[data-theme="dark"] .xray-page .laboratory-print-preview { border-color: var
   .pharmacy-alphabetic-heading { flex-direction: column; }
   .pharmacy-alphabetic-heading > strong { text-align: left; }
   .physician-page .patient-row-actions { justify-content: flex-start; }
+  .physician-patient-filters { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
   .waiting-room-actions { width: 100%; }

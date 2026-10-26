@@ -91,6 +91,11 @@ class ActivityPayload(BaseModel):
     patient_reference: str | None = Field(default=None, max_length=36)
     participant_references: list[str] = Field(default_factory=list, max_length=100)
 
+    @field_validator("title", "location", mode="before")
+    @classmethod
+    def trim_required_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
     @field_validator("participant_references")
     @classmethod
     def require_unique_participants(cls, value: list[str]) -> list[str]:
