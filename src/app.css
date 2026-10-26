@@ -68,7 +68,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding-right: 10px;
   padding-left: 10px;
 }
-.sidebar::before { position: absolute; z-index: 0; inset: 0; background: url("/sidebar-health-watermark.svg") 10px 14px / 88px 88px repeat; content: ""; opacity: .22; pointer-events: none; }
+.sidebar::before { position: absolute; z-index: 0; inset: 0; background: url("/sidebar-health-watermark.svg") 8px 12px / 128px 128px repeat; content: ""; opacity: .18; pointer-events: none; }
 .sidebar > * { position: relative; z-index: 1; }
 .sidebar::-webkit-scrollbar { width: 5px; }
 .sidebar::-webkit-scrollbar-thumb { border-radius: 5px; background: #cbd7de; }
