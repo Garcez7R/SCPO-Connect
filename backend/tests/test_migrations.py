@@ -42,7 +42,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0047_nursing_triage"
+    assert revision == "0048_reception_announce"
     if service == "nursing":
         assert len(tables) == 27
         assert {"nursing_hourly_rounds", "nursing_hourly_round_patients"} <= tables
@@ -390,6 +390,7 @@ def test_audit_migration_backfills_a_verifiable_hash_chain(
         ("0022_stock_emergency", "0022_stock_movements_emergency_arrivals"),
         ("0024_patient_med_results", "0024_patient_linked_medications_and_results"),
         ("0025_patient_flow_risk", "0025_patient_flow_risk_and_dashboard"),
+        ("0048_reception_announce", "0048_reception_announcement_version"),
     ],
 )
 def test_legacy_long_revision_is_normalized_before_upgrade(

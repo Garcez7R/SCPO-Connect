@@ -12,6 +12,7 @@ LEGACY_REVISION_IDS = {
     "0022_stock_movements_emergency_arrivals": "0022_stock_emergency",
     "0024_patient_linked_medications_and_results": "0024_patient_med_results",
     "0025_patient_flow_risk_and_dashboard": "0025_patient_flow_risk",
+    "0048_reception_announcement_version": "0048_reception_announce",
 }
 
 
