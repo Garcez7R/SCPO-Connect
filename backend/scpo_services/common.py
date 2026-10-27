@@ -105,7 +105,7 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0048_reception_announcement"
+    expected_revision = "0049_behavioral_observations"
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."
@@ -292,6 +292,26 @@ def require_demo_role(*allowed_modules: str):
         action = _action_for_method(request.method)
         for module in allowed_modules:
             if module in principal.modules and action in principal.permissions.get(module, []):
+                return principal
+        raise HTTPException(status_code=403, detail="Acesso não autorizado para este módulo ou ação")
+
+    return authorize
+
+
+def require_demo_role_or_superuser(*allowed_modules: str):
+    async def authorize(request: Request) -> DemoPrincipal:
+        principal = await authenticated_principal(request)
+        if principal.is_superuser:
+            return principal
+
+        action = _action_for_method(request.method)
+        for module in allowed_modules:
+            if module not in principal.modules:
+                continue
+            permissions = principal.permissions.get(module, [])
+            if action in permissions or (
+                module == "admin" and "administrar" in permissions
+            ):
                 return principal
         raise HTTPException(status_code=403, detail="Acesso não autorizado para este módulo ou ação")
 

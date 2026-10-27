@@ -64,6 +64,7 @@ import { APP_VERSION } from './appVersion'
 import { MOBILE_FEEDBACK_STORAGE_KEY, triggerMobileFeedback } from './mobileFeedback'
 import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 import { squareImageFile, squareVideoFrame } from './patientPhoto'
+import { BehavioralStatusBadge, type BehavioralStatus } from './components/BehavioralStatusBadge'
 import QRCode from 'qrcode'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
@@ -74,8 +75,8 @@ const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds
 const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária', triage: 'Triagem' }
 const adminTabValues = ['users', 'reports', 'audit'] as const
 const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Administração do aplicativo', reports: 'Relatórios', audit: 'Auditoria de ações' }
-const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'governance', 'shortcuts'] as const
-const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', governance: 'Governança', shortcuts: 'Acesso rápido' }
+const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior', 'governance', 'shortcuts'] as const
+const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios' }
 const systemAdminTabValues = ['backup', 'recovery'] as const
@@ -176,6 +177,13 @@ function remainingDispensedQuantity(dispensation: MedicationDispensation, admini
 }
 type PatientFlowEvent = { id: number; patient_reference: string; event_type: 'admission' | 'transfer' | 'discharge'; previous_room: string; previous_bed: string; next_room: string; next_bed: string; reason: string; summary: string; actor_name: string; occurred_at: string }
 type HospitalBed = { id: string; unit_id: string; unit_name: string; room: string; label: string; status: 'available' | 'cleaning' | 'maintenance' | 'blocked'; isolation_capable: boolean; notes: string; active: boolean; occupied: boolean; patient_reference: string | null }
+function hospitalBedTone(bed: Pick<HospitalBed, 'status' | 'occupied'>) {
+  if (bed.occupied) return 'neutral'
+  if (bed.status === 'available') return 'success'
+  if (bed.status === 'cleaning') return 'progress'
+  if (bed.status === 'maintenance') return 'warning'
+  return 'critical'
+}
 type ClinicalRisk = { id: number | string; patient_reference: string; patient_name: string; room: string; bed: string; risk_type: 'allergy' | 'contraindication'; description: string; severity: 'unspecified' | 'low' | 'moderate' | 'high'; status: 'active' | 'resolved'; reason: string; actor_name: string; created_at: string; resolved_at?: string | null; resolved_by?: string; resolution_reason?: string }
 type EmergencyArrivalStatus = 'waiting' | 'called' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
 type EmergencyClinicalPriority = 'unassigned' | 'routine' | 'priority' | 'urgent'
@@ -467,6 +475,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
     }
   })
   const [historyPatientReference, setHistoryPatientReference] = useState('')
+  const [historyReturnModule, setHistoryReturnModule] = useState<ModuleId>('patients')
   const [showBetaPopup, setShowBetaPopup] = useState(false)
   const [betaIconError, setBetaIconError] = useState(false)
   const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem('scpo-theme') === 'dark')
@@ -515,7 +524,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
 
   function navigate(id: ModuleId) {
     if (id === 'nursing-history' && !profile.modules.includes('nursing')) return
-    if (id === 'patient-history' && !profile.modules.includes('patients')) return
+    if (id === 'patient-history' && !user.is_superuser && !['patients', 'nursing', 'physician', 'psychology', 'management', 'admin'].some((module) => profile.modules.includes(module as ModuleId))) return
     if (id === 'system-admin' && !user.is_superuser) return
     if (id !== 'about' && id !== 'work-orders' && id !== 'system-admin' && id !== 'admin' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
     if (id === 'admin' && !hasAppAdmin && !hasOversight) return
@@ -537,15 +546,16 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
     logoClickTimer.current = window.setTimeout(() => { logoClickCount.current = 0 }, 2200)
   }
 
-  function openPatientHistory(reference: string) {
+  function openPatientHistory(reference: string, returnTo: ModuleId = 'patients') {
     setHistoryPatientReference(reference)
+    setHistoryReturnModule(returnTo)
     navigate('patient-history')
   }
 
   const activeLabel = activeModule === 'home'
     ? 'Visão geral'
     : activeModule === 'nursing-history' ? 'Enfermagem'
-    : activeModule === 'patient-history' ? 'Pacientes'
+    : activeModule === 'patient-history' ? 'Histórico assistencial'
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
   const breadcrumbItems = [...tabBreadcrumbs].sort((left, right) => left.depth - right.depth)
 
@@ -608,17 +618,17 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
         <div className="page-content">
           <ModuleErrorBoundary key={activeModule} moduleLabel={activeLabel} onReturnHome={() => navigate('home')}>
           {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
-          {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} />}
+          {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'nursing')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
           {activeModule === 'pharmacy' && <Suspense fallback={<div className="history-empty" role="status">Carregando Farmácia…</div>}><PharmacyPage user={user} /></Suspense>}
-          {activeModule === 'physician' && <Suspense fallback={<div className="history-empty" role="status">Carregando módulo Médico…</div>}><PhysicianPage userId={user.id} /></Suspense>}
+          {activeModule === 'physician' && <Suspense fallback={<div className="history-empty" role="status">Carregando módulo Médico…</div>}><PhysicianPage userId={user.id} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'physician')} /></Suspense>}
           {activeModule === 'work-orders' && <Suspense fallback={<div className="history-empty" role="status">Carregando ordens de serviço…</div>}><WorkOrdersPage user={user} /></Suspense>}
           {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage userId={user.id} /></Suspense>}
           {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
-          {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage userId={user.id} canPrescribe={profile.modules.includes('physician')} onOpenPhysician={() => navigate('physician')} /></Suspense>}
+          {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage userId={user.id} canPrescribe={profile.modules.includes('physician')} onOpenPhysician={() => navigate('physician')} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'psychology')} /></Suspense>}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
           {activeModule === 'reception' && <Suspense fallback={<div className="history-empty" role="status">Carregando Recepção…</div>}><ReceptionPage user={user} PatientRegistryPage={PatientRegistryPage} /></Suspense>}
-          {activeModule === 'patient-history' && <PatientHistoryPage patientReference={historyPatientReference} onBack={() => navigate('patients')} />}
+          {activeModule === 'patient-history' && <PatientHistoryPage key={historyPatientReference} patientReference={historyPatientReference} user={user} onBack={() => navigate(historyReturnModule)} />}
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
           {activeModule === 'admin' && <AdminPage user={user} />}
           {activeModule === 'management' && <ManagementPage user={user} onNavigate={navigate} allowedModules={profile.modules} />}
@@ -823,7 +833,6 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState('')
   const [registryTab, setRegistryTab] = useState<'registry' | 'list' | 'reports'>('registry')
-  useBreadcrumb('patient-registry', receptionMode ? null : patientRegistryTabLabels[registryTab])
   const [patientPage, setPatientPage] = useState(0)
   const [form, setForm] = useState({ ...emptyPatientForm })
   const [newPatientPurpose, setNewPatientPurpose] = useState<'outpatient' | 'inpatient'>(receptionMode ? 'inpatient' : 'outpatient')
@@ -841,6 +850,9 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [treatmentStatus, setTreatmentStatus] = useState<PatientObservation['treatment_status']>('in_progress')
   const [observationDraft, setObservationDraft] = useState('')
   const [savingObservation, setSavingObservation] = useState(false)
+  useBreadcrumb('patient-registry', receptionMode || showPatientFollowUp ? null : patientRegistryTabLabels[registryTab])
+  useBreadcrumb('patient-follow-up', showPatientFollowUp ? 'Acompanhamento' : null, 2)
+  useBreadcrumb('patient-follow-up-selected', showPatientFollowUp ? viewingPatient?.name ?? null : null, 3)
   const [query, setQuery] = useState('')
   const [roomFilter, setRoomFilter] = useState('')
   const [bedFilter, setBedFilter] = useState('')
@@ -1022,13 +1034,18 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
 
   useEffect(() => {
     if (!viewingPatient) return
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setViewingPatient(null) }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowPatientFollowUp(false)
+        setViewingPatient(null)
+      }
+    }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [viewingPatient])
 
   useEffect(() => {
-    if (!viewingPatient) return
+    if (!viewingPatient || !showPatientFollowUp) return
     let current = true
     fetch(`/api/v1/nursing/patients/${encodeURIComponent(viewingPatient.reference)}/observations`)
       .then((response) => readApiResponse<{ observations?: PatientObservation[] }>(response))
@@ -1050,7 +1067,27 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
         }
       })
     return () => { current = false }
-  }, [viewingPatient])
+  }, [showPatientFollowUp, viewingPatient])
+
+  useEffect(() => {
+    if (showPatientFollowUp) window.scrollTo(0, 0)
+  }, [showPatientFollowUp])
+
+  function openPatientFollowUp(patient: Patient) {
+    setPatientObservations([])
+    setPatientObservationsReference('')
+    setPatientObservationsError('')
+    setObservationDraft('')
+    setError('')
+    setNotice('')
+    setViewingPatient(patient)
+    setShowPatientFollowUp(true)
+  }
+
+  function closePatientFollowUp() {
+    setShowPatientFollowUp(false)
+    setViewingPatient(null)
+  }
 
   async function savePatientObservation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1181,7 +1218,29 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       .catch((error) => setError(error instanceof Error ? error.message : 'Não foi possível ler a imagem selecionada.'))
   }
 
-  return <section className="patient-registry-page page-enter">
+  return <section className={`patient-registry-page page-enter${showPatientFollowUp ? ' patient-registry-follow-up-open' : ''}`}>
+    {showPatientFollowUp && viewingPatient ? <section className="patient-follow-up-page">
+      <div className="page-title-row">
+        <div><p className="eyebrow">PACIENTES · ACOMPANHAMENTO ASSISTENCIAL</p><h1>{viewingPatient.name}</h1><p className="welcome-copy">Quarto {viewingPatient.room || 'não atribuído'} · Leito {viewingPatient.bed || 'não atribuído'} · {viewingPatient.active === false ? 'Alta registrada' : 'Cadastro ativo'}</p></div>
+        <button className="button button-secondary" type="button" onClick={closePatientFollowUp}><ArrowLeft size={16} /> Voltar à lista</button>
+      </div>
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+      <section className="patient-follow-up-panel patient-follow-up-entry">
+        <div className="section-heading"><div><p className="eyebrow">NOVO REGISTRO</p><h2>Registrar acompanhamento</h2><p className="welcome-copy">Registre observações objetivas e atualize o nível de acompanhamento e a situação do tratamento.</p></div></div>
+        <form className="patient-observation-form" onSubmit={(event) => void savePatientObservation(event)}>
+          <div className="field-grid field-grid-two">
+            <label className="field"><span className="field-label">Nível de acompanhamento</span><select value={attentionLevel} onChange={(event) => setAttentionLevel(event.target.value as PatientObservation['attention_level'])}><option value="green">Verde · rotina habitual</option><option value="yellow">Amarelo · atenção ampliada</option><option value="red">Vermelho · prioridade de acompanhamento</option></select></label>
+            <label className="field"><span className="field-label">Situação do tratamento</span><select value={treatmentStatus} onChange={(event) => setTreatmentStatus(event.target.value as PatientObservation['treatment_status'])}><option value="in_progress">Em andamento</option><option value="completed">Concluído</option><option value="discharged">Alta</option></select></label>
+          </div>
+          <label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={observationDraft} onChange={(event) => setObservationDraft(event.target.value)} placeholder="Registre fatos observáveis, cuidados realizados, resposta ao tratamento e orientações de continuidade." /></label>
+          <button className="button button-primary" type="submit" disabled={savingObservation || observationDraft.trim().length < 5}>{savingObservation ? 'Salvando…' : 'Registrar acompanhamento'}</button>
+        </form>
+      </section>
+      <section className="patient-follow-up-panel">
+        <div className="section-heading"><div><p className="eyebrow">HISTÓRICO INDIVIDUAL</p><h2>Registros de acompanhamento</h2></div><span className="module-total">{patientObservations.length}</span></div>
+        <div className="patient-observation-list">{patientObservationsReference !== viewingPatient.reference ? <div className="history-empty">Carregando histórico…</div> : patientObservationsError ? <ToastMessage variant="error">{`Não foi possível carregar o histórico de acompanhamento: ${patientObservationsError}`}</ToastMessage> : patientObservations.map((item) => <article className={`patient-observation-card attention-${item.attention_level}`} key={item.id}><div><strong>{item.attention_level === 'green' ? 'Verde · rotina habitual' : item.attention_level === 'yellow' ? 'Amarelo · atenção ampliada' : 'Vermelho · prioridade de acompanhamento'}</strong><span>{item.treatment_status === 'in_progress' ? 'Tratamento em andamento' : item.treatment_status === 'completed' ? 'Tratamento concluído' : 'Alta'}</span></div><p>{item.observation}</p><small>{item.actor_name} · {dateTime(item.created_at)}</small></article>)}{patientObservationsReference === viewingPatient.reference && !patientObservationsError && !patientObservations.length && <div className="history-empty">Nenhuma anotação de acompanhamento registrada.</div>}</div>
+      </section>
+    </section> : <>
     {receptionMode ? <div className="section-heading reception-admission-heading"><div><p className="eyebrow">INTERNAÇÕES</p><h2>Admissões e internações</h2><p className="welcome-copy">Confirme a identificação do paciente e registre sua acomodação.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNewPatientPurpose('inpatient'); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Nova admissão'}</button></div> : <div className="page-title-row"><span className="module-icon module-icon-patients"><UserRound size={23} /></span><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.</p></div></div>}
     {!receptionMode && <div className="admin-tabs module-tabs patient-registry-tabs" role="tablist" aria-label="Áreas de pacientes">
       <button className={`button ${registryTab === 'registry' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'registry'} onClick={() => setRegistryTab('registry')}><UserRound size={16} /> Novo cadastro</button>
@@ -1231,7 +1290,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       </div>
       {loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? patientGroups.map(([groupLabel, groupPatients]) => <section className="patient-registry-group" key={groupLabel}>
         {groupPatientsByRoom && <h3>{groupLabel}<span>{groupPatients.length}</span></h3>}
-        <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card ${patientCareTrackClass(patient.treatment_track)}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><PatientCareTrackBadge track={patient.treatment_track} /><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => { setViewingPatient(patient); setShowPatientFollowUp(true) }}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button><button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button></div></article>)}</div>
+        <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card ${patientCareTrackClass(patient.treatment_track)}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><PatientCareTrackBadge track={patient.treatment_track} /><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => openPatientFollowUp(patient)}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(patient.reference); setViewingPatient(null); setShowPatientFollowUp(false) }}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button><button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button></div></article>)}</div>
       </section>) : <div className="history-empty"><UsersRound size={20} /><span>{query || roomFilter || bedFilter || treatmentTrackFilter || patientStatusFilter !== 'all' ? 'Nenhum paciente corresponde aos filtros selecionados.' : 'Nenhum paciente cadastrado.'}</span></div>}
       {!loading && patientTotal > 0 && <nav className="history-pagination" aria-label="Paginação da lista de pacientes"><span>Exibindo {currentPatientPage * patientPageSize + 1}–{Math.min((currentPatientPage + 1) * patientPageSize, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={currentPatientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentPatientPage + 1 >= patientPageCount} onClick={() => setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}
     </section>}
@@ -1270,7 +1329,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
         </div>
         <div className="patient-detail-actions">
           <button className="button button-secondary" type="button" onClick={() => { startEdit(viewingPatient); setViewingPatient(null) }}><Pencil size={15} /> Editar cadastro</button>
-          <button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(true)}><ClipboardList size={15} /> Acompanhamento</button>
+          <button className="button button-secondary" type="button" onClick={() => openPatientFollowUp(viewingPatient)}><ClipboardList size={15} /> Acompanhamento</button>
           {onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(viewingPatient.reference); setViewingPatient(null) }}><ClipboardList size={15} /> Histórico de sinais vitais</button>}
           <button className="button button-primary" type="button" onClick={() => { document.body.classList.add('print-patient-detail'); window.addEventListener('afterprint', () => document.body.classList.remove('print-patient-detail'), { once: true }); window.print() }}><Printer size={16} /> Imprimir ficha</button>
         </div>
@@ -1282,11 +1341,106 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       {reportLoading ? <div className="history-empty">Carregando todos os pacientes para o relatório…</div> : <PrintSelectionPanel title="Relação de pacientes" rows={patientPrintRows} />}
     </>}
     {archivingPatient && <div className="patient-modal-backdrop" role="presentation"><section className="patient-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-archive-title"><h2 id="patient-archive-title">Arquivar cadastro de paciente</h2><p><strong>{archivingPatient.name}</strong> deixará de aparecer nos cadastros ativos. Os dados assistenciais serão preservados, e a exclusão lógica, o motivo e o responsável ficarão registrados na auditoria.</p><label className="field"><span className="field-label">Motivo do arquivamento</span><textarea required minLength={5} maxLength={500} value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} /></label><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => setArchivingPatient(null)}>Cancelar</button><button className="button button-danger" type="button" onClick={() => void confirmArchivePatient()} disabled={archiveReason.trim().length < 5}>Arquivar paciente</button></div></section></div>}
-    {viewingPatient && showPatientFollowUp && <div className="patient-modal-backdrop patient-follow-up-backdrop" role="presentation"><section className="patient-follow-up-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-follow-up-title"><div className="patient-detail-header"><div><p className="eyebrow">ACOMPANHAMENTO ASSISTENCIAL</p><h2 id="patient-follow-up-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room || 'não atribuído'} · Leito {viewingPatient.bed || 'não atribuído'} · {viewingPatient.active === false ? 'Alta registrada' : 'Cadastro ativo'}</p></div><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(false)}>Fechar</button></div><form className="patient-observation-form" onSubmit={(event) => void savePatientObservation(event)}><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nível de acompanhamento</span><select value={attentionLevel} onChange={(event) => setAttentionLevel(event.target.value as PatientObservation['attention_level'])}><option value="green">Verde · rotina habitual</option><option value="yellow">Amarelo · atenção ampliada</option><option value="red">Vermelho · prioridade de acompanhamento</option></select></label><label className="field"><span className="field-label">Situação do tratamento</span><select value={treatmentStatus} onChange={(event) => setTreatmentStatus(event.target.value as PatientObservation['treatment_status'])}><option value="in_progress">Em andamento</option><option value="completed">Concluído</option><option value="discharged">Alta</option></select></label></div><label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={observationDraft} onChange={(event) => setObservationDraft(event.target.value)} placeholder="Registre fatos observáveis, cuidados realizados, resposta ao tratamento e orientações de continuidade." /></label><button className="button button-primary" type="submit" disabled={savingObservation || observationDraft.trim().length < 5}>{savingObservation ? 'Salvando…' : 'Registrar acompanhamento'}</button></form><div className="patient-observation-list">{patientObservationsReference !== viewingPatient.reference ? <div className="history-empty">Carregando histórico…</div> : patientObservationsError ? <ToastMessage variant="error">{`Não foi possível carregar o histórico de acompanhamento: ${patientObservationsError}`}</ToastMessage> : patientObservations.map((item) => <article className={`patient-observation-card attention-${item.attention_level}`} key={item.id}><div><strong>{item.attention_level === 'green' ? 'Verde · rotina habitual' : item.attention_level === 'yellow' ? 'Amarelo · atenção ampliada' : 'Vermelho · prioridade de acompanhamento'}</strong><span>{item.treatment_status === 'in_progress' ? 'Tratamento em andamento' : item.treatment_status === 'completed' ? 'Tratamento concluído' : 'Alta'}</span></div><p>{item.observation}</p><small>{item.actor_name} · {dateTime(item.created_at)}</small></article>)}{patientObservationsReference === viewingPatient.reference && !patientObservationsError && !patientObservations.length && <div className="history-empty">Nenhuma anotação de acompanhamento registrada.</div>}</div></section></div>}
+    </>}
   </section>
 }
 
-function PatientHistoryPage({ patientReference, onBack }: { patientReference: string; onBack: () => void }) {
+type ClinicalHistoryEntry = {
+  id: string
+  source: string
+  category: string
+  created_at: string
+  actor_name: string
+  title: string
+  details: string[]
+  status?: BehavioralStatus | null
+}
+
+type TriageHistoryRecord = {
+  id: number
+  arrival_reason: string
+  allergies_status: string
+  allergies: string
+  conditions_treatments: string
+  vital_values: Record<string, string>
+  glucose_unit: string
+  actor_name: string
+  created_at: string
+}
+
+type OutpatientHistoryRecord = {
+  id: number
+  encounter_type: string
+  physician_name: string
+  examination: string
+  activity_rows: Array<Record<string, string>>
+  group_name: string
+  programs: string[]
+  diagnostic_hypothesis: string
+  antibiotic_prescription: string
+  referral: string
+  created_by: string
+  created_at: string
+}
+
+type PsychologyHistoryRecord = {
+  id: number
+  encounter_type: 'intake' | 'follow_up' | 'psychiatry'
+  objective: string
+  evolution: string
+  plan: string
+  actor_name: string
+  created_at: string
+}
+
+type BehavioralHistoryRecord = {
+  id: number
+  observation: string
+  context: string
+  response: string
+  status: BehavioralStatus | null
+  actor_name: string
+  created_at: string
+}
+
+type PatientBehavioralStatus = {
+  patient_reference: string
+  status: BehavioralStatus | null
+  updated_at: string | null
+}
+
+type PatientFlowHistoryRecord = {
+  id: number
+  event_type: 'admission' | 'transfer' | 'discharge'
+  previous_room: string
+  previous_bed: string
+  next_room: string
+  next_bed: string
+  reason: string
+  summary: string
+  actor_name: string
+  occurred_at: string
+}
+
+async function loadPatientHistoryPages<T>(endpoint: string, collection: string): Promise<T[]> {
+  const rows: T[] = []
+  const pageSize = 100
+  let hasMore = true
+  while (hasMore) {
+    const url = new URL(endpoint, window.location.origin)
+    url.searchParams.set('limit', String(pageSize))
+    url.searchParams.set('offset', String(rows.length))
+    const page = await readApiResponse<Record<string, unknown>>(await fetch(`${url.pathname}${url.search}`))
+    const pageRows = page[collection]
+    if (!Array.isArray(pageRows)) throw new Error(`A resposta de ${collection} não contém uma lista válida.`)
+    rows.push(...(pageRows as T[]))
+    const total = typeof page.total === 'number' ? page.total : null
+    hasMore = pageRows.length > 0 && total !== null && rows.length < total
+  }
+  return rows
+}
+
+function PatientHistoryPage({ patientReference, user, onBack }: { patientReference: string; user: AuthUser; onBack: () => void }) {
   useBreadcrumb('patient-history', 'Histórico assistencial')
   const pageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
@@ -1296,19 +1450,247 @@ function PatientHistoryPage({ patientReference, onBack }: { patientReference: st
   const [metric, setMetric] = useState('saturation')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [timeline, setTimeline] = useState<ClinicalHistoryEntry[]>([])
+  const [sourceErrors, setSourceErrors] = useState<Record<string, string>>({})
+  const [timelineLoading, setTimelineLoading] = useState(true)
+  const [timelineRevision, setTimelineRevision] = useState(0)
+  const [behaviorForm, setBehaviorForm] = useState({ observation: '', context: '', response: '', status: '' as '' | BehavioralStatus })
+  const [behaviorSaving, setBehaviorSaving] = useState(false)
+  const [behaviorError, setBehaviorError] = useState('')
+  const [behaviorNotice, setBehaviorNotice] = useState('')
   const patient = patients.find((item) => item.reference === patientReference)
+  const hasPermission = (module: string, action: string) => user.is_superuser
+    || (user.modules.includes(module as ModuleId) && user.permissions[module]?.includes(action) === true)
+    || (module === 'admin' && user.permissions.admin?.includes('administrar') === true)
+  const canReadClinical = ['nursing', 'physician', 'psychology', 'admin'].some((module) => hasPermission(module, 'consultar'))
+  const canReadOutpatient = ['reception', 'nursing', 'physician', 'psychology', 'admin'].some((module) => hasPermission(module, 'consultar'))
+  const canReadFlow = ['patients', 'nursing', 'physician', 'management', 'admin'].some((module) => hasPermission(module, 'consultar'))
+  const canWriteBehavior = user.is_superuser
+    || ['nursing', 'physician', 'psychology'].some((module) => hasPermission(module, 'consultar') && hasPermission(module, 'criar'))
+    || hasPermission('admin', 'administrar')
+  const canSetBehaviorStatus = user.is_superuser
+    || ['physician', 'psychology'].some((module) => hasPermission(module, 'consultar') && hasPermission(module, 'criar'))
+    || hasPermission('admin', 'administrar')
+
   useEffect(() => {
     let current = true
-    Promise.all([fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}`), fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/history?limit=${pageSize}&offset=${offset}`)]).then(async ([patientResponse, historyResponse]) => {
-      const patientData = await patientResponse.json() as Patient & { detail?: string }
-      const historyData = await historyResponse.json() as { records?: VitalRecordData[]; total?: number; detail?: string }
-      if (!patientResponse.ok) throw new Error(patientData.detail ?? 'Não foi possível carregar o cadastro.')
-      if (!historyResponse.ok) throw new Error(historyData.detail ?? 'Não foi possível carregar o histórico.')
+    Promise.all([
+      fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}`).then(readApiResponse<Patient>),
+      fetch(`/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/history?limit=${pageSize}&offset=${offset}`).then(readApiResponse<{ records?: VitalRecordData[]; total?: number }>),
+    ]).then(([patientData, historyData]) => {
       return { patientData, historyData }
-    }).then(({ patientData, historyData }) => { if (current) { setPatients([patientData]); setRecords(historyData.records ?? []); setTotal(historyData.total ?? 0); setError('') } }).catch((loadError) => { if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao consultar o histórico.') }).finally(() => { if (current) setLoading(false) })
+    }).then(({ patientData, historyData }) => {
+      if (current) {
+        setPatients([patientData])
+        setRecords(historyData.records ?? [])
+        setTotal(historyData.total ?? 0)
+        setError('')
+      }
+    }).catch((loadError) => {
+      if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao consultar o histórico.')
+    }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }
   }, [patientReference, offset])
-  return <section className="patient-history-page page-enter"><div className="page-title-row"><div><p className="eyebrow">PRONTUÁRIO · ACESSO AUTORIZADO</p><h1>Histórico do paciente</h1><p className="welcome-copy">Registros de sinais vitais associados ao cadastro central.</p></div><button className="button button-secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Voltar aos pacientes</button></div>{patient && <section className="patient-history-summary">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}<div><h2>{patient.name}</h2><p>{patientLocationLabel(patient)}{patient.birth_date ? ` · ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}{patient.active === false ? ' · Alta registrada' : ''}</p>{patient.responsible_status === 'not_applicable' ? <small>Responsável pela internação: não se aplica</small> : patient.responsible_name && <small>Responsável pela internação: {patient.responsible_name} · {patient.responsible_phone || 'Contato não informado'}</small>}</div><span className="module-total">{total} {total === 1 ? 'registro' : 'registros'}</span></section>}  {error && <ToastMessage variant="error">{error}</ToastMessage>}{loading ? <div className="history-empty">Carregando histórico…</div> : <><VitalTrendsDashboard patientReference={patientReference} patientName={patient?.name} /><VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} showChart={false} /><VitalExtraDetails records={records} patientReference={patientReference} /></>}{!loading && total > pageSize && <nav className="history-pagination" aria-label="Paginação do histórico do paciente"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={offset + pageSize >= total} onClick={() => setOffset(offset + pageSize)}>Mais antigas <ArrowRight size={15} /></button></div></nav>}</section>
+
+  useEffect(() => {
+    let current = true
+    const reference = encodeURIComponent(patientReference)
+    const sources: Array<{ key: string; label: string; endpoint: string; collection: string }> = []
+    if (canReadFlow) sources.push({
+      key: 'flow',
+      label: 'Movimentações e internações',
+      endpoint: `/api/v1/nursing/patients/flow-events?patient_reference=${reference}`,
+      collection: 'events',
+    })
+    if (canReadClinical) {
+      sources.push(
+        {
+          key: 'triage',
+          label: 'Triagens de enfermagem',
+          endpoint: `/api/v1/nursing/patients/${reference}/triage-history`,
+          collection: 'records',
+        },
+        {
+          key: 'psychology',
+          label: 'Psicologia e Psiquiatria',
+          endpoint: `/api/v1/psychology/encounters?patient_reference=${reference}`,
+          collection: 'encounters',
+        },
+        {
+          key: 'behavior',
+          label: 'Histórico comportamental',
+          endpoint: `/api/v1/nursing/patients/${reference}/behavioral-observations`,
+          collection: 'observations',
+        },
+      )
+    }
+    if (canReadOutpatient) sources.push({
+      key: 'outpatient',
+      label: 'Atendimentos ambulatoriais',
+      endpoint: `/api/v1/reception/encounters?patient_reference=${reference}`,
+      collection: 'encounters',
+    })
+    void Promise.all(sources.map(async (source) => {
+      try {
+        const rows = source.key === 'flow'
+            ? await loadPatientHistoryPages<PatientFlowHistoryRecord>(source.endpoint, source.collection)
+            : source.key === 'triage'
+              ? await loadPatientHistoryPages<TriageHistoryRecord>(source.endpoint, source.collection)
+              : source.key === 'psychology'
+                ? await loadPatientHistoryPages<PsychologyHistoryRecord>(source.endpoint, source.collection)
+                : source.key === 'behavior'
+                  ? await loadPatientHistoryPages<BehavioralHistoryRecord>(source.endpoint, source.collection)
+                : await loadPatientHistoryPages<OutpatientHistoryRecord>(source.endpoint, source.collection)
+        const entries: ClinicalHistoryEntry[] = rows.map((row) => {
+          if (source.key === 'flow') {
+            const event = row as PatientFlowHistoryRecord
+            const title = event.event_type === 'admission'
+              ? `Internação · quarto ${event.next_room}, leito ${event.next_bed}`
+              : event.event_type === 'transfer'
+                ? `Transferência · quarto ${event.previous_room}, leito ${event.previous_bed} → quarto ${event.next_room}, leito ${event.next_bed}`
+                : `Alta · quarto ${event.previous_room}, leito ${event.previous_bed}`
+            return { id: `${source.key}-${event.id}`, source: source.key, category: source.label, created_at: event.occurred_at, actor_name: event.actor_name, title, details: [event.reason, event.summary].filter(Boolean) }
+          }
+          if (source.key === 'triage') {
+            const triage = row as TriageHistoryRecord
+            const details = [
+              triage.arrival_reason && `Motivo da chegada: ${triage.arrival_reason}`,
+              `Alergias: ${triage.allergies_status === 'none_known' ? 'nenhuma conhecida' : triage.allergies_status === 'known' ? triage.allergies || 'relatadas' : 'não verificadas'}`,
+              triage.conditions_treatments && `Condições e tratamentos: ${triage.conditions_treatments}`,
+              ...Object.entries(triage.vital_values ?? {}).map(([name, value]) => `${name}: ${value}${name === 'glucose' ? ` ${triage.glucose_unit}` : ''}`),
+            ].filter((detail): detail is string => Boolean(detail))
+            return { id: `${source.key}-${triage.id}`, source: source.key, category: source.label, created_at: triage.created_at, actor_name: triage.actor_name, title: 'Triagem registrada', details }
+          }
+          if (source.key === 'psychology') {
+            const encounter = row as PsychologyHistoryRecord
+            const labels: Record<PsychologyHistoryRecord['encounter_type'], string> = { intake: 'Acolhimento inicial', follow_up: 'Acompanhamento', psychiatry: 'Atendimento psiquiátrico' }
+            return { id: `${source.key}-${encounter.id}`, source: source.key, category: source.label, created_at: encounter.created_at, actor_name: encounter.actor_name, title: labels[encounter.encounter_type], details: [`Objetivo: ${encounter.objective}`, `Evolução: ${encounter.evolution}`, encounter.plan && `Plano: ${encounter.plan}`].filter(Boolean) }
+          }
+          if (source.key === 'behavior') {
+            const observation = row as BehavioralHistoryRecord
+            return { id: `${source.key}-${observation.id}`, source: source.key, category: source.label, created_at: observation.created_at, actor_name: observation.actor_name, title: 'Observação comportamental', details: [observation.observation, observation.context && `Contexto: ${observation.context}`, observation.response && `Resposta/conduta: ${observation.response}`].filter(Boolean), status: observation.status }
+          }
+          const encounter = row as OutpatientHistoryRecord
+          return {
+            id: `${source.key}-${encounter.id}`,
+            source: source.key,
+            category: source.label,
+            created_at: encounter.created_at,
+            actor_name: encounter.created_by,
+            title: `Atendimento ambulatorial · ${encounter.encounter_type}`,
+            details: [
+              encounter.physician_name && `Profissional: ${encounter.physician_name}`,
+              encounter.examination && `Exame clínico: ${encounter.examination}`,
+              ...encounter.activity_rows.map((activity) => Object.entries(activity).map(([key, value]) => `${key}: ${value}`).join(' · ')),
+              encounter.group_name && `Grupo: ${encounter.group_name}`,
+              encounter.programs.length ? `Programas: ${encounter.programs.join(', ')}` : '',
+              encounter.diagnostic_hypothesis && `Hipótese diagnóstica: ${encounter.diagnostic_hypothesis}`,
+              encounter.antibiotic_prescription && `Prescrição: ${encounter.antibiotic_prescription}`,
+              encounter.referral && `Encaminhamento: ${encounter.referral}`,
+            ].filter(Boolean),
+          }
+        })
+        return { key: source.key, entries, error: '' }
+      } catch (sourceError) {
+        return {
+          key: source.key,
+          entries: [] as ClinicalHistoryEntry[],
+          error: sourceError instanceof Error ? sourceError.message : `Não foi possível carregar ${source.label.toLowerCase()}.`,
+        }
+      }
+    })).then((results) => {
+      if (!current) return
+      setTimeline(results.flatMap((result) => result.entries).sort((left, right) => right.created_at.localeCompare(left.created_at)))
+      setSourceErrors(Object.fromEntries(results.filter((result) => result.error).map((result) => [result.key, result.error])))
+      setTimelineLoading(false)
+    })
+    return () => { current = false }
+  }, [patientReference, timelineRevision, canReadClinical, canReadFlow, canReadOutpatient])
+
+  const currentBehaviorStatus = timeline.find((entry) => entry.source === 'behavior' && entry.status)?.status ?? null
+  const timelineSources = [
+    { key: 'flow', label: 'Movimentações e internações', rows: timeline.filter((entry) => entry.source === 'flow') },
+    { key: 'triage', label: 'Triagens de enfermagem', rows: timeline.filter((entry) => entry.source === 'triage') },
+    { key: 'outpatient', label: 'Atendimentos ambulatoriais', rows: timeline.filter((entry) => entry.source === 'outpatient') },
+    { key: 'psychology', label: 'Psicologia e Psiquiatria', rows: timeline.filter((entry) => entry.source === 'psychology') },
+    { key: 'behavior', label: 'Histórico comportamental', rows: timeline.filter((entry) => entry.source === 'behavior') },
+  ].filter((source) => source.key === 'flow' ? canReadFlow
+    : source.key === 'outpatient' ? canReadOutpatient
+      : canReadClinical)
+
+  async function saveBehaviorObservation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBehaviorSaving(true)
+    setBehaviorError('')
+    setBehaviorNotice('')
+    try {
+      await readApiResponse<BehavioralHistoryRecord>(await fetch(
+        `/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/behavioral-observations`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            observation: behaviorForm.observation,
+            context: behaviorForm.context,
+            response: behaviorForm.response,
+            status: behaviorForm.status || null,
+          }),
+        },
+      ))
+      setBehaviorForm({ observation: '', context: '', response: '', status: '' })
+      setBehaviorNotice('Registro comportamental incluído no histórico.')
+      setTimelineLoading(true)
+      setTimelineRevision((revision) => revision + 1)
+    } catch (saveError) {
+      setBehaviorError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar a observação.')
+    } finally {
+      setBehaviorSaving(false)
+    }
+  }
+
+  return <section className="patient-history-page page-enter">
+    <div className="page-title-row"><div><p className="eyebrow">PRONTUÁRIO · ACESSO AUTORIZADO</p><h1>Histórico assistencial</h1><p className="welcome-copy">Linha do tempo de sinais vitais, triagens, atendimentos, movimentações e registros autorizados da equipe.</p></div><button className="button button-secondary" type="button" onClick={onBack}><ArrowLeft size={16} /> Voltar aos pacientes</button></div>
+    {patient && <section className="patient-history-summary">
+      {patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}
+      <div><h2>{patient.name}</h2><p>{patientLocationLabel(patient)}{patient.birth_date ? ` · ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}{patient.active === false ? ' · Alta registrada' : ''}</p>{patient.responsible_status === 'not_applicable' ? <small>Responsável pela internação: não se aplica</small> : patient.responsible_name && <small>Responsável pela internação: {patient.responsible_name} · {patient.responsible_phone || 'Contato não informado'}</small>}</div>
+      <div className="patient-history-summary-status">{canReadClinical && (timelineLoading ? <span className="field-hint">Carregando semáforo…</span> : sourceErrors.behavior ? <span className="behavioral-status-unavailable">Semáforo indisponível</span> : <BehavioralStatusBadge status={currentBehaviorStatus} />)}<span className="module-total">{total} {total === 1 ? 'coleta' : 'coletas'} de sinais vitais</span></div>
+    </section>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {loading ? <div className="history-empty">Carregando cadastro e sinais vitais…</div> : <>
+      <VitalTrendsDashboard patientReference={patientReference} patientName={patient?.name} />
+      <VitalHistory records={records} patients={patients} patientReference={patientReference} metric={metric} onMetric={setMetric} showChart={false} />
+      <VitalExtraDetails records={records} patientReference={patientReference} />
+      {!loading && total > pageSize && <nav className="history-pagination" aria-label="Paginação das coletas de sinais vitais"><span>Exibindo {offset + 1}–{Math.min(offset + records.length, total)} de {total}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => { setLoading(true); setOffset(Math.max(0, offset - pageSize)) }}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + pageSize >= total} onClick={() => { setLoading(true); setOffset(offset + pageSize) }}>Mais antigas <ArrowRight size={15} /></button></div></nav>}
+    </>}
+    <section className="patient-list-panel clinical-history-panel">
+      <div className="section-heading"><div><p className="eyebrow">HISTÓRICO INTEGRADO</p><h2>Demais registros assistenciais</h2><p className="welcome-copy">Registros são exibidos por categoria, em ordem cronológica, conforme o acesso do seu perfil.</p></div></div>
+      {timelineLoading && <div className="history-empty" role="status">Carregando demais registros assistenciais…</div>}
+      {!timelineLoading && !timeline.length && !Object.keys(sourceErrors).length && <div className="history-empty">Nenhum outro registro foi localizado para este paciente.</div>}
+      {timelineSources.map((source) => <section className="clinical-history-source" key={source.key}>
+        <div className="section-heading"><h3>{source.label}</h3><span className="module-total">{source.rows.length}</span></div>
+        {sourceErrors[source.key] && <ToastMessage variant="error">{`Falha ao carregar ${source.label.toLowerCase()}: ${sourceErrors[source.key]}`}</ToastMessage>}
+        {!sourceErrors[source.key] && !timelineLoading && source.rows.length === 0 && <p className="field-hint">Nenhum registro nesta categoria.</p>}
+        {source.rows.map((entry) => <article className="clinical-history-entry" key={entry.id}>
+          <div><strong>{entry.title}</strong><time>{dateTime(entry.created_at)}</time></div>
+          {entry.status !== undefined && <BehavioralStatusBadge status={entry.status} />}
+          {entry.details.map((detail, index) => <p key={`${entry.id}-detail-${index}`}>{detail}</p>)}
+          <small>Registrado por {entry.actor_name || 'Profissional não informado'}</small>
+        </article>)}
+      </section>)}
+    </section>
+    {canWriteBehavior && <section className="patient-list-panel behavioral-observation-form-panel">
+      <div className="section-heading"><div><p className="eyebrow">REGISTRO DA EQUIPE ASSISTENCIAL</p><h2>Nova observação comportamental</h2><p className="welcome-copy">Descreva fatos observáveis, o contexto e a resposta da equipe. A classificação é manual e não é inferida pelo sistema.</p></div></div>
+      {behaviorError && <ToastMessage variant="error">{behaviorError}</ToastMessage>}
+      {behaviorNotice && <ToastMessage variant="success">{behaviorNotice}</ToastMessage>}
+      <form className="field-grid field-grid-two" onSubmit={(event) => void saveBehaviorObservation(event)}>
+        <label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={behaviorForm.observation} onChange={(event) => setBehaviorForm((current) => ({ ...current, observation: event.target.value }))} /></label>
+        <label className="field"><span className="field-label">Contexto (opcional)</span><textarea maxLength={500} value={behaviorForm.context} onChange={(event) => setBehaviorForm((current) => ({ ...current, context: event.target.value }))} /></label>
+        <label className="field"><span className="field-label">Resposta ou conduta adotada (opcional)</span><textarea maxLength={1000} value={behaviorForm.response} onChange={(event) => setBehaviorForm((current) => ({ ...current, response: event.target.value }))} /></label>
+        {canSetBehaviorStatus && <label className="field"><span className="field-label">Semáforo comportamental · revisão profissional</span><select value={behaviorForm.status} onChange={(event) => setBehaviorForm((current) => ({ ...current, status: event.target.value as '' | BehavioralStatus }))}><option value="">Não alterar a sinalização atual</option><option value="green">Verde · bom comportamento</option><option value="yellow">Amarelo · requer atenção</option><option value="red">Vermelho · supervisão constante</option></select><span className="field-hint">Use somente conforme avaliação profissional e protocolo institucional; a atualização fica registrada no histórico.</span></label>}
+        <button className="button button-primary" type="submit" disabled={behaviorSaving || behaviorForm.observation.trim().length < 5}>{behaviorSaving ? 'Registrando…' : 'Registrar observação'}</button>
+      </form>
+    </section>}
+  </section>
 }
 
 const therapyActivityStatusLabels: Record<TherapyActivityStatus, string> = {
@@ -1923,7 +2305,7 @@ function NursingHourlyRoundsPanel({ canUpdate }: { canUpdate: boolean }) {
   )
 }
 
-function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user: AuthUser; onShowHistory: () => void }) {
+function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { profile: Profile; user: AuthUser; onShowHistory: () => void; onOpenPatientHistory: (reference: string) => void }) {
   const [record, setRecord] = useState<RecordFields>({ ...emptyRecord })
   const [notApplicable, setNotApplicable] = useState<string[]>([])
   const [entryState, setEntryState] = useState<EntryState>('draft')
@@ -1931,6 +2313,9 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
   const [savedAt, setSavedAt] = useState('')
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientRef, setPatientRef] = useState('')
+  const [patientBehavioralStatuses, setPatientBehavioralStatuses] = useState<Record<string, PatientBehavioralStatus>>({})
+  const [patientBehavioralStatusError, setPatientBehavioralStatusError] = useState('')
+  const [patientBehavioralStatusLoading, setPatientBehavioralStatusLoading] = useState(true)
   const [historyError, setHistoryError] = useState('')
   const [medicationError, setMedicationError] = useState('')
   const [medicationLoading, setMedicationLoading] = useState(true)
@@ -1958,6 +2343,25 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
     }).catch((loadError) => { if (current) setHistoryError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os pacientes. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
     return () => { current = false }
   }, [profile.id])
+
+  useEffect(() => {
+    let current = true
+    fetch('/api/v1/nursing/behavioral-status')
+      .then(readApiResponse<{ statuses?: PatientBehavioralStatus[] }>)
+      .then((result) => {
+        if (current) {
+          setPatientBehavioralStatuses(Object.fromEntries(
+            (result.statuses ?? []).map((status) => [status.patient_reference, status]),
+          ))
+          setPatientBehavioralStatusError('')
+        }
+      }).catch((statusError) => {
+        if (current) setPatientBehavioralStatusError(statusError instanceof Error ? statusError.message : 'Não foi possível carregar o semáforo comportamental.')
+      }).finally(() => {
+        if (current) setPatientBehavioralStatusLoading(false)
+      })
+    return () => { current = false }
+  }, [])
 
   useEffect(() => {
     let current = true
@@ -2101,7 +2505,8 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
     <section className="nursing-page page-enter">
       <div className="page-title-row"><span className="module-icon module-icon-nursing"><HeartPulse size={23} /></span><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><div className="nursing-vitals-action"><span className="module-icon"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button></div><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       {nursingTab !== 'triage' && <>
-        <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><PatientCareTrackBadge track={patients.find((patient) => patient.reference === patientRef)?.treatment_track} /><button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+        <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><PatientCareTrackBadge track={patients.find((patient) => patient.reference === patientRef)?.treatment_track} />{patientRef && patients.find((patient) => patient.reference === patientRef)?.room && patients.find((patient) => patient.reference === patientRef)?.bed && !patientBehavioralStatusLoading && !patientBehavioralStatusError && <BehavioralStatusBadge status={patientBehavioralStatuses[patientRef]?.status ?? null} />}<button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+        {patientBehavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${patientBehavioralStatusError}`}</ToastMessage>}
         <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
       </>}
       <div className="admin-tabs module-tabs nursing-tabs" role="tablist" aria-label="Seções de Enfermagem">
@@ -2149,7 +2554,7 @@ function NursingPage({ profile, user, onShowHistory }: { profile: Profile; user:
             <article className={allergyReviewCount ? 'nursing-overview-warning' : ''}><strong>{allergyReviewCount}</strong><span>Cadastros com alergias ainda não revisadas</span></article>
             <article><strong>{pendingMedicationCount}</strong><span>Dispensações sem registro de ação da Enfermagem</span></article>
           </div>
-          <div className="nursing-overview-patient"><div><p className="eyebrow">PACIENTE SELECIONADO</p><strong>{patients.find((patient) => patient.reference === patientRef)?.name ?? 'Selecione um paciente'}</strong><span>{patients.find((patient) => patient.reference === patientRef) ? patientLocationLabel(patients.find((patient) => patient.reference === patientRef)!) : 'Cadastro necessário para iniciar registros.'}</span></div><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')} disabled={!patientRef}><Activity size={16} /> Iniciar coleta de sinais vitais</button></div>
+          <div className="nursing-overview-patient"><div><p className="eyebrow">PACIENTE SELECIONADO</p><strong>{patients.find((patient) => patient.reference === patientRef)?.name ?? 'Selecione um paciente'}</strong><span>{patients.find((patient) => patient.reference === patientRef) ? patientLocationLabel(patients.find((patient) => patient.reference === patientRef)!) : 'Cadastro necessário para iniciar registros.'}</span></div><div className="patient-row-actions"><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')} disabled={!patientRef}><Activity size={16} /> Iniciar coleta de sinais vitais</button><button className="button button-secondary" type="button" onClick={() => onOpenPatientHistory(patientRef)} disabled={!patientRef}>Histórico assistencial completo</button></div></div>
           {patientRef ? <VitalTrendsDashboard patientReference={patientRef} patientName={patients.find((patient) => patient.reference === patientRef)?.name} /> : <div className="placeholder-state patient-empty-state"><span className="placeholder-state-icon"><UsersRound size={20} /></span><div><strong>Selecione um paciente</strong><p>Os gráficos e a tabela de evolução ficam disponíveis depois que um paciente é escolhido para a consulta.</p></div></div>}
           <div className="nursing-overview-actions">
             <button className="button button-secondary" type="button" onClick={() => setNursingTab('medications')}>Conferir medicações <ArrowRight size={15} /></button>
@@ -3208,7 +3613,7 @@ function HospitalBedManagement() {
     <div className="section-heading"><div><p className="eyebrow">CAPACIDADE FÍSICA</p><h2>Unidades e mapa de leitos</h2><p className="welcome-copy">Cadastre a capacidade física e reconcilie manualmente os cadastros legados antes de usar percentuais de ocupação.</p></div><button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Atualizar</button></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-    {capacity && <div className="hygiene-summary executive-kpis"><article><strong>{capacity.total_beds}</strong><span>Leitos cadastrados</span></article><article><strong>{capacity.occupied_beds}</strong><span>Ocupados no mapa físico</span></article><article><strong>{capacity.available_beds}</strong><span>Liberados</span></article><article><strong>{capacity.occupancy_percent === null ? '—' : `${capacity.occupancy_percent}%`}</strong><span>Ocupação física</span></article></div>}
+    {capacity && <div className="hygiene-summary executive-kpis"><article className="status-tone-neutral"><strong>{capacity.total_beds}</strong><span>Leitos cadastrados</span></article><article className="status-tone-neutral"><strong>{capacity.occupied_beds}</strong><span>Ocupados no mapa físico</span></article><article className="status-tone-success"><strong>{capacity.available_beds}</strong><span>Liberados</span></article><article className="status-tone-neutral"><strong>{capacity.occupancy_percent === null ? '—' : `${capacity.occupancy_percent}%`}</strong><span>Ocupação física</span></article></div>}
     {capacity && capacity.unreconciled_legacy_patients > 0 && <div className="notice-band" role="status"><Info size={18} /><span>{capacity.unreconciled_legacy_patients} paciente(s) com quarto/leito legado aguardam reconciliação manual. O percentual de ocupação permanece indisponível.</span></div>}
     <form className="account-create-panel" onSubmit={(event) => void createUnit(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVA UNIDADE</p><h3>Cadastrar setor ou unidade</h3></div></div>
@@ -3229,7 +3634,7 @@ function HospitalBedManagement() {
       <button className="button button-primary" type="submit" disabled={saving || !patientReference || !reconciliationBedId}>{saving ? 'Vinculando…' : 'Confirmar reconciliação'}</button>
     </form>}
     <section><div className="section-heading"><div><p className="eyebrow">MAPA ATUAL</p><h3>Leitos cadastrados</h3></div><span className="module-total">{beds.length}</span></div>
-      {loading ? <div className="history-empty">Carregando capacidade física…</div> : beds.length ? <div className="collection-list">{beds.map((bed) => <article className="collection-row" key={bed.id}><div className="collection-row-heading"><strong>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</strong><span className={`work-order-status status-${bed.status === 'available' ? 'open' : bed.status === 'cleaning' ? 'in_progress' : 'cancelled'}`}>{bed.occupied ? 'Ocupado' : bed.status === 'available' ? 'Disponível' : bed.status === 'cleaning' ? 'Em higienização' : bed.status === 'maintenance' ? 'Manutenção' : 'Bloqueado'}</span></div><small>{bed.isolation_capable ? 'Preparado para isolamento' : 'Sem característica de isolamento'}{bed.patient_reference ? ` · Paciente vinculado: ${bed.patient_reference}` : ''}</small><label className="field"><span className="field-label">Situação operacional</span><select value={bed.occupied ? 'available' : bed.status} disabled={saving || bed.occupied} onChange={(event) => void updateStatus(bed, event.target.value as HospitalBed['status'])}><option value="available">Disponível</option><option value="cleaning">Em higienização</option><option value="maintenance">Manutenção</option><option value="blocked">Bloqueado</option></select></label></article>)}</div> : <div className="history-empty">Nenhum leito foi cadastrado.</div>}
+      {loading ? <div className="history-empty">Carregando capacidade física…</div> : beds.length ? <div className="collection-list">{beds.map((bed) => <article className="collection-row" key={bed.id}><div className="collection-row-heading"><strong>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</strong><span className={`work-order-status status-tone-${hospitalBedTone(bed)}`}>{bed.occupied ? 'Ocupado' : bed.status === 'available' ? 'Disponível' : bed.status === 'cleaning' ? 'Em higienização' : bed.status === 'maintenance' ? 'Manutenção' : 'Bloqueado'}</span></div><small>{bed.isolation_capable ? 'Preparado para isolamento' : 'Sem característica de isolamento'}{bed.patient_reference ? ` · Paciente vinculado: ${bed.patient_reference}` : ''}</small><label className="field"><span className="field-label">Situação operacional</span><select value={bed.occupied ? 'available' : bed.status} disabled={saving || bed.occupied} onChange={(event) => void updateStatus(bed, event.target.value as HospitalBed['status'])}><option value="available">Disponível</option><option value="cleaning">Em higienização</option><option value="maintenance">Manutenção</option><option value="blocked">Bloqueado</option></select></label></article>)}</div> : <div className="history-empty">Nenhum leito foi cadastrado.</div>}
     </section>
   </section>
 }
@@ -3725,6 +4130,7 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
       <button className={`button ${tab === 'tasks' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}><ClipboardList size={16} /> Pendências</button>
       <button className={`button ${tab === 'beds' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}><Building2 size={16} /> Unidades e leitos</button>
       <button className={`button ${tab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}><ClipboardList size={16} /> Relatórios</button>
+      <button className={`button ${tab === 'behavior' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'behavior'} onClick={() => setTab('behavior')}><AlertTriangle size={16} /> Semáforo comportamental</button>
       <button className={`button ${tab === 'governance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'governance'} onClick={() => setTab('governance')}><ShieldCheck size={16} /> Governança</button>
       <button className={`button ${tab === 'shortcuts' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'shortcuts'} onClick={() => setTab('shortcuts')}><ArrowRight size={16} /> Acesso rápido</button>
     </div>
@@ -3732,8 +4138,48 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
     {tab === 'tasks' && <Suspense fallback={<div className="history-empty" role="status">Carregando pendências operacionais…</div>}><OperationalTaskCenter user={user} onNavigate={onNavigate} /></Suspense>}
     {tab === 'beds' && <HospitalBedManagement />}
     {tab === 'reports' && <AdminReportsCenter scope="management" />}
+    {tab === 'behavior' && <ManagementBehavioralStatusBoard />}
     {tab === 'governance' && <Suspense fallback={<div className="history-empty" role="status">Carregando operações administrativas…</div>}><AdministrativeRoadmapPanel userId={user.id} /></Suspense>}
     {tab === 'shortcuts' && <section className="patient-list-panel management-shortcuts"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO OPERACIONAL</p><h2>Acesso rápido às áreas</h2></div></div><div>{visibleShortcuts.map(({ id, label }) => <button className="button button-secondary" type="button" key={id} onClick={() => onNavigate(id)}>{label}<ArrowRight size={15} /></button>)}</div></section>}
+  </section>
+}
+
+type ManagementBehavioralStatus = {
+  patient_reference: string
+  patient_name: string
+  room: string
+  bed: string
+  status: BehavioralStatus | null
+  updated_at: string | null
+}
+
+function ManagementBehavioralStatusBoard() {
+  const [statuses, setStatuses] = useState<ManagementBehavioralStatus[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [refreshVersion, setRefreshVersion] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    fetch('/api/v1/management/behavioral-status')
+      .then(readApiResponse<{ statuses?: ManagementBehavioralStatus[] }>)
+      .then((result) => {
+      if (active) setStatuses(result.statuses ?? [])
+    }).catch((loadError) => {
+      if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar as sinalizações comportamentais.')
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
+  }, [refreshVersion])
+
+  return <section className="patient-list-panel behavioral-status-board-panel">
+    <div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO DE INTERNADOS</p><h2>Sinalização comportamental</h2><p className="welcome-copy">Exibe somente a cor de atenção e a data da última revisão. Observações e detalhes clínicos permanecem restritos à equipe assistencial.</p></div><button className="button button-secondary" type="button" onClick={() => { setLoading(true); setError(''); setRefreshVersion((version) => version + 1) }}>Atualizar</button></div>
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {loading ? <div className="history-empty" role="status">Carregando sinalizações…</div> : statuses.length ? <div className="behavioral-status-board">{statuses.map((item) => <article className="behavioral-status-row" key={item.patient_reference}>
+      <div><strong>{item.patient_name}</strong><small>Quarto {item.room} · leito {item.bed}</small><small>{item.updated_at ? `Última revisão: ${dateTime(item.updated_at)}` : 'Ainda sem revisão do semáforo'}</small></div>
+      <BehavioralStatusBadge status={item.status} />
+    </article>)}</div> : <div className="history-empty">Nenhum paciente internado está disponível para acompanhamento.</div>}
   </section>
 }
 

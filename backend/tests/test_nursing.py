@@ -1648,6 +1648,166 @@ def test_patient_vital_trends_accepts_custom_datetime_range(
         nursing.app.dependency_overrides.clear()
 
 
+def test_behavioral_observations_are_descriptive_append_only_and_role_restricted(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    reference = str(patient["reference"])
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    nursing.app.dependency_overrides[
+        nursing.CLINICAL_HISTORY_ACCESS.dependency
+    ] = lambda: nurse
+    try:
+        with TestClient(nursing.app) as client:
+            created = client.post(
+                f"/api/v1/nursing/patients/{reference}/behavioral-observations",
+                json={
+                    "observation": "Permaneceu em silêncio durante a atividade.",
+                    "context": "Atividade em grupo no período da manhã.",
+                    "response": "Profissional ofereceu conversa individual.",
+                },
+            )
+            listed = client.get(
+                f"/api/v1/nursing/patients/{reference}/behavioral-observations"
+            )
+            nurse_status_update = client.post(
+                f"/api/v1/nursing/patients/{reference}/behavioral-observations",
+                json={
+                    "observation": "Atualização que exige profissional autorizado.",
+                    "status": "red",
+                },
+            )
+        assert created.status_code == 201
+        assert "attention_level" not in created.json()
+        assert listed.status_code == 200
+        assert listed.json()["observations"][0]["observation"] == (
+            "Permaneceu em silêncio durante a atividade."
+        )
+        assert listed.json()["observations"][0]["actor_name"] == nurse.actor_name
+        assert nurse_status_update.status_code == 403
+
+        physician = DemoPrincipal(
+            "physician-id",
+            "physician",
+            "Médica de teste",
+            "physician",
+            ["physician"],
+            {"physician": ["consultar", "criar"]},
+        )
+        nursing.create_behavioral_observation(
+            reference,
+            nursing.BehavioralObservationPayload(
+                observation="Equipe profissional registrou supervisão contínua.",
+                status="red",
+            ),
+            physician,
+            nursing_db,
+        )
+
+        manager = DemoPrincipal(
+            "manager-id",
+            "manager",
+            "Gestão",
+            "management",
+            ["management"],
+            {"management": ["consultar", "criar"]},
+        )
+        nursing.app.dependency_overrides[
+            nursing.CLINICAL_HISTORY_ACCESS.dependency
+        ] = lambda: manager
+        with TestClient(nursing.app) as client:
+            forbidden = client.get(
+                f"/api/v1/nursing/patients/{reference}/behavioral-observations"
+            )
+            forbidden_create = client.post(
+                f"/api/v1/nursing/patients/{reference}/behavioral-observations",
+                json={"observation": "Gestão não deve registrar nota clínica."},
+            )
+        assert forbidden.status_code == 403
+        assert forbidden_create.status_code == 403
+        management_status = nursing.list_management_behavioral_status(
+            manager, nursing_db
+        )
+        assert management_status["statuses"] == [
+            {
+                "patient_reference": reference,
+                "patient_name": "Paciente de teste",
+                "room": "3",
+                "bed": "B",
+                "status": "red",
+                "updated_at": management_status["statuses"][0]["updated_at"],
+            }
+        ]
+        assert "observation" not in management_status["statuses"][0]
+        assert "actor_name" not in management_status["statuses"][0]
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
+def test_reception_screensaver_images_can_be_uploaded_listed_and_deleted(
+    nursing_db: Session,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = tmp_path / "reception-screensaver"
+    monkeypatch.setenv("SCPO_RECEPTION_SCREENSAVER_DIR", str(directory))
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    reception = DemoPrincipal(
+        "reception-id",
+        "reception",
+        "Recepcionista de teste",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar", "excluir"]},
+    )
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    for route in nursing.app.routes:
+        if getattr(route, "path", None) in {
+            "/api/v1/reception/screensaver/images",
+            "/api/v1/reception/screensaver/images/{filename}",
+        }:
+            principal_dependency = next(
+                dependency.call
+                for dependency in route.dependant.dependencies
+                if dependency.name == "principal"
+            )
+            nursing.app.dependency_overrides[principal_dependency] = lambda: reception
+    try:
+        with TestClient(nursing.app) as client:
+            upload = client.post(
+                "/api/v1/reception/screensaver/images",
+                content=b"\x89PNG\r\n\x1a\nimage data",
+                headers={"Content-Type": "image/png"},
+            )
+            assert upload.status_code == 201
+            image = upload.json()
+            assert image["url"] == (
+                f"/api/v1/reception/public/screensaver/images/{image['filename']}"
+            )
+            assert (directory / image["filename"]).is_file()
+            listed = client.get("/api/v1/reception/public/screensaver/images")
+            assert listed.status_code == 200
+            assert listed.json()["images"] == [
+                {"filename": image["filename"], "url": image["url"]}
+            ]
+            fetched = client.get(image["url"])
+            assert fetched.status_code == 200
+            assert fetched.content == b"\x89PNG\r\n\x1a\nimage data"
+            deleted = client.delete(
+                f"/api/v1/reception/screensaver/images/{image['filename']}"
+            )
+            assert deleted.status_code == 204
+            assert not (directory / image["filename"]).exists()
+            assert client.get("/api/v1/reception/public/screensaver/images").json() == {
+                "images": []
+            }
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
 def test_vital_elimination_and_venous_access_choices_are_restricted() -> None:
     nursing.VitalPayload(
         patient_reference="123e4567-e89b-12d3-a456-426614174000",

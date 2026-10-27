@@ -10,5 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends postgresql-clie
 COPY pyproject.toml uv.lock alembic.ini ./
 COPY backend ./backend
 RUN uv sync --frozen --no-dev
+RUN mkdir -p /var/lib/scpo/reception-screensaver && chown -R 10001:10001 /var/lib/scpo
 USER 10001:10001
 EXPOSE 8000

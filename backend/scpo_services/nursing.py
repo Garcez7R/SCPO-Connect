@@ -1,11 +1,11 @@
+import os
 import re
 import uuid
-import os
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
-from pathlib import Path
 from decimal import Decimal, InvalidOperation
 from enum import IntEnum
+from pathlib import Path
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
@@ -40,6 +40,7 @@ from .common import (
     database_session,
     emit_audit_event,
     require_demo_role,
+    require_demo_role_or_superuser,
     require_service_token,
     resolve_medication_dispensation,
     verify_database_migrated,
@@ -71,6 +72,53 @@ class VitalTrendPeriod(IntEnum):
     ONE_DAY = 24
     SEVEN_DAYS = 168
     THIRTY_DAYS = 720
+
+
+class BehavioralObservation(Base):
+    __tablename__ = "behavioral_observations"
+    __table_args__ = (
+        Index(
+            "ix_behavioral_observations_patient_created",
+            "patient_reference",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("patients.reference", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    observation: Mapped[str] = mapped_column(String(2000), nullable=False)
+    context: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    response: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    status: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BehavioralObservationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observation: str = Field(min_length=5, max_length=2000)
+    context: str = Field(default="", max_length=500)
+    response: str = Field(default="", max_length=1000)
+    status: Literal["green", "yellow", "red"] | None = None
+
+    @field_validator("observation")
+    @classmethod
+    def trim_observation(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 5:
+            raise ValueError("Descreva objetivamente o comportamento observado")
+        return value
+
+    @field_validator("context", "response")
+    @classmethod
+    def trim_optional_fields(cls, value: str) -> str:
+        return value.strip()
 
 
 class PatientObservation(Base):
@@ -1799,7 +1847,15 @@ async def authorize_patient_module(request: Request) -> DemoPrincipal:
 
 
 PATIENT_ACCESS = Depends(authorize_patient_module)
-PATIENT_HISTORY_ACCESS = Depends(require_demo_role("patients", "nursing", "physician", "management", "admin"))
+PATIENT_HISTORY_ACCESS = Depends(
+    require_demo_role_or_superuser(
+        "patients", "nursing", "physician", "psychology", "management", "admin"
+    )
+)
+CLINICAL_HISTORY_MODULES = ("nursing", "physician", "psychology", "admin")
+CLINICAL_HISTORY_ACCESS = Depends(
+    require_demo_role_or_superuser(*CLINICAL_HISTORY_MODULES)
+)
 CLINICAL_RISK_ACCESS = Depends(require_demo_role("nursing", "nutrition", "pharmacy", "physician", "management"))
 PHYSICIAN_ACCESS = require_demo_role("physician", "management")
 PHYSICIAN_PROFILE_READ_ACCESS = require_demo_role("physician", "management", "admin")
@@ -2549,6 +2605,54 @@ def list_physician_triage_arrivals(
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     return list_triage_arrivals(db, principal=principal, triaged_only=True)
+
+
+@app.get("/api/v1/nursing/patients/{patient_reference}/triage-history")
+def list_patient_triage_history(
+    patient_reference: str,
+    principal: Annotated[DemoPrincipal, CLINICAL_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    if db.get(Patient, patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    query = (
+        select(NursingTriage, EmergencyArrival)
+        .join(EmergencyArrival, EmergencyArrival.id == NursingTriage.arrival_id)
+        .where(NursingTriage.patient_reference == patient_reference)
+    )
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    records = db.execute(
+        query.order_by(NursingTriage.created_at.desc(), NursingTriage.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    emit_audit_event(
+        principal, "nursing", "patient_triage_history_read", patient_reference
+    )
+    return {
+        "records": [
+            {
+                "id": triage.id,
+                "arrival_reason": arrival.reason,
+                "allergies_status": triage.allergies_status,
+                "allergies": triage.allergies,
+                "conditions_treatments": triage.conditions_treatments,
+                "vital_values": triage.vital_values,
+                "glucose_unit": triage.glucose_unit,
+                "measured_at": triage.measured_at.isoformat()
+                if triage.measured_at
+                else None,
+                "actor_name": triage.actor_name,
+                "created_at": triage.created_at.isoformat(),
+            }
+            for triage, arrival in records
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @app.get("/api/v1/management/reports/triages")
@@ -3405,7 +3509,17 @@ def update_reception_appointment_status(
 def list_outpatient_encounters(
     principal: Annotated[
         DemoPrincipal,
-        Depends(require_demo_role("reception", "nursing", "management", "admin", "oversight")),
+        Depends(
+            require_demo_role(
+                "reception",
+                "nursing",
+                "physician",
+                "psychology",
+                "management",
+                "admin",
+                "oversight",
+            )
+        ),
     ],
     db: Annotated[Session, Depends(get_nursing_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -5116,6 +5230,233 @@ def list_management_patient_status(
                 "observation": latest[patient.reference].observation if patient.reference in latest else "",
                 "actor_name": latest[patient.reference].actor_name if patient.reference in latest else "",
                 "updated_at": latest[patient.reference].created_at.isoformat() if patient.reference in latest else None,
+            }
+            for patient in patients
+        ]
+    }
+
+
+def serialize_behavioral_observation(row: BehavioralObservation) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "patient_reference": row.patient_reference,
+        "observation": row.observation,
+        "context": row.context,
+        "response": row.response,
+        "status": row.status,
+        "actor_name": row.actor_name,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def can_view_behavioral_history(principal: DemoPrincipal) -> bool:
+    return principal.is_superuser or any(
+        module in principal.modules
+        and "consultar" in principal.permissions.get(module, [])
+        for module in CLINICAL_HISTORY_MODULES
+    ) or (
+        "admin" in principal.modules
+        and "administrar" in principal.permissions.get("admin", [])
+    )
+
+
+def can_update_behavioral_status(principal: DemoPrincipal) -> bool:
+    return principal.is_superuser or any(
+        module in principal.modules
+        and "consultar" in principal.permissions.get(module, [])
+        and "criar" in principal.permissions.get(module, [])
+        for module in ("physician", "psychology")
+    ) or (
+        "admin" in principal.modules
+        and "administrar" in principal.permissions.get("admin", [])
+    )
+
+
+def latest_behavioral_statuses(
+    db: Session, patient_references: list[str]
+) -> dict[str, BehavioralObservation]:
+    if not patient_references:
+        return {}
+    rows = db.scalars(
+        select(BehavioralObservation)
+        .where(
+            BehavioralObservation.patient_reference.in_(patient_references),
+            BehavioralObservation.status.is_not(None),
+        )
+        .order_by(
+            BehavioralObservation.created_at.desc(),
+            BehavioralObservation.id.desc(),
+        )
+    ).all()
+    latest: dict[str, BehavioralObservation] = {}
+    for row in rows:
+        latest.setdefault(row.patient_reference, row)
+    return latest
+
+
+@app.get("/api/v1/nursing/patients/{patient_reference}/behavioral-observations")
+def list_behavioral_observations(
+    patient_reference: str,
+    principal: Annotated[DemoPrincipal, CLINICAL_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    if not can_view_behavioral_history(principal):
+        raise HTTPException(
+            status_code=403,
+            detail="Histórico comportamental disponível somente à equipe assistencial",
+        )
+    if db.get(Patient, patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    query = select(BehavioralObservation).where(
+        BehavioralObservation.patient_reference == patient_reference
+    )
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = db.scalars(
+        query.order_by(BehavioralObservation.created_at.desc(), BehavioralObservation.id.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    emit_audit_event(
+        principal, "nursing", "patient_behavioral_observations_read", patient_reference
+    )
+    return {
+        "observations": [serialize_behavioral_observation(row) for row in rows],
+        "total": total,
+    }
+
+
+@app.get("/api/v1/nursing/behavioral-status")
+def list_clinical_behavioral_status(
+    principal: Annotated[DemoPrincipal, CLINICAL_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    if not can_view_behavioral_history(principal):
+        raise HTTPException(
+            status_code=403,
+            detail="Sinalização comportamental disponível somente à equipe assistencial",
+        )
+    patients = db.scalars(
+        select(Patient)
+        .where(
+            Patient.deleted_at.is_(None),
+            Patient.active.is_(True),
+            Patient.room != "",
+            Patient.bed != "",
+        )
+        .order_by(Patient.room, Patient.bed, Patient.name)
+    ).all()
+    latest = latest_behavioral_statuses(
+        db, [patient.reference for patient in patients]
+    )
+    emit_audit_event(
+        principal, "nursing", "clinical_behavioral_status_read", "inpatients"
+    )
+    return {
+        "statuses": [
+            {
+                "patient_reference": patient.reference,
+                "patient_name": patient.name,
+                "room": patient.room,
+                "bed": patient.bed,
+                "status": latest[patient.reference].status
+                if patient.reference in latest
+                else None,
+                "updated_at": latest[patient.reference].created_at.isoformat()
+                if patient.reference in latest
+                else None,
+            }
+            for patient in patients
+        ]
+    }
+
+
+@app.post(
+    "/api/v1/nursing/patients/{patient_reference}/behavioral-observations",
+    status_code=201,
+)
+def create_behavioral_observation(
+    patient_reference: str,
+    payload: BehavioralObservationPayload,
+    principal: Annotated[DemoPrincipal, CLINICAL_HISTORY_ACCESS],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    if not can_view_behavioral_history(principal):
+        raise HTTPException(
+            status_code=403,
+            detail="Histórico comportamental disponível somente à equipe assistencial",
+        )
+    patient = db.get(Patient, patient_reference)
+    if patient is None or patient.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    row = BehavioralObservation(
+        patient_reference=patient_reference,
+        observation=payload.observation,
+        context=payload.context,
+        response=payload.response,
+        status=payload.status,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        created_at=datetime.now(UTC),
+    )
+    if payload.status is not None and not can_update_behavioral_status(principal):
+        raise HTTPException(
+            status_code=403,
+            detail="Somente Médico, Psicologia/Psiquiatria ou Administração pode alterar o semáforo comportamental",
+        )
+    db.add(row)
+    emit_audit_event(
+        principal,
+        "nursing",
+        "patient_behavioral_observation_created",
+        patient_reference,
+        db=db,
+    )
+    db.commit()
+    db.refresh(row)
+    return serialize_behavioral_observation(row)
+
+
+@app.get("/api/v1/management/behavioral-status")
+def list_management_behavioral_status(
+    principal: Annotated[
+        DemoPrincipal,
+        Depends(
+            require_demo_role_or_superuser("management", "admin")
+        ),
+    ],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, list[dict[str, object]]]:
+    patients = db.scalars(
+        select(Patient)
+        .where(
+            Patient.deleted_at.is_(None),
+            Patient.active.is_(True),
+            Patient.room != "",
+            Patient.bed != "",
+        )
+        .order_by(Patient.room, Patient.bed, Patient.name)
+    ).all()
+    latest = latest_behavioral_statuses(
+        db, [patient.reference for patient in patients]
+    )
+    emit_audit_event(
+        principal, "management", "behavioral_status_board_read", "inpatients"
+    )
+    return {
+        "statuses": [
+            {
+                "patient_reference": patient.reference,
+                "patient_name": patient.name,
+                "room": patient.room,
+                "bed": patient.bed,
+                "status": latest[patient.reference].status
+                if patient.reference in latest
+                else None,
+                "updated_at": latest[patient.reference].created_at.isoformat()
+                if patient.reference in latest
+                else None,
             }
             for patient in patients
         ]

@@ -17,6 +17,7 @@ import PatientSelect from '../components/PatientSelect'
 import InterprofessionalSharePanel from '../components/InterprofessionalSharePanel'
 import { useBreadcrumb, usePersistentTab } from '../components/PageNavigationContext'
 import { PatientCareTrackBadge } from '../components/PatientCareTrackBadge'
+import { BehavioralStatusBadge, type BehavioralStatus } from '../components/BehavioralStatusBadge'
 import { patientCareTrackClass } from '../patientCareTrack'
 import ToastMessage from '../components/ToastMessage'
 
@@ -139,6 +140,7 @@ const psychologyTabLabels: Record<PsychologyTab, string> = { triage: 'Acolhiment
 type PsychologyServiceArea = 'psychology' | 'psychiatry'
 type PsychologyReferral = { id: number; patient_reference: string; referral_type: string; status: string; priority: 'routine' | 'priority'; created_at: string }
 type PsychologyEncounter = { id: number; patient_reference: string; encounter_type: 'intake' | 'follow_up' | 'psychiatry'; objective: string; evolution: string; plan: string; actor_name: string; created_at: string }
+type PatientBehavioralStatus = { patient_reference: string; status: BehavioralStatus | null; updated_at: string | null }
 
 const psychologyStatuses: Record<string, string> = {
   open: 'Aguardando triagem',
@@ -154,12 +156,15 @@ const psychologyEncounterTypes: Record<PsychologyEncounter['encounter_type'], st
   psychiatry: 'Atendimento psiquiátrico',
 }
 
-export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { userId: string; canPrescribe: boolean; onOpenPhysician: () => void }) {
+export function PsychologyPage({ userId, canPrescribe, onOpenPhysician, onOpenPatientHistory }: { userId: string; canPrescribe: boolean; onOpenPhysician: () => void; onOpenPatientHistory: (reference: string) => void }) {
   const [serviceArea, setServiceArea] = useState<PsychologyServiceArea>('psychology')
   const [tab, setTab] = usePersistentTab(`scpo-tab-psychology-${userId}`, 'triage', psychologyTabs, psychologyTabLabels, true, 2)
   const [patients, setPatients] = useState<Patient[]>([])
   const [referrals, setReferrals] = useState<PsychologyReferral[]>([])
   const [encounters, setEncounters] = useState<PsychologyEncounter[]>([])
+  const [behavioralStatuses, setBehavioralStatuses] = useState<Record<string, PatientBehavioralStatus>>({})
+  const [behavioralStatusError, setBehavioralStatusError] = useState('')
+  const [behavioralStatusLoading, setBehavioralStatusLoading] = useState(true)
   const [encountersPatient, setEncountersPatient] = useState('')
   const [triageFilter, setTriageFilter] = useState('')
   const [triagePatient, setTriagePatient] = useState('')
@@ -202,6 +207,25 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { user
         if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila de atendimento.')
       })
       .finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
+  }, [])
+
+  useEffect(() => {
+    let current = true
+    fetch('/api/v1/nursing/behavioral-status')
+      .then(readApiResponse<{ statuses?: PatientBehavioralStatus[] }>)
+      .then((result) => {
+      if (current) {
+        setBehavioralStatuses(Object.fromEntries(
+          (result.statuses ?? []).map((status) => [status.patient_reference, status]),
+        ))
+        setBehavioralStatusError('')
+      }
+    }).catch((statusError) => {
+      if (current) setBehavioralStatusError(statusError instanceof Error ? statusError.message : 'Não foi possível carregar o semáforo comportamental.')
+    }).finally(() => {
+      if (current) setBehavioralStatusLoading(false)
+    })
     return () => { current = false }
   }, [])
 
@@ -342,6 +366,7 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { user
     </div>
     <div className="psychology-privacy" role="note"><LockKeyhole size={18} /><span>Informações clínicas confidenciais: acesso restrito a contas autorizadas neste módulo. Registre apenas dados necessários ao atendimento.</span></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {behavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${behavioralStatusError}`}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="admin-tabs module-tabs psychology-service-tabs" role="tablist" aria-label="Área profissional">
       <button type="button" role="tab" aria-selected={serviceArea === 'psychology'} className={`button ${serviceArea === 'psychology' ? 'button-primary' : 'button-secondary'}`} onClick={() => selectServiceArea('psychology')}><Brain size={16} /> Psicologia</button>
@@ -375,7 +400,7 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { user
         {loading ? <div className="history-empty">Carregando fila…</div> : visibleReferrals.length ? <div className="psychology-referral-list">{visibleReferrals.map((referral) => {
           const patient = patients.find((item) => item.reference === referral.patient_reference)
           return <article className={`psychology-referral-card patient-care-track-card ${patientCareTrackClass(patient?.treatment_track)}`} key={referral.id}>
-          <div className="psychology-referral-main"><div><h3>{patientName(referral.patient_reference)}</h3><PatientCareTrackBadge track={patient?.treatment_track} /><p>{referral.referral_type}</p><small>{dateTime(referral.created_at)}</small></div><span className={`psychology-priority ${referral.priority === 'priority' ? 'is-priority' : ''}`}>{referral.priority === 'priority' ? 'Prioritária' : 'Rotina'}</span></div>
+          <div className="psychology-referral-main"><div><h3>{patientName(referral.patient_reference)}</h3><PatientCareTrackBadge track={patient?.treatment_track} />{patient?.room && patient.bed && !behavioralStatusLoading && !behavioralStatusError && <BehavioralStatusBadge status={behavioralStatuses[patient.reference]?.status ?? null} />}<p>{referral.referral_type}</p><small>{dateTime(referral.created_at)}</small></div><span className={`psychology-priority ${referral.priority === 'priority' ? 'is-priority' : ''}`}>{referral.priority === 'priority' ? 'Prioritária' : 'Rotina'}</span></div>
           <div className="psychology-referral-actions"><label className="field"><span className="field-label">Situação</span><select aria-label={`Situação do encaminhamento de ${patientName(referral.patient_reference)}`} disabled={updatingReferral === referral.id} value={referral.status} onChange={(event) => void updateReferral(referral.id, { status: event.target.value })}>{Object.entries(psychologyStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select aria-label={`Prioridade do encaminhamento de ${patientName(referral.patient_reference)}`} disabled={updatingReferral === referral.id} value={referral.priority} onChange={(event) => void updateReferral(referral.id, { priority: event.target.value })}><option value="routine">Rotina</option><option value="priority">Prioritária</option></select></label></div>
         </article>
         })}</div> : <div className="history-empty">{referrals.length ? 'Nenhum encaminhamento corresponde à busca.' : 'A fila está vazia. Registre um encaminhamento para iniciar o acompanhamento.'}</div>}
@@ -386,6 +411,7 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { user
         <div className="section-heading"><div><p className="eyebrow">PRONTUÁRIO RESTRITO</p><h2>Novo registro de atendimento</h2></div></div>
         <div className="field-grid field-grid-two">
           <PatientSelect label="Paciente" patients={patients} value={recordPatient} onChange={(reference) => { setRecordPatient(reference); setEncountersPatient(''); setEncounterLoadError(''); setEncounters([]) }} required placeholder="Digite nome, quarto ou leito" optionLabel={(patient) => `${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação'}`} />
+          {recordPatient && <button className="button button-secondary" type="button" onClick={() => onOpenPatientHistory(recordPatient)}>Histórico assistencial completo</button>}
           <PatientAllergyAlert patient={patients.find((patient) => patient.reference === recordPatient)} />
           <label className="field"><span className="field-label">Tipo de registro</span><select value={recordType} onChange={(event) => setRecordType(event.target.value as PsychologyEncounter['encounter_type'])}>{Object.entries(psychologyEncounterTypes).filter(([value]) => serviceArea === 'psychiatry' ? value === 'psychiatry' : value !== 'psychiatry').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label className="field psychology-field-wide"><span className="field-label">Objetivo do atendimento</span><textarea required minLength={3} maxLength={500} value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Finalidade do encontro, em termos objetivos" /></label>
@@ -398,7 +424,7 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { user
       <section className="psychology-panel">
         <div className="section-heading"><div><p className="eyebrow">HISTÓRICO INDIVIDUAL</p><h2>Registros de {serviceArea === 'psychiatry' ? 'Psiquiatria' : 'Psicologia'}</h2></div><span className="module-total">{visibleEncounters.length}</span></div>
         {!recordPatient ? <div className="history-empty">Selecione um paciente acima para consultar apenas o histórico individual autorizado.</div> : encounterLoadError ? <ToastMessage variant="error">{encounterLoadError}</ToastMessage> : encountersLoading ? <div className="history-empty">Carregando histórico confidencial…</div> : visibleEncounters.length ? <div className="psychology-encounter-list">{visibleEncounters.map((encounter) => <article className="psychology-encounter-card" key={encounter.id}>
-          <div className="psychology-encounter-heading"><div><h3>{psychologyEncounterTypes[encounter.encounter_type]}</h3><p>{patientName(encounter.patient_reference)}</p></div><div><time>{dateTime(encounter.created_at)}</time><small>{encounter.actor_name}</small></div></div>
+          <div className="psychology-encounter-heading"><div><h3>{psychologyEncounterTypes[encounter.encounter_type]}</h3><p>{patientName(encounter.patient_reference)}</p>{patients.find((patient) => patient.reference === encounter.patient_reference)?.room && patients.find((patient) => patient.reference === encounter.patient_reference)?.bed && !behavioralStatusLoading && !behavioralStatusError && <BehavioralStatusBadge status={behavioralStatuses[encounter.patient_reference]?.status ?? null} />}</div><div><time>{dateTime(encounter.created_at)}</time><small>{encounter.actor_name}</small></div></div>
           <div className="psychology-encounter-field"><strong>Objetivo</strong><p>{encounter.objective}</p></div>
           <div className="psychology-encounter-field"><strong>Evolução</strong><p>{encounter.evolution}</p></div>
           {encounter.plan && <div className="psychology-encounter-field"><strong>Plano e encaminhamentos</strong><p>{encounter.plan}</p></div>}

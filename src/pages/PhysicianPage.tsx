@@ -6,6 +6,7 @@ import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
 import PhysicianTriageQueue from '../components/PhysicianTriageQueue'
 import { PatientCareTrackBadge } from '../components/PatientCareTrackBadge'
+import { BehavioralStatusBadge, type BehavioralStatus } from '../components/BehavioralStatusBadge'
 import { useBreadcrumb, usePersistentTab } from '../components/PageNavigationContext'
 import { printExternalPrescription, printMedicationAdministrationLabels, printMedicationScheduleSheet } from '../printClinicalForm'
 
@@ -31,6 +32,7 @@ type Patient = {
   active?: boolean
   treatment_track?: 'clinical' | 'psychiatric' | 'combined' | 'unclassified'
 }
+type PatientBehavioralStatus = { patient_reference: string; status: BehavioralStatus | null; updated_at: string | null }
 type Profile = { user_id: string; name: string; crm: string; crm_state: string }
 type Prescription = {
   id: string
@@ -71,13 +73,16 @@ const emptyForm: PrescriptionForm = {
   is_controlled: false,
 }
 
-function PhysicianPage({ userId }: { userId: string }) {
+function PhysicianPage({ userId, onOpenPatientHistory }: { userId: string; onOpenPatientHistory: (reference: string) => void }) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientTotal, setPatientTotal] = useState(0)
   const [patientPage, setPatientPage] = useState(0)
   const [patientSearch, setPatientSearch] = useState('')
   const [patientListLoading, setPatientListLoading] = useState(false)
   const [patientListError, setPatientListError] = useState('')
+  const [behavioralStatuses, setBehavioralStatuses] = useState<Record<string, PatientBehavioralStatus>>({})
+  const [behavioralStatusError, setBehavioralStatusError] = useState('')
+  const [behavioralStatusLoading, setBehavioralStatusLoading] = useState(true)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [patientReference, setPatientReference] = useState('')
@@ -108,6 +113,25 @@ function PhysicianPage({ userId }: { userId: string }) {
     () => visiblePatients.find((patient) => patient.reference === patientReference),
     [visiblePatients, patientReference],
   )
+
+  useEffect(() => {
+    let active = true
+    fetch('/api/v1/nursing/behavioral-status')
+      .then(readApiResponse<{ statuses?: PatientBehavioralStatus[] }>)
+      .then((result) => {
+      if (active) {
+        setBehavioralStatuses(Object.fromEntries(
+          (result.statuses ?? []).map((status) => [status.patient_reference, status]),
+        ))
+        setBehavioralStatusError('')
+      }
+    }).catch((statusError) => {
+      if (active) setBehavioralStatusError(statusError instanceof Error ? statusError.message : 'Não foi possível carregar o semáforo comportamental.')
+    }).finally(() => {
+      if (active) setBehavioralStatusLoading(false)
+    })
+    return () => { active = false }
+  }, [])
   useBreadcrumb('physician-selected-patient', physicianTab === 'records' ? selectedPatient?.name ?? null : null, 3)
 
   useEffect(() => {
@@ -275,18 +299,19 @@ function PhysicianPage({ userId }: { userId: string }) {
         <div className="physician-patient-filters"><label className="field physician-care-filter"><span className="field-label">Perfil de cuidado</span><select value={treatmentTrackFilter} onChange={(event) => { setTreatmentTrackFilter(event.target.value as typeof treatmentTrackFilter); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}><option value="all">Todos os perfis</option><option value="clinical">Clínico</option><option value="psychiatric">Psiquiátrico</option><option value="combined">Clínico e psiquiátrico</option><option value="unclassified">Não classificado</option></select></label><label className="field physician-patient-search"><span className="field-label">Buscar paciente</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }} placeholder="Nome ou identificador" /></label></div>
         <p className="field-hint">O perfil de cuidado é uma classificação operacional e não substitui diagnóstico.</p>
         {patientListError && <ToastMessage variant="error">{patientListError}</ToastMessage>}
+        {behavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${behavioralStatusError}`}</ToastMessage>}
         {patientListLoading && <p className="history-empty" role="status">Carregando pacientes…</p>}
         {visiblePatients.length > 0 && <div className="physician-care-roster">{visiblePatients.map((patient) => {
           const track = patient.treatment_track ?? 'unclassified'
           const expanded = patient.reference === patientReference
-          return <button className={`physician-care-roster-item physician-care-${track} care-track-${track}${expanded ? ' is-selected' : ''}`} key={patient.reference} type="button" aria-expanded={expanded} onClick={() => { setPatientReference(expanded ? '' : patient.reference); setForm((current) => ({ ...current, patient_reference: expanded ? '' : patient.reference })) }}><PatientCareTrackBadge track={track} /><span className="physician-care-roster-copy"><strong>{patient.name}</strong><small>{patient.room && patient.bed ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem acomodação atribuída'}</small></span><span className="physician-care-roster-action">{expanded ? 'Recolher' : 'Abrir prontuário'}</span></button>
+          return <button className={`physician-care-roster-item physician-care-${track} care-track-${track}${expanded ? ' is-selected' : ''}`} key={patient.reference} type="button" aria-expanded={expanded} onClick={() => { setPatientReference(expanded ? '' : patient.reference); setForm((current) => ({ ...current, patient_reference: expanded ? '' : patient.reference })) }}><PatientCareTrackBadge track={track} /><span className="physician-care-roster-copy"><strong>{patient.name}</strong><small>{patient.room && patient.bed ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem acomodação atribuída'}</small>{patient.room && patient.bed && !behavioralStatusLoading && !behavioralStatusError && <BehavioralStatusBadge status={behavioralStatuses[patient.reference]?.status ?? null} />}</span><span className="physician-care-roster-action">{expanded ? 'Recolher' : 'Abrir prontuário'}</span></button>
         })}</div>}
         {!patientListLoading && !patientListError && !visiblePatients.length && <p className="history-empty">{patientSearch.trim() ? 'Nenhum paciente corresponde à busca.' : patientGroup === 'inpatients' ? 'Nenhum paciente internado está disponível.' : 'Nenhum cadastro ativo sem internação está disponível.'}</p>}
         {!patientListLoading && patientTotal > 50 && <nav className="history-pagination" aria-label="Paginação dos pacientes médicos"><span>Exibindo {patientPage * 50 + 1}–{Math.min((patientPage + 1) * 50, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={patientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}>Anterior</button><button className="button button-secondary" type="button" disabled={(patientPage + 1) * 50 >= patientTotal} onClick={() => setPatientPage((page) => page + 1)}>Próxima</button></div></nav>}
       </div>
       {selectedPatient && <>
         <section className="patient-list-panel">
-          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">{selectedPatient.room && selectedPatient.bed ? `Internado · Quarto ${selectedPatient.room} · leito ${selectedPatient.bed}` : 'Cadastro ativo sem internação'} · Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'}</p></div><PatientCareTrackBadge track={selectedPatient.treatment_track} /></div>
+          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">{selectedPatient.room && selectedPatient.bed ? `Internado · Quarto ${selectedPatient.room} · leito ${selectedPatient.bed}` : 'Cadastro ativo sem internação'} · Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'}</p></div><div className="patient-row-actions"><PatientCareTrackBadge track={selectedPatient.treatment_track} /><button className="button button-secondary" type="button" onClick={() => onOpenPatientHistory(selectedPatient.reference)}>Histórico assistencial</button></div></div>
           {selectedPatient.allergies_status === 'known' && selectedPatient.allergies
             ? <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alergia registrada</strong><span>{selectedPatient.allergies}</span></div></div>
             : <div className={`clinical-alert ${selectedPatient.allergies_status === 'none_known' ? 'clinical-alert-clear' : 'clinical-alert-unknown'}`} role="status"><AlertTriangle size={18} /><div><strong>{selectedPatient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Alergias não verificadas'}</strong><span>Confirme as informações clínicas antes de prescrever.</span></div></div>}

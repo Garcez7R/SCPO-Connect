@@ -84,6 +84,9 @@ services:
       <<: *backend-environment
       SCPO_SERVICE: nursing
       SCPO_NURSING_DATABASE_URL: postgresql+psycopg://${SCPO_NURSING_DB_USER}:${SCPO_NURSING_DB_PASSWORD}@db:5432/scpo_nursing
+      SCPO_RECEPTION_SCREENSAVER_DIR: /var/lib/scpo/reception-screensaver
+    volumes:
+      - reception_screensaver_data:/var/lib/scpo/reception-screensaver
     networks: [backend]
 
   pharmacy:
@@ -200,6 +203,7 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  reception_screensaver_data:
 
 networks:
   backend:

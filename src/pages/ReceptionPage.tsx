@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentType, FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, BadgeCheck, ContactRound, Info, Search } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BadgeCheck, ContactRound, Info, Search, Trash2, Upload } from 'lucide-react'
 import { readApiResponse } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import { formatCpf, formatPhone, formatPostalCode } from '../inputFormatting'
@@ -164,6 +164,8 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [notice, setNotice] = useState('')
   const canCreate = user.permissions.reception?.includes('criar') ?? false
   const canUpdate = user.permissions.reception?.includes('alterar') ?? false
+  const canUploadScreensaver = user.permissions.reception?.includes('criar') ?? false
+  const canDeleteScreensaver = user.permissions.reception?.includes('excluir') ?? false
   const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
 
   async function loadArrivals(filter = statusFilter, search = query, pageOffset = 0) {
@@ -323,7 +325,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       <button className={`button ${tab === 'calls' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calls'} onClick={() => setTab('calls')}><span>Painel de chamadas</span><span>{counts.waiting + counts.called}</span></button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} canUploadImages={canUploadScreensaver} canDeleteImages={canDeleteScreensaver} /> : <>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <div className="hygiene-summary" aria-label="Resumo operacional do pronto atendimento"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
@@ -416,6 +418,19 @@ type WaitingRoomItem = {
   queue_type: 'common' | 'priority'
 }
 
+type ScreensaverImage = {
+  filename: string
+  url: string
+}
+
+function isScreensaverImage(value: unknown): value is ScreensaverImage {
+  if (!value || typeof value !== 'object') return false
+  const image = value as Record<string, unknown>
+  return typeof image.filename === 'string'
+    && /^[a-f0-9]{32}\.(?:avif|jpg|png|webp)$/i.test(image.filename)
+    && image.url === `/api/v1/reception/public/screensaver/images/${image.filename}`
+}
+
 const priorityOrder: Record<EmergencyArrival['clinical_priority'], number> = {
   urgent: 0,
   priority: 1,
@@ -439,7 +454,7 @@ function readScreensaverPreference() {
   }
 }
 
-function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boolean; kioskMode?: boolean }) {
+function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kioskMode = false }: { canUpdate: boolean; canUploadImages: boolean; canDeleteImages: boolean; kioskMode?: boolean }) {
   const screensaverStorageKey = 'scpo-reception-screensaver-enabled'
   const [callBoardTab, setCallBoardTab] = useState<'board' | 'screensaver'>('board')
   useBreadcrumb('reception-call-board', callBoardTab === 'screensaver' ? 'Proteção de tela' : null, 2)
@@ -450,8 +465,9 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
   const [isCallHighlighting, setIsCallHighlighting] = useState(false)
   const [clock, setClock] = useState(() => new Date())
   const [screensaverEnabled, setScreensaverEnabled] = useState(screensaverPreference.enabled)
-  const [screensaverImages, setScreensaverImages] = useState<string[]>([])
+  const [screensaverImages, setScreensaverImages] = useState<ScreensaverImage[]>([])
   const [screensaverImageIndex, setScreensaverImageIndex] = useState(0)
+  const [screensaverImageAction, setScreensaverImageAction] = useState('')
   const [lastNewCallAt, setLastNewCallAt] = useState(() => Date.now())
   const [normalBeforePriority, setNormalBeforePriority] = useState(3)
   const [normalCallsSincePriority, setNormalCallsSincePriority] = useState(0)
@@ -483,21 +499,29 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
 
   useEffect(() => {
     let active = true
-    fetch('/reception-screensaver/manifest.json', { cache: 'no-store' })
-      .then((response) => readApiResponse<{ images?: unknown }>(response))
-      .then((manifest) => {
-        if (!Array.isArray(manifest.images) || !manifest.images.every((image) =>
-          typeof image === 'string'
-          && /^\/reception-screensaver\/[^/]+\.(?:avif|jpe?g|png|webp)$/i.test(image),
-        )) {
-          throw new Error('O manifesto da proteção de tela contém uma lista de imagens inválida.')
+    const loadImages = async () => {
+      try {
+        const result = await readApiResponse<{ images?: unknown }>(
+          await fetch('/api/v1/reception/public/screensaver/images', { cache: 'no-store' }),
+        )
+        const images = result.images
+        if (!Array.isArray(images) || !images.every(isScreensaverImage)) {
+          throw new Error('A lista de imagens da proteção de tela é inválida.')
         }
-        if (active) setScreensaverImages(manifest.images)
-      })
-      .catch((manifestError) => {
+        if (active) {
+          setScreensaverImages(images)
+          setScreensaverImageIndex((index) => Math.min(index, Math.max(images.length - 1, 0)))
+        }
+      } catch (manifestError) {
         if (active) setError(manifestError instanceof Error ? manifestError.message : 'Não foi possível carregar as imagens da proteção de tela.')
-      })
-    return () => { active = false }
+      }
+    }
+    void loadImages()
+    const interval = window.setInterval(() => void loadImages(), 60_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
   }, [])
 
   function toggleScreensaver() {
@@ -507,6 +531,74 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       setScreensaverEnabled(enabled)
     } catch (storageError) {
       setError(storageError instanceof Error ? `Não foi possível salvar a configuração da proteção de tela: ${storageError.message}` : 'Não foi possível salvar a configuração da proteção de tela.')
+    }
+  }
+
+  async function uploadScreensaverImage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const file = new FormData(form).get('image')
+    if (!(file instanceof File) || file.size === 0) {
+      setError('Selecione uma imagem para enviar.')
+      return
+    }
+    if (!['image/avif', 'image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setError('Formato não aceito. Envie JPG, PNG, WebP ou AVIF.')
+      return
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Cada imagem deve ter no máximo 8 MB.')
+      return
+    }
+    setScreensaverImageAction('upload')
+    setError('')
+    setNotice('')
+    try {
+      await readApiResponse<{ filename: string }>(await fetch('/api/v1/reception/screensaver/images', {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      }))
+      const result = await readApiResponse<{ images?: unknown }>(
+        await fetch('/api/v1/reception/public/screensaver/images', { cache: 'no-store' }),
+      )
+      if (!Array.isArray(result.images) || !result.images.every(isScreensaverImage)) {
+        throw new Error('A lista de imagens da proteção de tela é inválida.')
+      }
+      setScreensaverImages(result.images)
+      setScreensaverImageIndex(0)
+      form.reset()
+      setNotice('Imagem adicionada à proteção de tela.')
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Não foi possível enviar a imagem.')
+    } finally {
+      setScreensaverImageAction('')
+    }
+  }
+
+  async function deleteScreensaverImage(image: ScreensaverImage) {
+    if (!window.confirm('Excluir esta imagem da proteção de tela?')) return
+    setScreensaverImageAction(image.filename)
+    setError('')
+    setNotice('')
+    try {
+      await readApiResponse(await fetch(
+        `/api/v1/reception/screensaver/images/${encodeURIComponent(image.filename)}`,
+        { method: 'DELETE' },
+      ))
+      const result = await readApiResponse<{ images?: unknown }>(
+        await fetch('/api/v1/reception/public/screensaver/images', { cache: 'no-store' }),
+      )
+      if (!Array.isArray(result.images) || !result.images.every(isScreensaverImage)) {
+        throw new Error('A lista de imagens da proteção de tela é inválida.')
+      }
+      setScreensaverImages(result.images)
+      setScreensaverImageIndex(0)
+      setNotice('Imagem removida da proteção de tela.')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Não foi possível excluir a imagem.')
+    } finally {
+      setScreensaverImageAction('')
     }
   }
 
@@ -858,7 +950,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       <section className="waiting-room-kiosk-current" aria-live="polite" aria-atomic="true">
         {screensaverActive
-          ? <img className="waiting-room-screensaver-image" src={screensaverImages[screensaverImageIndex]} alt="Imagem institucional da sala de espera" />
+          ? <img className="waiting-room-screensaver-image" src={screensaverImages[screensaverImageIndex].url} alt="Imagem institucional da sala de espera" />
           : loading && !items.length
           ? <p className="waiting-room-display-empty">Carregando chamada…</p>
           : currentCall
@@ -886,10 +978,15 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
       <div className="section-heading"><div><p className="eyebrow">PAINEL PÚBLICO</p><h3>Proteção de tela</h3><p className="welcome-copy">Após cinco minutos sem uma chamada nova, o painel público exibe imagens institucionais aleatórias. Uma chamada interrompe a apresentação e volta a mostrar o atendimento.</p></div></div>
       <div className="waiting-room-screensaver-status"><strong>{screensaverEnabled ? 'Ativada' : 'Desativada'}</strong><span>{screensaverImages.length} imagem(ns) disponível(is)</span></div>
       <div className="waiting-room-actions"><button className="button button-primary waiting-room-screensaver-toggle" type="button" onClick={toggleScreensaver} disabled={!canUpdate || !screensaverImages.length} aria-pressed={screensaverEnabled}>{screensaverEnabled ? 'Desativar proteção de tela' : 'Ativar proteção de tela'}</button></div>
-      {!canUpdate && <p className="field-hint">Seu perfil pode consultar a configuração, mas não pode alterá-la.</p>}
-      {!screensaverImages.length && <p className="field-hint">Nenhuma imagem foi encontrada. Adicione imagens institucionais aprovadas à pasta <code>public/reception-screensaver/</code> do app e reinicie o servidor local ou gere e publique uma nova versão. Formatos aceitos: JPG, JPEG, PNG, WebP e AVIF.</p>}
-      {screensaverImages.length > 0 && <p className="field-hint">As imagens disponíveis são carregadas de <code>public/reception-screensaver/</code>. Para adicionar ou remover arquivos, atualize essa pasta no app; o manifesto é gerado automaticamente ao iniciar em desenvolvimento e durante o build.</p>}
+      {!canUpdate && <p className="field-hint">Seu perfil pode consultar o painel, mas não pode ativar ou desativar a proteção de tela.</p>}
+      {canUploadImages && <form className="waiting-room-screensaver-upload" onSubmit={(event) => void uploadScreensaverImage(event)}>
+        <label className="field"><span className="field-label">Adicionar imagem institucional aprovada</span><input required name="image" type="file" accept=".avif,.jpg,.jpeg,.png,.webp,image/avif,image/jpeg,image/png,image/webp" disabled={Boolean(screensaverImageAction)} /><span className="field-hint">JPG, PNG, WebP ou AVIF · até 8 MB por imagem.</span></label>
+        <button className="button button-secondary" type="submit" disabled={Boolean(screensaverImageAction)}><Upload size={16} />{screensaverImageAction === 'upload' ? 'Enviando…' : 'Enviar imagem'}</button>
+      </form>}
+      {screensaverImages.length > 0 && <div className="waiting-room-screensaver-gallery">{screensaverImages.map((image) => <article className="waiting-room-screensaver-image-card" key={image.filename}><img src={image.url} alt="Prévia de imagem institucional da proteção de tela" /><div><span>{image.filename}</span>{canDeleteImages && <button className="button button-danger" type="button" onClick={() => void deleteScreensaverImage(image)} disabled={Boolean(screensaverImageAction)}><Trash2 size={15} />{screensaverImageAction === image.filename ? 'Excluindo…' : 'Excluir'}</button>}</div></article>)}</div>}
+      {!screensaverImages.length && <p className="field-hint">{canUploadImages ? 'Nenhuma imagem foi enviada. Use o formulário acima para adicionar imagens aprovadas.' : 'Nenhuma imagem está disponível; solicite à Recepção que adicione imagens aprovadas.'}</p>}
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
+      {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     </section>}
     {callBoardTab === 'board' && <>
     {canUpdate && <div className="waiting-room-call-controls"><div><strong>Chamar próximo paciente</strong><span>{normalCallsSincePriority} de {normalBeforePriority} chamada(s) comum(ns) desde a última prioritária</span></div><div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('automatic')}>{updating === 'next' ? 'Chamando…' : 'Próximo automático'}</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('common')}>Chamar comum</button><button className="button button-secondary" type="button" disabled={Boolean(updating)} onClick={() => void callNext('priority')}>Chamar prioritário</button></div><form className="waiting-room-cadence" onSubmit={(event) => void saveCallCadence(event)}><label className="field"><span className="field-label">Comuns antes de prioritário</span><input type="number" min={1} max={20} value={normalBeforePriority} onChange={(event) => setNormalBeforePriority(Number(event.target.value))} /></label><button className="button button-secondary" type="submit" disabled={savingCadence || normalBeforePriority < 1 || normalBeforePriority > 20}>{savingCadence ? 'Salvando…' : 'Salvar alternância'}</button></form></div>}
@@ -921,5 +1018,5 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
 export default ReceptionPage
 
 export function WaitingRoomKioskPage() {
-  return <WaitingRoomCallBoard canUpdate={false} kioskMode />
+  return <WaitingRoomCallBoard canUpdate={false} canUploadImages={false} canDeleteImages={false} kioskMode />
 }

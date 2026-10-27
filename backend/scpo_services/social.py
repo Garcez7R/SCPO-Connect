@@ -2,9 +2,20 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import JSON, Date, DateTime, Integer, String, Text, and_, or_, select
+from sqlalchemy import (
+    JSON,
+    Date,
+    DateTime,
+    Integer,
+    String,
+    Text,
+    and_,
+    func,
+    or_,
+    select,
+)
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -324,18 +335,31 @@ def create_psychology_referral(
 
 @app.get("/api/v1/psychology/encounters")
 def list_psychology_encounters(
-    principal: Annotated[DemoPrincipal, Depends(PSYCHOLOGY_ROLE)],
+    principal: Annotated[
+        DemoPrincipal,
+        Depends(require_demo_role("nursing", "physician", "psychology", "admin")),
+    ],
     db: Annotated[Session, Depends(get_social_db)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+    offset: Annotated[int, Query(ge=0)] = 0,
     patient_reference: str | None = None,
-) -> dict[str, list[dict[str, object]]]:
+) -> dict[str, object]:
     query = select(PsychologyEncounter)
     if patient_reference:
         query = query.where(PsychologyEncounter.patient_reference == patient_reference)
     rows = db.scalars(
-        query.order_by(PsychologyEncounter.created_at.desc()).limit(200)
+        query.order_by(
+            PsychologyEncounter.created_at.desc(), PsychologyEncounter.id.desc()
+        )
+        .limit(limit)
+        .offset(offset)
     ).all()
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     emit_audit_event(principal, "psychology", "psychology_encounters_read", "psychology_encounters")
-    return {"encounters": [serialize_psychology_encounter(item) for item in rows]}
+    return {
+        "encounters": [serialize_psychology_encounter(item) for item in rows],
+        "total": total,
+    }
 
 
 @app.post("/api/v1/psychology/encounters", status_code=201)
