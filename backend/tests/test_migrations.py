@@ -390,9 +390,10 @@ def test_audit_migration_backfills_a_verifiable_hash_chain(
         ("0022_stock_emergency", "0022_stock_movements_emergency_arrivals"),
         ("0024_patient_med_results", "0024_patient_linked_medications_and_results"),
         ("0025_patient_flow_risk", "0025_patient_flow_risk_and_dashboard"),
+        ("0048_reception_announcement", "0048_reception_announce"),
     ],
 )
-def test_legacy_long_revision_is_normalized_before_upgrade(
+def test_legacy_revision_is_normalized_before_upgrade(
     current_revision: str,
     legacy_revision: str,
     tmp_path,
