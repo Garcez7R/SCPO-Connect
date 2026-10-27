@@ -7,7 +7,7 @@ import { formatCpf, formatPhone, formatPostalCode } from '../inputFormatting'
 import AllergyFields from '../components/AllergyFields'
 import OutpatientEncounterPage from './OutpatientEncounterPage'
 import ReceptionAppointmentsPage from './ReceptionAppointmentsPage'
-import { usePersistentTab } from '../components/PageNavigationContext'
+import { useBreadcrumb, usePersistentTab } from '../components/PageNavigationContext'
 import ToastMessage from '../components/ToastMessage'
 
 type Patient = {
@@ -442,6 +442,7 @@ function readScreensaverPreference() {
 function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boolean; kioskMode?: boolean }) {
   const screensaverStorageKey = 'scpo-reception-screensaver-enabled'
   const [callBoardTab, setCallBoardTab] = useState<'board' | 'screensaver'>('board')
+  useBreadcrumb('reception-call-board', callBoardTab === 'screensaver' ? 'Proteção de tela' : null, 2)
   const [screensaverPreference] = useState(readScreensaverPreference)
   const [items, setItems] = useState<WaitingRoomItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -866,7 +867,7 @@ function WaitingRoomCallBoard({ canUpdate, kioskMode = false }: { canUpdate: boo
                 {currentCall.queue_type === 'priority' ? 'Atendimento prioritário' : 'Atendimento'}
               </span>
               <strong>{currentCall.code}</strong>
-              <b style={{ fontSize: `clamp(12px, calc(72cqi / ${Math.max([...currentCallName].length, 1)}), 144px)` }}>{currentCallName}</b>
+              <b style={{ fontSize: `clamp(18px, calc(88cqi / ${Math.max([...currentCallName].length, 1)}), 176px)` }}>{currentCallName}</b>
             </article>
             : <p className="waiting-room-display-empty">Aguarde. Em breve uma chamada será exibida.</p>}
       </section>

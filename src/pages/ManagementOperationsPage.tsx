@@ -30,7 +30,7 @@ function dateLabel(value: string | null) {
 }
 
 export function AdministrativeRoadmapPanel({ userId }: { userId: string }) {
-  const [tab, setTab] = usePersistentTab(`scpo-tab-administrative-roadmap-${userId}`, 'safety', roadmapTabs, roadmapTabLabels, false)
+  const [tab, setTab] = usePersistentTab(`scpo-tab-administrative-roadmap-${userId}`, 'safety', roadmapTabs, roadmapTabLabels, true, 2)
   return <section className="patient-list-panel">
     <div className="section-heading"><div><p className="eyebrow">ROADMAP ADMINISTRATIVO · MVP</p><h2>Operações e governança</h2><p className="welcome-copy">Compras estão integradas ao módulo Farmácia; esta área reúne patrimônio, segurança e documentos institucionais.</p></div></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Frentes administrativas">
@@ -45,7 +45,7 @@ export function AdministrativeRoadmapPanel({ userId }: { userId: string }) {
 export function AssetMaintenancePanel({ userId }: { userId: string }) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [plans, setPlans] = useState<PreventivePlan[]>([])
-  const [tab, setTab] = usePersistentTab(`scpo-tab-asset-maintenance-${userId}`, 'assets', assetTabs, assetTabLabels, false)
+  const [tab, setTab] = usePersistentTab(`scpo-tab-asset-maintenance-${userId}`, 'assets', assetTabs, assetTabLabels, true, 2)
   const [assetForm, setAssetForm] = useState({ asset_tag: '', name: '', category: '', unit: '', location: '', manufacturer: '', model: '', serial_number: '' })
   const [planForm, setPlanForm] = useState({ asset_id: '', procedure: '', interval_days: '90', due_date: '', responsible: '' })
   const [saving, setSaving] = useState(false)

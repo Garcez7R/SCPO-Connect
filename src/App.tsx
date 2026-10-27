@@ -56,7 +56,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import PrintSelectionPanel from './components/PrintSelectionPanel'
 import ToastMessage from './components/ToastMessage'
-import { PageNavigationContext, usePersistentTab } from './components/PageNavigationContext'
+import { PageNavigationContext, useBreadcrumb, usePersistentTab } from './components/PageNavigationContext'
 import { printRows, type PrintRow } from './printReport'
 import { APP_VERSION } from './appVersion'
 import { MOBILE_FEEDBACK_STORAGE_KEY, triggerMobileFeedback } from './mobileFeedback'
@@ -77,7 +77,8 @@ const managementTabLabels: Record<typeof managementTabValues[number], string> = 
 const therapyTabValues = ['calendar', 'attendance', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios' }
 const systemAdminTabValues = ['backup', 'recovery'] as const
-const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { backup: 'Backup', recovery: 'Recuperação de acesso' }
+const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const patientRegistryTabLabels = { registry: 'Novo cadastro', list: 'Lista de pacientes', reports: 'Relatórios' } as const
 type Patient = {
   reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; same_number?: string; mother_name?: string; health_plan?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
   treatment_track?: 'clinical' | 'psychiatric' | 'combined' | 'unclassified'
@@ -447,7 +448,14 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
       return 'home'
     }
   })
-  const [activeTabLabel, setActiveTabLabel] = useState<string | null>(null)
+  const [tabBreadcrumbs, setTabBreadcrumbs] = useState<{ id: string; label: string; depth: number }[]>([])
+  const setBreadcrumb = useCallback((id: string, label: string | null, depth = 1) => {
+    setTabBreadcrumbs((current) => {
+      const withoutCurrent = current.filter((entry) => entry.id !== id)
+      if (!label) return withoutCurrent
+      return [...withoutCurrent, { id, label, depth }]
+    })
+  }, [])
   const [menuOpen, setMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -509,7 +517,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
     if (id === 'system-admin' && !user.is_superuser) return
     if (id !== 'about' && id !== 'work-orders' && id !== 'system-admin' && id !== 'admin' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
     if (id === 'admin' && !hasAppAdmin && !hasOversight) return
-    setActiveTabLabel(null)
+    setTabBreadcrumbs([])
     setActiveModule(id)
     window.scrollTo(0, 0)
     if (navigation.some((item) => item.id === id)) window.sessionStorage.setItem(`scpo-active-module:${user.id}`, id)
@@ -534,13 +542,14 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
 
   const activeLabel = activeModule === 'home'
     ? 'Visão geral'
-    : activeModule === 'nursing-history' ? 'Coletas de sinais vitais'
-    : activeModule === 'patient-history' ? 'Histórico do paciente'
+    : activeModule === 'nursing-history' ? 'Enfermagem'
+    : activeModule === 'patient-history' ? 'Pacientes'
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
+  const breadcrumbItems = [...tabBreadcrumbs].sort((left, right) => left.depth - right.depth)
 
   return (
     <div className="app-shell" style={sidebarStyle}>
-      <PageNavigationContext.Provider value={setActiveTabLabel}>
+      <PageNavigationContext.Provider value={setBreadcrumb}>
       <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`} aria-label="Navegação principal">
         <div className="brand-lockup">
           <button className="brand-trigger" type="button" aria-label="Marca SCPO Connect" onClick={handleBrandClick}>
@@ -584,7 +593,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
         <header className="topbar">
           <div className="topbar-left">
             <button className="icon-button menu-trigger" type="button" aria-label="Abrir menu" onClick={() => setMenuOpen(true)}><Menu size={21} /></button>
-            <div className="breadcrumbs"><span>SCPO Connect</span><span className="crumb-divider">/</span><strong>{activeLabel}</strong>{activeTabLabel && <><span className="crumb-divider">/</span><strong>{activeTabLabel}</strong></>}</div>
+            <nav className="breadcrumbs" aria-label="Caminho da página"><span>SCPO Connect</span><span className="crumb-divider">/</span><strong>{activeLabel}</strong>{breadcrumbItems.map((item) => <span className="breadcrumb-entry" key={item.id}><span className="crumb-divider">/</span><strong>{item.label}</strong></span>)}</nav>
           </div>
           <div className="topbar-right">
             <span className="session-role">{getGreeting()}, {profile.name.split(/\s+/)[0]}</span>
@@ -600,7 +609,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
           {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
           {activeModule === 'pharmacy' && <Suspense fallback={<div className="history-empty" role="status">Carregando Farmácia…</div>}><PharmacyPage user={user} /></Suspense>}
-          {activeModule === 'physician' && <Suspense fallback={<div className="history-empty" role="status">Carregando módulo Médico…</div>}><PhysicianPage /></Suspense>}
+          {activeModule === 'physician' && <Suspense fallback={<div className="history-empty" role="status">Carregando módulo Médico…</div>}><PhysicianPage userId={user.id} /></Suspense>}
           {activeModule === 'work-orders' && <Suspense fallback={<div className="history-empty" role="status">Carregando ordens de serviço…</div>}><WorkOrdersPage user={user} /></Suspense>}
           {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage userId={user.id} /></Suspense>}
           {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
@@ -812,6 +821,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState('')
   const [registryTab, setRegistryTab] = useState<'registry' | 'list' | 'reports'>('registry')
+  useBreadcrumb('patient-registry', receptionMode ? null : patientRegistryTabLabels[registryTab])
   const [patientPage, setPatientPage] = useState(0)
   const [form, setForm] = useState({ ...emptyPatientForm })
   const [newPatientPurpose, setNewPatientPurpose] = useState<'outpatient' | 'inpatient'>(receptionMode ? 'inpatient' : 'outpatient')
@@ -1022,7 +1032,10 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       .then((response) => readApiResponse<{ observations?: PatientObservation[] }>(response))
       .then((data) => {
         if (current) {
-          setPatientObservations(data.observations ?? [])
+          const observations = data.observations ?? []
+          setPatientObservations(observations)
+          setAttentionLevel(observations[0]?.attention_level ?? 'green')
+          setTreatmentStatus(observations[0]?.treatment_status ?? 'in_progress')
           setPatientObservationsReference(viewingPatient.reference)
           setPatientObservationsError('')
         }
@@ -1216,23 +1229,63 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       </div>
       {loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? patientGroups.map(([groupLabel, groupPatients]) => <section className="patient-registry-group" key={groupLabel}>
         {groupPatientsByRoom && <h3>{groupLabel}<span>{groupPatients.length}</span></h3>}
-        <div className="patient-registry-list">{groupPatients.map((patient) => <article className="patient-registry-card" key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><small>{treatmentTrackLabel(patient.treatment_track ?? 'unclassified')}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => setViewingPatient(patient)}><Eye size={15} /> Ver ficha</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}><ClipboardList size={15} /> Histórico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button><button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button></div></article>)}</div>
+        <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card care-track-${patient.treatment_track ?? 'unclassified'}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><span className={`care-track-badge care-track-${patient.treatment_track ?? 'unclassified'}`}>{treatmentTrackLabel(patient.treatment_track ?? 'unclassified')}</span><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => { setViewingPatient(patient); setShowPatientFollowUp(true) }}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => onHistory(patient.reference)}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button><button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button></div></article>)}</div>
       </section>) : <div className="history-empty"><UsersRound size={20} /><span>{query || roomFilter || bedFilter || treatmentTrackFilter || patientStatusFilter !== 'all' ? 'Nenhum paciente corresponde aos filtros selecionados.' : 'Nenhum paciente cadastrado.'}</span></div>}
       {!loading && patientTotal > 0 && <nav className="history-pagination" aria-label="Paginação da lista de pacientes"><span>Exibindo {currentPatientPage * patientPageSize + 1}–{Math.min((currentPatientPage + 1) * patientPageSize, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={currentPatientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentPatientPage + 1 >= patientPageCount} onClick={() => setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}
     </section>}
-    {viewingPatient && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewingPatient(null) }}><section className="patient-detail-modal" role="dialog" aria-modal="true" aria-labelledby="patient-detail-title"><div className="patient-detail-header"><div className="patient-detail-identity">{viewingPatient.photo_data ? <img src={viewingPatient.photo_data} alt={`Foto de ${viewingPatient.name}`} /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}<div><p className="eyebrow">FICHA DO PACIENTE</p><h2 id="patient-detail-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room} · Leito {viewingPatient.bed} · {viewingPatient.active === false ? 'Cadastro inativo' : 'Internado'}</p></div></div><button className="button button-secondary" type="button" onClick={() => setViewingPatient(null)}>Fechar</button></div><div className="patient-detail-sections"><section><h3>Identificação e contato</h3><div className="patient-detail-grid"><span><small>Nome da mãe</small><strong>{viewingPatient.mother_name || 'Não informado'}</strong></span><span><small>CPF</small><strong>{viewingPatient.cpf || 'Não informado'}</strong></span><span><small>Cartão Nacional de Saúde (SUS)</small><strong>{viewingPatient.sus_card || 'Não informado'}</strong></span><span><small>Nascimento</small><strong>{viewingPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${viewingPatient.birth_date}T00:00:00Z`)) : 'Não informado'}</strong></span><span><small>Sexo</small><strong>{viewingPatient.sex || 'Não informado'}</strong></span><span><small>Telefone</small><strong>{viewingPatient.phone || 'Não informado'}</strong></span><span><small>E-mail</small><strong>{viewingPatient.email || 'Não informado'}</strong></span></div></section><section><h3>Endereço do paciente</h3><p>{patientAddress(viewingPatient) || 'Não informado'}</p></section><section><h3>Responsável pela internação</h3><div className="patient-detail-grid"><span><small>Nome</small><strong>{viewingPatient.responsible_name || 'Não informado'}</strong></span><span><small>Vínculo</small><strong>{viewingPatient.responsible_relationship || 'Não informado'}</strong></span><span><small>Telefone</small><strong>{viewingPatient.responsible_phone || 'Não informado'}</strong></span><span><small>Endereço</small><strong>{responsibleAddress(viewingPatient) || 'Não informado'}</strong></span></div></section><section className={viewingPatient.allergies ? 'patient-detail-alert' : ''}><h3>Alergias e alertas</h3><p>{viewingPatient.allergies || 'Nenhum alerta cadastrado'}</p></section><section><h3>Registro cadastral</h3><div className="patient-detail-grid"><span><small>Cadastrado em</small><strong>{viewingPatient.created_at ? dateTime(viewingPatient.created_at) : 'Não informado'}</strong></span><span><small>Última atualização</small><strong>{viewingPatient.updated_at ? dateTime(viewingPatient.updated_at) : 'Não informado'}</strong></span><span><small>Atualizado por</small><strong>{viewingPatient.updated_by || 'Não informado'}</strong></span></div></section></div><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => { startEdit(viewingPatient); setViewingPatient(null) }}><Pencil size={15} /> Editar cadastro</button>{onHistory && <button className="button button-primary" type="button" onClick={() => { onHistory(viewingPatient.reference); setViewingPatient(null) }}><ClipboardList size={15} /> Histórico assistencial</button>}</div></section></div>}
+    {viewingPatient && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewingPatient(null) }}>
+      <section className="patient-detail-modal" role="dialog" aria-modal="true" aria-labelledby="patient-detail-title">
+        <div className="patient-detail-header">
+          <div className="patient-detail-identity">
+            {viewingPatient.photo_data ? <img src={viewingPatient.photo_data} alt={`Foto de ${viewingPatient.name}`} /> : <span className="patient-registry-avatar"><UserRound size={22} /></span>}
+            <div><p className="eyebrow">FICHA DO PACIENTE</p><h2 id="patient-detail-title">{viewingPatient.name}</h2><span className={`care-track-badge care-track-${viewingPatient.treatment_track ?? 'unclassified'}`}>{treatmentTrackLabel(viewingPatient.treatment_track ?? 'unclassified')}</span><p>Quarto {viewingPatient.room || 'não atribuído'} · Leito {viewingPatient.bed || 'não atribuído'} · {viewingPatient.active === false ? 'Cadastro inativo' : 'Cadastro ativo'}</p></div>
+          </div>
+          <button className="button button-secondary" type="button" onClick={() => setViewingPatient(null)}>Fechar</button>
+        </div>
+        <div className="patient-detail-sections">
+          <section><h3>Identificação e contato</h3><div className="patient-detail-grid">
+            <span><small>Nome da mãe</small><strong>{viewingPatient.mother_name || 'Não informado'}</strong></span>
+            <span><small>CPF</small><strong>{viewingPatient.cpf || 'Não informado'}</strong></span>
+            <span><small>Cartão Nacional de Saúde (SUS)</small><strong>{viewingPatient.sus_card || 'Não informado'}</strong></span>
+            <span><small>Nascimento</small><strong>{viewingPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${viewingPatient.birth_date}T00:00:00Z`)) : 'Não informado'}</strong></span>
+            <span><small>Sexo</small><strong>{viewingPatient.sex || 'Não informado'}</strong></span>
+            <span><small>Telefone</small><strong>{viewingPatient.phone || 'Não informado'}</strong></span>
+            <span><small>E-mail</small><strong>{viewingPatient.email || 'Não informado'}</strong></span>
+          </div></section>
+          <section><h3>Endereço do paciente</h3><p>{patientAddress(viewingPatient) || 'Não informado'}</p></section>
+          <section><h3>Responsável pela internação</h3><div className="patient-detail-grid">
+            <span><small>Nome</small><strong>{viewingPatient.responsible_name || 'Não informado'}</strong></span>
+            <span><small>Vínculo</small><strong>{viewingPatient.responsible_relationship || 'Não informado'}</strong></span>
+            <span><small>Telefone</small><strong>{viewingPatient.responsible_phone || 'Não informado'}</strong></span>
+            <span><small>Endereço</small><strong>{responsibleAddress(viewingPatient) || 'Não informado'}</strong></span>
+          </div></section>
+          <section className={viewingPatient.allergies ? 'patient-detail-alert' : ''}><h3>Alergias e alertas</h3><p>{viewingPatient.allergies || 'Nenhum alerta cadastrado'}</p></section>
+          <section><h3>Registro cadastral</h3><div className="patient-detail-grid">
+            <span><small>Cadastrado em</small><strong>{viewingPatient.created_at ? dateTime(viewingPatient.created_at) : 'Não informado'}</strong></span>
+            <span><small>Última atualização</small><strong>{viewingPatient.updated_at ? dateTime(viewingPatient.updated_at) : 'Não informado'}</strong></span>
+            <span><small>Atualizado por</small><strong>{viewingPatient.updated_by || 'Não informado'}</strong></span>
+          </div></section>
+        </div>
+        <div className="patient-detail-actions">
+          <button className="button button-secondary" type="button" onClick={() => { startEdit(viewingPatient); setViewingPatient(null) }}><Pencil size={15} /> Editar cadastro</button>
+          <button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(true)}><ClipboardList size={15} /> Acompanhamento</button>
+          {onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(viewingPatient.reference); setViewingPatient(null) }}><ClipboardList size={15} /> Histórico de sinais vitais</button>}
+          <button className="button button-primary" type="button" onClick={() => { document.body.classList.add('print-patient-detail'); window.addEventListener('afterprint', () => document.body.classList.remove('print-patient-detail'), { once: true }); window.print() }}><Printer size={16} /> Imprimir ficha</button>
+        </div>
+      </section>
+    </div>}
     {receptionMode ? <PrintSelectionPanel title="Relação de pacientes · página atual" rows={patients.map((patient) => ({ id: patient.reference, date: patient.updated_at || patient.created_at || '', title: patient.name, fields: [['Quarto e leito', patient.room && patient.bed ? `${patient.room} · ${patient.bed}` : 'Sem acomodação atribuída'], ['Situação', patient.active === false ? 'Alta / inativo' : 'Ativo'], ['Tratamento', treatmentTrackLabel(patient.treatment_track ?? 'unclassified')], ['Alergias e alertas', patient.allergies_status === 'known' ? patient.allergies || 'Detalhes não informados' : patient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Não verificadas'], ['Responsável', patient.responsible_status === 'not_applicable' ? 'Não se aplica' : patient.responsible_name || 'Não informado']] }))} /> : null}
     {registryTab === 'reports' && <>
       {reportError && <ToastMessage variant="error">{reportError}</ToastMessage>}
       {reportLoading ? <div className="history-empty">Carregando todos os pacientes para o relatório…</div> : <PrintSelectionPanel title="Relação de pacientes" rows={patientPrintRows} />}
     </>}
-    {viewingPatient && <div className="patient-detail-toolbar"><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(true)}><ClipboardList size={15} /> Histórico</button><button className="button button-primary" type="button" onClick={() => { document.body.classList.add('print-patient-detail'); window.addEventListener('afterprint', () => document.body.classList.remove('print-patient-detail'), { once: true }); window.print() }}><Printer size={16} /> Imprimir ficha</button></div>}
     {archivingPatient && <div className="patient-modal-backdrop" role="presentation"><section className="patient-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-archive-title"><h2 id="patient-archive-title">Arquivar cadastro de paciente</h2><p><strong>{archivingPatient.name}</strong> deixará de aparecer nos cadastros ativos. Os dados assistenciais serão preservados, e a exclusão lógica, o motivo e o responsável ficarão registrados na auditoria.</p><label className="field"><span className="field-label">Motivo do arquivamento</span><textarea required minLength={5} maxLength={500} value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} /></label><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => setArchivingPatient(null)}>Cancelar</button><button className="button button-danger" type="button" onClick={() => void confirmArchivePatient()} disabled={archiveReason.trim().length < 5}>Arquivar paciente</button></div></section></div>}
-    {viewingPatient && showPatientFollowUp && <div className="patient-modal-backdrop" role="presentation"><section className="patient-follow-up-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-follow-up-title"><div className="patient-detail-header"><div><p className="eyebrow">HISTÓRICO DO PACIENTE</p><h2 id="patient-follow-up-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room} · Leito {viewingPatient.bed} · {viewingPatient.active === false ? 'Alta registrada' : 'Internado'}</p></div><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(false)}>Fechar</button></div><form className="patient-observation-form" onSubmit={(event) => void savePatientObservation(event)}><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nível de acompanhamento</span><select value={attentionLevel} onChange={(event) => setAttentionLevel(event.target.value as PatientObservation['attention_level'])}><option value="green">Verde · rotina habitual</option><option value="yellow">Amarelo · atenção ampliada</option><option value="red">Vermelho · plano de abordagem prioritário</option></select></label><label className="field"><span className="field-label">Situação do tratamento</span><select value={treatmentStatus} onChange={(event) => setTreatmentStatus(event.target.value as PatientObservation['treatment_status'])}><option value="in_progress">Em andamento</option><option value="completed">Concluído</option><option value="discharged">Alta</option></select></label></div><label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={observationDraft} onChange={(event) => setObservationDraft(event.target.value)} placeholder="Registre fatos observáveis, cuidados realizados, resposta ao tratamento e orientações de continuidade." /></label><button className="button button-primary" type="submit" disabled={savingObservation || observationDraft.trim().length < 5}>{savingObservation ? 'Salvando…' : 'Registrar no histórico'}</button></form><div className="patient-observation-list">{patientObservationsReference !== viewingPatient.reference ? <div className="history-empty">Carregando histórico…</div> : patientObservationsError ? <ToastMessage variant="error">{`Não foi possível carregar o histórico de acompanhamento: ${patientObservationsError}`}</ToastMessage> : patientObservations.map((item) => <article className={`patient-observation-card attention-${item.attention_level}`} key={item.id}><div><strong>{item.attention_level === 'green' ? 'Verde · rotina habitual' : item.attention_level === 'yellow' ? 'Amarelo · atenção ampliada' : 'Vermelho · plano prioritário'}</strong><span>{item.treatment_status === 'in_progress' ? 'Tratamento em andamento' : item.treatment_status === 'completed' ? 'Tratamento concluído' : 'Alta registrada'}</span></div><p>{item.observation}</p><small>{item.actor_name} · {dateTime(item.created_at)}</small></article>)}{patientObservationsReference === viewingPatient.reference && !patientObservationsError && !patientObservations.length && <div className="history-empty">Nenhuma anotação de acompanhamento registrada.</div>}</div></section></div>}
+    {viewingPatient && showPatientFollowUp && <div className="patient-modal-backdrop patient-follow-up-backdrop" role="presentation"><section className="patient-follow-up-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-follow-up-title"><div className="patient-detail-header"><div><p className="eyebrow">ACOMPANHAMENTO ASSISTENCIAL</p><h2 id="patient-follow-up-title">{viewingPatient.name}</h2><p>Quarto {viewingPatient.room || 'não atribuído'} · Leito {viewingPatient.bed || 'não atribuído'} · {viewingPatient.active === false ? 'Alta registrada' : 'Cadastro ativo'}</p></div><button className="button button-secondary" type="button" onClick={() => setShowPatientFollowUp(false)}>Fechar</button></div><form className="patient-observation-form" onSubmit={(event) => void savePatientObservation(event)}><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nível de acompanhamento</span><select value={attentionLevel} onChange={(event) => setAttentionLevel(event.target.value as PatientObservation['attention_level'])}><option value="green">Verde · rotina habitual</option><option value="yellow">Amarelo · atenção ampliada</option><option value="red">Vermelho · prioridade de acompanhamento</option></select></label><label className="field"><span className="field-label">Situação do tratamento</span><select value={treatmentStatus} onChange={(event) => setTreatmentStatus(event.target.value as PatientObservation['treatment_status'])}><option value="in_progress">Em andamento</option><option value="completed">Concluído</option><option value="discharged">Alta</option></select></label></div><label className="field"><span className="field-label">Observação objetiva</span><textarea required minLength={5} maxLength={2000} value={observationDraft} onChange={(event) => setObservationDraft(event.target.value)} placeholder="Registre fatos observáveis, cuidados realizados, resposta ao tratamento e orientações de continuidade." /></label><button className="button button-primary" type="submit" disabled={savingObservation || observationDraft.trim().length < 5}>{savingObservation ? 'Salvando…' : 'Registrar acompanhamento'}</button></form><div className="patient-observation-list">{patientObservationsReference !== viewingPatient.reference ? <div className="history-empty">Carregando histórico…</div> : patientObservationsError ? <ToastMessage variant="error">{`Não foi possível carregar o histórico de acompanhamento: ${patientObservationsError}`}</ToastMessage> : patientObservations.map((item) => <article className={`patient-observation-card attention-${item.attention_level}`} key={item.id}><div><strong>{item.attention_level === 'green' ? 'Verde · rotina habitual' : item.attention_level === 'yellow' ? 'Amarelo · atenção ampliada' : 'Vermelho · prioridade de acompanhamento'}</strong><span>{item.treatment_status === 'in_progress' ? 'Tratamento em andamento' : item.treatment_status === 'completed' ? 'Tratamento concluído' : 'Alta'}</span></div><p>{item.observation}</p><small>{item.actor_name} · {dateTime(item.created_at)}</small></article>)}{patientObservationsReference === viewingPatient.reference && !patientObservationsError && !patientObservations.length && <div className="history-empty">Nenhuma anotação de acompanhamento registrada.</div>}</div></section></div>}
   </section>
 }
 
 function PatientHistoryPage({ patientReference, onBack }: { patientReference: string; onBack: () => void }) {
+  useBreadcrumb('patient-history', 'Histórico assistencial')
   const pageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
   const [records, setRecords] = useState<VitalRecordData[]>([])
@@ -1583,6 +1636,7 @@ function InstallAppButton({ showDescription = false }: { showDescription?: boole
 }
 
 function NursingHistoryPage({ onBack }: { onBack: () => void }) {
+  useBreadcrumb('nursing-history', 'Coletas de sinais vitais')
   const pageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
   const [records, setRecords] = useState<VitalRecordData[]>([])
@@ -3417,7 +3471,11 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
   const visibleSources = scope === 'management'
     ? adminReportSources.filter((item) => managementReportSourceIds.includes(item.id))
     : adminReportSources
-  const source = visibleSources.find((item) => item.id === sourceId) ?? visibleSources[0]
+  const orderedSources = [...visibleSources].sort((left, right) =>
+    left.label.localeCompare(right.label, 'pt-BR', { sensitivity: 'base' }),
+  )
+  const source = orderedSources.find((item) => item.id === sourceId) ?? orderedSources[0]
+  useBreadcrumb('admin-report-source', visibleSources.find((item) => item.id === sourceId)?.label ?? null, 2)
 
   const loadReport = useCallback(async () => {
     const reportSource = adminReportSources.find((item) => item.id === sourceId)
@@ -3532,7 +3590,7 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
     <div className="patient-list-panel">
       <div className="section-heading"><div><p className="eyebrow">RELATÓRIOS DIGITAIS POR ÁREA</p><h2>Consultar relatórios</h2><p className="welcome-copy">Selecione uma área para consultar e, se necessário, imprimir os registros disponíveis no módulo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadReport()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar relatório'}</button></div>
       <div className="admin-report-controls">
-        <label className="field"><span className="field-label">Área / relatório</span><select value={sourceId} onChange={(event) => { setRows([]); setReportTotal(null); setError(''); setReportPage(0); setSourceId(event.target.value) }}><option value="">Selecione uma área para consultar</option>{visibleSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Área / relatório</span><select value={sourceId} onChange={(event) => { setRows([]); setReportTotal(null); setError(''); setReportPage(0); setSourceId(event.target.value) }}><option value="">Selecione uma área para consultar</option>{orderedSources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <label className="field"><span className="field-label">Pesquisar nos resultados</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={searchQuery} onChange={(event) => { setReportPage(0); setSearchQuery(event.target.value) }} placeholder="Paciente, responsável, situação…" /></span></label>
         <label className="field"><span className="field-label">De (data e hora)</span><input type="datetime-local" value={fromDate} max={toDate || undefined} onChange={(event) => { setReportPage(0); setFromDate(event.target.value) }} /></label>
         <label className="field"><span className="field-label">Até (data e hora)</span><input type="datetime-local" value={toDate} min={fromDate || undefined} onChange={(event) => { setReportPage(0); setToDate(event.target.value) }} /></label>
@@ -3583,7 +3641,10 @@ function TherapyReportsCenter() {
   const [activities, setActivities] = useState<TherapyActivity[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const reports = activities.filter((activity) => activity.activity_report.trim())
+  const reports = activities
+    .filter((activity) => activity.activity_report.trim())
+    .sort((left, right) => left.title.localeCompare(right.title, 'pt-BR', { sensitivity: 'base' })
+      || left.starts_at.localeCompare(right.starts_at))
 
   useEffect(() => {
     let active = true

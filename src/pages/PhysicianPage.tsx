@@ -2,11 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, ClipboardPlus, Printer, RefreshCw, Stethoscope } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
-import PatientSelect from '../components/PatientSelect'
 import ToastMessage from '../components/ToastMessage'
 import VitalTrendsDashboard from '../components/VitalTrendsDashboard'
 import PhysicianTriageQueue from '../components/PhysicianTriageQueue'
+import { useBreadcrumb, usePersistentTab } from '../components/PageNavigationContext'
 import { printExternalPrescription, printMedicationAdministrationLabels, printMedicationScheduleSheet } from '../printClinicalForm'
+
+const physicianTabValues = ['queue', 'records'] as const
+const physicianTabLabels: Record<typeof physicianTabValues[number], string> = {
+  queue: 'Fila de atendimento',
+  records: 'Prontuário e prescrições',
+}
+const physicianPatientGroupValues = ['inpatients', 'registered'] as const
+const physicianPatientGroupLabels: Record<typeof physicianPatientGroupValues[number], string> = {
+  inpatients: 'Internados',
+  registered: 'Cadastrados sem internação',
+}
 
 type Patient = {
   reference: string
@@ -59,7 +70,7 @@ const emptyForm: PrescriptionForm = {
   is_controlled: false,
 }
 
-function PhysicianPage() {
+function PhysicianPage({ userId }: { userId: string }) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientTotal, setPatientTotal] = useState(0)
   const [patientPage, setPatientPage] = useState(0)
@@ -69,8 +80,20 @@ function PhysicianPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([])
   const [patientReference, setPatientReference] = useState('')
-  const [physicianTab, setPhysicianTab] = useState<'triage' | 'patients'>('triage')
-  const [patientGroup, setPatientGroup] = useState<'inpatients' | 'registered'>('inpatients')
+  const [physicianTab, setPhysicianTab] = usePersistentTab(
+    `scpo-tab-physician-${userId}`,
+    'queue',
+    physicianTabValues,
+    physicianTabLabels,
+  )
+  const [patientGroup, setPatientGroup] = usePersistentTab(
+    `scpo-tab-physician-patient-group-${userId}`,
+    'inpatients',
+    physicianPatientGroupValues,
+    physicianPatientGroupLabels,
+    true,
+    2,
+  )
   const [treatmentTrackFilter, setTreatmentTrackFilter] = useState<'all' | NonNullable<Patient['treatment_track']>>('all')
   const [form, setForm] = useState<PrescriptionForm>(emptyForm)
   const [loading, setLoading] = useState(true)
@@ -84,6 +107,7 @@ function PhysicianPage() {
     () => visiblePatients.find((patient) => patient.reference === patientReference),
     [visiblePatients, patientReference],
   )
+  useBreadcrumb('physician-selected-patient', physicianTab === 'records' ? selectedPatient?.name ?? null : null, 3)
 
   useEffect(() => {
     let active = true
@@ -211,7 +235,7 @@ function PhysicianPage() {
     setPatientGroup('inpatients')
     setTreatmentTrackFilter('all')
     setPatientPage(0)
-    setPhysicianTab('patients')
+    setPhysicianTab('records')
     try {
       const patient = await readApiResponse<Patient>(
         await fetch(`/api/v1/nursing/patients/${encodeURIComponent(reference)}`),
@@ -235,12 +259,13 @@ function PhysicianPage() {
         <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfil do prescritor</h2><p className="welcome-copy">Nome e CRM/UF vinculados às prescrições e à receita impressa.</p></div></div>
         {profile ? <div className="physician-profile-summary"><strong>{profile.name}</strong><span>CRM {profile.crm}/{profile.crm_state}</span></div> : <div className="admin-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira seu nome e CRM/UF antes de registrar prescrições.</span></div></div>}
       </section>
-      <div className="admin-tabs module-tabs physician-tabs" role="tablist" aria-label="Atendimentos médicos">
-        <button className={`button ${physicianTab === 'triage' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'triage'} onClick={() => setPhysicianTab('triage')}>Aguardando avaliação</button>
-        <button className={`button ${physicianTab === 'patients' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'patients'} onClick={() => setPhysicianTab('patients')}>Pacientes cadastrados</button>
+        <div className="admin-tabs module-tabs physician-tabs" role="tablist" aria-label="Fluxo de trabalho médico">
+          <button className={`button ${physicianTab === 'queue' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'queue'} onClick={() => setPhysicianTab('queue')}>1. Fila de atendimento</button>
+          <button className={`button ${physicianTab === 'records' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'records'} onClick={() => setPhysicianTab('records')}>2. Prontuário e prescrições</button>
       </div>
-      {physicianTab === 'triage' && <PhysicianTriageQueue onOpenPatient={(reference) => void openPatientFromTriage(reference)} />}
-      {physicianTab === 'patients' && <>
+        <p className="field-hint physician-workflow-help">{physicianTab === 'queue' ? 'Revise a triagem e abra o paciente para seguir ao prontuário. Atendimentos sem triagem podem ser localizados na busca de pacientes.' : 'Escolha o grupo e o perfil de cuidado; selecione uma linha para abrir ou recolher o prontuário e registrar prescrições.'}</p>
+        {physicianTab === 'queue' && <PhysicianTriageQueue onOpenPatient={(reference) => void openPatientFromTriage(reference)} />}
+        {physicianTab === 'records' && <>
       <div className="patient-list-panel physician-patient-groups">
         <div className="admin-tabs module-tabs" role="tablist" aria-label="Separar pacientes cadastrados e internados">
           <button className={`button ${patientGroup === 'inpatients' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={patientGroup === 'inpatients'} onClick={() => { setPatientGroup('inpatients'); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>Internados</button>
@@ -253,13 +278,11 @@ function PhysicianPage() {
         {visiblePatients.length > 0 && <div className="physician-care-roster">{visiblePatients.map((patient) => {
           const track = patient.treatment_track ?? 'unclassified'
           const labels = { clinical: 'Cuidado clínico', psychiatric: 'Cuidado psiquiátrico', combined: 'Cuidado clínico e psiquiátrico', unclassified: 'Perfil não classificado' }
-          return <button className={`physician-care-roster-item physician-care-${track}${patient.reference === patientReference ? ' is-selected' : ''}`} key={patient.reference} type="button" onClick={() => { setPatientReference(patient.reference); setForm((current) => ({ ...current, patient_reference: patient.reference })) }}><span className={`physician-care-badge physician-care-${track}`}>{labels[track]}</span><strong>{patient.name}</strong><small>{patient.room && patient.bed ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem acomodação atribuída'}</small></button>
+          const expanded = patient.reference === patientReference
+          return <button className={`physician-care-roster-item physician-care-${track} care-track-${track}${expanded ? ' is-selected' : ''}`} key={patient.reference} type="button" aria-expanded={expanded} onClick={() => { setPatientReference(expanded ? '' : patient.reference); setForm((current) => ({ ...current, patient_reference: expanded ? '' : patient.reference })) }}><span className={`physician-care-badge care-track-badge physician-care-${track} care-track-${track}`}>{labels[track]}</span><span className="physician-care-roster-copy"><strong>{patient.name}</strong><small>{patient.room && patient.bed ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem acomodação atribuída'}</small></span><span className="physician-care-roster-action">{expanded ? 'Recolher' : 'Abrir prontuário'}</span></button>
         })}</div>}
         {!patientListLoading && !patientListError && !visiblePatients.length && <p className="history-empty">{patientSearch.trim() ? 'Nenhum paciente corresponde à busca.' : patientGroup === 'inpatients' ? 'Nenhum paciente internado está disponível.' : 'Nenhum cadastro ativo sem internação está disponível.'}</p>}
         {!patientListLoading && patientTotal > 50 && <nav className="history-pagination" aria-label="Paginação dos pacientes médicos"><span>Exibindo {patientPage * 50 + 1}–{Math.min((patientPage + 1) * 50, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={patientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}>Anterior</button><button className="button button-secondary" type="button" disabled={(patientPage + 1) * 50 >= patientTotal} onClick={() => setPatientPage((page) => page + 1)}>Próxima</button></div></nav>}
-      </div>
-      <div className="form-grid physician-patient-picker">
-        <PatientSelect label="Paciente para consulta" patients={visiblePatients} value={patientReference} onChange={(reference) => { setPatientReference(reference); setForm((current) => ({ ...current, patient_reference: reference })) }} optionLabel={(patient) => `${patient.name} · ${patient.room && patient.bed ? `internado · quarto ${patient.room} · leito ${patient.bed}` : 'cadastro ativo sem internação'}`} />
       </div>
       {selectedPatient && <>
         <section className="patient-list-panel">

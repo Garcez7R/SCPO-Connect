@@ -1,7 +1,17 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 
-export const PageNavigationContext = createContext<(label: string | null) => void>(() => {})
+export type BreadcrumbUpdate = (id: string, label: string | null, depth?: number) => void
+
+export const PageNavigationContext = createContext<BreadcrumbUpdate>(() => {})
+
+export function useBreadcrumb(id: string, label: string | null, depth = 1): void {
+  const setBreadcrumb = useContext(PageNavigationContext)
+  useEffect(() => {
+    setBreadcrumb(id, label, depth)
+    return () => setBreadcrumb(id, null, depth)
+  }, [depth, id, label, setBreadcrumb])
+}
 
 function readStoredTab<T extends string>(storageKey: string, values: readonly T[], defaultValue: T): T {
   try {
@@ -19,24 +29,19 @@ export function usePersistentTab<T extends string>(
   values: readonly T[],
   labels: Record<T, string>,
   showInBreadcrumb = true,
+  breadcrumbDepth = 1,
 ): [T, Dispatch<SetStateAction<T>>] {
-  const setActiveTabLabel = useContext(PageNavigationContext)
   const [storedTab, setTab] = useState<T>(() => readStoredTab(storageKey, values, defaultValue))
   const tab = values.includes(storedTab) ? storedTab : defaultValue
 
   useEffect(() => {
-    if (showInBreadcrumb) setActiveTabLabel(labels[tab])
     try {
       window.sessionStorage.setItem(storageKey, tab)
     } catch (error) {
       console.warn('A preferência da aba não pôde ser salva nesta sessão.', error)
     }
-  }, [labels, setActiveTabLabel, showInBreadcrumb, storageKey, tab])
-
-  useEffect(() => {
-    if (!showInBreadcrumb) return
-    return () => setActiveTabLabel(null)
-  }, [setActiveTabLabel, showInBreadcrumb])
+  }, [storageKey, tab])
+  useBreadcrumb(storageKey, showInBreadcrumb ? labels[tab] : null, breadcrumbDepth)
 
   return [tab, setTab]
 }
