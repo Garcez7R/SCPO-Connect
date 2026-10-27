@@ -105,9 +105,10 @@ function TrendChart({
         {series.map((item) => {
           const points = entries.filter((entry) => entry.series.key === item.key).sort((a, b) => a.record.measured_at.localeCompare(b.record.measured_at))
           return <g key={item.key}>
-            {points.length > 1 && <polyline points={points.map(({ record, value }) => `${xFor(record)},${yFor(value)}`).join(' ')} fill="none" stroke={item.color} strokeWidth="1.7" vectorEffect="non-scaling-stroke" />}
-            {points.map(({ record, value }) => <circle
+            {points.length > 1 && <polyline className="vital-trend-line" points={points.map(({ record, value }) => `${xFor(record)},${yFor(value)}`).join(' ')} fill="none" stroke={item.color} strokeWidth="1.7" vectorEffect="non-scaling-stroke" pathLength="1" />}
+            {points.map(({ record, value }, pointIndex) => <circle
               key={`${record.id}-${item.key}`}
+              className="vital-trend-point"
               cx={xFor(record)}
               cy={yFor(value)}
               r={selectedRecordId === record.id ? '6' : '4.2'}
@@ -115,6 +116,7 @@ function TrendChart({
               stroke="var(--surface)"
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
+              style={{ animationDelay: `${Math.min(pointIndex * 25, 300)}ms` }}
               tabIndex={0}
               role="button"
               aria-label={`${item.label}: ${value} ${unit}, aferido em ${dateTime(record.measured_at)}`}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, ClipboardList, RefreshCw } from 'lucide-react'
 import { readApiResponse } from '../api'
 import ToastMessage from './ToastMessage'
+import { hygieneAreaLabels, hygieneRequestTypeLabels, type HygieneArea, type HygieneRequestType } from '../operationsLabels'
 
 type ModuleId = 'reception' | 'nursing' | 'pharmacy' | 'maintenance' | 'hygiene'
 type TaskFilter = 'all' | 'urgent'
@@ -61,7 +62,7 @@ export default function OperationalTaskCenter({
     type Administration = { dispensation_id: string; dose: string; status: 'administered' | 'refused' | 'held' }
     type StockAlert = { item_id: number; item_name: string; balance: string; unit: string; expiry_date: string; days_to_expiry: number; alert_types: string[] }
     type WorkOrder = { id: string; title: string; location: string; priority: 'normal' | 'high' | 'urgent'; status: 'open' | 'in_progress' | 'completed' | 'cancelled' }
-    type HygieneRequest = { id: string; request_type: string; custom_type: string; unit: string; area: string; location: string; priority: 'normal' | 'high' | 'urgent'; status: 'open' | 'in_progress' | 'completed' | 'cancelled'; created_at: string }
+    type HygieneRequest = { id: string; request_type: HygieneRequestType; custom_type: string; unit: string; area: HygieneArea; location: string; priority: 'normal' | 'high' | 'urgent'; status: 'open' | 'in_progress' | 'completed' | 'cancelled'; created_at: string }
 
     const loaders: { module: ModuleId; load: () => Promise<TaskCard> }[] = []
 
@@ -185,8 +186,8 @@ export default function OperationalTaskCenter({
             count: openRequests.length,
             tasks: openRequests.map((request) => ({
               id: request.id,
-              title: request.custom_type || request.request_type,
-              detail: `${request.status === 'open' ? 'Aberta' : 'Em execução'} · ${[request.unit, request.area, request.location].filter(Boolean).join(' · ')} · ${localDateTime(request.created_at)}`,
+              title: request.custom_type || hygieneRequestTypeLabels[request.request_type],
+              detail: `${request.status === 'open' ? 'Aberta' : 'Em execução'} · ${[request.unit, hygieneAreaLabels[request.area], request.location].filter(Boolean).join(' · ')} · ${localDateTime(request.created_at)}`,
               priority: request.priority,
             })),
           }

@@ -85,6 +85,15 @@ Preservar o isolamento por serviço, as permissões por perfil, os registros aud
 - O serviço Nursing persiste as imagens em `/var/lib/scpo/reception-screensaver`, montado no volume nomeado Docker `reception_screensaver_data`; o diretório da imagem é preparado com permissões para o usuário sem privilégios do contêiner.
 - A configuração e os volumes ainda precisam ser homologados no ambiente institucional. Confirmar também a inclusão do volume de imagens no procedimento de backup/restauração antes de uso operacional.
 
+### Ajustes de interface — 27/10/2026
+
+- A caixa de pendências traduz os tipos internos de solicitação de Higienização para rótulos em português.
+- Os resumos coloridos de Manutenção e Higienização aparecem antes dos filtros, no início do painel operacional.
+- Relatórios digitais ocupam a largura alinhada às demais telas de Administração; os painéis de criação/listagem de usuários recebem fundo de tema escuro.
+- O texto “Acesso individual por perfil” foi removido da base do menu lateral; identificação e perfil do usuário permanecem visíveis.
+- Resumos de estoque da Farmácia usam os tokens semânticos comuns, com alertas textuais e cores adequadas também ao tema escuro. Cartões-resumo têm entrada e elevação mais perceptíveis; gráficos de sinais vitais desenham as linhas e revelam os pontos ao abrir a visualização, respeitando `prefers-reduced-motion`.
+- Validação local: `npm run lint`, `npm run build` e `npm run test:e2e` passaram. O E2E continua cobrindo somente um fluxo Recepção → Enfermagem → Médico; a homologação visual completa em telas/dispositivos institucionais permanece pendente. Nenhuma implantação foi feita nesta etapa.
+
 ## Outros itens de homologação ainda relevantes
 
 - Homologar login/MFA, permissões e rotas com contas de teste autorizadas; não compartilhar credenciais.

@@ -590,7 +590,6 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="privacy-note"><LockKeyhole size={16} /><span>Acesso individual<br />por perfil</span></div>
           <div className="profile-card">
             <div className="avatar">{profile.initials}</div>
             <div className="profile-copy"><strong>{profile.name}</strong><span>{profile.role}</span></div>
