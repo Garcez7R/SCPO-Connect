@@ -795,6 +795,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .psychology-filter-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); align-items: end; gap: 14px; }
 .psychology-referral-list, .psychology-encounter-list { display: grid; gap: 10px; }
 .psychology-referral-card, .psychology-encounter-card { display: grid; gap: 13px; padding: 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.psychology-referral-card.patient-care-track-card { border-left: 5px solid #77828b; }
 .psychology-referral-main { display: flex; justify-content: space-between; gap: 12px; }
 .psychology-referral-main h3, .psychology-encounter-heading h3 { margin: 0; color: var(--ink); font-size: 13px; }
 .psychology-referral-main p, .psychology-encounter-heading p { margin: 5px 0; color: var(--muted); font-size: 12px; }
@@ -1030,9 +1031,8 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .nursing-medication-panel { display: grid; gap: 15px; margin-top: 16px; padding: 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); }
 .nursing-triage-panel { display: grid; gap: 14px; margin-top: 16px; }
 .nursing-triage-panel > .section-heading { margin: 0; }
-.nursing-triage-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
-.nursing-triage-summary strong { color: var(--blue-dark); font-size: 20px; }
-.nursing-triage-summary span { color: var(--muted); font-size: 12px; }
+.nursing-triage-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.maintenance-report-summary { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .nursing-triage-layout { display: grid; grid-template-columns: minmax(220px, .72fr) minmax(0, 1.28fr); align-items: start; gap: 14px; }
 .nursing-triage-arrivals { display: grid; max-height: 72vh; gap: 8px; overflow: auto; padding-right: 3px; }
 .nursing-triage-arrival { display: grid; min-width: 0; justify-items: start; gap: 6px; padding: 12px; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 7px; background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; }
@@ -1137,7 +1137,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
   .nursing-triage-layout { grid-template-columns: 1fr; }
   .nursing-triage-arrivals { max-height: 34vh; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nursing-triage-form { padding: 12px; }
-  .nursing-triage-summary { grid-template-columns: auto minmax(0, 1fr); }
+  .nursing-triage-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .physician-triage-heading { flex-direction: column; }
   .physician-triage-details { grid-template-columns: 1fr; }
   .physician-triage-details section:last-child { grid-column: auto; }
@@ -1537,6 +1537,7 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
   .nursing-page .patient-copy { grid-column: 2 / -1; }
   .nursing-page .patient-copy input, .nursing-page .patient-copy select { width: 100%; max-width: none; min-height: 44px; font-size: 14px; }
   .nursing-page .patient-copy .search-input-wrap input { min-height: 44px; }
+  .nursing-page .patient-strip > .care-track-badge { grid-column: 2 / -1; justify-self: start; }
   .nursing-page .patient-strip > .button { grid-column: 2 / -1; min-height: 42px; }
   .nursing-page .patient-meta { grid-column: 2 / -1; margin: 0; padding: 8px 0 0; border-top: 1px solid #edf1f3; }
   .nursing-page .form-section { padding: 18px 14px; }
@@ -1583,6 +1584,10 @@ html[data-theme="dark"] {
 }
 html[data-theme="dark"] body { background: var(--page); color: var(--ink); }
 html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-follow-up-dialog, .patient-archive-dialog, .account-create-panel, .account-row, .therapy-report-card, .nutrition-record-card, .nutrition-context-card, .patient-detail-sections > section, .pharmacy-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .interprofessional-share-card, .hygiene-panel, .hygiene-summary article, .hygiene-request-card, .hygiene-bed-link, .xray-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .psychology-referral-card.patient-care-track-card { border-left-color: #9aa5ad; }
+html[data-theme="dark"] .psychology-referral-card.patient-care-track-card.care-track-clinical { border-left-color: #54b681; }
+html[data-theme="dark"] .psychology-referral-card.patient-care-track-card.care-track-psychiatric { border-left-color: #a38bd7; }
+html[data-theme="dark"] .psychology-referral-card.patient-care-track-card.care-track-combined { border-left-color: #e0a84c; }
 html[data-theme="dark"] .patient-registry-card.care-track-clinical { border-left-color: #54b681; }
 html[data-theme="dark"] .patient-registry-card.care-track-psychiatric { border-left-color: #a38bd7; }
 html[data-theme="dark"] .patient-registry-card.care-track-combined { border-left-color: #e0a84c; }
@@ -2227,6 +2232,10 @@ html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
 .physician-care-roster-item small { color: var(--muted); }
 .physician-care-badge, .care-track-badge { display: inline-flex; width: fit-content; align-items: center; padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .care-track-badge { margin: 4px 0; }
+.patient-care-track-card.care-track-clinical { border-left-color: #16764a; }
+.patient-care-track-card.care-track-psychiatric { border-left-color: #6e54a3; }
+.patient-care-track-card.care-track-combined { border-left-color: #b87516; }
+.patient-care-track-card.care-track-unclassified { border-left-color: #77828b; }
 .care-track-clinical { border-left-color: #16764a; }
 .care-track-badge.care-track-clinical { background: #e4f4eb; color: #145d3b; }
 .care-track-psychiatric { border-left-color: #6e54a3; }

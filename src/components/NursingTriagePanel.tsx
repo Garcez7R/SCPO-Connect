@@ -146,7 +146,10 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
     <div className="clinical-note"><UserRound size={17} /><span>Este registro não altera o cadastro do paciente, não cria diagnósticos nem classifica risco automaticamente. Siga o protocolo institucional de triagem.</span></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-    <div className="nursing-triage-summary"><strong>{arrivals.length}</strong><span>aguardando triagem</span><strong>{priorityCount}</strong><span>prioritários na fila</span></div>
+    <div className="hygiene-summary nursing-triage-summary" aria-label="Resumo da fila de triagem">
+      <article><strong>{arrivals.length}</strong><span>Aguardando triagem</span></article>
+      <article><strong>{priorityCount}</strong><span>Prioritários na fila</span></article>
+    </div>
     {loading ? <p className="history-empty">Carregando chegadas da Recepção…</p> : !arrivals.length
       ? <p className="history-empty">Não há chegadas em andamento para triar.</p>
       : <div className="nursing-triage-layout">

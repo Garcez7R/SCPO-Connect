@@ -15,7 +15,9 @@ import {
 import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import InterprofessionalSharePanel from '../components/InterprofessionalSharePanel'
-import { usePersistentTab } from '../components/PageNavigationContext'
+import { useBreadcrumb, usePersistentTab } from '../components/PageNavigationContext'
+import { PatientCareTrackBadge } from '../components/PatientCareTrackBadge'
+import { patientCareTrackClass } from '../patientCareTrack'
 import ToastMessage from '../components/ToastMessage'
 
 type Patient = {
@@ -23,6 +25,7 @@ type Patient = {
   name: string
   room: string
   bed: string
+  treatment_track?: 'clinical' | 'psychiatric' | 'combined' | 'unclassified'
   allergies?: string
   allergies_status?: 'unknown' | 'none_known' | 'known'
 }
@@ -152,8 +155,8 @@ const psychologyEncounterTypes: Record<PsychologyEncounter['encounter_type'], st
 }
 
 export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { userId: string; canPrescribe: boolean; onOpenPhysician: () => void }) {
-  const [tab, setTab] = usePersistentTab(`scpo-tab-psychology-${userId}`, 'triage', psychologyTabs, psychologyTabLabels)
   const [serviceArea, setServiceArea] = useState<PsychologyServiceArea>('psychology')
+  const [tab, setTab] = usePersistentTab(`scpo-tab-psychology-${userId}`, 'triage', psychologyTabs, psychologyTabLabels, true, 2)
   const [patients, setPatients] = useState<Patient[]>([])
   const [referrals, setReferrals] = useState<PsychologyReferral[]>([])
   const [encounters, setEncounters] = useState<PsychologyEncounter[]>([])
@@ -174,6 +177,9 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { user
   const [updatingReferral, setUpdatingReferral] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+
+  useBreadcrumb('psychology-service-area', serviceArea === 'psychology' ? 'Psicologia' : 'Psiquiatria', 1)
+  useBreadcrumb('psychology-selected-patient', tab === 'encounters' && recordPatient ? patients.find((patient) => patient.reference === recordPatient)?.name ?? null : null, 3)
 
   useEffect(() => {
     let current = true
@@ -366,10 +372,13 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician }: { user
           <label className="field"><span className="field-label">Buscar encaminhamento</span><input value={triageFilter} onChange={(event) => setTriageFilter(event.target.value)} placeholder="Paciente ou tipo de atendimento" /></label>
           <p className="psychology-help">Atualize a situação conforme o fluxo da equipe.</p>
         </div>
-        {loading ? <div className="history-empty">Carregando fila…</div> : visibleReferrals.length ? <div className="psychology-referral-list">{visibleReferrals.map((referral) => <article className="psychology-referral-card" key={referral.id}>
-          <div className="psychology-referral-main"><div><h3>{patientName(referral.patient_reference)}</h3><p>{referral.referral_type}</p><small>{dateTime(referral.created_at)}</small></div><span className={`psychology-priority ${referral.priority === 'priority' ? 'is-priority' : ''}`}>{referral.priority === 'priority' ? 'Prioritária' : 'Rotina'}</span></div>
+        {loading ? <div className="history-empty">Carregando fila…</div> : visibleReferrals.length ? <div className="psychology-referral-list">{visibleReferrals.map((referral) => {
+          const patient = patients.find((item) => item.reference === referral.patient_reference)
+          return <article className={`psychology-referral-card patient-care-track-card ${patientCareTrackClass(patient?.treatment_track)}`} key={referral.id}>
+          <div className="psychology-referral-main"><div><h3>{patientName(referral.patient_reference)}</h3><PatientCareTrackBadge track={patient?.treatment_track} /><p>{referral.referral_type}</p><small>{dateTime(referral.created_at)}</small></div><span className={`psychology-priority ${referral.priority === 'priority' ? 'is-priority' : ''}`}>{referral.priority === 'priority' ? 'Prioritária' : 'Rotina'}</span></div>
           <div className="psychology-referral-actions"><label className="field"><span className="field-label">Situação</span><select aria-label={`Situação do encaminhamento de ${patientName(referral.patient_reference)}`} disabled={updatingReferral === referral.id} value={referral.status} onChange={(event) => void updateReferral(referral.id, { status: event.target.value })}>{Object.entries(psychologyStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field"><span className="field-label">Prioridade</span><select aria-label={`Prioridade do encaminhamento de ${patientName(referral.patient_reference)}`} disabled={updatingReferral === referral.id} value={referral.priority} onChange={(event) => void updateReferral(referral.id, { priority: event.target.value })}><option value="routine">Rotina</option><option value="priority">Prioritária</option></select></label></div>
-        </article>)}</div> : <div className="history-empty">{referrals.length ? 'Nenhum encaminhamento corresponde à busca.' : 'A fila está vazia. Registre um encaminhamento para iniciar o acompanhamento.'}</div>}
+        </article>
+        })}</div> : <div className="history-empty">{referrals.length ? 'Nenhum encaminhamento corresponde à busca.' : 'A fila está vazia. Registre um encaminhamento para iniciar o acompanhamento.'}</div>}
       </section>
     </>}
     {tab === 'encounters' && <>
