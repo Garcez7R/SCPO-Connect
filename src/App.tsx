@@ -569,6 +569,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
         </nav>
 
         <div className="sidebar-bottom">
+          <div className="privacy-note"><LockKeyhole size={16} /><span>Acesso individual<br />por perfil</span></div>
           <div className="profile-card">
             <div className="avatar">{profile.initials}</div>
             <div className="profile-copy"><strong>{profile.name}</strong><span>{profile.role}</span></div>
@@ -799,6 +800,9 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const patientPageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientTotal, setPatientTotal] = useState(0)
+  const [availableHospitalBeds, setAvailableHospitalBeds] = useState<HospitalBed[]>([])
+  const [bedOptionsLoading, setBedOptionsLoading] = useState(true)
+  const [bedOptionsError, setBedOptionsError] = useState('')
   const [roomOptions, setRoomOptions] = useState<string[]>([])
   const [bedOptions, setBedOptions] = useState<string[]>([])
   const [inactivePatientCount, setInactivePatientCount] = useState(0)
@@ -810,6 +814,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [registryTab, setRegistryTab] = useState<'registry' | 'list' | 'reports'>('registry')
   const [patientPage, setPatientPage] = useState(0)
   const [form, setForm] = useState({ ...emptyPatientForm })
+  const [newPatientPurpose, setNewPatientPurpose] = useState<'outpatient' | 'inpatient'>(receptionMode ? 'inpatient' : 'outpatient')
+  const [selectedAdmissionBed, setSelectedAdmissionBed] = useState('')
   const [editingReference, setEditingReference] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [viewingPatient, setViewingPatient] = useState<Patient | null>(null)
@@ -840,6 +846,26 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   const [duplicateOverride, setDuplicateOverride] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [patientReload, setPatientReload] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    fetch('/api/v1/nursing/beds')
+      .then((response) => readApiResponse<{ beds?: HospitalBed[] }>(response))
+      .then((data) => {
+        if (active) {
+          setAvailableHospitalBeds((data.beds ?? []).filter((bed) => bed.status === 'available' && !bed.occupied))
+          setBedOptionsError('')
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setAvailableHospitalBeds([])
+          setBedOptionsError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os leitos disponíveis.')
+        }
+      })
+      .finally(() => { if (active) setBedOptionsLoading(false) })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     if (!cameraOpen) return
@@ -1034,6 +1060,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
     setEditingReference(patient.reference)
     setRegistryTab('registry')
     setShowForm(true)
+    setSelectedAdmissionBed('')
     setCameraOpen(false)
     setNotice('')
   }
@@ -1056,17 +1083,27 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       const response = await fetch(editingReference ? `/api/v1/nursing/patients/${encodeURIComponent(editingReference)}` : '/api/v1/nursing/patients', {
         method: editingReference ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, birth_date: form.birth_date || null }),
+        body: JSON.stringify({
+          ...form,
+          room: editingReference ? form.room : '',
+          bed: editingReference ? form.bed : '',
+          bed_id: !editingReference && newPatientPurpose === 'inpatient' ? selectedAdmissionBed : null,
+          birth_date: form.birth_date || null,
+        }),
       })
       const data = await response.json() as Patient & { detail?: string }
       if (!response.ok) throw new Error(data.detail ?? 'Não foi possível salvar o cadastro.')
       setPatients((current) => editingReference ? current.map((item) => item.reference === data.reference ? data : item) : [...current, data].sort((a, b) => a.room.localeCompare(b.room, 'pt-BR', { numeric: true }) || a.bed.localeCompare(b.bed, 'pt-BR', { numeric: true })))
       setPatientPage(0)
       setPatientReload((current) => current + 1)
-      setForm({ ...emptyPatientForm }); setEditingReference(''); setShowForm(false); setCameraOpen(false)
+      setForm({ ...emptyPatientForm }); setEditingReference(''); setShowForm(false); setCameraOpen(false); setSelectedAdmissionBed('')
       setDuplicateCandidates([]); setDuplicateOverride(false)
       setRegistryTab('list')
-      setNotice(editingReference ? 'Cadastro do paciente atualizado.' : receptionMode ? 'Paciente admitido e cadastro compartilhado com os módulos autorizados.' : 'Paciente cadastrado e disponível nos módulos autorizados.')
+      setNotice(editingReference
+        ? 'Cadastro do paciente atualizado.'
+        : newPatientPurpose === 'inpatient'
+          ? 'Paciente cadastrado e vinculado ao leito selecionado.'
+          : 'Paciente cadastrado sem internação, disponível para atendimento ambulatorial.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Falha ao salvar o cadastro.')
     } finally { setSaving(false) }
@@ -1130,16 +1167,20 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
   }
 
   return <section className="patient-registry-page page-enter">
-    {receptionMode ? <div className="section-heading reception-admission-heading"><div><p className="eyebrow">INTERNAÇÕES</p><h2>Admissões e internações</h2><p className="welcome-copy">Confirme a identificação do paciente e registre sua acomodação.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Nova admissão'}</button></div> : <div className="page-title-row"><span className="module-icon module-icon-patients"><UserRound size={23} /></span><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.</p></div><button className="button button-primary" type="button" onClick={() => { setRegistryTab('registry'); setNotice(''); setError('') }}><UserRound size={16} /> Cadastrar paciente</button></div>}
+    {receptionMode ? <div className="section-heading reception-admission-heading"><div><p className="eyebrow">INTERNAÇÕES</p><h2>Admissões e internações</h2><p className="welcome-copy">Confirme a identificação do paciente e registre sua acomodação.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNewPatientPurpose('inpatient'); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Nova admissão'}</button></div> : <div className="page-title-row"><span className="module-icon module-icon-patients"><UserRound size={23} /></span><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.</p></div></div>}
     {!receptionMode && <div className="admin-tabs module-tabs patient-registry-tabs" role="tablist" aria-label="Áreas de pacientes">
-      <button className={`button ${registryTab === 'registry' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'registry'} onClick={() => setRegistryTab('registry')}><UserRound size={16} /> Cadastro</button>
+      <button className={`button ${registryTab === 'registry' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'registry'} onClick={() => setRegistryTab('registry')}><UserRound size={16} /> Novo cadastro</button>
       <button className={`button ${registryTab === 'list' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'list'} onClick={() => setRegistryTab('list')}><UsersRound size={16} /> Lista de pacientes</button>
       <button className={`button ${registryTab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'reports'} onClick={() => setRegistryTab('reports')}><Printer size={16} /> Relatórios</button>
     </div>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {receptionMode && <div className="hygiene-summary reception-admission-summary" aria-label="Resumo de internações"><article><strong>{activeAssignedCount}</strong><span>Pacientes acomodados</span></article><article><strong>{activeUnassignedCount}</strong><span>Sem acomodação</span></article><article><strong>{inactivePatientCount}</strong><span>Cadastros inativos</span></article></div>}
     {(receptionMode ? showForm : registryTab === 'registry') && <form className={`patient-registry-form${receptionMode ? ' hygiene-panel' : ''}`} onSubmit={(event) => void submit(event)}>
-      <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : receptionMode ? 'Identificação e internação' : 'Identificação e internação'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
+      <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : newPatientPurpose === 'inpatient' ? 'Identificação e internação' : 'Identificação para consulta ambulatorial'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
+      {!editingReference && <div className="patient-registration-purpose">
+        <label className="field"><span className="field-label">Finalidade do cadastro</span><select value={newPatientPurpose} onChange={(event) => { setNewPatientPurpose(event.target.value as 'outpatient' | 'inpatient'); setSelectedAdmissionBed('') }}><option value="outpatient">Consulta / atendimento ambulatorial · sem internação</option><option value="inpatient">Internação · atribuir quarto e leito</option></select></label>
+        {newPatientPurpose === 'inpatient' && <label className="field"><span className="field-label">Leito disponível</span><select required value={selectedAdmissionBed} onChange={(event) => setSelectedAdmissionBed(event.target.value)} disabled={bedOptionsLoading || Boolean(bedOptionsError) || availableHospitalBeds.length === 0}><option value="">{bedOptionsLoading ? 'Carregando leitos…' : 'Selecione unidade, quarto e leito'}</option>{availableHospitalBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{bedOptionsError ? <span className="field-hint">Não foi possível carregar leitos disponíveis: {bedOptionsError}</span> : !bedOptionsLoading && availableHospitalBeds.length === 0 ? <span className="field-hint">Nenhum leito disponível. Cadastre ou libere um leito em Gestão Hospitalar.</span> : <span className="field-hint">A seleção é validada novamente ao salvar para evitar dupla ocupação.</span>}</label>}
+      </div>}
       <div className="patient-form-grid">
         <label className="field"><span className="field-label">Nome completo</span><input required minLength={2} maxLength={120} autoComplete="name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
         <label className="field"><span className="field-label">Nome da mãe</span><input maxLength={120} autoComplete="off" value={form.mother_name} onChange={(event) => setForm({ ...form, mother_name: event.target.value })} /></label>
@@ -1149,8 +1190,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
         <label className="field"><span className="field-label">CPF</span><input inputMode="numeric" autoComplete="off" maxLength={14} value={formatCpf(form.cpf)} onChange={(event) => setForm({ ...form, cpf: formatCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
         <label className="field"><span className="field-label">Cartão Nacional de Saúde (SUS)</span><input inputMode="numeric" autoComplete="off" maxLength={20} value={form.sus_card} onChange={(event) => setForm({ ...form, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>
         <label className="field"><span className="field-label">Data de nascimento</span><input type="date" value={form.birth_date} onChange={(event) => setForm({ ...form, birth_date: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label>
-        <label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={form.bed} onChange={(event) => setForm({ ...form, bed: event.target.value })} /></label>
+        {editingReference && <><label className="field"><span className="field-label">Quarto</span><input required maxLength={20} value={form.room} onChange={(event) => setForm({ ...form, room: event.target.value })} /></label><label className="field"><span className="field-label">Leito</span><input required maxLength={20} value={form.bed} onChange={(event) => setForm({ ...form, bed: event.target.value })} /></label></>}
         <label className="field"><span className="field-label">Sexo (opcional)</span><select value={form.sex} onChange={(event) => setForm({ ...form, sex: event.target.value })}><option value="">Não informado</option><option value="Feminino">Feminino</option><option value="Masculino">Masculino</option><option value="Outro">Outro</option><option value="Não informado">Prefere não informar</option></select></label>
         <label className="field"><span className="field-label">Telefone do paciente</span><input inputMode="tel" maxLength={20} autoComplete="tel" value={formatPhone(form.phone)} onChange={(event) => setForm({ ...form, phone: formatPhone(event.target.value) })} /></label>
         <label className="field"><span className="field-label">E-mail do paciente</span><input type="email" maxLength={160} autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
@@ -1354,33 +1394,19 @@ function TherapyPage({ profile }: { profile: Profile }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const title = form.title.trim()
-    const activityType = form.activity_type.trim()
-    const location = form.location.trim()
-    const participantReferences = [...new Set((form.participant_references ?? []).map((reference) => reference.trim()).filter(Boolean))]
-    if (title.length < 3) { setError('Informe um nome de atividade com pelo menos 3 caracteres.'); return }
-    if (!activityType) { setError('Selecione a modalidade da atividade.'); return }
-    if (location.length < 2) { setError('Informe o local da atividade.'); return }
+    if (form.title.trim().length < 3) { setError('Informe um nome de atividade com pelo menos 3 caracteres.'); return }
+    if (!form.activity_type) { setError('Selecione a modalidade da atividade.'); return }
+    if (form.location.trim().length < 2) { setError('Informe o local da atividade.'); return }
     if (!form.starts_at || !Number.isFinite(new Date(form.starts_at).getTime())) { setError('Informe uma data e hora de início válidas.'); return }
     setSaving(true); setError(''); setNotice('')
     try {
-      const payload = {
-        title,
-        activity_type: activityType,
-        description: form.description.trim(),
-        location,
-        starts_at: new Date(form.starts_at).toISOString(),
-        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
-        patient_reference: form.patient_reference?.trim() || null,
-        participant_references: participantReferences,
-      }
-      const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, starts_at: new Date(form.starts_at).toISOString(), ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null, patient_reference: form.patient_reference || null }) })
       const data = await readApiResponse<TherapyActivity>(response)
       if (new Date(data.starts_at).getFullYear() === month.getFullYear() && new Date(data.starts_at).getMonth() === month.getMonth()) { setActivities((items) => [...items, data].sort((a, b) => a.starts_at.localeCompare(b.starts_at))); setReportDrafts((items) => ({ ...items, [data.id]: data.activity_report ?? '' })); setReportStatuses((items) => ({ ...items, [data.id]: data.status })) }
       setForm({ title: '', activity_type: '', description: '', location: 'Oficina Terapêutica', starts_at: '', ends_at: '', patient_reference: '', participant_references: [] }); setNewParticipantReference(''); setShowForm(false); setNotice('Atividade incluída na agenda.')
     } catch (submitError) {
       const message = readableApiError(submitError)
-      setError(message === 'Campo obrigatório: Dados da solicitação.' || message === 'Campo obrigatório: campo.'
+      setError(message === 'Campo obrigatório: Dados da solicitação.'
         ? 'A API recebeu a solicitação sem identificar os campos. Confira nome da atividade, modalidade, início e local; se persistir, atualize a página e avise o suporte.'
         : message)
     } finally { setSaving(false) }
@@ -2547,6 +2573,7 @@ function AdminPage({ user }: { user: AuthUser }) {
   const [resettingPassword, setResettingPassword] = useState(false)
   const [deleteUserTarget, setDeleteUserTarget] = useState<Account | null>(null)
   const [deletingUser, setDeletingUser] = useState(false)
+  const [accountFilter, setAccountFilter] = useState<'all' | 'administrative' | 'operational' | 'inactive'>('all')
 
   useEffect(() => {
     if (!availableTabs.includes(tab)) setTab(availableTabs[0] ?? 'reports')
@@ -2713,6 +2740,13 @@ function AdminPage({ user }: { user: AuthUser }) {
     }
   }
 
+  const visibleAccounts = users.filter((account) => {
+    if (accountFilter === 'inactive') return !account.active
+    if (accountFilter === 'administrative') return account.active && ['admin', 'management'].includes(account.role)
+    if (accountFilter === 'operational') return account.active && !['admin', 'management'].includes(account.role)
+    return true
+  })
+
   return <section className="admin-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div><p className="eyebrow">ADMINISTRAÇÃO</p><h1>{adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div>{canManageApp && <span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span>}</div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções de Administração">{availableTabs.map((value) => <button className={`button ${activeTab === value ? 'button-primary' : 'button-secondary'}`} key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setTab(value)}>{adminTabLabels[value]}</button>)}</div>
@@ -2753,7 +2787,7 @@ function AdminPage({ user }: { user: AuthUser }) {
       </div>
       <button className="button button-primary" type="button" onClick={() => void retryPhysicianProfile()} disabled={saving}>{saving ? 'Salvando…' : 'Tentar salvar perfil médico'}</button>
     </section>}
-    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{users.length} contas</span></div><div className="account-list">{users.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} onResetPassword={resetUserPassword} onDelete={deleteUser} currentUserId={user.id} availableModules={assignableModules} canManageBroadAccess={user.role === 'management' || user.is_superuser} />)}{status === 'ready' && users.length === 0 && <p className="account-empty">Nenhuma conta cadastrada.</p>}</div></section>
+    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{visibleAccounts.length} de {users.length} contas</span></div><div className="admin-tabs module-tabs account-filters" role="group" aria-label="Filtrar tipos de conta"><button className={`button ${accountFilter === 'all' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'all'} onClick={() => setAccountFilter('all')}>Todas</button><button className={`button ${accountFilter === 'administrative' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'administrative'} onClick={() => setAccountFilter('administrative')}>Administração / Gestão</button><button className={`button ${accountFilter === 'operational' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'operational'} onClick={() => setAccountFilter('operational')}>Operacionais</button><button className={`button ${accountFilter === 'inactive' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'inactive'} onClick={() => setAccountFilter('inactive')}>Inativas</button></div><p className="account-superuser-note"><LockKeyhole size={15} /> O Superadministrador do Sistema é um perfil separado, gerenciado em Administração do Sistema; ele não aparece nesta lista operacional.</p><div className="account-list">{visibleAccounts.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} onResetPassword={resetUserPassword} onDelete={deleteUser} currentUserId={user.id} availableModules={assignableModules} canManageBroadAccess={user.role === 'management' || user.is_superuser} />)}{status === 'ready' && visibleAccounts.length === 0 && <p className="account-empty">Nenhuma conta corresponde a este filtro.</p>}</div></section>
     <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia para todos os módulos e ações, incluindo administração de contas</span><span><strong>Superadministrador</strong> privilégio de sistema separado e reservado</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
     </>}
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
@@ -2763,22 +2797,33 @@ function AdminPage({ user }: { user: AuthUser }) {
   </section>
 }
 
-function accountTypeForUser(account: Account) {
-  if (account.is_superuser) return 'Superusuário'
-  if (account.role === 'admin') return 'Administração'
-  if (account.role === 'management') return 'Gestão Hospitalar'
-  if (account.modules.includes('oversight')) return 'Relatórios e auditoria'
-  if (account.modules.length > 0) return 'Operacional'
-  return 'Sem acesso'
-}
-
 function AccountRow({ user, onUpdate, onResetPassword, onDelete, currentUserId, availableModules, canManageBroadAccess }: { user: Account; onUpdate: (user: Account, body: Record<string, unknown>, success: string) => Promise<void>; onResetPassword: (user: Account) => Promise<void>; onDelete: (user: Account) => Promise<void>; currentUserId: string; availableModules: [string, string][]; canManageBroadAccess: boolean }) {
   const [editModules, setEditModules] = useState(user.modules)
   const [editPermissions, setEditPermissions] = useState(user.permissions)
   const [expanded, setExpanded] = useState(false)
   const mayEditBroad = canManageBroadAccess || user.role !== 'management'
   const assignedModules = user.role === 'admin' ? ['admin'] : user.modules
-  return <article className="account-row"><div className="account-row-main"><div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div><div className="user-meta-stack"><div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div><span className="account-type-badge">{accountTypeForUser(user)}</span></div><span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span>{user.id !== currentUserId && <button className="user-action" type="button" onClick={() => void onResetPassword(user)}>Redefinir senha</button>}{mayEditBroad && <><button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button><button className="user-action" type="button" onClick={() => { setEditModules(assignedModules); setEditPermissions(user.role === 'admin' ? { admin: user.permissions.admin ?? ['consultar', 'criar', 'alterar', 'administrar'] } : user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button>{user.id !== currentUserId && !user.is_superuser && <button className="user-action user-action-danger" type="button" onClick={() => void onDelete(user)}>Excluir usuário</button>}</>}</div>{expanded && <div className="account-access-editor"><p className="field-label">Módulos permitidos</p><div className="module-permission-grid">{availableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div><fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset><button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? (module === 'admin' ? ['consultar', 'criar', 'alterar', 'administrar'] : module === 'oversight' ? ['consultar'] : ['consultar', 'criar', 'alterar'])])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button></div>}</article>
+  return <article className="account-row">
+    <div className="account-row-main">
+      <div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div>
+      <div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div>
+      <span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span>
+      <div className="account-row-actions">
+        {user.id !== currentUserId && <button className="user-action" type="button" onClick={() => void onResetPassword(user)}>Redefinir senha</button>}
+        {mayEditBroad && <>
+          <button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button>
+          <button className="user-action" type="button" onClick={() => { setEditModules(assignedModules); setEditPermissions(user.role === 'admin' ? { admin: user.permissions.admin ?? ['consultar', 'criar', 'alterar', 'administrar'] } : user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button>
+          {user.id !== currentUserId && !user.is_superuser && <button className="user-action user-action-danger" type="button" onClick={() => void onDelete(user)}>Excluir usuário</button>}
+        </>}
+      </div>
+    </div>
+    {expanded && <div className="account-access-editor">
+      <p className="field-label">Módulos permitidos</p>
+      <div className="module-permission-grid">{availableModules.map(([module, label]) => <label className="checkbox-label" key={module}><input type="checkbox" checked={editModules.includes(module)} onChange={() => setEditModules((current) => current.includes(module) ? current.filter((item) => item !== module) : [...current, module])} /><span>{label}</span></label>)}</div>
+      <fieldset className="module-permission-fieldset"><legend>Permitir arquivamento de registros clínicos</legend>{(['patients', 'nursing', 'nutrition', 'reception'] as const).map((module) => <label className="checkbox-label" key={module}><input type="checkbox" disabled={!editModules.includes(module)} checked={Boolean(editPermissions[module]?.includes('excluir'))} onChange={() => setEditPermissions((current) => ({ ...current, [module]: current[module]?.includes('excluir') ? current[module].filter((permission) => permission !== 'excluir') : [...(current[module] ?? ['consultar', 'criar', 'alterar']), 'excluir'] }))} /><span>{moduleLabels[module]}</span></label>)}</fieldset>
+      <button className="button button-secondary" type="button" disabled={!editModules.length} onClick={() => void onUpdate(user, { modules: editModules, permissions: Object.fromEntries(editModules.map((module) => [module, editPermissions[module] ?? (module === 'admin' ? ['consultar', 'criar', 'alterar', 'administrar'] : module === 'oversight' ? ['consultar'] : ['consultar', 'criar', 'alterar'])])) }, 'Acessos atualizados e registrados na auditoria.')}>Salvar acessos</button>
+    </div>}
+  </article>
 }
 
 function NutritionPage() {

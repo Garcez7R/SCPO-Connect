@@ -49,9 +49,9 @@ Build, lint, typecheck, testes backend e correspondência estática das rotas pa
 
 ### P2 — Cobertura de integração do frontend
 
-O projeto oferece `npm run test:e2e` com bancos SQLite temporários, e o fluxo Recepção → triagem da Enfermagem → fila Médica passou no navegador nesta verificação complementar. A cobertura automatizada ainda é parcial.
+O projeto não declara um comando de testes de interface no `package.json`; a checagem do frontend nesta rodada cobriu lint, TypeScript e build, não uma execução automatizada de navegador.
 
-**Recomendação:** ampliar E2E para prescrição → Farmácia/Enfermagem, Oficina → presença/relatório e ações administrativas de conta. Manter dados e credenciais de teste isolados.
+**Recomendação:** adicionar testes E2E focados nos fluxos intermodulares de maior risco: chegada da Recepção → triagem da Enfermagem → fila médica; prescrição → Farmácia/Enfermagem; Oficina → presença/relatório; e ações administrativas de conta. Usar dados e credenciais de teste isolados.
 
 ### P2 — Tamanho do chunk principal
 
@@ -75,12 +75,4 @@ Na Oficina Terapêutica, o formulário valida localmente nome, modalidade, local
 
 Validações desta rodada: lint, typecheck e build do frontend; Ruff nos arquivos backend alterados; 48 testes direcionados de Enfermagem e relatórios da Oficina Terapêutica; e `git diff --check`. O build continua exibindo aviso de chunk principal acima de 500 kB (539,02 kB minificado; 148,49 kB gzip), sem falha de compilação.
 
-Continuam pendentes os itens já apontados acima: operação recuperável para exclusão distribuída de perfil médico, homologação institucional das permissões e fluxos, ampliação da cobertura E2E e validação operacional da classificação por quarto/leito antes de tratá-la como ocupação oficial.
-
-## Verificação complementar — 26/10/2026
-
-A execução da E2E isolada encontrou um bloqueio real de inicialização: a checagem de versão dos serviços ainda esperava `0047_nursing_triage`, embora a migração mais recente já fosse a de chamadas públicas. A migração `0048` também tinha um identificador acima do limite de 32 caracteres do campo padrão `alembic_version` no PostgreSQL. O ID foi encurtado para `0048_reception_announce`, com normalização do ID anterior para preservar bancos SQLite que já o tenham gravado. A validação de inicialização e os testes de migração foram alinhados à revisão curta. O teste da fila pública também passou a verificar o campo `announcement_version` já usado pelo painel.
-
-Validações complementares: `npm run test:e2e` passou (1 fluxo Recepção → Enfermagem → Médico); `uv run pytest backend/tests -q` passou; Ruff nos arquivos backend alterados passou; `npm run lint`, `npm run typecheck` e `npm run build` passaram; `git diff --check` passou. O build mantém o aviso informativo do chunk principal acima de 500 kB. Os testes E2E usaram apenas bancos temporários locais; nenhum serviço implantado ou dado real foi acessado.
-
-A homologação com usuários institucionais autorizados e dados fictícios permanece necessária, assim como os cenários E2E adicionais e a operação recuperável para exclusão distribuída de perfil médico descrita acima.
+Continuam pendentes os itens já apontados acima: operação recuperável para exclusão distribuída de perfil médico, homologação das permissões e fluxos em runtime, e testes E2E. A classificação por quarto/leito também precisa de validação operacional para não ser confundida com a ocupação oficial de leitos.

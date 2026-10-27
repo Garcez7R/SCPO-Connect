@@ -193,30 +193,12 @@ O estado atual está funcional e coerente para demonstração, mas ainda exige p
 - Cada gravação é um snapshot do atendimento, append-only, com autoria e horário. Não altera alergias do cadastro global, não cria diagnóstico e não classifica risco automaticamente.
 - Criada a fila “Aguardando avaliação” no módulo Médico, separada da guia de pacientes cadastrados, exibindo o snapshot mais recente e permitindo abrir a ficha clínica quando a chegada estiver vinculada a um paciente.
 - Escopo confirmado pelo usuário: somente chegadas ativas da fila da Recepção; agendamentos marcados como “chegou” não são incluídos nesta entrega.
-- Adicionada a migração `0047_nursing_triage`; a migração `0048_reception_announcement_version` acrescenta a versão das chamadas públicas. A tabela de triagens é criada somente no banco Nursing.
+- Adicionada a migração `0047_nursing_triage`; a checagem de versão dos serviços agora reconhece essa revisão. A tabela de triagens é criada somente no banco Nursing.
 - Adicionados testes de validação, revisões append-only, seleção do snapshot mais recente, fila médica, bloqueio de chegadas encerradas e isolamento da migração por serviço.
 
 ### Validação
 - `npm run lint`, `npm run typecheck` e `npm run build` passaram. O build continua exibindo o aviso conhecido do chunk JavaScript acima de 500 kB.
 - Ruff passou nos arquivos Python alterados.
-- `uv run pytest backend/tests -q` passou na validação desta retomada; os testes agora também cobrem a revisão mais recente das migrações e a versão de anúncio retornada pela fila pública.
+- `uv run pytest backend/tests -q` passou: 129 testes.
 - A validação de runtime com usuários autorizados e dados fictícios continua pendente; as verificações locais não substituem homologação clínica.
-- Commit e push das entregas anteriores já foram realizados.
-
-## Retomada complementar — 2026-10-26
-
-### Correção feita
-- A inicialização dos serviços ainda exigia `0047_nursing_triage`, apesar de `0048_reception_announcement_version` já ser a migração mais recente. Isso impedia o startup de APIs locais e bloqueava a execução da E2E.
-- O ID dessa migração excedia o limite de 32 caracteres do campo padrão `alembic_version` em PostgreSQL. Ele foi encurtado para `0048_reception_announce`, a validação passou a exigir esse head e o ID longo anterior é normalizado para preservar bancos SQLite já existentes.
-- O teste da fila pública foi atualizado para verificar também o campo `announcement_version`, usado pelo painel de chamadas.
-
-### Validação
-- `npm run test:e2e`: passou no fluxo Recepção → triagem da Enfermagem → fila Médico, usando bancos SQLite temporários.
-- `uv run pytest backend/tests -q`: passou.
-- Ruff dos arquivos backend alterados, `npm run lint`, `npm run typecheck`, `npm run build` e `git diff --check`: passaram.
-- O build continua emitindo apenas o aviso informativo de chunk principal acima de 500 kB. Nenhum serviço implantado ou dado clínico real foi acessado.
-
-### Em aberto
-- Homologar permissões e fluxos em ambiente autorizado com dados fictícios.
-- Expandir E2E para prescrição → Farmácia/Enfermagem, Oficina Terapêutica e ações administrativas.
-- Projetar uma exclusão recuperável/idempotente para o perfil médico distribuído entre serviços, após aprovação institucional.
+- Commit e push desta entrega ainda pendentes.

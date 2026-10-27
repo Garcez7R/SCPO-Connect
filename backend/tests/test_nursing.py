@@ -501,7 +501,6 @@ def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
                 "queue_type": "common",
                 "arrived_at": payload["items"][0]["arrived_at"],
                 "updated_at": payload["items"][0]["updated_at"],
-                "announcement_version": "0",
             },
             {
                 "id": "P001",
@@ -512,7 +511,6 @@ def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
                 "queue_type": "priority",
                 "arrived_at": payload["items"][1]["arrived_at"],
                 "updated_at": payload["items"][1]["updated_at"],
-                "announcement_version": "0",
             },
         ]
         assert "Sobrenome" not in response.text

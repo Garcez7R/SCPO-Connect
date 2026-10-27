@@ -125,6 +125,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .nav-link-active::before { position: absolute; inset: 8px auto 8px 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--blue); content: ''; }
 .nav-count { display: grid; width: 20px; height: 20px; margin-left: auto; place-items: center; border-radius: 5px; background: #fff; color: var(--blue); font-size: 10px; font-weight: 600; }
 .sidebar-bottom { display: grid; flex: 0 0 auto; gap: 15px; margin-top: auto; }
+.privacy-note { display: flex; align-items: center; gap: 10px; padding: 12px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.5; }
+.privacy-note svg { flex: 0 0 auto; color: var(--blue); }
 .profile-card { display: flex; align-items: center; gap: 9px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 7px; }
 .avatar { display: grid; width: 33px; height: 33px; flex: 0 0 auto; place-items: center; border: 1px solid #d4e4eb; border-radius: 50%; background: #edf4f6; color: #28546a; font-size: 10px; font-weight: 700; }
 .profile-copy { display: grid; min-width: 0; gap: 3px; }
@@ -226,12 +228,6 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-card-description { max-width: 34ch; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .module-card-status { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 13px; color: var(--muted); font-size: 11px; }
 .module-card-status .status-dot { width: 6px; height: 6px; }
-:is(.module-card, .patient-strip, .collection-row, .executive-summary-grid > article, .nursing-overview-summary > article, .pharmacy-summary > article, .hygiene-summary > article, .waiting-room-counts > article, .therapy-summary > article, .status-card, .summary-card, .metric-card) {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
 .status-ready { color: #377052; }
 .status-later { color: var(--subtle); }
 .module-arrow { position: absolute; right: 15px; bottom: 15px; color: #628094; }
@@ -399,10 +395,8 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .user-name strong { display: grid; gap: 3px; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .user-name small { color: var(--muted); font-size: 9px; font-weight: 400; }
 .user-role { color: var(--muted); font-size: 10px; }
-.user-meta-stack { display: grid; gap: 6px; }
 .user-modules { display: flex; flex-wrap: wrap; gap: 4px; }
 .user-modules span { padding: 4px 6px; border-radius: 4px; background: #eff4f6; color: #486579; font-size: 9px; }
-.account-type-badge { display: inline-flex; width: fit-content; align-items: center; padding: 4px 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--blue-pale); color: var(--blue-dark); font-size: 9px; font-weight: 700; letter-spacing: .3px; }
 .account-state { display: inline-flex; align-items: center; gap: 5px; color: var(--green); font-size: 10px; }
 .account-state .status-dot { width: 6px; height: 6px; }
 .account-disabled { color: var(--subtle); }
@@ -1501,17 +1495,23 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .module-permission-grid .checkbox-label { min-height: 34px; }
 .account-list { display: grid; }
 .account-row { padding: 13px 0; border-top: 1px solid #edf1f4; }
-.account-row-main { display: grid; grid-template-columns: minmax(170px, 1.1fr) minmax(160px, 1fr) auto auto auto auto; align-items: center; gap: 12px; }
+.account-row-main { display: grid; grid-template-columns: minmax(190px, 1.1fr) minmax(150px, 1fr) auto minmax(270px, 1.4fr); align-items: center; gap: 12px; }
 .account-row .user-name { min-width: 0; }
 .account-row .user-name strong { overflow-wrap: anywhere; }
 .account-row .user-modules { display: flex; flex-wrap: wrap; gap: 4px; }
 .account-row .user-modules span { padding: 4px 6px; }
+.account-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.account-row .user-action-danger { border-color: #e6c6c6; background: #fff7f6; color: #9a3d3d; }
+.account-row .user-action-danger:hover:not(:disabled) { border-color: #c7797d; background: #fcebea; color: #8e3037; }
 .account-access-editor { display: grid; gap: 10px; margin: 12px 0 0 43px; padding: 13px; border-radius: 6px; background: #f7f9fa; }
 .account-access-editor .button { justify-self: start; }
+.account-filters { margin: 0 0 12px; }
+.account-superuser-note { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.account-superuser-note svg { flex: 0 0 auto; color: var(--blue); }
 .account-empty { padding: 20px 0; color: var(--muted); }
 .session-role { color: var(--muted); font-size: 11px; }
 .logout-button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; }
-@media (max-width: 900px) { .account-row-main { grid-template-columns: minmax(0, 1fr) auto; } .account-row .user-modules { grid-column: 1 / -1; grid-row: 2; } .account-row .account-state { grid-row: 1; grid-column: 2; } .account-row .user-action { min-height: 38px; } }
+@media (max-width: 900px) { .account-row-main { grid-template-columns: minmax(0, 1fr) auto; } .account-row .user-modules { grid-column: 1 / -1; grid-row: 2; } .account-row .account-state { grid-row: 1; grid-column: 2; } .account-row-actions { grid-column: 1 / -1; justify-content: flex-start; } .account-row .user-action { min-height: 38px; } }
 @media (max-width: 620px) { .auth-card { padding: 28px 22px 22px; } .auth-brand { width: calc(100% + 44px); min-height: 154px; gap: 12px; margin: -28px -22px 23px; padding: 12px 18px; } .auth-brand img { width: 120px !important; min-width: 120px; max-width: 120px; height: 120px !important; flex-basis: 120px; } .auth-brand strong { font-size: 20px; } .auth-brand span { font-size: 11px; } .auth-card h1 { margin-bottom: 20px; } .module-permission-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .account-create-panel { padding: 15px; } .account-row-main { gap: 9px; } .account-row .user-modules { grid-row: auto; } .topbar-right { gap: 6px; } .session-role { display: none; } .logout-button { padding: 7px; font-size: 11px; } }
 
 @media (max-width: 760px) {
@@ -1585,6 +1585,14 @@ html[data-theme="dark"] .button-primary { background-color: #246b8e; color: #fff
 html[data-theme="dark"] .button-primary:hover:not(:disabled) { background-color: #1e5876; }
 html[data-theme="dark"] .button-secondary { background-color: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .button-danger { border-color: #693b40; background-color: #352528; color: #f1b4b4; }
+html[data-theme="dark"] .module-permission-fieldset { border-color: var(--line); background: #17232b; color: var(--ink); }
+html[data-theme="dark"] .account-access-editor { background: #17232b; color: var(--ink); }
+html[data-theme="dark"] .account-row .user-modules span { background: #263944; color: #b5e3f5; }
+html[data-theme="dark"] .account-row .user-action { border-color: var(--line); background: #17232b; color: var(--ink); }
+html[data-theme="dark"] .account-row .user-action:hover:not(:disabled) { border-color: #693b40; background: #352528; color: #f1b4b4; }
+html[data-theme="dark"] .account-row .user-action-danger { border-color: #693b40; background: #352528; color: #f1b4b4; }
+html[data-theme="dark"] .account-row .user-action-danger:hover:not(:disabled) { border-color: #a8555a; background: #44292c; color: #ffd2d2; }
+html[data-theme="dark"] .account-superuser-note { border-color: var(--line); background: #17232b; }
 .page-error-boundary { display: grid; justify-items: center; gap: 12px; max-width: 560px; margin: 10vh auto; padding: 28px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--red); text-align: center; box-shadow: var(--shadow); }
 .page-error-boundary h2 { margin: 0; color: var(--ink); font-size: 19px; }
 .page-error-boundary p { margin: 0 0 5px; color: var(--muted); line-height: 1.55; }

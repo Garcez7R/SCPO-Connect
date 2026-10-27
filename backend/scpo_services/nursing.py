@@ -1083,6 +1083,9 @@ def get_nursing_db():
 
 
 BED_ACCESS = require_demo_role("management", "nursing", "reception", "hygiene", "maintenance")
+BED_READ_ACCESS = require_demo_role(
+    "management", "nursing", "reception", "hygiene", "maintenance", "patients"
+)
 BED_MANAGEMENT = require_demo_role("management")
 
 
@@ -1261,7 +1264,7 @@ app = FastAPI(
 
 @app.get("/api/v1/nursing/beds")
 def list_hospital_beds(
-    principal: Annotated[DemoPrincipal, Depends(BED_ACCESS)],
+    principal: Annotated[DemoPrincipal, Depends(BED_READ_ACCESS)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     rows = db.execute(
@@ -1560,6 +1563,7 @@ def validate_vital_values(values: dict[str, str], allowed_fields: set[str]) -> d
 class PatientPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=2, max_length=120)
+    bed_id: str | None = Field(default=None, max_length=36)
     mother_name: str = Field(default="", max_length=120)
     health_plan: str = Field(default="", max_length=120)
     same_number: str = Field(default="", max_length=40)
@@ -2751,7 +2755,6 @@ def list_public_reception_queue(
                 "queue_type": queue_type,
                 "arrived_at": arrived_at.isoformat(),
                 "updated_at": updated_at.isoformat(),
-                "announcement_version": str(announcement_version),
             }
         )
     return {"items": public_items, "generated_at": datetime.now(UTC).isoformat()}
@@ -4835,11 +4838,14 @@ def create_patient_record(
     principal: DemoPrincipal,
     payload: PatientPayload,
 ) -> Patient:
+    selected_bed: tuple[HospitalBed, HospitalUnit] | None = None
+    if payload.bed_id:
+        selected_bed = _available_hospital_bed(db, payload.bed_id)
     if payload.cpf and db.scalar(select(Patient.reference).where(Patient.cpf == payload.cpf)):
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este CPF")
     if payload.sus_card and db.scalar(select(Patient.reference).where(Patient.sus_card == payload.sus_card)):
         raise HTTPException(status_code=409, detail="Já existe um paciente cadastrado com este Cartão SUS")
-    if payload.room.strip() and payload.bed.strip() and db.scalar(
+    if selected_bed is None and payload.room.strip() and payload.bed.strip() and db.scalar(
         select(Patient.reference).where(
             Patient.active.is_(True),
             Patient.room == payload.room.strip(),
@@ -4848,7 +4854,11 @@ def create_patient_record(
     ):
         raise HTTPException(status_code=409, detail="Este quarto e leito já estão ocupados")
     now = datetime.now(UTC)
-    patient_data = payload.model_dump(exclude={"treatment_track", "elopement_risk"})
+    patient_data = payload.model_dump(exclude={"bed_id", "treatment_track", "elopement_risk"})
+    if selected_bed:
+        bed, _ = selected_bed
+        patient_data["room"] = bed.room
+        patient_data["bed"] = bed.label
     patient = Patient(
         reference=str(uuid.uuid4()),
         **patient_data,
@@ -4918,7 +4928,7 @@ def update_patient(
         payload.allergies,
         "Atualização do cadastro do paciente",
     )
-    for key, value in payload.model_dump(exclude_none=True).items():
+    for key, value in payload.model_dump(exclude_none=True, exclude={"bed_id"}).items():
         if key == "elopement_risk":
             continue
         setattr(patient, key, value)
@@ -5193,13 +5203,16 @@ def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profil
         "active": patient.active,
     }
     if full_profile:
-        result.update({
-            key: getattr(patient, key)
-            for key in PatientPayload.model_fields
-            if key != "elopement_risk"
-            if key not in {"allergies", "allergies_status"} or can_view_patient_allergies(principal)
-            if key != "treatment_track" or can_view_patient_treatment_track(principal)
-        })
+        for key in PatientPayload.model_fields:
+            if key == "bed_id" or key == "elopement_risk":
+                continue
+            if key in {"allergies", "allergies_status"} and not can_view_patient_allergies(principal):
+                continue
+            if key == "treatment_track" and not can_view_patient_treatment_track(principal):
+                continue
+            if not hasattr(patient, key):
+                continue
+            result[key] = getattr(patient, key)
         result.update({"created_at": patient.created_at.isoformat() if patient.created_at else None, "updated_at": patient.updated_at.isoformat() if patient.updated_at else None, "updated_by": patient.updated_by})
     if "nursing" in principal.modules and "consultar" in principal.permissions.get("nursing", []):
         result["elopement_risk"] = patient.elopement_risk
