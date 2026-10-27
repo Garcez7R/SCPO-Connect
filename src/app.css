@@ -125,8 +125,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .nav-link-active::before { position: absolute; inset: 8px auto 8px 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--blue); content: ''; }
 .nav-count { display: grid; width: 20px; height: 20px; margin-left: auto; place-items: center; border-radius: 5px; background: #fff; color: var(--blue); font-size: 10px; font-weight: 600; }
 .sidebar-bottom { display: grid; flex: 0 0 auto; gap: 15px; margin-top: auto; }
-.privacy-note { display: flex; align-items: center; gap: 10px; padding: 12px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.5; }
-.privacy-note svg { flex: 0 0 auto; color: var(--blue); }
 .profile-card { display: flex; align-items: center; gap: 9px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 7px; }
 .avatar { display: grid; width: 33px; height: 33px; flex: 0 0 auto; place-items: center; border: 1px solid #d4e4eb; border-radius: 50%; background: #edf4f6; color: #28546a; font-size: 10px; font-weight: 700; }
 .profile-copy { display: grid; min-width: 0; gap: 3px; }
@@ -228,6 +226,12 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-card-description { max-width: 34ch; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .module-card-status { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 13px; color: var(--muted); font-size: 11px; }
 .module-card-status .status-dot { width: 6px; height: 6px; }
+:is(.module-card, .patient-strip, .collection-row, .executive-summary-grid > article, .nursing-overview-summary > article, .pharmacy-summary > article, .hygiene-summary > article, .waiting-room-counts > article, .therapy-summary > article, .status-card, .summary-card, .metric-card) {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
 .status-ready { color: #377052; }
 .status-later { color: var(--subtle); }
 .module-arrow { position: absolute; right: 15px; bottom: 15px; color: #628094; }
@@ -395,8 +399,10 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .user-name strong { display: grid; gap: 3px; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .user-name small { color: var(--muted); font-size: 9px; font-weight: 400; }
 .user-role { color: var(--muted); font-size: 10px; }
+.user-meta-stack { display: grid; gap: 6px; }
 .user-modules { display: flex; flex-wrap: wrap; gap: 4px; }
 .user-modules span { padding: 4px 6px; border-radius: 4px; background: #eff4f6; color: #486579; font-size: 9px; }
+.account-type-badge { display: inline-flex; width: fit-content; align-items: center; padding: 4px 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--blue-pale); color: var(--blue-dark); font-size: 9px; font-weight: 700; letter-spacing: .3px; }
 .account-state { display: inline-flex; align-items: center; gap: 5px; color: var(--green); font-size: 10px; }
 .account-state .status-dot { width: 6px; height: 6px; }
 .account-disabled { color: var(--subtle); }
