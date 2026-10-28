@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Pill, Search,
 import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
+import ModuleTabNavigation from '../components/ModuleTabNavigation'
 import ToastMessage from '../components/ToastMessage'
 import PrintSelectionPanel from '../components/PrintSelectionPanel'
 import type { PrintRow } from '../printReport'
@@ -525,13 +526,23 @@ function PharmacyPage({ user }: { user: AuthUser }) {
 
   return <section className="pharmacy-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Cadastre lotes com conversão explícita para a unidade de controle.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
-    <div className="admin-tabs module-tabs pharmacy-tabs" role="tablist" aria-label="Seções da Farmácia">
-      <button className={`button ${pharmacyTab === 'stock' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'stock'} onClick={() => setPharmacyTab('stock')}><Package size={16} /> Estoque e lotes</button>
-      <button className={`button ${pharmacyTab === 'inventory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'inventory'} onClick={() => setPharmacyTab('inventory')}><Package size={16} /> Estoque geral A–Z</button>
-      <button className={`button ${pharmacyTab === 'dispensation' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'dispensation'} onClick={() => setPharmacyTab('dispensation')}><ArrowRight size={16} /> Dispensação</button>
-      <button className={`button ${pharmacyTab === 'prescriptions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'prescriptions'} onClick={() => setPharmacyTab('prescriptions')}><ArrowRight size={16} /> Prescrições médicas <span>{prescriptions.length}</span></button>
-      {canManagePurchases && <button className={`button ${pharmacyTab === 'purchases' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={pharmacyTab === 'purchases'} onClick={() => setPharmacyTab('purchases')}><Package size={16} /> Compras e suprimentos</button>}
-    </div>
+    <ModuleTabNavigation
+      className="pharmacy-tabs"
+      ariaLabel="Seções da Farmácia"
+      value={pharmacyTab}
+      onChange={setPharmacyTab}
+      options={pharmacyTabs.filter((value) => value !== 'purchases' || canManagePurchases).map((value) => ({
+        value,
+        label: pharmacyTabLabels[value],
+        content: value === 'stock' || value === 'inventory'
+          ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
+          : value === 'prescriptions'
+            ? <><ArrowRight size={16} /> {pharmacyTabLabels[value]} <span>{prescriptions.length}</span></>
+            : value === 'purchases'
+              ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
+              : <><ArrowRight size={16} /> {pharmacyTabLabels[value]}</>,
+      }))}
+    />
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {pharmacyTab === 'stock' && <>
     <div className="pharmacy-summary"><article className="status-tone-neutral"><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article><article className={expiringCount ? 'status-tone-warning' : 'status-tone-neutral'}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article><article className={expiredCount ? 'status-tone-critical' : 'status-tone-success'}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article><article className={criticalCount ? 'status-tone-critical' : 'status-tone-success'}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No limite mínimo ou abaixo</small></article></div>

@@ -213,54 +213,20 @@ def _current_user(
     return user, claims
 
 
-def _require_management(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
-    user, _ = _current_user(request, db)
-    if not user.is_superuser and (
-        "management" not in user.modules
-        or "administrar" not in user.permissions.get("management", [])
-    ):
-        raise HTTPException(status_code=403, detail="Acesso restrito à Gestão Hospitalar")
-    principal = DemoPrincipal(
-        user.id,
-        user.username,
-        user.name,
-        "system_admin" if user.is_superuser else "management",
-        user.modules,
-        user.permissions,
-        is_superuser=user.is_superuser,
-    )
-    return user, principal
-
-
 def _require_account_admin(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
     user, _ = _current_user(request, db)
-    is_management = "management" in user.modules and "administrar" in user.permissions.get("management", [])
     is_app_admin = "admin" in user.modules and "administrar" in user.permissions.get("admin", [])
-    if not user.is_superuser and not is_management and not is_app_admin:
+    if not user.is_superuser and not is_app_admin:
         raise HTTPException(status_code=403, detail="Acesso restrito à Administração do aplicativo")
     principal = DemoPrincipal(
         user.id,
         user.username,
         user.name,
-        "system_admin" if user.is_superuser else "management" if is_management else "admin",
+        "system_admin" if user.is_superuser else "admin",
         user.modules,
         user.permissions,
         is_superuser=user.is_superuser,
     )
-    return user, principal
-
-
-def _require_account_lifecycle_admin(
-    request: Request,
-    db: Session,
-    action: str,
-) -> tuple[AppUser, DemoPrincipal]:
-    user, principal = _require_account_admin(request, db)
-    if not user.is_superuser and "management" in user.modules:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Gestão Hospitalar não pode {action} contas",
-        )
     return user, principal
 
 
@@ -552,14 +518,12 @@ def list_users(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    actor, _ = _require_account_admin(request, db)
+    _require_account_admin(request, db)
     users = db.scalars(
         select(AppUser)
         .where(AppUser.is_superuser.is_(False))
         .order_by(AppUser.name)
     ).all()
-    if "management" not in actor.modules:
-        users = [user for user in users if "management" not in user.modules]
     return {"users": [_user_response(user) for user in users]}
 
 
@@ -629,12 +593,6 @@ async def reset_user_password(
     _prevent_superuser_changes(user)
     if user.id == actor.id:
         raise HTTPException(status_code=409, detail="Use a troca de senha da própria conta")
-    can_manage_broad_access = actor.is_superuser or (
-        "management" in actor.modules
-        and "administrar" in actor.permissions.get("management", [])
-    )
-    if "management" in user.modules and not can_manage_broad_access:
-        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode redefinir a senha desta conta")
     await record_audit_event(principal, user.id, "user_password_reset", db)
     temporary_password = _reset_password(user)
     db.commit()
@@ -649,16 +607,12 @@ async def create_user(
     response: Response,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    actor, principal = _require_account_lifecycle_admin(request, db, "criar")
-    can_grant_management = (
-        actor.is_superuser
-        or (
-            "management" in actor.modules
-            and "administrar" in actor.permissions.get("management", [])
-        )
+    actor, principal = _require_account_admin(request, db)
+    can_grant_management = actor.is_superuser or (
+        "admin" in actor.modules and "administrar" in actor.permissions.get("admin", [])
     )
     if not can_grant_management and "management" in payload.modules:
-        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode conceder esse acesso amplo")
+        raise HTTPException(status_code=403, detail="Somente a Administração do aplicativo pode conceder esse acesso amplo")
     username = payload.username.strip().lower()
     if db.scalar(select(AppUser.id).where(AppUser.username == username)):
         raise HTTPException(status_code=409, detail="Este usuário já existe")
@@ -700,17 +654,13 @@ async def update_user(
     modules = changes.get("modules", user.modules)
     if len(set(modules)) != len(modules) or set(modules) - MODULES:
         raise HTTPException(status_code=422, detail="Módulo inválido ou repetido")
-    can_grant_management = (
-        actor.is_superuser
-        or (
-            "management" in actor.modules
-            and "administrar" in actor.permissions.get("management", [])
-        )
+    can_grant_management = actor.is_superuser or (
+        "admin" in actor.modules and "administrar" in actor.permissions.get("admin", [])
     )
     if not can_grant_management and (
         "management" in modules or "management" in user.modules
     ):
-        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode alterar esse acesso amplo")
+        raise HTTPException(status_code=403, detail="Somente a Administração do aplicativo pode alterar esse acesso amplo")
     if "management" in modules:
         modules = sorted(MODULES)
     elif "admin" in modules:
@@ -744,19 +694,13 @@ async def delete_user(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, str]:
-    actor, principal = _require_account_lifecycle_admin(request, db, "excluir")
+    actor, principal = _require_account_admin(request, db)
     user = db.get(AppUser, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     _prevent_superuser_changes(user)
     if user.id == actor.id:
         raise HTTPException(status_code=409, detail="Não é possível excluir a própria conta")
-    can_manage_broad_access = actor.is_superuser or (
-        "management" in actor.modules
-        and "administrar" in actor.permissions.get("management", [])
-    )
-    if "management" in user.modules and not can_manage_broad_access:
-        raise HTTPException(status_code=403, detail="Somente a Gestão Hospitalar pode excluir esta conta")
     if "management" in user.modules:
         other_managers = db.scalars(
             select(AppUser).where(

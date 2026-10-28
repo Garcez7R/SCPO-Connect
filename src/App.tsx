@@ -59,6 +59,7 @@ import type { LucideIcon } from 'lucide-react'
 import PrintSelectionPanel from './components/PrintSelectionPanel'
 import ToastMessage from './components/ToastMessage'
 import { PageNavigationContext, useBreadcrumb, usePersistentTab } from './components/PageNavigationContext'
+import ModuleTabNavigation from './components/ModuleTabNavigation'
 import { printRows, type PrintRow } from './printReport'
 import { APP_VERSION } from './appVersion'
 import { MOBILE_FEEDBACK_STORAGE_KEY, triggerMobileFeedback } from './mobileFeedback'
@@ -518,7 +519,11 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
     modules: ['home', ...user.modules, 'about'],
   }
   const canReviewTherapyReports = profile.modules.includes('management')
-  const hasAppAdmin = profile.modules.includes('admin') && Boolean(user.permissions.admin?.includes('administrar'))
+  const hasAppAdmin = user.is_superuser || (
+    user.role !== 'management'
+    && profile.modules.includes('admin')
+    && Boolean(user.permissions.admin?.includes('administrar'))
+  )
   const hasOversight = profile.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar'))
   const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || (item.id === 'system-admin' && user.is_superuser) || (item.id === 'admin' && (hasAppAdmin || hasOversight)) || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports))
 
@@ -1241,11 +1246,17 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       </section>
     </section> : <>
     {receptionMode ? <div className="section-heading reception-admission-heading"><div><p className="eyebrow">INTERNAÇÕES</p><h2>Admissões e internações</h2><p className="welcome-copy">Confirme a identificação do paciente e registre sua acomodação.</p></div><button className="button button-primary" type="button" onClick={() => { if (showForm) { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false) } else { setShowForm(true); setNewPatientPurpose('inpatient'); setNotice(''); setError('') } }}><UserRound size={16} /> {showForm ? 'Fechar cadastro' : 'Nova admissão'}</button></div> : <div className="page-title-row"><span className="module-icon module-icon-patients"><UserRound size={23} /></span><div><p className="eyebrow">CADASTRO COMPARTILHADO</p><h1>Pacientes</h1><p className="welcome-copy">Cadastros centralizados, exibidos nos módulos autorizados para cada profissional.</p></div></div>}
-    {!receptionMode && <div className="admin-tabs module-tabs patient-registry-tabs" role="tablist" aria-label="Áreas de pacientes">
-      <button className={`button ${registryTab === 'registry' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'registry'} onClick={() => setRegistryTab('registry')}><UserRound size={16} /> Novo cadastro</button>
-      <button className={`button ${registryTab === 'list' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'list'} onClick={() => setRegistryTab('list')}><UsersRound size={16} /> Lista de pacientes</button>
-      <button className={`button ${registryTab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={registryTab === 'reports'} onClick={() => setRegistryTab('reports')}><Printer size={16} /> Relatórios</button>
-    </div>}
+    {!receptionMode && <ModuleTabNavigation
+      className="patient-registry-tabs"
+      ariaLabel="Áreas de pacientes"
+      value={registryTab}
+      onChange={setRegistryTab}
+      options={[
+        { value: 'registry', label: patientRegistryTabLabels.registry, content: <><UserRound size={16} /> {patientRegistryTabLabels.registry}</> },
+        { value: 'list', label: patientRegistryTabLabels.list, content: <><UsersRound size={16} /> {patientRegistryTabLabels.list}</> },
+        { value: 'reports', label: patientRegistryTabLabels.reports, content: <><Printer size={16} /> {patientRegistryTabLabels.reports}</> },
+      ]}
+    />}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {receptionMode && <div className="hygiene-summary reception-admission-summary" aria-label="Resumo de internações"><article><strong>{activeAssignedCount}</strong><span>Pacientes acomodados</span></article><article><strong>{activeUnassignedCount}</strong><span>Sem acomodação</span></article><article><strong>{inactivePatientCount}</strong><span>Cadastros inativos</span></article></div>}
     {(receptionMode ? showForm : registryTab === 'registry') && <form className={`patient-registry-form${receptionMode ? ' hygiene-panel' : ''}`} onSubmit={(event) => void submit(event)}>
@@ -2508,14 +2519,13 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
         {patientBehavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${patientBehavioralStatusError}`}</ToastMessage>}
         <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
       </>}
-      <div className="admin-tabs module-tabs nursing-tabs" role="tablist" aria-label="Seções de Enfermagem">
-        <button className={`button ${nursingTab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'overview'} onClick={() => setNursingTab('overview')}>Visão geral</button>
-        <button className={`button ${nursingTab === 'vitals' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'vitals'} onClick={() => setNursingTab('vitals')}>Sinais vitais</button>
-        <button className={`button ${nursingTab === 'medications' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'medications'} onClick={() => setNursingTab('medications')}>Medicações</button>
-        <button className={`button ${nursingTab === 'safety' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'safety'} onClick={() => setNursingTab('safety')}>Fila e segurança</button>
-        <button className={`button ${nursingTab === 'rounds' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'rounds'} onClick={() => setNursingTab('rounds')}>Verificação horária</button>
-        <button className={`button ${nursingTab === 'triage' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nursingTab === 'triage'} onClick={() => setNursingTab('triage')}>Triagem</button>
-      </div>
+      <ModuleTabNavigation
+        className="nursing-tabs"
+        ariaLabel="Seções de Enfermagem"
+        value={nursingTab}
+        onChange={setNursingTab}
+        options={nursingTabValues.map((value) => ({ value, label: nursingTabLabels[value] }))}
+      />
       {nursingTab === 'triage' && <Suspense fallback={<div className="history-empty" role="status">Carregando fila de triagem…</div>}><NursingTriagePanel canUpdate={user.permissions.nursing?.includes('criar') ?? false} /></Suspense>}
       {nursingTab === 'medications' && <>
       {medicationError && <ToastMessage variant="error">{medicationError}</ToastMessage>}
@@ -3020,12 +3030,16 @@ const moduleLabels: Record<string, string> = {
 const accessModules = Object.entries(moduleLabels)
 
 function AdminPage({ user }: { user: AuthUser }) {
-  const canManageApp = user.modules.includes('admin') && Boolean(user.permissions.admin?.includes('administrar'))
-  const canCreateAccounts = user.is_superuser || !user.modules.includes('management')
+  const canManageApp = user.is_superuser || (
+    user.role !== 'management'
+    && user.modules.includes('admin')
+    && Boolean(user.permissions.admin?.includes('administrar'))
+  )
+  const canCreateAccounts = canManageApp
   const canDeleteAccounts = canCreateAccounts
   const canReviewData = user.modules.includes('admin') || Boolean(user.permissions.oversight?.includes('consultar'))
   const availableTabs = adminTabValues.filter((value) => value === 'users' ? canManageApp : canReviewData)
-  const assignableModules = accessModules.filter(([module]) => module !== 'management' || user.modules.includes('management'))
+  const assignableModules = accessModules.filter(([module]) => module !== 'management' || canManageApp)
   const [tab, setTab] = usePersistentTab(`scpo-tab-admin-${user.id}`, canManageApp ? 'users' : 'reports', adminTabValues, adminTabLabels)
   const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'reports'
   const [users, setUsers] = useState<Account[]>([])
@@ -3219,11 +3233,14 @@ function AdminPage({ user }: { user: AuthUser }) {
 
   return <section className="admin-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div><p className="eyebrow">ADMINISTRAÇÃO</p><h1>{adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div>{canManageApp && <span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span>}</div>
-    <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções de Administração">{availableTabs.map((value) => <button className={`button ${activeTab === value ? 'button-primary' : 'button-secondary'}`} key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setTab(value)}>{adminTabLabels[value]}</button>)}</div>
+    <ModuleTabNavigation
+      ariaLabel="Seções de Administração"
+      value={activeTab}
+      onChange={setTab}
+      options={availableTabs.map((value) => ({ value, label: adminTabLabels[value] }))}
+    />
     {activeTab === 'users' && canManageApp && <>
-    {canCreateAccounts
-      ? <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Senha temporária exclusiva, troca obrigatória e MFA.</strong><span>Uma senha aleatória de uso único é gerada para cada conta. Entregue-a ao titular por um canal seguro.</span></div></div>
-      : <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Gestão Hospitalar não pode criar nem excluir contas.</strong><span>Você pode consultar contas existentes, ajustar acessos e redefinir senhas conforme suas responsabilidades.</span></div></div>}
+    <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Administração restrita a administradores e superadministradores.</strong><span>Uma senha aleatória de uso único é gerada para cada conta. Entregue-a ao titular por um canal seguro.</span></div></div>
     {status === 'unavailable' && <ToastMessage variant="error">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</ToastMessage>}
     {mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
@@ -3248,7 +3265,7 @@ function AdminPage({ user }: { user: AuthUser }) {
           <label className="field"><span className="field-label">UF do CRM</span><input required pattern="[A-Za-z]{2}" maxLength={2} value={physicianForm.crm_state} onChange={(event) => setPhysicianForm((current) => ({ ...current, crm_state: event.target.value.toUpperCase() }))} /></label>
         </div>
       </section>}
-      {selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações operacionais. Não permite criar nem excluir contas. Conceda somente após aprovação institucional.</span></div></div>}
+      {selectedModules.includes('management') && <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Privilégio amplo</strong><span>Gestão Hospitalar concede todos os módulos e ações operacionais, mas não permite administrar contas. Conceda somente após aprovação institucional.</span></div></div>}
       <div className="form-actions"><span className="draft-hint">As permissões selecionadas serão registradas na auditoria.</span><button className="button button-primary" type="submit" disabled={saving || selectedModules.length === 0}>{saving ? 'Criando…' : 'Criar usuário'}</button></div>
     </form>
     {pendingPhysicianProfile && <section className="account-create-panel physician-profile-inline">
@@ -3261,8 +3278,8 @@ function AdminPage({ user }: { user: AuthUser }) {
       <button className="button button-primary" type="button" onClick={() => void retryPhysicianProfile()} disabled={saving}>{saving ? 'Salvando…' : 'Tentar salvar perfil médico'}</button>
     </section>}
     </>}
-    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{visibleAccounts.length} de {users.length} contas</span></div><div className="admin-tabs module-tabs account-filters" role="group" aria-label="Filtrar tipos de conta"><button className={`button ${accountFilter === 'all' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'all'} onClick={() => setAccountFilter('all')}>Todas</button><button className={`button ${accountFilter === 'administrative' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'administrative'} onClick={() => setAccountFilter('administrative')}>Administração / Gestão</button><button className={`button ${accountFilter === 'operational' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'operational'} onClick={() => setAccountFilter('operational')}>Operacionais</button><button className={`button ${accountFilter === 'inactive' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'inactive'} onClick={() => setAccountFilter('inactive')}>Inativas</button></div><p className="account-superuser-note"><LockKeyhole size={15} /> O Superadministrador do Sistema é um perfil separado, gerenciado em Administração do Sistema; ele não aparece nesta lista operacional.</p><div className="account-list">{visibleAccounts.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} onResetPassword={resetUserPassword} onDelete={deleteUser} currentUserId={user.id} availableModules={assignableModules} canManageBroadAccess={user.role === 'management' || user.is_superuser} canDeleteAccounts={canDeleteAccounts} />)}{status === 'ready' && visibleAccounts.length === 0 && <p className="account-empty">Nenhuma conta corresponde a este filtro.</p>}</div></section>
-    <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia para todos os módulos e ações, incluindo administração de contas</span><span><strong>Superadministrador</strong> privilégio de sistema separado e reservado</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
+    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{visibleAccounts.length} de {users.length} contas</span></div><div className="admin-tabs module-tabs account-filters" role="group" aria-label="Filtrar tipos de conta"><button className={`button ${accountFilter === 'all' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'all'} onClick={() => setAccountFilter('all')}>Todas</button><button className={`button ${accountFilter === 'administrative' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'administrative'} onClick={() => setAccountFilter('administrative')}>Administração / Gestão</button><button className={`button ${accountFilter === 'operational' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'operational'} onClick={() => setAccountFilter('operational')}>Operacionais</button><button className={`button ${accountFilter === 'inactive' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'inactive'} onClick={() => setAccountFilter('inactive')}>Inativas</button></div><p className="account-superuser-note"><LockKeyhole size={15} /> O Superadministrador do Sistema é um perfil separado, gerenciado em Administração do Sistema; ele não aparece nesta lista operacional.</p><div className="account-list">{visibleAccounts.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} onResetPassword={resetUserPassword} onDelete={deleteUser} currentUserId={user.id} availableModules={assignableModules} canManageBroadAccess={canManageApp} canDeleteAccounts={canDeleteAccounts} />)}{status === 'ready' && visibleAccounts.length === 0 && <p className="account-empty">Nenhuma conta corresponde a este filtro.</p>}</div></section>
+    <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia ações operacionais em todos os módulos, mas não administra contas</span><span><strong>Superadministrador</strong> privilégio de sistema separado e reservado</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
     </>}
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
     {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
@@ -4135,15 +4152,22 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
   const visibleShortcuts = shortcuts.filter(({ id }) => allowedModules.includes(id))
   return <section className="management-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">GESTÃO INSTITUCIONAL</p><h1>Painel de Gestão Hospitalar</h1><p className="welcome-copy">Visão consolidada dos indicadores operacionais existentes; não substitui relatórios contábeis, faturamento ou sistemas regulatórios.</p></div><span className="module-icon module-icon-management"><Building2 size={20} /></span></div>
-    <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas da Gestão Hospitalar">
-      <button className={`button ${tab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}><Activity size={16} /> Visão geral</button>
-      <button className={`button ${tab === 'tasks' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'tasks'} onClick={() => setTab('tasks')}><ClipboardList size={16} /> Pendências</button>
-      <button className={`button ${tab === 'beds' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'beds'} onClick={() => setTab('beds')}><Building2 size={16} /> Unidades e leitos</button>
-      <button className={`button ${tab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}><ClipboardList size={16} /> Relatórios</button>
-      <button className={`button ${tab === 'behavior' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'behavior'} onClick={() => setTab('behavior')}><AlertTriangle size={16} /> Semáforo comportamental</button>
-      <button className={`button ${tab === 'governance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'governance'} onClick={() => setTab('governance')}><ShieldCheck size={16} /> Governança</button>
-      <button className={`button ${tab === 'shortcuts' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'shortcuts'} onClick={() => setTab('shortcuts')}><ArrowRight size={16} /> Acesso rápido</button>
-    </div>
+    <ModuleTabNavigation
+      ariaLabel="Áreas da Gestão Hospitalar"
+      value={tab}
+      onChange={setTab}
+      options={managementTabValues.map((value) => ({
+        value,
+        label: managementTabLabels[value],
+        content: value === 'overview' ? <><Activity size={16} /> {managementTabLabels[value]}</>
+          : value === 'tasks' ? <><ClipboardList size={16} /> {managementTabLabels[value]}</>
+          : value === 'beds' ? <><Building2 size={16} /> {managementTabLabels[value]}</>
+          : value === 'reports' ? <><ClipboardList size={16} /> {managementTabLabels[value]}</>
+          : value === 'behavior' ? <><AlertTriangle size={16} /> {managementTabLabels[value]}</>
+          : value === 'governance' ? <><ShieldCheck size={16} /> {managementTabLabels[value]}</>
+          : <><ArrowRight size={16} /> {managementTabLabels[value]}</>,
+      }))}
+    />
     {tab === 'overview' && <ExecutiveDashboard />}
     {tab === 'tasks' && <Suspense fallback={<div className="history-empty" role="status">Carregando pendências operacionais…</div>}><OperationalTaskCenter user={user} onNavigate={onNavigate} /></Suspense>}
     {tab === 'beds' && <HospitalBedManagement />}

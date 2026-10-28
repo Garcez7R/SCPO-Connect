@@ -102,6 +102,14 @@ Preservar o isolamento por serviço, as permissões por perfil, os registros aud
 - Testar layouts em computador, tablet e celular nos temas claro/escuro.
 - Antes do uso com dados reais, validar backup/restauração, retenção, auditoria e governança com TI e responsáveis institucionais.
 
+## Navegação e acessos — 28/10/2026
+
+- Iniciado o padrão de navegação interna responsiva compartilhado entre Pacientes, Enfermagem, Farmácia, Central de Exames, Gestão Hospitalar e Administração: guias lado a lado no desktop quando são poucas e seletor em telas estreitas ou módulos com muitas opções.
+- Administração de contas foi restringida no backend e na interface a Administração do aplicativo e Superadministrador. Gestão Hospitalar não pode consultar, criar, editar, redefinir credenciais ou excluir contas; administradores do aplicativo podem administrar qualquer escopo, inclusive Gestão Hospitalar.
+- Os cartões informativos usam o mesmo efeito de entrada com atraso em sequência, respeitando a redução de movimento configurada pelo usuário.
+- A tela de indisponibilidade agora informa falta de conexão com o servidor, não com a internet.
+- O mapa de comparação com o programa Visual Basic e a proposta segura para o PWA conectado estão em [docs/modernization-roadmap.md](docs/modernization-roadmap.md). O repositório não contém fontes ou banco do programa antigo; o levantamento funcional depende de material validado pela equipe. O PWA inicial não grava dados clínicos offline.
+
 ## Referências técnicas
 
 - `src/App.tsx`: navegação global, cadastro/lista/ficha/acompanhamento de pacientes, Enfermagem, Gestão e Administração.

@@ -17,12 +17,12 @@ Psicologia e Psiquiatria permanecem reunidas no mesmo módulo, com áreas de tra
 | Acesso atribuído | Consultar | Criar | Alterar | Excluir/arquivar | Administrar contas |
 | --- | --- | --- | --- | --- | --- |
 | Módulo operacional individual | Sim, se selecionado | Sim, padrão | Sim, padrão | Opcional somente para Pacientes, Enfermagem, Nutrição e Recepção | Não |
-| Gestão Hospitalar | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Consulta, edição e redefinição; não cria nem exclui contas |
+| Gestão Hospitalar | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Não |
 | Administração do aplicativo | Todos os módulos operacionais | Todos os módulos operacionais | Todos os módulos operacionais | Conforme módulo | Sim |
 | Relatórios e auditoria | Todos os relatórios digitais disponíveis e eventos registrados | Não | Não | Não | Não |
 | Superadministrador | Todos os módulos | Todos os módulos | Todos os módulos | Todos os módulos | Backup, restauração e recuperação de acesso |
 
-Gestão Hospitalar e Administração do aplicativo são perfis amplos de módulos no backend. Gestão Hospitalar pode consultar e administrar acessos de contas existentes, mas não pode criar nem excluir contas. Administração do aplicativo pode criar e excluir contas operacionais, mas não concede acesso à API de backup/restauração: essas rotas verificam explicitamente o privilégio `is_superuser`. O superadministrador é independente e reservado; outros administradores não podem promovê-lo nem alterar sua conta.
+Gestão Hospitalar e Administração do aplicativo são perfis amplos de módulos no backend, mas somente Administração do aplicativo e Superadministrador podem listar, criar, editar, redefinir credenciais ou excluir contas. Administração do aplicativo pode gerenciar contas com qualquer escopo, inclusive Gestão Hospitalar; conceder esse acesso amplo continua exigindo aprovação institucional. A Administração do aplicativo não concede acesso à API de backup/restauração: essas rotas verificam explicitamente o privilégio `is_superuser`. O superadministrador é independente e reservado; outros administradores não podem promovê-lo nem alterar sua conta.
 
 As ações gerais correspondem a `consultar`, `criar`, `alterar`, `excluir` e `administrar`. A autorização é checada no backend; esconder ou desabilitar um controle na interface não substitui essa checagem. A opção de arquivamento na interface existe somente para Pacientes, Enfermagem, Nutrição e Recepção.
 

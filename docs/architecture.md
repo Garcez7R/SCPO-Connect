@@ -39,6 +39,8 @@ Cada app publica seu próprio OpenAPI em `/docs` e `/openapi.json`. Os scripts d
 
 Para extrair um domínio, mantenha seu pacote, migrações e banco como unidade, publique sua imagem a partir de `Dockerfile.backend` e mova sua rota no proxy. Preserve o contrato `/api/v1/<domínio>` ou publique nova versão quando houver alteração incompatível. Substitua `X-Demo-Role` por identidade autenticada institucional, defina contas de serviço e política de rede, e revise o contrato de auditoria antes de qualquer implantação real.
 
+O direcionamento da navegação por módulo, do levantamento do sistema legado e do PWA focado de Enfermagem está em [modernization-roadmap.md](./modernization-roadmap.md). O PWA proposto reutiliza autenticação e APIs existentes; gravações clínicas offline não estão autorizadas no escopo inicial.
+
 ## Limites
 
 O cabeçalho `X-Demo-Role` é deliberadamente falsificável: demonstra autorização de rotas, não autentica pessoas. Serviços, critérios, retenção, HTTPS interno, backup, políticas de menor privilégio e requisitos legais necessitam de revisão técnica e institucional antes de uso real. A prioridade da emergência é registrada manualmente e não substitui protocolo institucional de triagem; os indicadores e registros de risco não fazem classificação, alerta ou recomendação clínica automatizada. As prescrições e solicitações de exames são fluxos internos de demonstração, sem validação institucional de CRM, integração com prontuário ou certificação de conformidade legal.

@@ -16,6 +16,7 @@ import { readApiResponse } from '../api'
 import { printLaboratoryRequest } from '../printClinicalForm'
 import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
+import ModuleTabNavigation from '../components/ModuleTabNavigation'
 import ToastMessage from '../components/ToastMessage'
 
 type Patient = {
@@ -290,11 +291,19 @@ export default function XrayPage({ user }: { user: AuthUser }) {
 
   return <section className="xray-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · CENTRAL DE EXAMES</p><h1>Central de Exames</h1><p className="welcome-copy">Solicite exames laboratoriais e acompanhe a fila de Raio X e exames.</p></div><span className="module-icon module-icon-xray"><Microscope size={23} /></span></div>
-    <div className="admin-tabs module-tabs xray-tabs" role="tablist" aria-label="Seções da Central de Exames">
-      <button className={`button ${section === 'xray' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={section === 'xray'} onClick={() => setSection('xray')}><Bone size={16} /> Raio X</button>
-      <button className={`button ${section === 'ecg' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={section === 'ecg'} onClick={() => setSection('ecg')}><Activity size={16} /> Eletrocardiograma</button>
-      <button className={`button ${section === 'laboratory' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={section === 'laboratory'} onClick={() => setSection('laboratory')}><FlaskConical size={16} /> Exames</button>
-    </div>
+    <ModuleTabNavigation
+      className="xray-tabs"
+      ariaLabel="Seções da Central de Exames"
+      value={section}
+      onChange={setSection}
+      options={xraySections.map((value) => ({
+        value,
+        label: xraySectionLabels[value],
+        content: value === 'xray' ? <><Bone size={16} /> {xraySectionLabels[value]}</>
+          : value === 'ecg' ? <><Activity size={16} /> {xraySectionLabels[value]}</>
+          : <><FlaskConical size={16} /> {xraySectionLabels[value]}</>,
+      }))}
+    />
     <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`}><article className="status-tone-neutral"><strong>{sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-success'}><strong>{activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-warning' : 'status-tone-neutral'}><strong>{sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}

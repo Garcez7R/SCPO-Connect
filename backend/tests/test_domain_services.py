@@ -185,7 +185,7 @@ def test_report_read_permissions_cover_admin_and_oversight_without_expanding_wri
     assert denied.value.status_code == 403
 
 
-def test_app_admin_cannot_assign_broad_management_access(
+def test_app_admin_can_create_management_account(
     domain_database: dict[str, Session],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -208,21 +208,39 @@ def test_app_admin_cannot_assign_broad_management_access(
         "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
         "query_string": b"",
     })
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(
-            access.create_user(
-                access.UserCreatePayload(
-                    username="newmanager",
-                    name="Novo gestor",
-                    modules=["management"],
-                ),
-                request,
-                Response(),
-                db,
-            )
+
+    async def record_audit(*_args) -> None:
+        return None
+
+    monkeypatch.setattr(access, "record_audit_event", record_audit)
+    created = asyncio.run(
+        access.create_user(
+            access.UserCreatePayload(
+                username="newmanager",
+                name="Novo gestor",
+                modules=["management"],
+            ),
+            request,
+            Response(),
+            db,
         )
-    assert error.value.status_code == 403
-    assert [user["username"] for user in access.list_users(request, db)["users"]] == ["appadmin"]
+    )
+    assert created["role"] == "management"
+    assert set(created["modules"]) == access.MODULES
+    updated = asyncio.run(
+        access.update_user(
+            manager.id,
+            access.UserUpdatePayload(name="Gestor atualizado"),
+            request,
+            db,
+        )
+    )
+    assert updated["name"] == "Gestor atualizado"
+    assert {user["username"] for user in access.list_users(request, db)["users"]} == {
+        "appadmin",
+        "manager",
+        "newmanager",
+    }
 
 
 def test_management_cannot_create_or_delete_accounts(
@@ -260,6 +278,32 @@ def test_management_cannot_create_or_delete_accounts(
             )
         )
     assert create_denied.value.status_code == 403
+
+    with pytest.raises(HTTPException) as list_denied:
+        access.list_users(request("GET", "/api/v1/access/users"), db)
+    assert list_denied.value.status_code == 403
+
+    with pytest.raises(HTTPException) as update_denied:
+        asyncio.run(
+            access.update_user(
+                target.id,
+                access.UserUpdatePayload(name="Nome alterado"),
+                request("PATCH", f"/api/v1/access/users/{target.id}"),
+                db,
+            )
+        )
+    assert update_denied.value.status_code == 403
+
+    with pytest.raises(HTTPException) as password_denied:
+        asyncio.run(
+            access.reset_user_password(
+                target.id,
+                request("POST", f"/api/v1/access/users/{target.id}/reset-password"),
+                Response(),
+                db,
+            )
+        )
+    assert password_denied.value.status_code == 403
 
     with pytest.raises(HTTPException) as delete_denied:
         asyncio.run(
