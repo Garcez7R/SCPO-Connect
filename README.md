@@ -160,7 +160,7 @@ uv run ruff check backend
 
 As contas locais são individuais, usam senha com derivação scrypt e MFA TOTP. Não há integração com provedor institucional de identidade. As sessões são assinadas e protegidas por cookie HttpOnly; a autorização é aplicada no servidor por módulo e ação. O HTTPS interno protege o tráfego somente nos aparelhos que confiam na CA do Caddy. O certificado TLS identifica o servidor e não substitui a autenticação do funcionário.
 
-Antes de habilitar o uso com dados pessoais ou clínicos, a Santa Casa deve validar a matriz de acesso, os fluxos assistenciais, a auditoria de consultas e alterações, a retenção, os backups, a resposta a incidentes e os requisitos de privacidade e segurança. Consulte [preparação para piloto](docs/pilot-security-readiness.md) e [autenticação e permissões](docs/permissions.md). O sistema não interpreta sinais, diagnostica nem recomenda condutas clínicas.
+O uso real dos PWAs móveis de Enfermagem, Manutenção e Higienização foi autorizado pela direção dentro dos limites descritos em [preparação para piloto](docs/pilot-security-readiness.md). Essa autorização não se estende automaticamente aos demais módulos. Para ampliar o uso com dados pessoais ou clínicos, validar matriz de acesso, fluxos, auditoria, retenção, backups, resposta a incidentes e requisitos de privacidade e segurança; consulte também [autenticação e permissões](docs/permissions.md). O sistema não interpreta sinais, diagnostica nem recomenda condutas clínicas.
 
 Segredos, bancos locais, certificados e logs não devem ser enviados ao Git. O `.gitignore` exclui esses arquivos; mantenha `.env` apenas no servidor e use `.env.example` como modelo sem valores secretos.
 
@@ -173,7 +173,7 @@ Antes de qualquer piloto com dados reais:
 3. Defina institucionalmente responsável, frequência e retenção dos backups, além das metas de perda de dados (RPO) e tempo de recuperação (RTO). Esses parâmetros ainda não são definidos pelo repositório.
 4. Observe tarefas reais em ambiente de teste e registre tempo, erros, retrabalho e dificuldades, inclusive em celular/tablet. A [preparação para piloto](docs/pilot-security-readiness.md) detalha os limites e controles pendentes.
 
-Não use dados pessoais ou clínicos reais até que esses controles e a validação institucional estejam concluídos. Os healthchecks de Compose e os testes automatizados não equivalem à verificação do servidor hospitalar nem à aprovação para produção.
+Para os PWAs móveis, siga o escopo já autorizado e os controles definidos na documentação. Não estenda essa autorização aos demais módulos antes de concluir as validações correspondentes. Os healthchecks de Compose e os testes automatizados não equivalem à verificação do servidor hospitalar nem à aprovação geral para produção.
 
 ## Documentação
 

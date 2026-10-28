@@ -56,13 +56,13 @@ Após o levantamento, cada função deve ser classificada como: já atendida; la
 
 ### Limites e prontidão
 
-O service worker pré-carrega a interface e os recursos estáticos dos três pontos de entrada, sem guardar `/api/`. O cache cifrado permite continuidade em sessão ativa, mas não é mecanismo de gerenciamento do aparelho nem autorização para uso de dados reais em celulares pessoais. Criptografia de armazenamento, bloqueio do aparelho, sessão, limpeza, retenção, privacidade e resposta a incidentes ainda precisam de validação institucional e teste nos dispositivos-alvo.
+O service worker pré-carrega a interface e os recursos estáticos dos três pontos de entrada, sem guardar `/api/`. A direção autorizou o uso real dos PWAs móveis dentro do escopo descrito acima. A autorização não substitui os controles acordados: celulares pessoais devem permanecer protegidos por bloqueio do aparelho, sessão autenticada e limpeza do cache ao sair; o app limita os dados locais a cache cifrado com validade máxima de 24 horas e não oferece login offline.
 
 1. **Mapear:** equipes validam tarefas e telas correspondentes no programa antigo; documentar campos, autoria, periodicidade e exceções.
 2. **Prototipar e testar:** validar navegação, cache e restauração de conexão com contas e dados fictícios nos aparelhos-alvo.
 3. **Implementar:** interfaces móveis, armazenamento cifrado, idempotência clínica, políticas diferenciadas e acesso somente leitura nas equipes operacionais.
-4. **Piloto controlado (pendente):** realizar testes observados em ambiente segregado, definir critérios de interrupção e obter aprovação de TI, segurança, encarregado de dados e equipes.
+4. **Acompanhamento operacional:** validar os PWAs nos aparelhos e locais de uso previstos, orientar as equipes sobre sessão, cache, reconexão e expiração, e acompanhar incidentes ou dificuldades para ajustes.
 
-Nenhuma fase autoriza implantação ou uso de dados reais por si só. A prontidão descrita em [pilot-security-readiness.md](./pilot-security-readiness.md) continua obrigatória.
+O escopo autorizado é específico aos PWAs móveis e não constitui liberação geral dos demais módulos para uso com dados reais. Os controles e limites adicionais estão em [pilot-security-readiness.md](./pilot-security-readiness.md).
 
 Nenhuma fase autoriza implantação ou uso de dados clínicos reais por si só. A prontidão descrita em [pilot-security-readiness.md](./pilot-security-readiness.md) continua obrigatória.
