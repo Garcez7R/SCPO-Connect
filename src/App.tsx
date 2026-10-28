@@ -1970,7 +1970,7 @@ function AboutPage() {
   return <section className="about-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-about"><Info size={23} /></span><div><p className="eyebrow">SCPO CONNECT</p><h1>Sobre e conformidade</h1><p className="welcome-copy">Referências legais e princípios considerados no desenvolvimento do sistema.</p></div></div>
     <div className="about-legal-grid">{legalReferences.map((item) => <article className="about-legal-card" key={item.title}><p className="eyebrow">REFERÊNCIA OFICIAL</p><h2>{item.title}</h2><p>{item.articles}</p><a href={item.href} target="_blank" rel="noreferrer">Consultar fonte oficial <ArrowRight size={15} /></a><small>{item.source}</small></article>)}</div>
-    <section className="patient-list-panel about-version"><div><p className="eyebrow">IDENTIFICAÇÃO DO PRODUTO</p><h2>SCPO Connect · v{APP_VERSION}</h2><p className="welcome-copy">Versão inicial de produto em evolução. Desenvolvimento mantido pela equipe do SCPO Connect.</p></div></section>
+    <section className="patient-list-panel about-version"><span className="about-product-brand startup-brand" aria-hidden="true"><span className="startup-orbit startup-orbit-one" /><span className="startup-orbit startup-orbit-two" /><span className="startup-mark"><img className="startup-mark-base" src="/scpo-connect-icon.png" alt="" /><img className="startup-mark-fill" src="/scpo-connect-icon.png" alt="" /></span><span className="startup-glow" /></span><div><p className="eyebrow">IDENTIFICAÇÃO DO PRODUTO</p><h2>SCPO Connect · v{APP_VERSION}</h2><p className="welcome-copy">Versão inicial de produto em evolução. Desenvolvimento mantido pela equipe do SCPO Connect.</p></div></section>
   </section>
 }
 

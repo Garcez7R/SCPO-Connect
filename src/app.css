@@ -206,6 +206,13 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
 .dashboard-page .module-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .dashboard-page .module-card { min-height: 132px; padding: 14px; }
+.dashboard-page .module-card { animation: info-card-enter 340ms cubic-bezier(.2, .75, .25, 1) both; }
+.dashboard-page .module-card:nth-child(2) { animation-delay: 65ms; }
+.dashboard-page .module-card:nth-child(3) { animation-delay: 130ms; }
+.dashboard-page .module-card:nth-child(4) { animation-delay: 195ms; }
+.dashboard-page .module-card:nth-child(5) { animation-delay: 260ms; }
+.dashboard-page .module-card:nth-child(6) { animation-delay: 325ms; }
+.dashboard-page .module-card:nth-child(n+7) { animation-delay: 390ms; }
 .module-card {
   position: relative;
   display: flex;
@@ -1365,6 +1372,11 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .about-page > * { position: relative; z-index: 1; }
 .about-legal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
 .about-version { margin: 16px 0; }
+.about-version { display: flex; align-items: center; gap: 18px; }
+.about-product-brand { width: 96px; height: 96px; flex: 0 0 96px; margin: 0; }
+.about-product-brand .startup-mark { width: 72px; height: 72px; }
+.about-product-brand .startup-orbit { inset: 5px; }
+.about-product-brand .startup-glow { bottom: 5px; }
 .about-version h2 { margin: 2px 0 6px; font-size: 18px; }
 .about-version .welcome-copy { margin: 0; }
 .about-legal-card { display: flex; min-height: 220px; flex-direction: column; align-items: flex-start; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
@@ -1974,10 +1986,16 @@ html[data-theme="dark"] .behavioral-status-red { border-color: #693b40; backgrou
 @media (prefers-reduced-motion: reduce) {
   :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article,
   :is(.pharmacy-stock-levels > .pharmacy-level-count, .module-overview-grid > .overview-stat),
+  .dashboard-page .module-card,
   .about-legal-card,
   .about-version { animation: none; transition: none; }
 }
 @media (max-width: 520px) { .xray-page .laboratory-exam-grid { grid-template-columns: 1fr; } }
+@media (max-width: 520px) {
+  .about-version { align-items: flex-start; gap: 12px; }
+  .about-product-brand { width: 70px; height: 70px; flex-basis: 70px; }
+  .about-product-brand .startup-mark { width: 56px; height: 56px; }
+}
 
 #toast-root {
   position: fixed;
