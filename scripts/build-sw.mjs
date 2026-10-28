@@ -11,7 +11,25 @@ async function files(dir) {
 const staticFiles = await files(root)
 const fingerprint = await Promise.all(staticFiles.filter((file) => !file.endsWith('/sw.js')).map(async (file) => `${relative(root, file)}:${createHash('sha256').update(await readFile(file)).digest('hex')}`))
 const version = createHash('sha256').update(fingerprint.sort().join('\n')).digest('hex').slice(0, 16)
+const precache = staticFiles
+  .filter((file) => {
+    const path = relative(root, file).replaceAll('\\', '/')
+    return path.startsWith('assets/') && /\.(?:js|css|woff2?)$/.test(path)
+  })
+  .map((file) => `/${relative(root, file).replaceAll('\\', '/')}`)
 const source = `const CACHE = 'scpo-connect-${version}';
+const PRECACHE = ${JSON.stringify([
+  ...precache,
+  '/offline.html',
+  '/nursing.html',
+  '/operations.html',
+  '/nursing.webmanifest',
+  '/operations.webmanifest',
+  '/scpo-connect-icon.png',
+  '/scpo-connect-install-192.png',
+  '/scpo-connect-install.png',
+  '/sidebar-health-watermark.svg',
+])};
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('scpo-connect-') && key !== CACHE) await caches.delete(key);
@@ -19,14 +37,14 @@ self.addEventListener('activate', (event) => event.waitUntil((async () => {
 })()));
 self.addEventListener('install', (event) => event.waitUntil((async () => {
   const cache = await caches.open(CACHE);
-  await cache.addAll(['/offline.html', '/scpo-connect-icon.png']);
+  await cache.addAll(PRECACHE);
 })()));
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(async () => (await caches.match('/offline.html')) || Response.error()));
+    event.respondWith(fetch(request).catch(async () => (await caches.match(request)) || (await caches.match('/offline.html')) || Response.error()));
     return;
   }
   if (!/\\.(?:js|css|avif|jpe?g|png|svg|webp|woff2?)$/.test(url.pathname)) return;

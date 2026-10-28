@@ -42,9 +42,10 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0051_therapy_materials_library"
+    assert revision == "0052_nursing_offline_actions"
     if service == "nursing":
-        assert len(tables) == 31
+        assert len(tables) == 32
+        assert "nursing_offline_action_receipts" in tables
         assert {"nursing_hourly_rounds", "nursing_hourly_round_patients"} <= tables
         assert {"physician_profiles", "physician_prescriptions"} <= tables
         assert "nursing_triages" in tables
@@ -149,6 +150,7 @@ def test_each_service_migration_creates_only_its_owned_table(
             "audit_outbox",
             "patient_safety_incidents",
             "institutional_documents",
+            "nursing_offline_action_receipts",
         } <= tables
         assert {
             "clinical_priority",

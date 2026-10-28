@@ -12,6 +12,6 @@
   "prefer_related_applications": false,
   "icons": [
     { "src": "/scpo-connect-install-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/scpo-connect-install-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    { "src": "/scpo-connect-install.png", "sizes": "580x580", "type": "image/png", "purpose": "any" }
   ]
 }

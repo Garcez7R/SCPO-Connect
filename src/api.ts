@@ -50,6 +50,16 @@ function readableApiError(detail: unknown): string {
   return 'Não foi possível concluir esta etapa. Confira os campos e tente novamente.'
 }
 
+export class ApiResponseError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+    this.name = 'ApiResponseError'
+  }
+}
+
 export async function readApiResponse<T>(response: Response): Promise<T> {
   const body = await response.text()
   let data: unknown
@@ -67,7 +77,7 @@ export async function readApiResponse<T>(response: Response): Promise<T> {
       : response.status >= 500
         ? `O serviço está indisponível (HTTP ${response.status}). Tente novamente em instantes ou avise a equipe responsável.`
         : `Erro HTTP ${response.status}.`
-    throw new Error(readableApiError(detail))
+    throw new ApiResponseError(response.status, readableApiError(detail))
   }
   return data as T
 }

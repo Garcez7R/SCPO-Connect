@@ -68,6 +68,8 @@ import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 import { squareImageFile, squareVideoFrame } from './patientPhoto'
 import { BehavioralStatusBadge, type BehavioralStatus } from './components/BehavioralStatusBadge'
 import TherapyMaterialsPanel from './components/TherapyMaterialsPanel'
+import NursingMobilePage from './pages/NursingMobilePage'
+import OperationsMobilePage from './pages/OperationsMobilePage'
 import QRCode from 'qrcode'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
@@ -565,6 +567,13 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
     : activeModule === 'patient-history' ? 'Histórico assistencial'
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
   const breadcrumbItems = [...tabBreadcrumbs].sort((left, right) => left.depth - right.depth)
+
+  if (window.location.pathname === '/nursing.html') {
+    return <NursingMobilePage user={user} onLogout={onLogout} />
+  }
+  if (window.location.pathname === '/operations.html') {
+    return <OperationsMobilePage user={user} onLogout={onLogout} />
+  }
 
   return (
     <div className="app-shell" style={sidebarStyle}>
@@ -2517,7 +2526,7 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
 
   return (
     <section className="nursing-page page-enter">
-      <div className="page-title-row"><span className="module-icon module-icon-nursing"><HeartPulse size={23} /></span><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><div className="nursing-vitals-action"><span className="module-icon"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button></div><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
+      <div className="page-title-row"><span className="module-icon module-icon-nursing"><HeartPulse size={23} /></span><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><div className="nursing-vitals-action"><span className="module-icon"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button></div><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><a className="button button-secondary" href="/nursing.html"><HeartPulse size={16} /> PWA móvel</a><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       {nursingTab !== 'triage' && <>
         <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><PatientCareTrackBadge track={patients.find((patient) => patient.reference === patientRef)?.treatment_track} />{patientRef && patients.find((patient) => patient.reference === patientRef)?.room && patients.find((patient) => patient.reference === patientRef)?.bed && !patientBehavioralStatusLoading && !patientBehavioralStatusError && <BehavioralStatusBadge status={patientBehavioralStatuses[patientRef]?.status ?? null} />}<button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
         {patientBehavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${patientBehavioralStatusError}`}</ToastMessage>}

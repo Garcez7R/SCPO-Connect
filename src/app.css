@@ -1812,6 +1812,121 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
   .waiting-room-kiosk-card > b { font-size: clamp(21px, 6vw, 30px); }
 }
 
+.nursing-mobile-page { display: grid; width: min(100%, 560px); min-height: 100dvh; align-content: start; gap: 18px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)); color: var(--ink); }
+.nursing-mobile-header, .nursing-mobile-brand, .nursing-mobile-identity, .nursing-mobile-section-title, .nursing-mobile-connection, .nursing-mobile-message, .nursing-mobile-round-patient-heading, .nursing-mobile-footer, .nursing-mobile-round-result, .nursing-mobile-section-title h2 { display: flex; align-items: center; }
+.nursing-mobile-header { justify-content: space-between; }
+.nursing-mobile-brand { gap: 10px; }
+.nursing-mobile-brand img { width: 42px; height: 42px; border-radius: 10px; background: #fff; object-fit: contain; }
+.nursing-mobile-brand div { display: grid; gap: 2px; }
+.nursing-mobile-brand span { color: var(--subtle); font-size: 9px; font-weight: 700; letter-spacing: 1.1px; }
+.nursing-mobile-brand strong { font-size: 15px; }
+.nursing-mobile-logout, .nursing-mobile-refresh { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; }
+.nursing-mobile-identity { justify-content: space-between; gap: 12px; }
+.nursing-mobile-identity .eyebrow { margin-bottom: 4px; }
+.nursing-mobile-identity h1 { margin: 0; font-size: clamp(22px, 6vw, 29px); letter-spacing: -.5px; }
+.nursing-mobile-connection { gap: 6px; flex: 0 0 auto; color: var(--muted); font-size: 10px; font-weight: 600; }
+.nursing-mobile-connection i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.nursing-mobile-connection.is-offline i { background: var(--red); }
+.nursing-mobile-connectivity-warning, .nursing-mobile-message { gap: 9px; padding: 11px 12px; border: 1px solid var(--status-warning-border); border-radius: 10px; background: var(--status-warning-background); color: var(--status-warning-ink); font-size: 12px; line-height: 1.45; }
+.nursing-mobile-connectivity-warning { display: flex; align-items: flex-start; }
+.nursing-mobile-connectivity-warning svg, .nursing-mobile-message svg { flex: 0 0 auto; }
+.nursing-mobile-message { border-color: var(--line); background: var(--surface); color: var(--ink); }
+.nursing-mobile-error { border-color: var(--status-critical-border); background: var(--status-critical-background); color: var(--status-critical-ink); }
+.nursing-mobile-success { border-color: var(--status-success-border); background: var(--status-success-background); color: var(--status-success-ink); }
+.nursing-mobile-tabs { position: sticky; z-index: 3; top: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+.nursing-mobile-tabs button { display: flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; padding: 7px 5px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
+.nursing-mobile-tabs button.is-active { background: var(--blue-pale); color: var(--blue-dark); }
+.nursing-mobile-tab-count { display: grid; min-width: 19px; height: 19px; place-items: center; padding: 0 5px; border-radius: 10px; background: var(--blue); color: #fff; font-size: 10px; }
+.nursing-mobile-panel { display: grid; min-width: 0; gap: 16px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }
+.nursing-mobile-section-title { justify-content: space-between; gap: 10px; }
+.nursing-mobile-section-title .eyebrow { margin-bottom: 4px; }
+.nursing-mobile-section-title h2 { gap: 8px; margin: 0; font-size: 18px; }
+.nursing-mobile-section-title h2 svg { color: var(--blue); }
+.nursing-mobile-refresh:disabled, .nursing-mobile-logout:disabled { opacity: .5; cursor: not-allowed; }
+.nursing-mobile-panel form { display: grid; gap: 15px; }
+.nursing-mobile-panel .field { gap: 7px; }
+.nursing-mobile-panel .field-label { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; font-size: 12px; }
+.nursing-mobile-panel .field-label small { color: var(--subtle); font-size: 10px; font-weight: 500; }
+.nursing-mobile-panel input:not([type="checkbox"]), .nursing-mobile-panel select { width: 100%; min-height: 46px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); color: var(--ink); font-size: 16px; }
+.nursing-mobile-patient-field select { min-height: 52px; }
+.nursing-mobile-vital-list { display: grid; gap: 12px; }
+.nursing-mobile-vital-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 10px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--page); }
+.nursing-mobile-vital-field > .field { grid-column: 1; }
+.nursing-mobile-not-applicable { display: flex; min-height: 43px; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.nursing-mobile-not-applicable input { width: 17px; height: 17px; margin: 0; accent-color: var(--blue); }
+.nursing-mobile-glucose-unit { grid-column: 1 / -1; }
+.nursing-mobile-submit { width: 100%; min-height: 48px; justify-content: center; }
+.nursing-mobile-submit:disabled { opacity: .6; cursor: not-allowed; }
+.nursing-mobile-footnote { margin: -5px 0 0; color: var(--subtle); font-size: 10px; line-height: 1.5; text-align: center; }
+.nursing-mobile-loading { display: flex; min-height: 110px; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.nursing-mobile-empty { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.nursing-mobile-empty svg { flex: 0 0 auto; color: var(--blue); }
+.nursing-mobile-round-empty { display: grid; justify-items: center; gap: 12px; padding: 18px 4px 4px; text-align: center; }
+.nursing-mobile-empty-icon { display: grid; width: 50px; height: 50px; place-items: center; border-radius: 50%; background: var(--blue-pale); color: var(--blue); }
+.nursing-mobile-round-empty > strong { font-size: 14px; }
+.nursing-mobile-round-empty > p { margin: -5px 0 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.nursing-mobile-round-empty > small { color: var(--subtle); font-size: 10px; }
+.nursing-mobile-round { display: grid; gap: 14px; }
+.nursing-mobile-round-summary { display: grid; gap: 4px; padding: 11px; border-radius: 9px; background: var(--blue-pale); color: var(--blue-dark); font-size: 12px; }
+.nursing-mobile-round-summary > span:last-child { color: var(--muted); font-size: 10px; }
+.nursing-mobile-round-list { display: grid; gap: 10px; }
+.nursing-mobile-round-patient { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-left: 4px solid var(--status-neutral-border); border-radius: 10px; background: var(--surface); }
+.nursing-mobile-round-patient.nursing-round-checked { border-left-color: var(--green); }
+.nursing-mobile-round-patient.nursing-round-exception { border-left-color: var(--amber); }
+.nursing-mobile-round-patient-heading { justify-content: space-between; gap: 8px; }
+.nursing-mobile-round-patient-heading > div { display: grid; min-width: 0; gap: 4px; }
+.nursing-mobile-round-patient-heading strong { font-size: 13px; overflow-wrap: anywhere; }
+.nursing-mobile-round-patient-heading > div > span { color: var(--muted); font-size: 10px; }
+.nursing-mobile-risk { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; background: var(--status-critical-background); color: var(--status-critical-ink); font-size: 9px; font-weight: 600; }
+.nursing-mobile-round-result { gap: 6px; margin: 0; color: var(--green); font-size: 10px; line-height: 1.5; }
+.nursing-mobile-round-result svg { flex: 0 0 auto; }
+.nursing-mobile-exception { color: var(--amber); }
+.nursing-mobile-round-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.nursing-mobile-round-actions > .button { min-height: 40px; flex: 1 1 120px; justify-content: center; padding: 8px; font-size: 11px; }
+.nursing-mobile-round-actions form { display: grid; width: 100%; gap: 10px; }
+.nursing-mobile-round-actions form > div { display: flex; gap: 7px; }
+.nursing-mobile-round-actions form > div .button { min-height: 40px; flex: 1; justify-content: center; padding: 7px; font-size: 11px; }
+.nursing-mobile-footer { justify-content: space-between; gap: 10px; color: var(--subtle); font-size: 9px; }
+.nursing-mobile-footer > span, .nursing-mobile-footer > a { display: inline-flex; align-items: center; gap: 4px; }
+.nursing-mobile-footer > span svg { color: var(--green); }
+.nursing-mobile-footer > a { color: var(--blue); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.nursing-mobile-denied { align-content: center; justify-items: center; text-align: center; }
+.nursing-mobile-denied > img { width: 82px; height: 82px; object-fit: contain; }
+.nursing-mobile-denied > h1 { margin: 0; font-size: 22px; }
+.nursing-mobile-denied > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.nursing-mobile-denied > .button { width: min(100%, 300px); justify-content: center; }
+.operations-mobile-page { width: min(100%, 680px); }
+.operations-mobile-panel .field { min-width: 0; }
+.operations-mobile-list { display: grid; gap: 10px; }
+.operations-mobile-card { display: grid; gap: 7px; padding: 13px; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 10px; background: var(--page); }
+.operations-mobile-card > strong { color: var(--ink); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.operations-mobile-card > span { display: flex; align-items: flex-start; gap: 5px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.operations-mobile-card > span svg { flex: 0 0 auto; margin-top: 1px; color: var(--blue); }
+.operations-mobile-card > p { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.operations-mobile-card > time { color: var(--subtle); font-size: 10px; }
+.operations-mobile-card-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.operations-mobile-card-heading > span { display: inline-flex; align-items: center; min-height: 21px; padding: 3px 7px; border-radius: 20px; font-size: 9px; font-weight: 700; }
+.operations-mobile-card-heading .work-order-status { background: var(--status-neutral-background); color: var(--status-neutral-ink); }
+.operations-mobile-card-heading .status-open { background: var(--status-warning-background); color: var(--status-warning-ink); }
+.operations-mobile-card-heading .status-in_progress { background: var(--status-progress-background); color: var(--status-progress-ink); }
+.operations-mobile-card-heading .status-completed { background: var(--status-success-background); color: var(--status-success-ink); }
+.operations-mobile-card-heading .status-cancelled { background: var(--status-neutral-background); color: var(--status-neutral-ink); }
+.operations-mobile-card-heading .priority-normal { background: var(--status-neutral-background); color: var(--status-neutral-ink); }
+.operations-mobile-card-heading .priority-high { background: var(--status-warning-background); color: var(--status-warning-ink); }
+.operations-mobile-card-heading .priority-urgent { background: var(--status-critical-background); color: var(--status-critical-ink); }
+html[data-theme="dark"] .nursing-mobile-vital-field { background: #172a35; }
+html[data-theme="dark"] .nursing-mobile-tabs button.is-active, html[data-theme="dark"] .nursing-mobile-round-summary { background: #203d4b; color: #b7dcea; }
+html[data-theme="dark"] .operations-mobile-card { background: #172a35; }
+@media (max-width: 390px) {
+  .nursing-mobile-page { gap: 13px; padding-right: 11px; padding-left: 11px; }
+  .nursing-mobile-panel { padding: 13px; }
+  .nursing-mobile-tabs button { font-size: 10px; }
+  .nursing-mobile-footer { align-items: flex-start; flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nursing-mobile-page *, .nursing-mobile-page *::before, .nursing-mobile-page *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
 .sidebar {
   background-image:
     radial-gradient(ellipse at 95% 12%, rgb(55 128 150 / 7%), transparent 38%),

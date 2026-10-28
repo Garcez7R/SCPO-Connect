@@ -1492,6 +1492,50 @@ def test_vitals_require_a_measurement_and_keep_actor(nursing_db: Session, nurse:
     assert record["actor_name"] == nurse.actor_name
 
 
+def test_offline_vital_retry_is_idempotent_and_bound_to_actor(
+    nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    patient = create_patient(nursing_db, nurse)
+    action_id = str(uuid.uuid4())
+    payload = nursing.VitalPayload(
+        patient_reference=str(patient["reference"]),
+        values={"saturation": "98"},
+        measured_at=datetime.now(UTC) - timedelta(minutes=5),
+        client_action_id=action_id,
+    )
+
+    original = nursing.create_vital_record(payload, nurse, nursing_db)
+    retried = nursing.create_vital_record(payload, nurse, nursing_db)
+
+    assert retried["id"] == original["id"]
+    records = nursing_db.query(nursing.VitalRecord).filter_by(patient_reference=patient["reference"]).all()
+    assert len(records) == 1
+    assert nursing_db.get(nursing.NursingOfflineActionReceipt, action_id).action_type == "vital_record"
+
+    another_nurse = DemoPrincipal(
+        "another-nurse-id",
+        "another-nurse",
+        "Outra enfermeira",
+        "nursing",
+        ["nursing"],
+        {"nursing": ["consultar", "criar", "alterar"]},
+    )
+    with pytest.raises(HTTPException) as other_actor_retry:
+        nursing.create_vital_record(payload, another_nurse, nursing_db)
+    assert other_actor_retry.value.status_code == 409
+
+    changed_payload = nursing.VitalPayload(
+        patient_reference=str(patient["reference"]),
+        values={"saturation": "97"},
+        measured_at=payload.measured_at,
+        client_action_id=action_id,
+    )
+    with pytest.raises(HTTPException) as conflicting_retry:
+        nursing.create_vital_record(changed_payload, nurse, nursing_db)
+    assert conflicting_retry.value.status_code == 409
+
+
 def test_vital_structure_rejects_invalid_saturation_and_conflicting_na(nursing_db: Session, nurse: DemoPrincipal) -> None:
     patient = create_patient(nursing_db, nurse)
     reference = str(patient["reference"])
@@ -2087,6 +2131,60 @@ def test_hourly_nursing_round_records_patient_checks_and_completion(
             nursing_db,
         )
     assert update_error.value.status_code == 409
+
+
+def test_offline_hourly_round_retry_preserves_original_check_and_detects_conflict(
+    nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    patient = create_patient(nursing_db, nurse)
+    started = nursing.start_nursing_hourly_round(nurse, nursing_db)
+    patient_reference = str(patient["reference"])
+    action_id = str(uuid.uuid4())
+    occurred_at = datetime.now(UTC) - timedelta(minutes=4)
+    payload = nursing.NursingHourlyRoundPatientPayload(
+        status="checked",
+        client_action_id=action_id,
+        occurred_at=occurred_at,
+    )
+
+    first = nursing.update_nursing_hourly_round_patient(
+        str(started["id"]), patient_reference, payload, nurse, nursing_db
+    )
+    retry = nursing.update_nursing_hourly_round_patient(
+        str(started["id"]), patient_reference, payload, nurse, nursing_db
+    )
+
+    assert first["patients"][0]["checked_at"] == retry["patients"][0]["checked_at"]
+    assert first["patients"][0]["checked_at"] == occurred_at.isoformat()
+    assert nursing_db.query(nursing.NursingOfflineActionReceipt).filter_by(action_id=action_id).count() == 1
+
+    another_nurse = DemoPrincipal(
+        "another-nurse-id",
+        "another-nurse",
+        "Outra enfermeira",
+        "nursing",
+        ["nursing"],
+        {"nursing": ["consultar", "criar", "alterar"]},
+    )
+    with pytest.raises(HTTPException) as other_actor_retry:
+        nursing.update_nursing_hourly_round_patient(
+            str(started["id"]), patient_reference, payload, another_nurse, nursing_db
+        )
+    assert other_actor_retry.value.status_code == 409
+
+    changed_payload = nursing.NursingHourlyRoundPatientPayload(
+        status="exception",
+        exception_type="away",
+        note="Paciente ausente",
+        client_action_id=action_id,
+        occurred_at=occurred_at,
+    )
+    with pytest.raises(HTTPException) as conflicting_retry:
+        nursing.update_nursing_hourly_round_patient(
+            str(started["id"]), patient_reference, changed_payload, nurse, nursing_db
+        )
+    assert conflicting_retry.value.status_code == 409
 
 
 def test_hourly_nursing_round_requires_descriptive_exception(

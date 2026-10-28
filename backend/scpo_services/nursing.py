@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import re
 import uuid
@@ -251,11 +253,41 @@ class NursingHourlyRoundPatient(Base):
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class NursingOfflineActionReceipt(Base):
+    __tablename__ = "nursing_offline_action_receipts"
+
+    action_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class NursingHourlyRoundPatientPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["checked", "exception"]
     exception_type: Literal["away", "location", "not_found", "other"] | None = None
     note: str = Field(default="", max_length=500)
+    client_action_id: str | None = Field(default=None, max_length=36)
+    occurred_at: datetime | None = None
+
+    @field_validator("client_action_id")
+    @classmethod
+    def normalize_client_action_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(uuid.UUID(value))
+        except ValueError as exc:
+            raise ValueError("Identificador de sincronização inválido") from exc
+
+    @field_validator("occurred_at")
+    @classmethod
+    def validate_occurred_at(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("O horário da verificação deve incluir fuso horário")
+        return value
 
     @field_validator("note")
     @classmethod
@@ -1901,6 +1933,17 @@ class VitalPayload(BaseModel):
     glucose_unit: Literal["mg/dL", "mmol/L"] = "mg/dL"
     not_applicable: list[str] = Field(default_factory=list)
     measured_at: datetime | None = None
+    client_action_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("client_action_id")
+    @classmethod
+    def normalize_client_action_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(uuid.UUID(value))
+        except ValueError as exc:
+            raise ValueError("Identificador de sincronização inválido") from exc
 
     @field_validator("measured_at")
     @classmethod
@@ -1924,6 +1967,34 @@ class VitalPayload(BaseModel):
         return fields
 
 
+def _offline_payload_hash(payload: dict[str, object]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _get_offline_action_receipt(
+    db: Session,
+    *,
+    action_id: str,
+    actor_id: str,
+    action_type: str,
+    payload_hash: str,
+) -> NursingOfflineActionReceipt | None:
+    receipt = db.get(NursingOfflineActionReceipt, action_id)
+    if receipt is None:
+        return None
+    if (
+        receipt.actor_id != actor_id
+        or receipt.action_type != action_type
+        or receipt.payload_hash != payload_hash
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="O identificador de sincronização já foi usado para outro registro",
+        )
+    return receipt
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"service": "nursing", "status": "ok"}
@@ -1935,8 +2006,6 @@ def create_vital_record(
     principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    if db.get(Patient, payload.patient_reference) is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
     if not any(value.strip() for value in payload.values.values()) and not payload.not_applicable:
         raise HTTPException(status_code=422, detail="Informe ao menos um dado coletado ou marque os sinais aplicáveis como não aferidos")
     for field in payload.not_applicable:
@@ -1954,6 +2023,28 @@ def create_vital_record(
     measured_at = payload.measured_at or recorded_at
     if measured_at > recorded_at:
         raise HTTPException(status_code=422, detail="O horário da aferição não pode estar no futuro")
+    action_hash = _offline_payload_hash({
+        "patient_reference": payload.patient_reference,
+        "values": payload.values,
+        "glucose_unit": payload.glucose_unit,
+        "not_applicable": payload.not_applicable,
+        "measured_at": measured_at.isoformat(),
+    })
+    if payload.client_action_id:
+        receipt = _get_offline_action_receipt(
+            db,
+            action_id=payload.client_action_id,
+            actor_id=principal.user_id,
+            action_type="vital_record",
+            payload_hash=action_hash,
+        )
+        if receipt:
+            record = db.get(VitalRecord, int(receipt.resource_id))
+            if record is None:
+                raise HTTPException(status_code=409, detail="O registro sincronizado não está mais disponível")
+            return serialize_record(record)
+    if db.get(Patient, payload.patient_reference) is None:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
     record = VitalRecord(
         patient_reference=payload.patient_reference,
         actor_id=principal.user_id,
@@ -1965,10 +2056,36 @@ def create_vital_record(
         recorded_at=recorded_at,
     )
     db.add(record)
+    if payload.client_action_id:
+        db.flush()
+        db.add(NursingOfflineActionReceipt(
+            action_id=payload.client_action_id,
+            actor_id=principal.user_id,
+            action_type="vital_record",
+            payload_hash=action_hash,
+            resource_id=str(record.id),
+            created_at=recorded_at,
+        ))
     emit_audit_event(
         principal, "nursing", "vitals_recorded", payload.patient_reference, db=db
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if payload.client_action_id:
+            receipt = _get_offline_action_receipt(
+                db,
+                action_id=payload.client_action_id,
+                actor_id=principal.user_id,
+                action_type="vital_record",
+                payload_hash=action_hash,
+            )
+            if receipt:
+                existing_record = db.get(VitalRecord, int(receipt.resource_id))
+                if existing_record:
+                    return serialize_record(existing_record)
+        raise HTTPException(status_code=409, detail="Não foi possível registrar a coleta sem duplicidade; atualize os dados") from exc
     db.refresh(record)
     return serialize_record(record)
 
@@ -2149,6 +2266,12 @@ def _active_round_patients(db: Session) -> list[Patient]:
     ).all()
 
 
+def _round_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.isoformat()
+
+
 def serialize_nursing_hourly_round(db: Session, round_record: NursingHourlyRound) -> dict[str, object]:
     patients = db.scalars(
         select(NursingHourlyRoundPatient)
@@ -2164,10 +2287,10 @@ def serialize_nursing_hourly_round(db: Session, round_record: NursingHourlyRound
         "status": round_record.status,
         "started_by_id": round_record.started_by_id,
         "started_by_name": round_record.started_by_name,
-        "started_at": round_record.started_at.isoformat(),
+        "started_at": _round_timestamp(round_record.started_at),
         "completed_by_id": round_record.completed_by_id,
         "completed_by_name": round_record.completed_by_name,
-        "completed_at": round_record.completed_at.isoformat() if round_record.completed_at else None,
+        "completed_at": _round_timestamp(round_record.completed_at) if round_record.completed_at else None,
         "patient_count": len(patients),
         "checked_count": sum(item.status == "checked" for item in patients),
         "exception_count": sum(item.status == "exception" for item in patients),
@@ -2183,7 +2306,7 @@ def serialize_nursing_hourly_round(db: Session, round_record: NursingHourlyRound
                 "elopement_risk": item.elopement_risk,
                 "checked_by_id": item.checked_by_id,
                 "checked_by_name": item.checked_by_name,
-                "checked_at": item.checked_at.isoformat() if item.checked_at else None,
+                "checked_at": _round_timestamp(item.checked_at) if item.checked_at else None,
             }
             for item in patients
         ],
@@ -2323,6 +2446,30 @@ def update_nursing_hourly_round_patient(
     principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
+    checked_at = payload.occurred_at or datetime.now(UTC)
+    if checked_at > datetime.now(UTC):
+        raise HTTPException(status_code=422, detail="O horário da verificação não pode estar no futuro")
+    action_hash = _offline_payload_hash({
+        "round_id": round_id,
+        "patient_reference": patient_reference,
+        "status": payload.status,
+        "exception_type": payload.exception_type,
+        "note": payload.note,
+        "occurred_at": checked_at.isoformat(),
+    })
+    if payload.client_action_id:
+        receipt = _get_offline_action_receipt(
+            db,
+            action_id=payload.client_action_id,
+            actor_id=principal.user_id,
+            action_type="hourly_round_patient",
+            payload_hash=action_hash,
+        )
+        if receipt:
+            round_record = db.get(NursingHourlyRound, receipt.resource_id)
+            if round_record is None:
+                raise HTTPException(status_code=409, detail="A verificação sincronizada não está mais disponível")
+            return serialize_nursing_hourly_round(db, round_record)
     round_record = db.get(NursingHourlyRound, round_id)
     if round_record is None:
         raise HTTPException(status_code=404, detail="Ronda não encontrada")
@@ -2336,12 +2483,26 @@ def update_nursing_hourly_round_patient(
     )
     if member is None:
         raise HTTPException(status_code=404, detail="Paciente não pertence a esta ronda")
+    if payload.client_action_id and member.status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="Este paciente já foi atualizado na ronda; atualize a lista antes de sincronizar",
+        )
     member.status = payload.status
     member.exception_type = payload.exception_type or ""
     member.note = payload.note
     member.checked_by_id = principal.user_id
     member.checked_by_name = principal.actor_name
-    member.checked_at = datetime.now(UTC)
+    member.checked_at = checked_at
+    if payload.client_action_id:
+        db.add(NursingOfflineActionReceipt(
+            action_id=payload.client_action_id,
+            actor_id=principal.user_id,
+            action_type="hourly_round_patient",
+            payload_hash=action_hash,
+            resource_id=round_id,
+            created_at=datetime.now(UTC),
+        ))
     emit_audit_event(
         principal,
         "nursing",
@@ -2349,7 +2510,23 @@ def update_nursing_hourly_round_patient(
         f"{round_id}:{patient_reference}",
         db=db,
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if payload.client_action_id:
+            receipt = _get_offline_action_receipt(
+                db,
+                action_id=payload.client_action_id,
+                actor_id=principal.user_id,
+                action_type="hourly_round_patient",
+                payload_hash=action_hash,
+            )
+            if receipt:
+                committed_round = db.get(NursingHourlyRound, receipt.resource_id)
+                if committed_round:
+                    return serialize_nursing_hourly_round(db, committed_round)
+        raise HTTPException(status_code=409, detail="Não foi possível sincronizar a verificação sem conflito; atualize a lista") from exc
     db.refresh(round_record)
     return serialize_nursing_hourly_round(db, round_record)
 

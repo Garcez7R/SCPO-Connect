@@ -8,6 +8,8 @@ O cadastro compartilhado usa referências UUID reais. Os fluxos de Enfermagem, N
 
 As validações de sinais vitais cobrem presença, formato, consistência entre valor e “não aferido”, saturação entre 0 e 100 e preenchimento dos componentes de pressão. Limites clínicos para os demais indicadores e alertas não foram definidos: devem ser aprovados pelos responsáveis assistenciais antes da configuração. O app não interpreta os valores nem orienta condutas.
 
+Os PWAs armazenam localmente cópias cifradas: a Enfermagem pode manter ações pendentes por até 24 horas, enquanto Manutenção/Higienização mantêm somente filas de consulta. O login offline não é permitido e a sincronização exige confirmação do servidor. Esses controles de aplicação não substituem criptografia e bloqueio do dispositivo, gestão dos celulares pessoais, validação da limpeza/retensão, nem aprovação de privacidade; os PWAs offline não autorizam uso de dados reais antes da revisão institucional e dos testes nos aparelhos-alvo.
+
 A prioridade das chegadas à emergência é atribuída manualmente e não implementa protocolo validado de triagem. Transferências, altas, contraindicações e indicadores de Gestão Hospitalar são registros operacionais; não fazem classificação ou recomendação clínica automatizada. Validar esses fluxos, terminologia, responsáveis e permissões com as equipes assistenciais antes de qualquer piloto.
 
 ## Decisões atuais e controles pendentes

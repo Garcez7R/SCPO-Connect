@@ -507,7 +507,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
   }
 
   return <section className="work-orders-page maintenance-queue-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><span className="module-icon module-icon-hygiene"><SprayCan size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · HIGIENIZAÇÃO</p><h1>Higienização</h1><p className="welcome-copy">Receba, priorize, atribua e acompanhe as solicitações da equipe.</p></div><div className="nursing-title-actions"><a className="button button-secondary" href="/operations.html">PWA móvel · consulta</a><span className="module-icon module-icon-hygiene"><SprayCan size={23} /></span></div></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <section className="work-order-list-panel">
@@ -690,7 +690,7 @@ export function MaintenanceQueuePage({ userId }: { userId: string }) {
   }
 
   return <section className="work-orders-page page-enter maintenance-queue-page">
-    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · MANUTENÇÃO</p><h1>Manutenção</h1><p className="welcome-copy">Consulte solicitações de todos os setores e atualize o andamento dos serviços.</p></div><span className="module-icon module-icon-maintenance"><Wrench size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">EQUIPE · MANUTENÇÃO</p><h1>Manutenção</h1><p className="welcome-copy">Consulte solicitações de todos os setores e atualize o andamento dos serviços.</p></div><div className="nursing-title-actions"><a className="button button-secondary" href="/operations.html">PWA móvel · consulta</a><span className="module-icon module-icon-maintenance"><Wrench size={23} /></span></div></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas da Manutenção">
       <button className={`button ${tab === 'requests' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'requests'} onClick={() => setTab('requests')}><ClipboardList size={16} /> Solicitações recebidas <span>{orders.filter((order) => order.status === 'open' || order.status === 'in_progress').length}</span></button>
       <button className={`button ${tab === 'assets' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'assets'} onClick={() => setTab('assets')}><Wrench size={16} /> Patrimônio e preventivas</button>

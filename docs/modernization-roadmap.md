@@ -37,26 +37,32 @@ Os itens abaixo são áreas já presentes no SCPO Connect para orientar a compar
 
 Após o levantamento, cada função deve ser classificada como: já atendida; lacuna aprovada; duplicada/inativa; ou dependente de decisão institucional. Só lacunas validadas devem virar trabalho de produto.
 
-## PWA focado de Enfermagem
+## PWAs móveis
 
-### Escopo inicial
+### Enfermagem
 
-- Interface instalável e responsiva para sinais vitais e verificação horária.
-- Mesmas APIs, cadastro de paciente, permissões, auditoria, identidade e bancos do SCPO Connect; não criar um segundo sistema clínico.
-- Login e sessão existentes, com seleção explícita do paciente e confirmação de autoria e horário do registro.
-- Validação pelo serviço central e retorno visível de sucesso ou falha. Reenvio deve evitar duplicar uma coleta.
-- O sistema desktop continua sendo a interface completa; o PWA é um atalho de coleta, não um substituto das demais guias da Enfermagem.
+- Entrada instalável independente em `/nursing.html`, com manifesto próprio e acesso pelo botão **PWA móvel** na Enfermagem completa.
+- Reutiliza autenticação, permissões, autoria e APIs existentes. A Enfermagem usa aparelhos institucionais.
+- Coleta de sinais vitais e verificações de uma ronda já carregada podem ser protegidas em armazenamento local cifrado e enviadas quando a rede voltar. Iniciar e encerrar rondas continuam exigindo conexão.
+- Cada ação offline tem identificador idempotente, horário do aparelho e validade de 24 horas. Reenvios repetidos são deduplicados pelo serviço; autoria é sempre a conta autenticada no servidor.
+- O login offline não é permitido. Para recuperar pendências após fechar/recarregar o PWA sem rede, é necessário reconectar e autenticar no servidor. Registros só são considerados no histórico depois da confirmação do servidor.
 
-### Limite de conectividade
+### Manutenção e Higienização
 
-O primeiro piloto deve exigir conexão com o servidor. Não guardar sinais vitais ou verificações horárias em armazenamento local para envio posterior. O service worker pode entregar a interface estática/offline, mas isso não significa que gravações clínicas estejam disponíveis offline. Qualquer modo offline exigirá decisão institucional separada sobre autenticação do dispositivo, criptografia e retenção local, identificação do paciente, timestamp confiável, autoria, idempotência, conflito e limpeza dos dados do aparelho.
+- Entrada instalável independente em `/operations.html`, com manifesto próprio e acesso nas páginas completas das equipes.
+- Celulares pessoais podem consultar, sem conexão, uma cópia cifrada e limitada a 24 horas das filas autorizadas. Os dados ficam separados por usuário e por aplicação; o service worker não armazena respostas de API.
+- O PWA é somente leitura: criar, alterar e encerrar ordens exige conexão. A Higienização só libera o leito depois da confirmação do servidor.
+- A autenticação offline não é permitida. O cache só pode ser consultado enquanto a sessão previamente autenticada permanecer aberta; após fechar ou recarregar sem rede, é necessário autenticar novamente quando o servidor estiver acessível. Sair apaga o cache operacional do aparelho.
 
-### Fases e critérios de avanço
+### Limites e prontidão
+
+O service worker pré-carrega a interface e os recursos estáticos dos três pontos de entrada, sem guardar `/api/`. O cache cifrado permite continuidade em sessão ativa, mas não é mecanismo de gerenciamento do aparelho nem autorização para uso de dados reais em celulares pessoais. Criptografia de armazenamento, bloqueio do aparelho, sessão, limpeza, retenção, privacidade e resposta a incidentes ainda precisam de validação institucional e teste nos dispositivos-alvo.
 
 1. **Mapear:** equipes validam tarefas e telas correspondentes no programa antigo; documentar campos, autoria, periodicidade e exceções.
-2. **Prototipar:** testar navegação mobile e a seleção de paciente com profissionais, sem persistir dados reais.
-3. **Implementar conectado:** reaproveitar os endpoints existentes, verificar permissões no backend e cobrir falhas/reenvio com testes.
-4. **Piloto controlado:** testar em ambiente segregado, com dados fictícios, aparelhos autorizados e critérios de interrupção.
-5. **Avaliar:** considerar uso offline somente após revisão de segurança, infraestrutura e operação e aprovação institucional.
+2. **Prototipar e testar:** validar navegação, cache e restauração de conexão com contas e dados fictícios nos aparelhos-alvo.
+3. **Implementar:** interfaces móveis, armazenamento cifrado, idempotência clínica, políticas diferenciadas e acesso somente leitura nas equipes operacionais.
+4. **Piloto controlado (pendente):** realizar testes observados em ambiente segregado, definir critérios de interrupção e obter aprovação de TI, segurança, encarregado de dados e equipes.
+
+Nenhuma fase autoriza implantação ou uso de dados reais por si só. A prontidão descrita em [pilot-security-readiness.md](./pilot-security-readiness.md) continua obrigatória.
 
 Nenhuma fase autoriza implantação ou uso de dados clínicos reais por si só. A prontidão descrita em [pilot-security-readiness.md](./pilot-security-readiness.md) continua obrigatória.

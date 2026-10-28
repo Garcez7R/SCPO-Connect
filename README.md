@@ -49,7 +49,9 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
 - Caixa de tarefas: filas acionáveis de Recepção, Enfermagem, Farmácia, Manutenção e Higienização, filtradas pelas permissões da conta.
 - Registro de eventos administrativos e de acessos/alterações assistenciais, sem copiar conteúdo clínico para a trilha.
-- Aplicação PWA, com instalação pela interface e atualização dos arquivos do app.
+- Aplicação PWA principal, com instalação pela interface e atualização dos arquivos do app.
+- PWA móvel da Enfermagem em `/nursing.html`, com manifesto próprio e acesso autenticado para coleta de sinais vitais e verificação horária; ações offline ficam cifradas por até 24 horas e são deduplicadas ao sincronizar. O login offline não é permitido.
+- PWA de Manutenção/Higienização em `/operations.html`, com manifesto próprio, consulta offline cifrada por até 24 horas e somente leitura. Alterações e encerramentos exigem conexão; ao sair, o cache operacional do aparelho é apagado. O login offline não é permitido.
 - Interface responsiva para computadores, celulares e tablets.
 - Menu lateral recolhível para uso mais eficiente em monitores menores e telas mais estreitas.
 - Tela inicial offline: verifica a conexão a cada 30 segundos e recarrega o app somente quando o servidor voltar a responder; a verificação não roda nas telas autenticadas.
