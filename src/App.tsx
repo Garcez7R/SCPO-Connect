@@ -625,7 +625,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
           {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage userId={user.id} /></Suspense>}
           {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
           {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage userId={user.id} canPrescribe={profile.modules.includes('physician')} onOpenPhysician={() => navigate('physician')} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'psychology')} /></Suspense>}
-          {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} />}
+          {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} canDeletePatients={user.is_superuser || (user.modules.includes('admin') && (user.permissions.admin?.includes('excluir') === true || user.permissions.admin?.includes('administrar') === true))} />}
           {activeModule === 'reception' && <Suspense fallback={<div className="history-empty" role="status">Carregando Recepção…</div>}><ReceptionPage user={user} PatientRegistryPage={PatientRegistryPage} /></Suspense>}
           {activeModule === 'patient-history' && <PatientHistoryPage key={historyPatientReference} patientReference={historyPatientReference} user={user} onBack={() => navigate(historyReturnModule)} />}
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
@@ -816,7 +816,7 @@ function AddressFields({ form, patients, prefix, onChange }: { form: PatientForm
   </div>{lookupMessage && <p className="cep-lookup-message" role="status">{lookupMessage}</p>}</>
 }
 
-function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean }) {
+function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatients = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean; canDeletePatients?: boolean }) {
   const patientPageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientTotal, setPatientTotal] = useState(0)
@@ -1289,7 +1289,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       </div>
       {loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? patientGroups.map(([groupLabel, groupPatients]) => <section className="patient-registry-group" key={groupLabel}>
         {groupPatientsByRoom && <h3>{groupLabel}<span>{groupPatients.length}</span></h3>}
-        <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card ${patientCareTrackClass(patient.treatment_track)}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><PatientCareTrackBadge track={patient.treatment_track} /><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => openPatientFollowUp(patient)}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(patient.reference); setViewingPatient(null); setShowPatientFollowUp(false) }}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button><button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button></div></article>)}</div>
+        <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card ${patientCareTrackClass(patient.treatment_track)}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><PatientCareTrackBadge track={patient.treatment_track} /><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => openPatientFollowUp(patient)}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(patient.reference); setViewingPatient(null); setShowPatientFollowUp(false) }}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button>{canDeletePatients && <button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button>}</div></article>)}</div>
       </section>) : <div className="history-empty"><UsersRound size={20} /><span>{query || roomFilter || bedFilter || treatmentTrackFilter || patientStatusFilter !== 'all' ? 'Nenhum paciente corresponde aos filtros selecionados.' : 'Nenhum paciente cadastrado.'}</span></div>}
       {!loading && patientTotal > 0 && <nav className="history-pagination" aria-label="Paginação da lista de pacientes"><span>Exibindo {currentPatientPage * patientPageSize + 1}–{Math.min((currentPatientPage + 1) * patientPageSize, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={currentPatientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentPatientPage + 1 >= patientPageCount} onClick={() => setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}
     </section>}
@@ -1339,7 +1339,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false }: { onHistory?:
       {reportError && <ToastMessage variant="error">{reportError}</ToastMessage>}
       {reportLoading ? <div className="history-empty">Carregando todos os pacientes para o relatório…</div> : <PrintSelectionPanel title="Relação de pacientes" rows={patientPrintRows} />}
     </>}
-    {archivingPatient && <div className="patient-modal-backdrop" role="presentation"><section className="patient-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-archive-title"><h2 id="patient-archive-title">Arquivar cadastro de paciente</h2><p><strong>{archivingPatient.name}</strong> deixará de aparecer nos cadastros ativos. Os dados assistenciais serão preservados, e a exclusão lógica, o motivo e o responsável ficarão registrados na auditoria.</p><label className="field"><span className="field-label">Motivo do arquivamento</span><textarea required minLength={5} maxLength={500} value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} /></label><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => setArchivingPatient(null)}>Cancelar</button><button className="button button-danger" type="button" onClick={() => void confirmArchivePatient()} disabled={archiveReason.trim().length < 5}>Arquivar paciente</button></div></section></div>}
+    {archivingPatient && canDeletePatients && <div className="patient-modal-backdrop" role="presentation"><section className="patient-archive-dialog" role="dialog" aria-modal="true" aria-labelledby="patient-archive-title"><h2 id="patient-archive-title">Arquivar cadastro de paciente</h2><p><strong>{archivingPatient.name}</strong> deixará de aparecer nos cadastros ativos. Os dados assistenciais serão preservados, e a exclusão lógica, o motivo e o responsável ficarão registrados na auditoria.</p><label className="field"><span className="field-label">Motivo do arquivamento</span><textarea required minLength={5} maxLength={500} value={archiveReason} onChange={(event) => setArchiveReason(event.target.value)} /></label><div className="patient-detail-actions"><button className="button button-secondary" type="button" onClick={() => setArchivingPatient(null)}>Cancelar</button><button className="button button-danger" type="button" onClick={() => void confirmArchivePatient()} disabled={archiveReason.trim().length < 5}>Arquivar paciente</button></div></section></div>}
     </>}
   </section>
 }
@@ -2644,6 +2644,11 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
   )
 }
 
+function isClinicalQueueArrival(arrival: EmergencyArrival) {
+  return (arrival.status === 'waiting' || arrival.status === 'called' || arrival.status === 'in_service')
+    && arrival.reason !== 'Ficha ambulatorial registrada'
+}
+
 function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
   const [arrivals, setArrivals] = useState<EmergencyArrival[]>([])
   const [selectedId, setSelectedId] = useState('')
@@ -2656,7 +2661,7 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
     try {
       const response = await fetch('/api/v1/reception/arrivals?limit=100')
       const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
-      const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'called' || arrival.status === 'in_service')
+      const openArrivals = (data.arrivals ?? []).filter(isClinicalQueueArrival)
       setArrivals(openArrivals)
       setSelectedId((current) => (openArrivals.some((arrival) => arrival.id === current) ? current : openArrivals[0]?.id ?? ''))
       setError('')
@@ -2673,7 +2678,7 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
       try {
         const response = await fetch('/api/v1/reception/arrivals?limit=100')
         const data = await readApiResponse<{ arrivals?: EmergencyArrival[] }>(response)
-        const openArrivals = (data.arrivals ?? []).filter((arrival) => arrival.status === 'waiting' || arrival.status === 'called' || arrival.status === 'in_service')
+        const openArrivals = (data.arrivals ?? []).filter(isClinicalQueueArrival)
         if (!active) return
         setArrivals(openArrivals)
         setSelectedId((current) => (openArrivals.some((arrival) => arrival.id === current) ? current : openArrivals[0]?.id ?? ''))

@@ -1847,6 +1847,8 @@ async def authorize_patient_module(request: Request) -> DemoPrincipal:
 
 
 PATIENT_ACCESS = Depends(authorize_patient_module)
+PATIENT_DELETE_ACCESS = Depends(require_demo_role_or_superuser("admin"))
+OUTPATIENT_ARRIVAL_REASON = "Ficha ambulatorial registrada"
 PATIENT_HISTORY_ACCESS = Depends(
     require_demo_role_or_superuser(
         "patients", "nursing", "physician", "psychology", "management", "admin"
@@ -3583,7 +3585,7 @@ def create_outpatient_encounter(
         patient_reference=patient.reference,
         patient_name=patient.name,
         arrival_mode="walk_in",
-        reason="Ficha ambulatorial registrada",
+        reason=OUTPATIENT_ARRIVAL_REASON,
         status="waiting",
         created_by=principal.actor_name,
         updated_by=principal.actor_name,
@@ -4910,7 +4912,7 @@ def get_patient(
 def delete_patient(
     patient_reference: str,
     payload: VoidPayload,
-    principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
+    principal: Annotated[DemoPrincipal, PATIENT_DELETE_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     patient = db.get(Patient, patient_reference)

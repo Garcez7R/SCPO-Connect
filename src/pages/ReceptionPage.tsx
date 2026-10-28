@@ -38,7 +38,7 @@ type Patient = {
   allergies_status?: 'unknown' | 'none_known' | 'known'
   active?: boolean
 }
-type AuthUser = { id: string; permissions: Record<string, string[]> }
+type AuthUser = { id: string; modules: string[]; permissions: Record<string, string[]>; is_superuser: boolean }
 type EmergencyArrivalStatus = 'waiting' | 'called' | 'in_service' | 'completed' | 'cancelled' | 'admitted'
 type TreatmentTrack = 'clinical' | 'psychiatric' | 'combined'
 type AllergyReportStatus = 'not_asked' | 'reported' | 'denied'
@@ -135,7 +135,7 @@ function ReceptionAllergyAlert({ status }: { status?: Patient['allergies_status'
   return <div className="clinical-alert clinical-alert-unknown" role="status"><Info size={19} /><div><strong>Alergias não verificadas</strong><span>Encaminhe para confirmação pela equipe clínica.</span></div></div>
 }
 
-function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean }> }) {
+function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean; canDeletePatients?: boolean }> }) {
   const [tab, setTab] = usePersistentTab(`scpo-tab-reception-${user.id}`, 'emergency', receptionTabs, receptionTabLabels)
   const [patients, setPatients] = useState<Patient[]>([])
   const [beds, setBeds] = useState<HospitalBed[]>([])
@@ -325,7 +325,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       <button className={`button ${tab === 'calls' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calls'} onClick={() => setTab('calls')}><span>Painel de chamadas</span><span>{counts.waiting + counts.called}</span></button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} canUploadImages={canUploadScreensaver} canDeleteImages={canDeleteScreensaver} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode canDeletePatients={user.is_superuser || (user.modules.includes('admin') && (user.permissions.admin?.includes('excluir') === true || user.permissions.admin?.includes('administrar') === true))} /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} canUploadImages={canUploadScreensaver} canDeleteImages={canDeleteScreensaver} /> : <>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <div className="hygiene-summary" aria-label="Resumo operacional do pronto atendimento"><article><strong>{counts.waiting}</strong><span>Aguardando</span></article><article><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article><strong>{counts.completed}</strong><span>Concluídos</span></article><article><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
@@ -467,6 +467,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
   const [screensaverEnabled, setScreensaverEnabled] = useState(screensaverPreference.enabled)
   const [screensaverImages, setScreensaverImages] = useState<ScreensaverImage[]>([])
   const [screensaverImageIndex, setScreensaverImageIndex] = useState(0)
+  const [screensaverFileName, setScreensaverFileName] = useState('')
   const [screensaverImageAction, setScreensaverImageAction] = useState('')
   const [lastNewCallAt, setLastNewCallAt] = useState(() => Date.now())
   const [normalBeforePriority, setNormalBeforePriority] = useState(3)
@@ -568,6 +569,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
       setScreensaverImages(result.images)
       setScreensaverImageIndex(0)
       form.reset()
+      setScreensaverFileName('')
       setNotice('Imagem adicionada à proteção de tela.')
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Não foi possível enviar a imagem.')
@@ -980,7 +982,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
       <div className="waiting-room-actions"><button className="button button-primary waiting-room-screensaver-toggle" type="button" onClick={toggleScreensaver} disabled={!canUpdate || !screensaverImages.length} aria-pressed={screensaverEnabled}>{screensaverEnabled ? 'Desativar proteção de tela' : 'Ativar proteção de tela'}</button></div>
       {!canUpdate && <p className="field-hint">Seu perfil pode consultar o painel, mas não pode ativar ou desativar a proteção de tela.</p>}
       {canUploadImages && <form className="waiting-room-screensaver-upload" onSubmit={(event) => void uploadScreensaverImage(event)}>
-        <label className="field"><span className="field-label">Adicionar imagem institucional aprovada</span><input required name="image" type="file" accept=".avif,.jpg,.jpeg,.png,.webp,image/avif,image/jpeg,image/png,image/webp" disabled={Boolean(screensaverImageAction)} /><span className="field-hint">JPG, PNG, WebP ou AVIF · até 8 MB por imagem.</span></label>
+        <div className="field"><span className="field-label">Adicionar imagem institucional aprovada</span><div className="screensaver-file-control"><label className="button button-secondary" htmlFor="screensaver-image-upload"><Upload size={16} /> Escolher arquivo</label><input id="screensaver-image-upload" name="image" type="file" accept=".avif,.jpg,.jpeg,.png,.webp,image/avif,image/jpeg,image/png,image/webp" disabled={Boolean(screensaverImageAction)} aria-describedby="screensaver-image-file-name" onChange={(event) => setScreensaverFileName(event.currentTarget.files?.[0]?.name ?? '')} /><span id="screensaver-image-file-name" className="field-hint">{screensaverFileName || 'Nenhum arquivo selecionado'}</span></div><span className="field-hint">JPG, PNG, WebP ou AVIF · até 8 MB por imagem.</span></div>
         <button className="button button-secondary" type="submit" disabled={Boolean(screensaverImageAction)}><Upload size={16} />{screensaverImageAction === 'upload' ? 'Enviando…' : 'Enviar imagem'}</button>
       </form>}
       {screensaverImages.length > 0 && <div className="waiting-room-screensaver-gallery">{screensaverImages.map((image) => <article className="waiting-room-screensaver-image-card" key={image.filename}><img src={image.url} alt="Prévia de imagem institucional da proteção de tela" /><div><span>{image.filename}</span>{canDeleteImages && <button className="button button-danger" type="button" onClick={() => void deleteScreensaverImage(image)} disabled={Boolean(screensaverImageAction)}><Trash2 size={15} />{screensaverImageAction === image.filename ? 'Excluindo…' : 'Excluir'}</button>}</div></article>)}</div>}

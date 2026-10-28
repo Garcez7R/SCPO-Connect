@@ -259,7 +259,7 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
       setDiagnosticHypothesis('')
       setAntibioticPrescription('')
       setReferral('discharge')
-      setNotice(`Ficha ambulatorial salva e paciente incluído na fila ${queueType === 'priority' ? 'prioritária' : 'comum'}, visível também em Enfermagem · Fila e segurança.`)
+      setNotice(`Ficha ambulatorial salva e paciente incluído na fila ${queueType === 'priority' ? 'prioritária' : 'comum'} e na fila de triagem. Após a triagem, ficará disponível para o Médico.`)
       onArrivalQueued?.()
       if (newPatientMode) {
         try {

@@ -340,7 +340,31 @@ def test_outpatient_encounter_creates_reusable_patient_and_keeps_print_snapshot(
         arrival["id"] == created["arrival_id"]
         and arrival["status"] == "waiting"
         and arrival["patient_name"] == "Paciente ambulatorial"
+        and arrival["reason"] == nursing.OUTPATIENT_ARRIVAL_REASON
         for arrival in queue["arrivals"]
+    )
+    triage_queue = nursing.list_triage_arrivals(
+        nursing_db, principal=receptionist, triaged_only=False
+    )
+    assert any(
+        arrival["arrival_id"] == created["arrival_id"]
+        for arrival in triage_queue["arrivals"]
+    )
+    nursing.create_nursing_triage(
+        str(created["arrival_id"]),
+        nursing.NursingTriagePayload(),
+        DemoPrincipal(
+            "nurse-id", "nurse", "Enfermeira de teste", "nursing",
+            ["nursing"], {"nursing": ["consultar", "criar", "alterar"]},
+        ),
+        nursing_db,
+    )
+    physician_queue = nursing.list_triage_arrivals(
+        nursing_db, principal=receptionist, triaged_only=True
+    )
+    assert any(
+        arrival["arrival_id"] == created["arrival_id"]
+        for arrival in physician_queue["arrivals"]
     )
 
 
@@ -1934,6 +1958,61 @@ def test_patient_registry_route_accepts_pagination_and_search_parameters(
         assert response.status_code == 200
         assert response.json()["total"] == 1
         assert response.json()["patients"][0]["name"] == "Zelda Paciente"
+    finally:
+        nursing.app.dependency_overrides.clear()
+
+
+def test_only_app_admin_and_superadmin_can_archive_patient(
+    nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    receptionist = nursing.create_patient(
+        nursing.PatientPayload(name="Paciente para arquivar"), nurse, nursing_db
+    )
+    admin = DemoPrincipal(
+        "admin-id", "admin", "Administradora de teste", "admin",
+        ["admin"], {"admin": ["consultar", "administrar"]},
+    )
+    superadmin = DemoPrincipal(
+        "superadmin-id", "root", "Superadministrador de teste", "system_admin",
+        [], {}, is_superuser=True,
+    )
+    nursing.app.dependency_overrides[nursing.get_nursing_db] = lambda: nursing_db
+    authenticated_principal = [nurse]
+
+    async def resolve_principal(_request):
+        return authenticated_principal[0]
+
+    monkeypatch.setattr(common, "authenticated_principal", resolve_principal)
+    try:
+        with TestClient(nursing.app) as client:
+            denied = client.request(
+                "DELETE",
+                f"/api/v1/nursing/patients/{receptionist['reference']}",
+                json={"reason": "Cadastro criado com grafia incorreta"},
+            )
+            assert denied.status_code == 403, denied.text
+
+            for principal, name in (
+                (admin, "Paciente arquivado pela Administração"),
+                (superadmin, "Paciente arquivado pelo Superadministrador"),
+            ):
+                patient = nursing.create_patient(
+                    nursing.PatientPayload(
+                        name=name,
+                        room="90" if principal is admin else "91",
+                        bed="A",
+                    ),
+                    nurse,
+                    nursing_db,
+                )
+                authenticated_principal[0] = principal
+                archived = client.request(
+                    "DELETE",
+                    f"/api/v1/nursing/patients/{patient['reference']}",
+                    json={"reason": "Cadastro criado com grafia incorreta"},
+                )
+                assert archived.status_code == 200
+                assert archived.json()["active"] is False
     finally:
         nursing.app.dependency_overrides.clear()
 
