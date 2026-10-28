@@ -124,6 +124,24 @@ function patientLocation(patient: Pick<MobilePatient, 'room' | 'bed'>) {
   return patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem quarto/leito'
 }
 
+function maskVitalValue(key: VitalKey, value: string) {
+  if (key === 'pressure') {
+    const [systolic = '', diastolic = ''] = value.split('/')
+    const cleanSystolic = systolic.replace(/\D/g, '').slice(0, 4)
+    const cleanDiastolic = diastolic.replace(/\D/g, '').slice(0, 4)
+    return value.includes('/') ? `${cleanSystolic}/${cleanDiastolic}` : cleanSystolic
+  }
+  if (key === 'heartRate' || key === 'respiratoryRate') return value.replace(/\D/g, '').slice(0, 4)
+
+  const normalizedValue = value.replace(/[.]/g, ',')
+  const [whole = '', ...fractions] = normalizedValue.split(',')
+  const maxWholeDigits = key === 'saturation' ? 3 : 6
+  const maxFractionDigits = key === 'saturation' ? 2 : 4
+  const cleanWhole = whole.replace(/\D/g, '').slice(0, maxWholeDigits)
+  if (!normalizedValue.includes(',') || fractions.length === 0) return cleanWhole
+  return `${cleanWhole || '0'},${fractions.join('').replace(/\D/g, '').slice(0, maxFractionDigits)}`
+}
+
 function formatTime(value: string | null) {
   if (!value) return ''
   return new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' }).format(new Date(value))
@@ -465,7 +483,7 @@ export default function NursingMobilePage({
   }, [offlineData.pending_round_actions, offlineData.pending_vitals, online, serverAvailable, syncPendingActions])
 
   function setVital(key: VitalKey, value: string) {
-    setVitals((current) => ({ ...current, [key]: value }))
+    setVitals((current) => ({ ...current, [key]: maskVitalValue(key, value) }))
     setNotApplicable((current) => current.filter((field) => field !== key))
     setSaved(false)
     setNotice('')

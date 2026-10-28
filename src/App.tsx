@@ -70,6 +70,7 @@ import { BehavioralStatusBadge, type BehavioralStatus } from './components/Behav
 import TherapyMaterialsPanel from './components/TherapyMaterialsPanel'
 import NursingMobilePage from './pages/NursingMobilePage'
 import OperationsMobilePage from './pages/OperationsMobilePage'
+import SystemAdminGuide from './components/SystemAdminGuide'
 import QRCode from 'qrcode'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
@@ -84,8 +85,8 @@ const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior',
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'reports', 'materials'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios', materials: 'Materiais e imagens' }
-const systemAdminTabValues = ['backup', 'recovery'] as const
-const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemAdminTabValues = ['guide', 'backup', 'recovery'] as const
+const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { guide: 'Guia e soluções', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const patientRegistryTabLabels = { registry: 'Novo cadastro', list: 'Lista de pacientes', reports: 'Relatórios' } as const
 type Patient = {
   reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; same_number?: string; mother_name?: string; health_plan?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
@@ -4409,7 +4410,7 @@ function AuditLogPanel() {
 }
 
 function SystemAdminPage({ userId }: { userId: string }) {
-  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${userId}`, 'backup', systemAdminTabValues, systemAdminTabLabels)
+  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${userId}`, 'guide', systemAdminTabValues, systemAdminTabLabels)
   const [users, setUsers] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -4482,7 +4483,8 @@ function SystemAdminPage({ userId }: { userId: string }) {
   }
   return <section className="system-admin-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div>
-    <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema"><button className={`button ${tab === 'backup' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'backup'} onClick={() => setTab('backup')}>Backup</button><button className={`button ${tab === 'recovery' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'recovery'} onClick={() => setTab('recovery')}>Recuperação de acesso</button></div>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
+    {tab === 'guide' && <SystemAdminGuide />}
     {tab === 'backup' && <BackupExportPanel />}
     {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel"><div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha e o MFA atuais serão revogados. Cada usuário receberá uma senha temporária aleatória, de uso único, e deverá configurar novos fatores de autenticação.</p></div></div><div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · a conta superadministradora é sempre excluída</span><button className="button button-danger" type="button" onClick={() => void resetAllCredentials()} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>Mostradas somente nesta sessão. Copie e entregue cada senha ao titular por canal seguro; não feche nem atualize a página antes de registrá-las.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}{!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((account) => <article key={account.id}><span>{account.name} · {account.username}{account.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(account)} disabled={busy}>Redefinir senha e MFA</button><button className="button button-danger" type="button" onClick={() => void deleteSystemUser(account)} disabled={busy}>{deletingUserId === account.id ? 'Excluindo…' : 'Excluir conta'}</button></article>)}</div></details>}</section>}
   </section>

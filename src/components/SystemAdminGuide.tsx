@@ -1,0 +1,79 @@
+import { useMemo, useState } from 'react'
+import { BookOpen, Search, ShieldCheck, TriangleAlert } from 'lucide-react'
+
+type GuideEntry = {
+  title: string
+  description: string
+  details: string[]
+  terms: string
+}
+
+const modules: GuideEntry[] = [
+  { title: 'Visão geral', description: 'Painel inicial com indicadores e atalhos para as áreas autorizadas.', details: ['Use os cartões para acompanhar os totais disponíveis ao seu perfil.', 'Os indicadores são informativos; abra o módulo correspondente para consultar ou alterar registros.'], terms: 'painel dashboard indicadores atalhos' },
+  { title: 'Abrir ordem de serviço', description: 'Registra uma solicitação de manutenção para a fila da equipe responsável.', details: ['Descreva o problema e o local com informações suficientes para a equipe identificar a necessidade.', 'Acompanhe o andamento na fila de Manutenção; o solicitante não precisa acessar o PWA operacional da equipe.'], terms: 'work-orders abrir ordem serviço manutenção chamado solicitação' },
+  { title: 'Pacientes e histórico', description: 'Cadastro, pesquisa e consulta do histórico assistencial do paciente.', details: ['Pesquise por identificadores e dados cadastrais disponíveis no formulário.', 'Confira a identificação e o vínculo correto antes de registrar qualquer atendimento.', 'Exclusões e alterações dependem do perfil e das regras de auditoria.'], terms: 'cadastro busca cpf sus paciente histórico prontuário' },
+  { title: 'Recepção e chamada', description: 'Organiza chegadas, chamadas e filas de atendimento.', details: ['Registre a chegada na fila apropriada e acompanhe o estado da chamada.', 'Formulários de atendimento ambulatorial seguem o fluxo de chamada, triagem e médico; não devem ser enviados à fila de Enfermagem.'], terms: 'recepção chamada fila atendimento ambulatorial' },
+  { title: 'Enfermagem e histórico de enfermagem', description: 'Registros de sinais vitais, triagem, atendimento e verificações horárias, além do histórico de registros.', details: ['Use o PWA Nursing em aparelho institucional para coleta móvel.', 'O PWA permite preparar registros offline de forma cifrada e sincronizá-los quando o servidor voltar a ficar acessível.', 'Confira paciente, unidade e valores antes de sincronizar; falhas de sincronização ficam visíveis para conferência.'], terms: 'nursing sinais vitais triagem ronda verificação horária pwa offline histórico' },
+  { title: 'Médico e atendimento ambulatorial', description: 'Fila e registros médicos associados ao atendimento.', details: ['Atenda os pacientes encaminhados pela chamada e triagem.', 'Confirme a identificação do paciente e a fila antes de iniciar o registro clínico.'], terms: 'physician médico ambulatório consulta' },
+  { title: 'Farmácia', description: 'Controle de medicamentos, estoque, dispensação e movimentações.', details: ['Acompanhe níveis e alertas de estoque.', 'Registre entradas e dispensações pelo fluxo do módulo para manter a rastreabilidade.'], terms: 'pharmacy medicamento estoque dispensação' },
+  { title: 'Central de exames', description: 'Solicitações e acompanhamento de exames laboratoriais, imagem e eletrocardiograma.', details: ['Selecione os exames e acompanhe o status e o resultado no registro correspondente.', 'Confira paciente e exame selecionado antes de concluir ou atualizar um pedido.'], terms: 'xray exames sangue laboratório eletrocardiograma ecg resultado' },
+  { title: 'Serviço Social', description: 'Acompanhamento e encaminhamentos sociais vinculados ao paciente.', details: ['Registre informações necessárias ao acompanhamento social.', 'Compartilhe somente dados pertinentes ao atendimento e conforme as permissões do perfil.'], terms: 'social assistência encaminhamento' },
+  { title: 'Nutrição', description: 'Acompanhamento nutricional e registros relacionados à assistência alimentar.', details: ['Revise o paciente e as informações atuais antes de registrar uma avaliação ou conduta.'], terms: 'nutrition dieta avaliação nutricional' },
+  { title: 'Psicologia', description: 'Acompanhamento psicológico e registros próprios do módulo.', details: ['Acesse somente os registros permitidos ao seu perfil e mantenha o sigilo das informações.'], terms: 'psychology psicologia atendimento sigilo' },
+  { title: 'Oficina Terapêutica', description: 'Calendário de atividades, presença, relatórios, materiais e biblioteca de imagens.', details: ['Use Materiais para controlar quantidades e movimentações de itens.', 'Imagens adicionadas à biblioteca são armazenadas no espaço próprio da Oficina, separadas do banco de dados clínico.', 'Confira o título e a imagem antes do envio; confirme a exclusão somente quando necessário.'], terms: 'therapy oficina calendário presença materiais imagens arquivo' },
+  { title: 'Manutenção', description: 'Ordens de serviço, equipamentos e acompanhamento dos trabalhos de manutenção.', details: ['No PWA Operações, o perfil de Manutenção vê somente sua própria fila.', 'Com conexão ao servidor, atualize o status e encerre a OS após concluir o trabalho.', 'A cópia offline é somente para consulta; alterações não são enfileiradas offline.'], terms: 'maintenance manutenção ordem serviço os equipamento pwa' },
+  { title: 'Higienização', description: 'Solicitações de higienização, status do serviço e liberação de leitos.', details: ['No PWA Operações, o perfil de Higienização vê somente sua própria fila.', 'A conclusão da higienização pode deixar a liberação do leito pendente; o leito só fica disponível após confirmação do servidor.', 'Se a liberação falhar, conecte ao servidor e use Tentar liberar leito. Não considere o leito liberado antes da confirmação.'], terms: 'hygiene higienização limpeza leito liberação pwa' },
+  { title: 'Gestão Hospitalar', description: 'Indicadores, pendências, unidades e leitos, relatórios e governança conforme as permissões atribuídas.', details: ['O perfil de Gestão Hospitalar não administra contas de usuários.', 'Ações de consulta ou alteração variam conforme as permissões efetivas do perfil.', 'Use os relatórios para acompanhamento; alterações operacionais devem ser feitas no módulo responsável.'], terms: 'management gestão hospitalar indicadores relatórios governança leitos pendências' },
+  { title: 'Administração', description: 'Administração de contas, permissões e auditoria para perfis autorizados.', details: ['A criação e gestão de contas é restrita a Administração e Superadministrador.', 'Revise o perfil e as permissões antes de salvar; conceda somente o acesso necessário.', 'Consulte a auditoria para verificar ações administrativas recentes.'], terms: 'admin administração usuários contas permissões auditoria' },
+  { title: 'Relatórios e auditoria', description: 'Consulta de relatórios e eventos administrativos permitidos ao perfil.', details: ['Use os filtros e os períodos disponíveis para localizar as informações necessárias.', 'A auditoria registra ações administrativas sem substituir os registros clínicos ou os controles institucionais.'], terms: 'oversight relatórios auditoria eventos consulta' },
+  { title: 'Sobre e conformidade', description: 'Identificação do produto e referências de conformidade e privacidade.', details: ['Consulte as informações de versão e as referências legais disponíveis.', 'Este conteúdo é informativo e não substitui normas e políticas institucionais.'], terms: 'about sobre conformidade privacidade legislação produto versão' },
+  { title: 'Superadministrador', description: 'Manutenção do sistema, backups, recuperação de acesso e este guia operacional.', details: ['Use backups para preservar uma cópia antes de operações de manutenção.', 'Recuperação de acesso revoga credenciais/sessões e exige entrega segura das novas credenciais.', 'O guia deve ser revisado sempre que módulos, fluxos, permissões ou procedimentos de suporte mudarem.'], terms: 'system-admin superadmin superadministrador backup recuperação acesso guia' },
+]
+
+const issues: GuideEntry[] = [
+  { title: 'Não consigo entrar ou a sessão expirou', description: 'O acesso pode falhar por senha, MFA, conta inativa ou expiração da sessão.', details: ['Confira usuário e senha e conclua a verificação MFA.', 'No acesso pelo computador, a sessão dura até 12 horas; entre novamente quando expirar.', 'Se as credenciais não puderem ser recuperadas, solicite ao Administrador ou Superadministrador a redefinição autorizada.'], terms: 'login senha mfa sessão expirada autenticação' },
+  { title: 'Acesso negado a um módulo', description: 'A conta autenticada não possui o módulo ou a permissão necessária.', details: ['Confirme que entrou com a conta correta.', 'Solicite ao Administrador a revisão do perfil e das permissões; não compartilhe credenciais de outro usuário.', 'A Gestão Hospitalar não concede gestão de contas.'], terms: '403 proibido acesso negado módulo permissão perfil' },
+  { title: 'PWA informa que não consegue conectar ao servidor', description: 'O dispositivo não está alcançando o servidor do SCPO Connect, mesmo que a internet esteja disponível.', details: ['Confirme que está na rede local que alcança o servidor ou na conexão institucional autorizada.', 'Atualize a tela e tente novamente.', 'Enfermagem pode sincronizar ações pendentes depois que o servidor voltar. Manutenção e Higienização não podem alterar status sem conexão.'], terms: 'servidor rede offline internet conexão pwa' },
+  { title: 'Dados móveis não aparecem ou parecem antigos', description: 'A fila pode estar usando uma cópia offline de consulta.', details: ['Confira o indicador de conexão e o horário da última atualização.', 'Quando conectado, use Atualizar para carregar os dados atuais do servidor.', 'O cache operacional expira após 24 horas e é somente para consulta.'], terms: 'cache desatualizado atualização fila ordens' },
+  { title: 'Status de OS não foi salvo', description: 'A atualização exige conexão e permissão de alteração no módulo de Manutenção.', details: ['Confirme que o servidor está conectado e tente novamente.', 'Confira se a OS ainda está aberta ou em andamento; estados concluídos/cancelados são finais.', 'Se o erro persistir, anote o número da OS e encaminhe ao Administrador.'], terms: 'ordem serviço os status salvar manutenção erro' },
+  { title: 'Higienização concluída, mas o leito segue bloqueado', description: 'O registro de conclusão e a liberação do leito são operações relacionadas, mas a liberação pode falhar.', details: ['Não encaminhe nova internação até o sistema confirmar “Leito liberado”.', 'Com conexão, tente novamente pelo botão Tentar liberar leito.', 'Se continuar pendente, acione o suporte e informe a solicitação e o leito.'], terms: 'leito bloqueado release_pending liberar higiene erro' },
+  { title: 'Registro de Enfermagem aguardando sincronização', description: 'Uma coleta feita sem conexão ainda está na fila cifrada do aparelho.', details: ['Reconecte à rede que alcança o servidor e mantenha o PWA aberto até a confirmação.', 'Confira o painel de sincronização para verificar sucesso ou erro.', 'Não repita o registro se ele já aparece como sincronizado; os envios usam identificadores para evitar duplicidade.'], terms: 'nursing offline sincronização pendente sinais vitais duplicado' },
+  { title: 'Backup ou restauração apresentou erro', description: 'A operação de backup/restauração não foi confirmada.', details: ['Não considere a operação concluída sem a mensagem de confirmação.', 'Verifique o espaço e a disponibilidade do destino de backup junto ao responsável técnico.', 'Antes de repetir uma restauração, confirme o arquivo e o ambiente de destino; peça apoio técnico se houver dúvida.'], terms: 'backup restauração restore falha arquivo' },
+  { title: 'Imagem da Oficina não foi enviada', description: 'O arquivo pode estar fora dos formatos ou limite aceitos ou o armazenamento pode estar indisponível.', details: ['Use JPG, PNG ou WebP com até 12 MB.', 'Confirme o título e tente novamente.', 'Se persistir, acione o suporte técnico para verificar o armazenamento próprio da Oficina.'], terms: 'therapy imagem upload arquivo oficina erro' },
+  { title: 'O aplicativo mostra erro inesperado', description: 'Uma falha de rede, permissão ou serviço pode ter interrompido a operação.', details: ['Anote o horário, o módulo e a ação imediatamente anterior ao erro.', 'Atualize a tela uma vez e confirme se o registro foi salvo antes de repetir.', 'Encaminhe a mensagem completa ao suporte; não envie senhas, códigos MFA ou dados clínicos desnecessários.'], terms: 'erro inesperado falha bug suporte' },
+]
+
+function matches(entry: GuideEntry, query: string) {
+  const normalized = query.trim().toLocaleLowerCase('pt-BR')
+  return !normalized || `${entry.title} ${entry.description} ${entry.details.join(' ')} ${entry.terms}`.toLocaleLowerCase('pt-BR').includes(normalized)
+}
+
+export default function SystemAdminGuide() {
+  const [query, setQuery] = useState('')
+  const visibleModules = useMemo(() => modules.filter((entry) => matches(entry, query)), [query])
+  const visibleIssues = useMemo(() => issues.filter((entry) => matches(entry, query)), [query])
+
+  return <section className="system-guide">
+    <div className="system-guide-intro patient-list-panel">
+      <div className="system-guide-intro-icon"><BookOpen size={22} /></div>
+      <div><p className="eyebrow">BASE OPERACIONAL</p><h2>Guia de módulos e solução de problemas</h2><p className="welcome-copy">Consulte o funcionamento dos módulos e os primeiros passos para resolver problemas comuns. Se não resolver, encaminhe o erro ao suporte responsável.</p></div>
+      <span className="system-guide-access"><ShieldCheck size={15} /> Superadministrador</span>
+    </div>
+    <label className="field system-guide-search"><span className="field-label">Pesquisar no guia</span><span className="system-guide-search-input"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ex.: leito, MFA, sinais vitais, backup" /></span></label>
+    <section className="system-guide-section">
+      <div className="section-heading"><div><p className="eyebrow">COMO O SISTEMA FUNCIONA</p><h2>Módulos e funções</h2></div><span className="module-total">{visibleModules.length} tópicos</span></div>
+      {visibleModules.length ? <div className="system-guide-grid">{visibleModules.map((entry) => <details className="system-guide-card" key={entry.title}>
+        <summary><strong>{entry.title}</strong><span>{entry.description}</span></summary>
+        <ul>{entry.details.map((detail) => <li key={detail}>{detail}</li>)}</ul>
+      </details>)}</div> : <p className="history-empty">Nenhum módulo encontrado para essa busca.</p>}
+    </section>
+    <section className="system-guide-section">
+      <div className="section-heading"><div><p className="eyebrow">DIAGNÓSTICO INICIAL</p><h2><TriangleAlert size={18} /> Problemas comuns e soluções</h2></div><span className="module-total">{visibleIssues.length} tópicos</span></div>
+      {visibleIssues.length ? <div className="system-guide-grid">{visibleIssues.map((entry) => <details className="system-guide-card system-guide-issue" key={entry.title}>
+        <summary><strong>{entry.title}</strong><span>{entry.description}</span></summary>
+        <ul>{entry.details.map((detail) => <li key={detail}>{detail}</li>)}</ul>
+      </details>)}</div> : <p className="history-empty">Nenhum problema encontrado para essa busca.</p>}
+      <p className="system-guide-safety">Não registre senhas, códigos MFA ou informações clínicas em chamados de suporte. O Superadministrador não substitui os procedimentos clínicos e assistenciais da instituição.</p>
+    </section>
+  </section>
+}

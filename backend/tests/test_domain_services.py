@@ -8,7 +8,6 @@ from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException, Request, Response
 from pydantic import ValidationError
-from sqlalchemy import select
 from scpo_services import (
     access,
     audit,
@@ -26,7 +25,13 @@ from scpo_services.common import (
     get_engine,
     require_demo_role,
 )
-from scpo_services.security import SESSION_COOKIE, issue_session, verify_password
+from scpo_services.security import (
+    SESSION_COOKIE,
+    SESSION_TTL_SECONDS,
+    issue_session,
+    verify_password,
+)
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 
@@ -503,6 +508,7 @@ def test_session_refresh_keeps_the_original_expiration(
     db.commit()
     token = issue_session(user.id, "active", user.session_version)
     claims = access.read_session(token)
+    assert claims["exp"] - claims["iat"] == SESSION_TTL_SECONDS == 12 * 60 * 60
     request = Request({
         "type": "http",
         "method": "POST",
