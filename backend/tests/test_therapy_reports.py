@@ -1,13 +1,16 @@
+import asyncio
 from collections.abc import Generator
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import HTTPException
 from pydantic import ValidationError
 from scpo_services import therapy
 from scpo_services.common import DemoPrincipal, clear_engine_cache, get_engine
 from scpo_services.nursing import Patient
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 
 @pytest.fixture
@@ -183,3 +186,151 @@ def test_therapy_roster_returns_only_operational_identity(
     assert roster["participants"] == [
         {"reference": "patient-private", "name": "Paciente Oficina", "birth_date": "1980-01-02"}
     ]
+
+
+def test_therapy_material_inventory_records_and_validates_stock_movements(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    therapist = DemoPrincipal(
+        "therapist-id", "therapist", "Profissional da oficina",
+        "therapy", ["therapy"], {"therapy": ["consultar", "criar", "alterar"]},
+    )
+    material = therapy.create_therapy_material(
+        therapy.TherapyMaterialCreatePayload(
+            name="Tinta acrílica",
+            category="Pintura",
+            unit="tubo",
+            initial_quantity="3.5",
+            color_name="Azul cobalto",
+            color_code="#0047AB",
+        ),
+        therapist,
+        therapy_database,
+    )
+    assert material["quantity"] == "3.500"
+    assert material["color_name"] == "Azul cobalto"
+
+    with pytest.raises(HTTPException) as error:
+        therapy.create_therapy_material_movement(
+            material["id"],
+            therapy.TherapyMaterialAdjustmentPayload(
+                direction="consumo", quantity="4", reason="Consumo para oficina"
+            ),
+            therapist,
+            therapy_database,
+        )
+    assert error.value.status_code == 409
+
+    result = therapy.create_therapy_material_movement(
+        material["id"],
+        therapy.TherapyMaterialAdjustmentPayload(
+            direction="consumo", quantity="1.25", reason="Atividade de pintura"
+        ),
+        therapist,
+        therapy_database,
+    )
+    assert result["material"]["quantity"] == "2.250"
+    history = therapy.list_therapy_material_movements(
+        material["id"], therapist, therapy_database
+    )
+    assert history["total"] == 2
+    assert history["movements"][0]["balance_after"] == "2.250"
+    assert history["movements"][0]["actor_name"] == "Profissional da oficina"
+    older_page = therapy.list_therapy_material_movements(
+        material["id"], therapist, therapy_database, limit=1, offset=1
+    )
+    assert len(older_page["movements"]) == 1
+    assert older_page["offset"] == 1
+
+    archived = therapy.update_therapy_material(
+        material["id"],
+        therapy.TherapyMaterialUpdatePayload(
+            name="Tinta acrílica",
+            category="Pintura",
+            unit="tubo",
+            color_name="Azul cobalto",
+            color_code="#0047AB",
+            active=False,
+        ),
+        therapist,
+        therapy_database,
+    )
+    assert archived["active"] is False
+    assert therapy.list_therapy_materials(therapist, therapy_database)["materials"] == []
+    assert len(therapy.list_therapy_materials(therapist, therapy_database, include_archived=True)["materials"]) == 1
+
+
+def test_therapy_material_image_upload_and_delete_use_configured_storage(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(therapy, "therapy_materials_directory", lambda: tmp_path / "therapy-images")
+    therapist = DemoPrincipal(
+        "therapist-id", "therapist", "Profissional da oficina",
+        "therapy", ["therapy"], {"therapy": ["consultar", "criar", "alterar"]},
+    )
+    image_bytes = b"\x89PNG\r\n\x1a\n" + b"test-image-content"
+    request_sent = False
+
+    async def receive():
+        nonlocal request_sent
+        if request_sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        request_sent = True
+        return {"type": "http.request", "body": image_bytes, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "headers": [(b"content-type", b"image/png")],
+            "path": "/api/v1/therapy/material-images",
+            "query_string": b"title=Formas+para+pintar",
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "scheme": "http",
+        },
+        receive,
+    )
+    uploaded = asyncio.run(
+        therapy.upload_therapy_material_image(
+            request, "Formas para pintar", therapist, therapy_database
+        )
+    )
+    image_path = tmp_path / "therapy-images" / uploaded["filename"]
+    assert image_path.read_bytes() == image_bytes
+    assert therapy.list_therapy_material_images(therapist, therapy_database)["images"][0]["title"] == "Formas para pintar"
+    file_response = therapy.get_therapy_material_image(
+        uploaded["filename"], therapist, therapy_database
+    )
+    assert file_response.path == image_path
+    assert file_response.headers["content-disposition"].startswith("inline;")
+    response = therapy.delete_therapy_material_image(
+        uploaded["id"], therapist, therapy_database
+    )
+    assert response.status_code == 204
+    assert not image_path.exists()
+    assert therapy.list_therapy_material_images(therapist, therapy_database)["images"] == []
+
+
+def test_therapy_library_rejects_non_image_payloads() -> None:
+    assert therapy.valid_material_image("image/png", b"\x89PNG\r\n\x1a\ncontent")
+    assert not therapy.valid_material_image("image/png", b"not an image")
+    assert not therapy.valid_material_image("image/svg+xml", b"<svg></svg>")
+
+
+def test_therapy_material_payload_rejects_blank_names_and_negative_stock() -> None:
+    with pytest.raises(ValidationError, match="name"):
+        therapy.TherapyMaterialCreatePayload(
+            name="  ",
+            category="Pintura",
+            unit="tubo",
+        )
+    with pytest.raises(ValidationError, match="initial_quantity"):
+        therapy.TherapyMaterialCreatePayload(
+            name="Tinta acrílica",
+            category="Pintura",
+            unit="tubo",
+            initial_quantity="-1",
+        )

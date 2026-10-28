@@ -1,14 +1,22 @@
+import os
+import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -64,6 +72,55 @@ class TherapyActivityAttendance(Base):
     attendance: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
 
 
+class TherapyMaterial(Base):
+    __tablename__ = "therapy_materials"
+    __table_args__ = (CheckConstraint("quantity >= 0", name="ck_therapy_materials_quantity_nonnegative"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    color_name: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    color_code: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TherapyMaterialMovement(Base):
+    __tablename__ = "therapy_material_movements"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_therapy_material_movements_quantity_positive"),
+        CheckConstraint("balance_after >= 0", name="ck_therapy_material_movements_balance_nonnegative"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    material_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("therapy_materials.id", ondelete="RESTRICT"), nullable=False
+    )
+    direction: Mapped[str] = mapped_column(String(12), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    balance_after: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TherapyMaterialImage(Base):
+    __tablename__ = "therapy_material_images"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(48), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 def get_therapy_db():
     yield from database_session("nursing")
 
@@ -78,6 +135,64 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="SCPO Connect · Oficina Terapêutica", version="1.0.0", lifespan=lifespan)
 THERAPY_ROLE = require_demo_role("therapy")
 THERAPY_REPORT_ACCESS = require_demo_role("therapy", "management", "admin", "oversight")
+MATERIAL_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+MATERIAL_IMAGE_MAX_BYTES = 12 * 1024 * 1024
+
+
+def therapy_materials_directory() -> Path:
+    configured_directory = os.getenv("SCPO_THERAPY_MATERIALS_DIR")
+    if configured_directory:
+        return Path(configured_directory).expanduser().resolve()
+    local_data_directory = os.getenv("SCPO_LOCAL_DATA_DIR")
+    if local_data_directory:
+        return (Path(local_data_directory).expanduser() / "therapy-materials").resolve()
+    return (Path(__file__).resolve().parents[2] / "data" / "therapy-materials").resolve()
+
+
+def valid_material_image(content_type: str, content: bytes) -> bool:
+    if content_type == "image/jpeg":
+        return content.startswith(b"\xff\xd8\xff")
+    if content_type == "image/png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    return (
+        content_type == "image/webp"
+        and len(content) >= 12
+        and content.startswith(b"RIFF")
+        and content[8:12] == b"WEBP"
+    )
+
+
+def serialize_material(material: TherapyMaterial) -> dict[str, object]:
+    return {
+        "id": material.id,
+        "name": material.name,
+        "category": material.category,
+        "unit": material.unit,
+        "quantity": str(material.quantity),
+        "color_name": material.color_name,
+        "color_code": material.color_code,
+        "active": material.active,
+        "created_by": material.created_by,
+        "created_at": material.created_at.isoformat(),
+        "updated_at": material.updated_at.isoformat(),
+    }
+
+
+def serialize_material_image(image: TherapyMaterialImage) -> dict[str, object]:
+    return {
+        "id": image.id,
+        "filename": image.filename,
+        "title": image.title,
+        "content_type": image.content_type,
+        "size_bytes": image.size_bytes,
+        "uploaded_by": image.uploaded_by,
+        "uploaded_at": image.uploaded_at.isoformat(),
+        "url": f"/api/v1/therapy/material-images/{image.filename}",
+    }
 
 
 class ActivityPayload(BaseModel):
@@ -129,9 +244,339 @@ class ActivityReportPayload(BaseModel):
     status: Literal["scheduled", "in_progress", "completed", "cancelled"]
 
 
+class TherapyMaterialCreatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=120)
+    category: str = Field(min_length=2, max_length=40)
+    unit: str = Field(min_length=1, max_length=24)
+    initial_quantity: Decimal = Field(default=Decimal(0), ge=0, max_digits=12, decimal_places=3)
+    color_name: str = Field(default="", max_length=60)
+    color_code: str = Field(default="", max_length=32)
+
+    @field_validator("name", "category", "unit", "color_name", "color_code", mode="before")
+    @classmethod
+    def trim_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class TherapyMaterialUpdatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=120)
+    category: str = Field(min_length=2, max_length=40)
+    unit: str = Field(min_length=1, max_length=24)
+    color_name: str = Field(default="", max_length=60)
+    color_code: str = Field(default="", max_length=32)
+    active: bool
+
+    @field_validator("name", "category", "unit", "color_name", "color_code", mode="before")
+    @classmethod
+    def trim_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class TherapyMaterialAdjustmentPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    direction: Literal["entrada", "consumo"]
+    quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
+    reason: str = Field(min_length=3, max_length=300)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def trim_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"service": "therapy", "status": "ok"}
+
+
+@app.get("/api/v1/therapy/materials")
+def list_therapy_materials(
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+    include_archived: bool = False,
+) -> dict[str, list[dict[str, object]]]:
+    query = select(TherapyMaterial)
+    if not include_archived:
+        query = query.where(TherapyMaterial.active.is_(True))
+    materials = db.scalars(query.order_by(TherapyMaterial.category, TherapyMaterial.name)).all()
+    emit_audit_event(principal, "therapy", "therapy_materials_read", "therapy_materials")
+    return {"materials": [serialize_material(material) for material in materials]}
+
+
+@app.post("/api/v1/therapy/materials", status_code=201)
+def create_therapy_material(
+    payload: TherapyMaterialCreatePayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    material = TherapyMaterial(
+        id=str(uuid.uuid4()),
+        name=payload.name,
+        category=payload.category,
+        unit=payload.unit,
+        quantity=payload.initial_quantity,
+        color_name=payload.color_name,
+        color_code=payload.color_code,
+        active=True,
+        created_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(material)
+    if payload.initial_quantity > 0:
+        db.add(
+            TherapyMaterialMovement(
+                id=str(uuid.uuid4()),
+                material_id=material.id,
+                direction="entrada",
+                quantity=payload.initial_quantity,
+                balance_after=payload.initial_quantity,
+                reason="Saldo inicial do cadastro",
+                actor_id=principal.user_id,
+                actor_name=principal.actor_name,
+                created_at=now,
+            )
+        )
+    emit_audit_event(principal, "therapy", "therapy_material_created", material.id, db=db)
+    db.commit()
+    db.refresh(material)
+    return serialize_material(material)
+
+
+@app.patch("/api/v1/therapy/materials/{material_id}")
+def update_therapy_material(
+    material_id: str,
+    payload: TherapyMaterialUpdatePayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    material = db.scalar(
+        select(TherapyMaterial).where(TherapyMaterial.id == material_id).with_for_update()
+    )
+    if material is None:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+    material.name = payload.name
+    material.category = payload.category
+    material.unit = payload.unit
+    material.color_name = payload.color_name
+    material.color_code = payload.color_code
+    material.active = payload.active
+    material.updated_at = datetime.now(UTC)
+    emit_audit_event(principal, "therapy", "therapy_material_updated", material.id, db=db)
+    db.commit()
+    db.refresh(material)
+    return serialize_material(material)
+
+
+@app.post("/api/v1/therapy/materials/{material_id}/movements", status_code=201)
+def create_therapy_material_movement(
+    material_id: str,
+    payload: TherapyMaterialAdjustmentPayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    material = db.scalar(
+        select(TherapyMaterial).where(TherapyMaterial.id == material_id).with_for_update()
+    )
+    if material is None:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+    if not material.active:
+        raise HTTPException(status_code=409, detail="Reative o material antes de movimentar o estoque")
+    change = payload.quantity if payload.direction == "entrada" else -payload.quantity
+    balance = material.quantity + change
+    if balance < 0:
+        raise HTTPException(status_code=409, detail="O consumo não pode deixar o estoque negativo")
+    if balance > Decimal("999999999.999"):
+        raise HTTPException(status_code=409, detail="A quantidade excede o limite permitido para o estoque")
+    now = datetime.now(UTC)
+    material.quantity = balance
+    material.updated_at = now
+    movement = TherapyMaterialMovement(
+        id=str(uuid.uuid4()),
+        material_id=material.id,
+        direction=payload.direction,
+        quantity=payload.quantity,
+        balance_after=balance,
+        reason=payload.reason,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        created_at=now,
+    )
+    db.add(movement)
+    emit_audit_event(principal, "therapy", "therapy_material_movement_created", material.id, db=db)
+    db.commit()
+    db.refresh(material)
+    return {
+        "material": serialize_material(material),
+        "movement": {
+            "id": movement.id,
+            "direction": movement.direction,
+            "quantity": str(movement.quantity),
+            "balance_after": str(movement.balance_after),
+            "reason": movement.reason,
+            "actor_name": movement.actor_name,
+            "created_at": movement.created_at.isoformat(),
+        },
+    }
+
+
+@app.get("/api/v1/therapy/materials/{material_id}/movements")
+def list_therapy_material_movements(
+    material_id: str,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    if db.get(TherapyMaterial, material_id) is None:
+        raise HTTPException(status_code=404, detail="Material não encontrado")
+    total = db.scalar(
+        select(func.count()).select_from(TherapyMaterialMovement).where(
+            TherapyMaterialMovement.material_id == material_id
+        )
+    ) or 0
+    movements = db.scalars(
+        select(TherapyMaterialMovement)
+        .where(TherapyMaterialMovement.material_id == material_id)
+        .order_by(TherapyMaterialMovement.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    emit_audit_event(principal, "therapy", "therapy_material_movements_read", material_id)
+    return {
+        "movements": [
+            {
+                "id": movement.id,
+                "direction": movement.direction,
+                "quantity": str(movement.quantity),
+                "balance_after": str(movement.balance_after),
+                "reason": movement.reason,
+                "actor_name": movement.actor_name,
+                "created_at": movement.created_at.isoformat(),
+            }
+            for movement in movements
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.get("/api/v1/therapy/material-images")
+def list_therapy_material_images(
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, list[dict[str, object]]]:
+    images = db.scalars(
+        select(TherapyMaterialImage).order_by(TherapyMaterialImage.title, TherapyMaterialImage.uploaded_at.desc())
+    ).all()
+    emit_audit_event(principal, "therapy", "therapy_material_images_read", "therapy_material_images")
+    return {"images": [serialize_material_image(image) for image in images]}
+
+
+@app.post("/api/v1/therapy/material-images", status_code=201)
+async def upload_therapy_material_image(
+    request: Request,
+    title: Annotated[str, Query(min_length=2, max_length=120)],
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    title = title.strip()
+    if len(title) < 2:
+        raise HTTPException(status_code=422, detail="Informe um título com pelo menos 2 caracteres")
+    content_type = request.headers.get("content-type", "").split(";", maxsplit=1)[0].strip().lower()
+    extension = MATERIAL_IMAGE_TYPES.get(content_type)
+    if extension is None:
+        raise HTTPException(status_code=415, detail="Formato não aceito. Envie JPG, PNG ou WebP.")
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > MATERIAL_IMAGE_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Cada imagem deve ter no máximo 12 MB.")
+    if not valid_material_image(content_type, content):
+        raise HTTPException(status_code=422, detail="O arquivo não corresponde a uma imagem válida do formato informado.")
+    filename = f"{uuid.uuid4().hex}{extension}"
+    image_path = therapy_materials_directory() / filename
+    image = TherapyMaterialImage(
+        id=str(uuid.uuid4()),
+        filename=filename,
+        title=title,
+        content_type=content_type,
+        size_bytes=len(content),
+        uploaded_by=principal.actor_name,
+        uploaded_at=datetime.now(UTC),
+    )
+    try:
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_bytes(content)
+        db.add(image)
+        emit_audit_event(principal, "therapy", "therapy_material_image_uploaded", image.id, db=db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            image_path.unlink(missing_ok=True)
+        except OSError as cleanup_error:
+            raise RuntimeError("Não foi possível finalizar ou limpar o upload da imagem.") from cleanup_error
+        raise
+    return serialize_material_image(image)
+
+
+@app.get("/api/v1/therapy/material-images/{filename}")
+def get_therapy_material_image(
+    filename: str,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> FileResponse:
+    if not re.fullmatch(r"[a-f0-9]{32}\.(?:jpg|png|webp)", filename):
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    image = db.scalar(select(TherapyMaterialImage).where(TherapyMaterialImage.filename == filename))
+    if image is None:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    image_path = therapy_materials_directory() / filename
+    if not image_path.is_file():
+        raise HTTPException(status_code=500, detail="Arquivo da biblioteca não está disponível no armazenamento")
+    emit_audit_event(principal, "therapy", "therapy_material_image_downloaded", image.id)
+    return FileResponse(
+        image_path,
+        media_type=image.content_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="{image.id}{image_path.suffix}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.delete("/api/v1/therapy/material-images/{image_id}", status_code=204)
+def delete_therapy_material_image(
+    image_id: str,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> Response:
+    image = db.get(TherapyMaterialImage, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    image_path = therapy_materials_directory() / image.filename
+    if not image_path.is_file():
+        raise HTTPException(status_code=500, detail="Arquivo da biblioteca não está disponível no armazenamento")
+    content = image_path.read_bytes()
+    image_path.unlink()
+    db.delete(image)
+    try:
+        emit_audit_event(principal, "therapy", "therapy_material_image_deleted", image.id, db=db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            image_path.write_bytes(content)
+        except OSError as restore_error:
+            raise RuntimeError("A exclusão falhou e não foi possível restaurar a imagem; contate o suporte.") from restore_error
+        raise
+    return Response(status_code=204)
 
 
 @app.get("/api/v1/therapy/activities")

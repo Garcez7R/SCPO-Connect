@@ -15,6 +15,20 @@ bash scripts/backup-rgs.sh
 
 O botão **Gerar backup** em Administração do Sistema exporta os mesmos sete bancos usando AES-GCM e a senha informada pelo superadministrador. A interface não importa nem aplica backups aos bancos ativos. Para validar um arquivo exportado pela interface, use a restauração isolada abaixo; o script solicitará a senha sem expô-la na linha de comando.
 
+## Biblioteca de imagens da Oficina Terapêutica
+
+Os metadados da biblioteca são armazenados no banco Nursing; os arquivos ficam no diretório indicado por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão: `./data/therapy-materials`). Para usar um HD externo, a equipe de infraestrutura deve primeiro montá-lo no host em um caminho persistente e definir esse caminho no `.env`, por exemplo:
+
+```sh
+SCPO_THERAPY_MATERIALS_HOST_DIR=/mnt/scpo-therapy-assets
+```
+
+O aplicativo aceita imagens JPG, PNG e WebP de até 12 MB por arquivo. O acervo é autenticado e não é servido como conteúdo público.
+
+Antes de iniciar ou reiniciar os containers, confirme que o dispositivo está realmente montado no caminho configurado (`findmnt --target /mnt/scpo-therapy-assets`) e que o diretório permite leitura e gravação ao UID/GID `10001` usado pelo container. Se o disco não estiver montado, o bind mount pode gravar no disco do sistema em vez do HD externo. A preparação do mount, permissões e persistência após reinicialização deve ser validada pela TI no host; o aplicativo não detecta nem monta hardware.
+
+O pacote `.rgs` não inclui esse diretório. Faça backup separado das imagens para um destino institucional protegido, com retenção e teste de restauração definidos; preservar somente o banco não recupera os arquivos da biblioteca, e preservar somente as imagens não recupera seus metadados.
+
 Para validar/importar o pacote sem trocar os bancos ativos, restaure em um conjunto novo e isolado:
 
 ```sh

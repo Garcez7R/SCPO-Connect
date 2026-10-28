@@ -1278,6 +1278,46 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-report-actions .button { min-height: 42px; }
 .therapy-report-author { color: var(--subtle); font-size: 10px; }
 .therapy-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.therapy-materials-panel { display: grid; gap: 16px; }
+.therapy-material-form, .therapy-material-section { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.therapy-material-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.therapy-material-section > .section-heading h2 { display: flex; align-items: center; gap: 8px; margin: 2px 0 0; font-size: 18px; }
+.therapy-material-section > .section-heading .welcome-copy { margin: 5px 0 0; }
+.therapy-material-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
+.therapy-material-card { display: grid; min-width: 0; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.therapy-material-card-archived { opacity: .8; }
+.therapy-material-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.therapy-material-category, .therapy-material-archived-label { color: var(--muted); font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+.therapy-material-card h3 { margin: 4px 0; color: var(--ink); font-size: 15px; }
+.therapy-material-color { margin: 0; color: var(--muted); font-size: 11px; }
+.therapy-material-stock { display: grid; justify-items: end; gap: 2px; color: var(--ink); }
+.therapy-material-stock strong { font-size: 19px; line-height: 1.1; }
+.therapy-material-stock span { color: var(--muted); font-size: 10px; }
+.therapy-material-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.therapy-material-actions .button { min-height: 34px; padding: 7px 10px; font-size: 11px; }
+.therapy-material-history-toggle { display: inline-flex; width: fit-content; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--blue-dark); font-size: 11px; font-weight: 600; cursor: pointer; }
+.therapy-material-edit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.therapy-material-edit > .button { width: fit-content; }
+.therapy-material-history { display: grid; gap: 8px; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--line); list-style: none; }
+.therapy-material-history > li:not(.history-empty) { display: grid; gap: 3px; color: var(--ink); font-size: 11px; }
+.therapy-material-history small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.therapy-movement-direction { font-weight: 650; }
+.therapy-movement-entrada { color: var(--status-success-ink); }
+.therapy-movement-consumo { color: var(--muted); }
+.therapy-material-message { margin: 0; padding: 11px 13px; border: 1px solid var(--status-success-border); border-radius: 7px; background: var(--status-success-background); color: var(--status-success-ink); font-size: 12px; }
+.therapy-material-error { border-color: var(--status-critical-border); background: var(--status-critical-background); color: var(--status-critical-ink); }
+.therapy-image-upload { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.therapy-image-upload > .button { width: fit-content; }
+.therapy-image-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.therapy-image-card { display: grid; min-width: 0; align-content: start; gap: 10px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.therapy-image-card > img { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--surface); object-fit: contain; }
+.therapy-image-card > div:not(.therapy-material-actions) { padding: 0 12px; }
+.therapy-image-card h3 { margin: 0 0 4px; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.therapy-image-card p, .therapy-image-card small { margin: 0; color: var(--muted); font-size: 10px; }
+.therapy-image-card .therapy-material-actions { padding: 0 12px 12px; }
+.therapy-image-card .therapy-material-actions .button { text-decoration: none; }
+html[data-theme="dark"] .therapy-material-card,
+html[data-theme="dark"] .therapy-image-card { background: var(--surface); }
 .therapy-participant-picker { display: grid; min-width: 0; gap: 11px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .therapy-participant-picker > div:first-child { display: grid; gap: 3px; }
 .therapy-participant-picker > div:first-child strong { color: var(--ink); font-size: 12px; }
@@ -1290,7 +1330,12 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-selected-participants li .button { min-height: 32px; padding: 5px 8px; font-size: 10px; }
 html[data-theme="dark"] .therapy-participant-picker,
 html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--line); background: var(--surface); }
-@media (max-width: 760px) { .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .therapy-material-form, .therapy-material-section { gap: 13px; padding: 15px; }
+  .therapy-material-fields, .therapy-material-list, .therapy-image-grid { grid-template-columns: 1fr; }
+  .therapy-material-edit, .therapy-image-upload { grid-template-columns: 1fr; }
+}
 .beta-celebration { position: fixed; z-index: 1800; inset: 0; display: grid; place-items: center; overflow: hidden; padding: 20px; }
 .beta-celebration-backdrop { position: absolute; inset: 0; background: rgba(18, 37, 49, .54); animation: beta-backdrop-in .2s ease-out both; }
 .beta-confetti-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
