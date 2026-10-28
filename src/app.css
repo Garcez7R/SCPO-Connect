@@ -853,6 +853,8 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .hygiene-summary article[class*="status-tone-"] > :is(strong, span) { color: var(--status-tone-ink); }
 .pharmacy-summary > article[class*="status-tone-"] { border-color: var(--status-tone-border); border-left: 3px solid var(--status-tone-ink); background: var(--status-tone-background); }
 .pharmacy-summary > article[class*="status-tone-"] > :is(strong, span, small) { color: var(--status-tone-ink); }
+.executive-summary-grid > article[class*="status-tone-"] { border-color: var(--status-tone-border); border-left: 3px solid var(--status-tone-ink); background: var(--status-tone-background); }
+.executive-summary-grid > article[class*="status-tone-"] > :is(strong, span) { color: var(--status-tone-ink); }
 .hygiene-panel { display: grid; gap: 15px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .hygiene-panel .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; gap: 10px; }
 .hygiene-panel .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
@@ -1657,6 +1659,7 @@ html[data-theme="dark"] .button-danger { border-color: #693b40; background-color
 html[data-theme="dark"] .module-permission-fieldset { border-color: var(--line); background: #17232b; color: var(--ink); }
 html[data-theme="dark"] .account-access-editor { background: #17232b; color: var(--ink); }
 html[data-theme="dark"] .admin-page .account-create-panel { border-color: var(--line); background: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .admin-page .account-create-panel > .form-actions { border-color: var(--line); background: var(--surface); color: var(--ink); }
 html[data-theme="dark"] .pharmacy-summary > article[class*="status-tone-"] { border-color: var(--status-tone-border); border-left-color: var(--status-tone-ink); background: var(--status-tone-background); }
 html[data-theme="dark"] .account-row .user-modules span { background: #263944; color: #b5e3f5; }
 html[data-theme="dark"] .account-row .user-action { border-color: var(--line); background: #17232b; color: var(--ink); }
@@ -2370,6 +2373,9 @@ html[data-theme="dark"] .care-track-badge.care-track-combined { background: #473
 html[data-theme="dark"] .care-track-badge.care-track-unclassified { background: #26333b; color: var(--muted); }
 html[data-theme="dark"] .physician-profile-summary { color: var(--ink); }
 .xray-page .laboratory-exam-fieldset { min-width: 0; }
+.xray-page .laboratory-exam-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.xray-page .laboratory-exam-heading .field-hint { text-align: left; }
+.xray-page .laboratory-exam-heading .button { min-height: 34px; }
 .xray-page .laboratory-exam-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
 .xray-page .laboratory-print-preview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .xray-page .laboratory-print-preview span { flex: 1 1 300px; color: var(--muted); font-size: 12px; }

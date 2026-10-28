@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Literal
+import uuid
 
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -26,6 +27,7 @@ class ExamRequest(Base):
     patient_reference: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     exam_label: Mapped[str] = mapped_column(String(80), nullable=False)
     exam_type: Mapped[str] = mapped_column(String(16), nullable=False, default="xray")
+    group_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     observations: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="requested")
     result: Mapped[str] = mapped_column(String(4000), nullable=False, default="")
@@ -89,7 +91,7 @@ class ExamRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     patient_reference: str = Field(min_length=1, max_length=36)
     exam_label: str = Field(min_length=1, max_length=80)
-    exam_type: Literal["xray", "laboratory"] = "xray"
+    exam_type: Literal["xray", "ecg"] = "xray"
     observations: str = Field(default="", max_length=1000)
 
 
@@ -188,11 +190,13 @@ def create_laboratory_requests(
     labels = list(payload.exams)
     if payload.other_exam:
         labels.append(f"Outros: {payload.other_exam}")
+    group_id = str(uuid.uuid4())
     requests = [
         ExamRequest(
             patient_reference=payload.patient_reference,
             exam_label=label,
             exam_type="laboratory",
+            group_id=group_id,
             observations=payload.observations,
             status="requested",
             created_at=datetime.now(UTC),
@@ -223,17 +227,27 @@ def update_request(
     request = db.get(ExamRequest, request_id)
     if request is None:
         raise HTTPException(status_code=404, detail="Solicitação de exame não encontrada")
+    grouped_requests = (
+        db.scalars(
+            select(ExamRequest).where(ExamRequest.group_id == request.group_id)
+        ).all()
+        if request.group_id
+        else [request]
+    )
     if request.status in {"completed", "cancelled"} and payload.status not in {None, request.status}:
         raise HTTPException(
             status_code=409,
             detail="Solicitação encerrada; registre uma nova solicitação para novo atendimento",
         )
     if payload.status is not None:
-        request.status = payload.status
+        for grouped_request in grouped_requests:
+            grouped_request.status = payload.status
     if payload.result is not None:
-        request.result = payload.result
-        request.result_recorded_by = principal.actor_name
-        request.result_recorded_at = datetime.now(UTC)
+        recorded_at = datetime.now(UTC)
+        for grouped_request in grouped_requests:
+            grouped_request.result = payload.result
+            grouped_request.result_recorded_by = principal.actor_name
+            grouped_request.result_recorded_at = recorded_at
     emit_audit_event(
         principal,
         "xray",
@@ -252,6 +266,7 @@ def serialize_request(request: ExamRequest) -> dict[str, object]:
         "patient_reference": request.patient_reference,
         "exam_label": request.exam_label,
         "exam_type": request.exam_type,
+        "group_id": request.group_id,
         "observations": request.observations,
         "status": request.status,
         "result": request.result,

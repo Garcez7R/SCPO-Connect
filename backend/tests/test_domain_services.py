@@ -8,6 +8,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import HTTPException, Request, Response
 from pydantic import ValidationError
+from sqlalchemy import select
 from scpo_services import (
     access,
     audit,
@@ -1247,6 +1248,15 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     xray_user = DemoPrincipal("xray-1", "xray", "Técnica de radiologia", "xray", ["xray"], {"xray": ["consultar", "criar", "alterar"]})
     referral = social.create_referral(social.ReferralPayload(patient_reference=reference, referral_type="Acompanhamento"), social_user, domain_database["social"])
     exam = xray.create_request(xray.ExamRequestPayload(patient_reference=reference, exam_label="Radiografia"), xray_user, domain_database["xray"])
+    ecg_exam = xray.create_request(
+        xray.ExamRequestPayload(
+            patient_reference=reference,
+            exam_label="Eletrocardiograma",
+            exam_type="ecg",
+        ),
+        xray_user,
+        domain_database["xray"],
+    )
     assert referral["patient_reference"] == reference
     assert social.update_referral(
         referral["id"],
@@ -1256,6 +1266,7 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     )["status"] == "in_progress"
     assert exam["patient_reference"] == reference
     assert exam["status"] == "requested"
+    assert ecg_exam["exam_type"] == "ecg"
 
     scheduled = xray.update_request(
         exam["id"],
@@ -1290,7 +1301,7 @@ def test_radiology_and_social_accept_real_uuid_references(monkeypatch: pytest.Mo
     assert closed_request.value.status_code == 409
 
 
-def test_laboratory_requests_create_one_record_per_selected_exam(
+def test_laboratory_exams_share_one_status_and_result_group(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:
     reference = "123e4567-e89b-12d3-a456-426614174000"
@@ -1319,6 +1330,32 @@ def test_laboratory_requests_create_one_record_per_selected_exam(
     ]
     assert all(request["exam_type"] == "laboratory" for request in result["requests"])
     assert all(request["observations"] == "Coleta pela manhã" for request in result["requests"])
+    group_ids = {request["group_id"] for request in result["requests"]}
+    assert len(group_ids) == 1
+    grouped_id = next(iter(group_ids))
+    assert grouped_id
+    scheduled = xray.update_request(
+        result["requests"][0]["id"],
+        xray.ExamRequestUpdate(status="scheduled"),
+        physician,
+        domain_database["xray"],
+    )
+    grouped_requests = domain_database["xray"].scalars(
+        select(xray.ExamRequest).where(xray.ExamRequest.group_id == grouped_id)
+    ).all()
+    assert scheduled["status"] == "scheduled"
+    assert all(request.status == "scheduled" for request in grouped_requests)
+    recorded = xray.update_request(
+        result["requests"][0]["id"],
+        xray.ExamRequestUpdate(result="Resultado conjunto da coleta"),
+        physician,
+        domain_database["xray"],
+    )
+    assert recorded["result"] == "Resultado conjunto da coleta"
+    assert all(
+        request.result == "Resultado conjunto da coleta"
+        for request in grouped_requests
+    )
     other_only = xray.create_laboratory_requests(
         xray.LaboratoryRequestPayload(
             patient_reference=reference,
@@ -1330,6 +1367,7 @@ def test_laboratory_requests_create_one_record_per_selected_exam(
     assert [request["exam_label"] for request in other_only["requests"]] == [
         "Outros: Teste independente",
     ]
+    assert other_only["requests"][0]["group_id"] != grouped_id
     with pytest.raises(ValidationError):
         xray.LaboratoryRequestPayload(patient_reference=reference, exams=["Exame inválido"])
     with pytest.raises(ValidationError):
