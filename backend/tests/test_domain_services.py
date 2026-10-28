@@ -225,6 +225,54 @@ def test_app_admin_cannot_assign_broad_management_access(
     assert [user["username"] for user in access.list_users(request, db)["users"]] == ["appadmin"]
 
 
+def test_management_cannot_create_or_delete_accounts(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    manager = access._new_user("manager", "Gestor", ["management"], access._all_permissions())
+    target = access._new_user("nurse", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
+    db.add_all([manager, target])
+    db.commit()
+    token = issue_session(manager.id, "active", manager.session_version)
+
+    def request(method: str, path: str) -> Request:
+        return Request({
+            "type": "http",
+            "method": method,
+            "path": path,
+            "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+            "query_string": b"",
+        })
+
+    with pytest.raises(HTTPException) as create_denied:
+        asyncio.run(
+            access.create_user(
+                access.UserCreatePayload(
+                    username="newuser",
+                    name="Novo usuário",
+                    modules=["nursing"],
+                ),
+                request("POST", "/api/v1/access/users"),
+                Response(),
+                db,
+            )
+        )
+    assert create_denied.value.status_code == 403
+
+    with pytest.raises(HTTPException) as delete_denied:
+        asyncio.run(
+            access.delete_user(
+                target.id,
+                request("DELETE", f"/api/v1/access/users/{target.id}"),
+                db,
+            )
+        )
+    assert delete_denied.value.status_code == 403
+    assert db.get(access.AppUser, target.id) is not None
+
+
 def test_management_cannot_recover_credentials_or_change_superadmin(
     domain_database: dict[str, Session],
     monkeypatch: pytest.MonkeyPatch,

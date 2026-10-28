@@ -1317,6 +1317,15 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .about-version h2 { margin: 2px 0 6px; font-size: 18px; }
 .about-version .welcome-copy { margin: 0; }
 .about-legal-card { display: flex; min-height: 220px; flex-direction: column; align-items: flex-start; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.about-legal-card,
+.about-version { animation: info-card-enter 340ms cubic-bezier(.2, .75, .25, 1) both; transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+.about-legal-card:hover,
+.about-version:hover { transform: translateY(-3px); border-color: #a9c6d3; box-shadow: var(--shadow); }
+.about-legal-card:nth-child(2) { animation-delay: 35ms; }
+.about-legal-card:nth-child(3) { animation-delay: 70ms; }
+.about-legal-card:nth-child(4) { animation-delay: 105ms; }
+.about-legal-card:nth-child(5) { animation-delay: 140ms; }
+.about-legal-card:nth-child(6) { animation-delay: 175ms; }
 .about-legal-card .eyebrow { margin-bottom: 9px; }
 .about-legal-card h2 { margin-bottom: 9px; }
 .about-legal-card > p:not(.eyebrow) { margin-bottom: 15px; color: var(--muted); font-size: 12px; line-height: 1.6; }
@@ -1846,6 +1855,8 @@ html[data-theme="dark"] .behavioral-status-red { border-color: #693b40; backgrou
 .credential-reset-heading { display: flex; align-items: center; gap: 12px; }
 .credential-reset-heading img { width: 48px; height: 48px; object-fit: contain; }
 .credential-reset-heading h2 { margin: 3px 0 0; }
+.screensaver-delete-icon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: var(--status-critical-background); color: var(--status-critical-ink); }
+.screensaver-delete-dialog .form-actions { margin-top: 20px; }
 @keyframes info-card-enter {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1903,7 +1914,9 @@ html[data-theme="dark"] .behavioral-status-red { border-color: #693b40; backgrou
 :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(5) { animation-delay: 140ms; }
 @media (prefers-reduced-motion: reduce) {
   :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article,
-  :is(.pharmacy-stock-levels > .pharmacy-level-count, .module-overview-grid > .overview-stat) { animation: none; transition: none; }
+  :is(.pharmacy-stock-levels > .pharmacy-level-count, .module-overview-grid > .overview-stat),
+  .about-legal-card,
+  .about-version { animation: none; transition: none; }
 }
 @media (max-width: 520px) { .xray-page .laboratory-exam-grid { grid-template-columns: 1fr; } }
 

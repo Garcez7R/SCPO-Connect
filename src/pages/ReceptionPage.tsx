@@ -466,6 +466,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
   const [clock, setClock] = useState(() => new Date())
   const [screensaverEnabled, setScreensaverEnabled] = useState(screensaverPreference.enabled)
   const [screensaverImages, setScreensaverImages] = useState<ScreensaverImage[]>([])
+  const [screensaverDeleteTarget, setScreensaverDeleteTarget] = useState<ScreensaverImage | null>(null)
   const [screensaverImageIndex, setScreensaverImageIndex] = useState(0)
   const [screensaverFileName, setScreensaverFileName] = useState('')
   const [screensaverImageAction, setScreensaverImageAction] = useState('')
@@ -578,8 +579,9 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
     }
   }
 
-  async function deleteScreensaverImage(image: ScreensaverImage) {
-    if (!window.confirm('Excluir esta imagem da proteção de tela?')) return
+  async function confirmDeleteScreensaverImage() {
+    if (!screensaverDeleteTarget) return
+    const image = screensaverDeleteTarget
     setScreensaverImageAction(image.filename)
     setError('')
     setNotice('')
@@ -597,12 +599,22 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
       setScreensaverImages(result.images)
       setScreensaverImageIndex(0)
       setNotice('Imagem removida da proteção de tela.')
+      setScreensaverDeleteTarget(null)
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'Não foi possível excluir a imagem.')
     } finally {
       setScreensaverImageAction('')
     }
   }
+
+  useEffect(() => {
+    if (!screensaverDeleteTarget) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !screensaverImageAction) setScreensaverDeleteTarget(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [screensaverDeleteTarget, screensaverImageAction])
 
   const screensaverActive = kioskMode
     && screensaverEnabled
@@ -985,7 +997,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         <div className="field"><span className="field-label">Adicionar imagem institucional aprovada</span><div className="screensaver-file-control"><label className="button button-secondary" htmlFor="screensaver-image-upload"><Upload size={16} /> Escolher arquivo</label><input id="screensaver-image-upload" name="image" type="file" accept=".avif,.jpg,.jpeg,.png,.webp,image/avif,image/jpeg,image/png,image/webp" disabled={Boolean(screensaverImageAction)} aria-describedby="screensaver-image-file-name" onChange={(event) => setScreensaverFileName(event.currentTarget.files?.[0]?.name ?? '')} /><span id="screensaver-image-file-name" className="field-hint">{screensaverFileName || 'Nenhum arquivo selecionado'}</span></div><span className="field-hint">JPG, PNG, WebP ou AVIF · até 8 MB por imagem.</span></div>
         <button className="button button-secondary" type="submit" disabled={Boolean(screensaverImageAction)}><Upload size={16} />{screensaverImageAction === 'upload' ? 'Enviando…' : 'Enviar imagem'}</button>
       </form>}
-      {screensaverImages.length > 0 && <div className="waiting-room-screensaver-gallery">{screensaverImages.map((image) => <article className="waiting-room-screensaver-image-card" key={image.filename}><img src={image.url} alt="Prévia de imagem institucional da proteção de tela" /><div><span>{image.filename}</span>{canDeleteImages && <button className="button button-danger" type="button" onClick={() => void deleteScreensaverImage(image)} disabled={Boolean(screensaverImageAction)}><Trash2 size={15} />{screensaverImageAction === image.filename ? 'Excluindo…' : 'Excluir'}</button>}</div></article>)}</div>}
+      {screensaverImages.length > 0 && <div className="waiting-room-screensaver-gallery">{screensaverImages.map((image) => <article className="waiting-room-screensaver-image-card" key={image.filename}><img src={image.url} alt="Prévia de imagem institucional da proteção de tela" /><div><span>{image.filename}</span>{canDeleteImages && <button className="button button-danger" type="button" onClick={() => setScreensaverDeleteTarget(image)} disabled={Boolean(screensaverImageAction)}><Trash2 size={15} />{screensaverImageAction === image.filename ? 'Excluindo…' : 'Excluir'}</button>}</div></article>)}</div>}
       {!screensaverImages.length && <p className="field-hint">{canUploadImages ? 'Nenhuma imagem foi enviada. Use o formulário acima para adicionar imagens aprovadas.' : 'Nenhuma imagem está disponível; solicite à Recepção que adicione imagens aprovadas.'}</p>}
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
@@ -1014,6 +1026,14 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
     </div>}
     </>}
   </section>
+  {screensaverDeleteTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !screensaverImageAction) setScreensaverDeleteTarget(null) }}>
+    <section className="patient-archive-dialog credential-reset-dialog screensaver-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="screensaver-delete-title">
+      <div className="credential-reset-heading"><span className="screensaver-delete-icon"><Trash2 size={22} /></span><div><p className="eyebrow">RECEPÇÃO · PROTEÇÃO DE TELA</p><h2 id="screensaver-delete-title">Excluir imagem?</h2></div></div>
+      <p>A imagem <strong>{screensaverDeleteTarget.filename}</strong> será removida da proteção de tela. Esta ação não pode ser desfeita.</p>
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+      <div className="form-actions"><button className="button button-secondary" type="button" disabled={Boolean(screensaverImageAction)} onClick={() => setScreensaverDeleteTarget(null)}>Cancelar</button><button className="button button-danger" type="button" disabled={Boolean(screensaverImageAction)} onClick={() => void confirmDeleteScreensaverImage()}><Trash2 size={15} />{screensaverImageAction === screensaverDeleteTarget.filename ? 'Excluindo…' : 'Confirmar exclusão'}</button></div>
+    </section>
+  </div>}
   </>
 }
 

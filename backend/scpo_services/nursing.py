@@ -2019,7 +2019,25 @@ def list_patients(
     searchable_fields = [Patient.name, Patient.room, Patient.bed]
     if full_profile:
         searchable_fields.extend(
-            [Patient.responsible_name, Patient.cpf, Patient.sus_card]
+            [
+                Patient.mother_name,
+                Patient.responsible_name,
+                Patient.responsible_relationship,
+                Patient.health_plan,
+                Patient.same_number,
+                Patient.cpf,
+                Patient.sus_card,
+                Patient.phone,
+                Patient.email,
+                Patient.responsible_phone,
+                Patient.address,
+                Patient.address_number,
+                Patient.address_complement,
+                Patient.neighborhood,
+                Patient.city,
+                Patient.state,
+                Patient.postal_code,
+            ]
         )
     for term in query_terms:
         matching_fields = [
@@ -2028,14 +2046,22 @@ def list_patients(
         ]
         digits = re.sub(r"\D", "", term)
         if digits and full_profile:
-            normalized_cpf = func.replace(func.replace(Patient.cpf, ".", ""), "-", "")
-            normalized_sus_card = func.replace(
-                func.replace(Patient.sus_card, ".", ""), "-", ""
-            )
+            def normalized_digits(field):
+                normalized = field
+                for character in (".", "-", " ", "(", ")", "+"):
+                    normalized = func.replace(normalized, character, "")
+                return normalized
+
             matching_fields.extend(
                 [
-                    normalized_cpf.contains(digits),
-                    normalized_sus_card.contains(digits),
+                    normalized_digits(field).contains(digits)
+                    for field in (
+                        Patient.cpf,
+                        Patient.sus_card,
+                        Patient.same_number,
+                        Patient.phone,
+                        Patient.responsible_phone,
+                    )
                 ]
             )
         query = query.where(or_(*matching_fields))

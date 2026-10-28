@@ -250,6 +250,20 @@ def _require_account_admin(request: Request, db: Session) -> tuple[AppUser, Demo
     return user, principal
 
 
+def _require_account_lifecycle_admin(
+    request: Request,
+    db: Session,
+    action: str,
+) -> tuple[AppUser, DemoPrincipal]:
+    user, principal = _require_account_admin(request, db)
+    if not user.is_superuser and "management" in user.modules:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Gestão Hospitalar não pode {action} contas",
+        )
+    return user, principal
+
+
 def _require_system_admin(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
     user, _ = _current_user(request, db)
     if not user.is_superuser:
@@ -635,7 +649,7 @@ async def create_user(
     response: Response,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    actor, principal = _require_account_admin(request, db)
+    actor, principal = _require_account_lifecycle_admin(request, db, "criar")
     can_grant_management = (
         actor.is_superuser
         or (
@@ -730,7 +744,7 @@ async def delete_user(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, str]:
-    actor, principal = _require_account_admin(request, db)
+    actor, principal = _require_account_lifecycle_admin(request, db, "excluir")
     user = db.get(AppUser, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")

@@ -1878,6 +1878,9 @@ def test_patient_registry_supports_server_side_search_filters_and_pagination(
             room="20",
             bed="B",
             cpf="529.982.247-25",
+            mother_name="Maria da Silva",
+            same_number="SAME 12345",
+            phone="(53) 99999-1234",
         ),
         nurse,
         nursing_db,
@@ -1910,6 +1913,17 @@ def test_patient_registry_supports_server_side_search_filters_and_pagination(
     )
     assert searched["total"] == 1
     assert searched["patients"][0]["reference"] == second["reference"]
+    for query in ("Maria da Silva", "12345", "999991234"):
+        by_additional_identifier = nursing.list_patients(
+            nurse,
+            nursing_db,
+            include_inactive=True,
+            full_profile=True,
+            search=query,
+            status="all",
+        )
+        assert by_additional_identifier["total"] == 1
+        assert by_additional_identifier["patients"][0]["reference"] == second["reference"]
     private_search = nursing.list_patients(
         nurse,
         nursing_db,
