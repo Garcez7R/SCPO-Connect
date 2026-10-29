@@ -12,6 +12,7 @@ type ModuleTabNavigationProps<T extends string> = {
   onChange: (value: T) => void
   ariaLabel: string
   className?: string
+  alwaysShowButtons?: boolean
 }
 
 export default function ModuleTabNavigation<T extends string>({
@@ -20,6 +21,7 @@ export default function ModuleTabNavigation<T extends string>({
   onChange,
   ariaLabel,
   className = '',
+  alwaysShowButtons = false,
 }: ModuleTabNavigationProps<T>) {
   const selectValue = (nextValue: string) => {
     const option = options.find(({ value: optionValue }) => optionValue === nextValue)
@@ -27,7 +29,7 @@ export default function ModuleTabNavigation<T extends string>({
   }
 
   return (
-    <div className={`admin-tabs module-tabs module-navigation ${options.length > 5 ? 'module-navigation-many' : ''} ${className}`}>
+    <div className={`admin-tabs module-tabs module-navigation ${options.length > 5 ? 'module-navigation-many' : ''} ${alwaysShowButtons ? 'module-navigation-buttons-only' : ''} ${className}`}>
       <div className="module-tab-buttons" role="tablist" aria-label={ariaLabel}>
         {options.map((option) => (
           <button

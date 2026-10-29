@@ -1492,6 +1492,42 @@ def test_vitals_require_a_measurement_and_keep_actor(nursing_db: Session, nurse:
     assert record["actor_name"] == nurse.actor_name
 
 
+def test_not_applicable_vitals_do_not_validate_device_measurement_time(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    record = nursing.create_vital_record(
+        nursing.VitalPayload(
+            patient_reference=str(patient["reference"]),
+            not_applicable=["pressure"],
+            measured_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+        nurse,
+        nursing_db,
+    )
+
+    assert record["not_applicable"] == ["pressure"]
+    assert record["measured_at"] is None
+
+
+def test_measured_vitals_still_reject_future_measurement_time(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    patient = create_patient(nursing_db, nurse)
+    with pytest.raises(HTTPException) as future_measurement:
+        nursing.create_vital_record(
+            nursing.VitalPayload(
+                patient_reference=str(patient["reference"]),
+                values={"pressure": "12/8"},
+                measured_at=datetime.now(UTC) + timedelta(hours=1),
+            ),
+            nurse,
+            nursing_db,
+        )
+
+    assert future_measurement.value.status_code == 422
+
+
 def test_offline_vital_retry_is_idempotent_and_bound_to_actor(
     nursing_db: Session, nurse: DemoPrincipal, monkeypatch: pytest.MonkeyPatch
 ) -> None:

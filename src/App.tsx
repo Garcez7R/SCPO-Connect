@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ErrorInfo, FormEvent, ReactNode } from 'react'
 import { readApiResponse, readableApiError } from './api'
 import AllergyFields from './components/AllergyFields'
@@ -80,13 +80,13 @@ const sessionDurationMs = 12 * 60 * 60 * 1000
 const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds', 'triage'] as const
 const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária', triage: 'Triagem' }
 const adminTabValues = ['users', 'reports', 'audit'] as const
-const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Administração do aplicativo', reports: 'Relatórios', audit: 'Auditoria de ações' }
+const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Usuários e permissões', reports: 'Relatórios', audit: 'Auditoria de ações' }
 const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior', 'governance', 'shortcuts'] as const
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'reports', 'materials'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios', materials: 'Materiais e imagens' }
-const systemAdminTabValues = ['guide', 'backup', 'recovery'] as const
-const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { guide: 'Guia e soluções', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemAdminTabValues = ['guide', 'accounts', 'backup', 'recovery'] as const
+const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { guide: 'Guia e soluções', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const patientRegistryTabLabels = { registry: 'Novo cadastro', list: 'Lista de pacientes', reports: 'Relatórios' } as const
 type Patient = {
   reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; same_number?: string; mother_name?: string; health_plan?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
@@ -648,7 +648,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
           {activeModule === 'admin' && <AdminPage user={user} />}
           {activeModule === 'management' && <ManagementPage user={user} onNavigate={navigate} allowedModules={profile.modules} />}
-          {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage userId={user.id} />}
+          {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage user={user} />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage />}
           {activeModule === 'xray' && <Suspense fallback={<div className="history-empty" role="status">Carregando Central de Exames…</div>}><XrayModulePage user={user} /></Suspense>}
@@ -3043,7 +3043,7 @@ const moduleLabels: Record<string, string> = {
 }
 const accessModules = Object.entries(moduleLabels)
 
-function AdminPage({ user }: { user: AuthUser }) {
+function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'accounts' }) {
   const canManageApp = user.is_superuser || (
     user.role !== 'management'
     && user.modules.includes('admin')
@@ -3052,7 +3052,12 @@ function AdminPage({ user }: { user: AuthUser }) {
   const canCreateAccounts = canManageApp
   const canDeleteAccounts = canCreateAccounts
   const canReviewData = user.modules.includes('admin') || Boolean(user.permissions.oversight?.includes('consultar'))
-  const availableTabs = adminTabValues.filter((value) => value === 'users' ? canManageApp : canReviewData)
+  const availableTabs = useMemo<readonly (typeof adminTabValues[number])[]>(
+    () => view === 'accounts'
+      ? (canManageApp ? ['users'] : [])
+      : adminTabValues.filter((value) => value === 'users' ? canManageApp : canReviewData),
+    [canManageApp, canReviewData, view],
+  )
   const assignableModules = accessModules.filter(([module]) => module !== 'management' || canManageApp)
   const [tab, setTab] = usePersistentTab(`scpo-tab-admin-${user.id}`, canManageApp ? 'users' : 'reports', adminTabValues, adminTabLabels)
   const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'reports'
@@ -4170,6 +4175,7 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
       ariaLabel="Áreas da Gestão Hospitalar"
       value={tab}
       onChange={setTab}
+      alwaysShowButtons
       options={managementTabValues.map((value) => ({
         value,
         label: managementTabLabels[value],
@@ -4409,8 +4415,8 @@ function AuditLogPanel() {
   return <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Registros de auditoria</h2><p className="welcome-copy">Eventos administrativos recentes, sem conteúdo clínico detalhado.</p></div><button className="button button-secondary" type="button" onClick={() => void loadEvents()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar registros'}</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{targetLabelError && <ToastMessage variant="error">{targetLabelError}</ToastMessage>}{loading && !events.length ? <div className="history-empty">Carregando registros…</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {roleLabels[event.actor_role as ProfileId] ?? 'Equipe autorizada'}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{localizedAuditAction(event.action)}</strong></span><span><small>Módulo</small><strong>{moduleLabels[event.module] ?? 'Sistema'}</strong></span><span><small>Registro</small><strong>{auditTargetLabel(event)}</strong>{!targetLabels[`${event.module}:${event.action}:${event.target_id}`] && !knownAuditTargets[event.target_id] && <small>Identificador interno: {event.target_id.length > 16 ? `${event.target_id.slice(0, 12)}…` : event.target_id}</small>}</span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section>
 }
 
-function SystemAdminPage({ userId }: { userId: string }) {
-  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${userId}`, 'guide', systemAdminTabValues, systemAdminTabLabels)
+function SystemAdminPage({ user }: { user: AuthUser }) {
+  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${user.id}`, 'guide', systemAdminTabValues, systemAdminTabLabels)
   const [users, setUsers] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -4485,6 +4491,7 @@ function SystemAdminPage({ userId }: { userId: string }) {
     <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'guide' && <SystemAdminGuide />}
+    {tab === 'accounts' && <AdminPage user={user} view="accounts" />}
     {tab === 'backup' && <BackupExportPanel />}
     {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel"><div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha e o MFA atuais serão revogados. Cada usuário receberá uma senha temporária aleatória, de uso único, e deverá configurar novos fatores de autenticação.</p></div></div><div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · a conta superadministradora é sempre excluída</span><button className="button button-danger" type="button" onClick={() => void resetAllCredentials()} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>Mostradas somente nesta sessão. Copie e entregue cada senha ao titular por canal seguro; não feche nem atualize a página antes de registrá-las.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}{!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((account) => <article key={account.id}><span>{account.name} · {account.username}{account.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(account)} disabled={busy}>Redefinir senha e MFA</button><button className="button button-danger" type="button" onClick={() => void deleteSystemUser(account)} disabled={busy}>{deletingUserId === account.id ? 'Excluindo…' : 'Excluir conta'}</button></article>)}</div></details>}</section>}
   </section>

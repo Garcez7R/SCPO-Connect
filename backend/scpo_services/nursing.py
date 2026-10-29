@@ -2006,7 +2006,8 @@ def create_vital_record(
     principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    if not any(value.strip() for value in payload.values.values()) and not payload.not_applicable:
+    has_measurement = any(value.strip() for value in payload.values.values())
+    if not has_measurement and not payload.not_applicable:
         raise HTTPException(status_code=422, detail="Informe ao menos um dado coletado ou marque os sinais aplicáveis como não aferidos")
     for field in payload.not_applicable:
         if payload.values.get(field, "").strip():
@@ -2020,15 +2021,15 @@ def create_vital_record(
         if systolic == 0 or diastolic == 0:
             raise HTTPException(status_code=422, detail="Informe os dois componentes da pressão arterial")
     recorded_at = datetime.now(UTC)
-    measured_at = payload.measured_at or recorded_at
-    if measured_at > recorded_at:
+    measured_at = (payload.measured_at or recorded_at) if has_measurement else None
+    if measured_at and measured_at > recorded_at:
         raise HTTPException(status_code=422, detail="O horário da aferição não pode estar no futuro")
     action_hash = _offline_payload_hash({
         "patient_reference": payload.patient_reference,
         "values": payload.values,
         "glucose_unit": payload.glucose_unit,
         "not_applicable": payload.not_applicable,
-        "measured_at": measured_at.isoformat(),
+        "measured_at": measured_at.isoformat() if measured_at else None,
     })
     if payload.client_action_id:
         receipt = _get_offline_action_receipt(
@@ -5824,9 +5825,11 @@ def list_vital_records(
 
 
 def serialize_record(record: VitalRecord) -> dict[str, object]:
-    measured_at = record.measured_at or record.recorded_at
+    measured_at = record.measured_at or (
+        record.recorded_at if any(value.strip() for value in record.values.values()) else None
+    )
     recorded_at = record.recorded_at
-    if measured_at.tzinfo is None:
+    if measured_at and measured_at.tzinfo is None:
         measured_at = measured_at.replace(tzinfo=UTC)
     if recorded_at.tzinfo is None:
         recorded_at = recorded_at.replace(tzinfo=UTC)
@@ -5838,7 +5841,7 @@ def serialize_record(record: VitalRecord) -> dict[str, object]:
         "values": record.values,
         "glucose_unit": record.glucose_unit,
         "not_applicable": record.not_applicable,
-        "measured_at": measured_at.isoformat(),
+        "measured_at": measured_at.isoformat() if measured_at else None,
         "recorded_at": recorded_at.isoformat(),
     }
 

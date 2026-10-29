@@ -1,6 +1,6 @@
 # SCPO Connect — resumo para retomada
 
-Atualizado em 27/10/2026. Este documento resume o que está implementado, as últimas validações e as próximas melhorias sugeridas.
+Atualizado em 28/10/2026. Este documento resume o que está implementado, as últimas validações e as próximas melhorias sugeridas.
 
 ## Contexto do projeto
 
@@ -104,11 +104,48 @@ Preservar o isolamento por serviço, as permissões por perfil, os registros aud
 
 ## Navegação e acessos — 28/10/2026
 
-- Iniciado o padrão de navegação interna responsiva compartilhado entre Pacientes, Enfermagem, Farmácia, Central de Exames, Gestão Hospitalar e Administração: guias lado a lado no desktop quando são poucas e seletor em telas estreitas ou módulos com muitas opções.
+- Iniciado o padrão de navegação interna responsiva compartilhado entre Pacientes, Enfermagem, Farmácia, Central de Exames, Gestão Hospitalar e Administração: guias lado a lado no desktop quando são poucas e seletor em telas estreitas ou módulos com muitas opções. Gestão Hospitalar mantém botões de seleção mesmo com muitas áreas, conforme solicitado.
 - Administração de contas foi restringida no backend e na interface a Administração do aplicativo e Superadministrador. Gestão Hospitalar não pode consultar, criar, editar, redefinir credenciais ou excluir contas; administradores do aplicativo podem administrar qualquer escopo, inclusive Gestão Hospitalar.
 - Os cartões informativos usam o mesmo efeito de entrada com atraso em sequência, respeitando a redução de movimento configurada pelo usuário.
 - A tela de indisponibilidade agora informa falta de conexão com o servidor, não com a internet.
 - O mapa de comparação com o programa Visual Basic e a proposta segura para o PWA conectado estão em [docs/modernization-roadmap.md](docs/modernization-roadmap.md). O repositório não contém fontes ou banco do programa antigo; o levantamento funcional depende de material validado pela equipe. O PWA inicial não grava dados clínicos offline.
+
+## Retomada — superadministrador e PWA Nursing — 28/10/2026
+
+- **Superadministrador `rgarcez`: tarefa operacional ainda pendente.** A verificação anterior do banco ativo encontrou duas contas, nenhuma marcada como superadministradora, e não encontrou `rgarcez`. O reset não foi executado porque essa instância não foi confirmada como o ambiente pretendido. Antes de qualquer alteração, confirmar servidor, projeto/contêiner Docker e banco de dados corretos. O bootstrap cria `rgarcez` com senha inicial `0000` somente quando o banco de acesso está vazio e o token de bootstrap válido está configurado; em seguida, o login exige troca de senha e configuração do MFA. Se o banco já tiver contas, não tentar bootstrap nem alterar o banco manualmente: confirmar a instância e seguir um procedimento de recuperação autorizado e auditável. Nunca registrar senha ou token no repositório.
+- **Gestão de usuários:** a aba foi incluída também em Administração do Sistema para o Superadministrador, reutilizando o fluxo de Administração do aplicativo para criar contas, alterar permissões, redefinir senhas temporárias e excluir contas. A conta superadministradora permanece protegida contra alteração por outras contas.
+- **Pressão no PWA:** o campo aceita o formato sistólica/diastólica, incluindo `120/80` e `12/8`; o teclado móvel deve ser do tipo texto para disponibilizar `/`.
+- **Erro de horário ao marcar “Não aferido”:** sinais sem valores aferidos não recebem horário de aferição e não são rejeitados por diferença no relógio do aparelho. Registros que contêm valores medidos continuam rejeitando horário futuro. Quando conectado, o PWA deixa o servidor registrar o horário; ações offline preservam o horário local para sincronização.
+- **Verificação horária:** o botão está nomeado “Registrar verificação” quando conectado e envia imediatamente ao servidor. Sem comunicação, “Guardar verificação” salva a ação cifrada no dispositivo; ela fica pendente até sincronizar e ser confirmada. O botão de encerrar a ronda aparece depois que todos os pacientes forem tratados e exige confirmação online do servidor.
+- O guia do Superadministrador e a documentação de permissões foram atualizados para refletir esses fluxos. Validar build, lint e os testes Nursing antes de considerar a retomada concluída.
+
+### Estado registrado antes desta retomada — 28/10/2026
+
+O usuário pediu para interromper o trabalho por enquanto e retomar em outra sessão/agente. As alterações abaixo estão **locais, não commitadas e ainda não concluídas**:
+
+- `src/pages/NursingMobilePage.tsx`: teclado de texto para a pressão (permite `/`), horário do aparelho omitido nas submissões online, horário local preservado ao enfileirar offline; orientação e rótulos explícitos para registrar/guardar verificações horárias.
+- `backend/scpo_services/nursing.py`: uma coleta composta apenas por sinais “não aferidos” não usa nem valida um horário de aferição; continua rejeitando horários futuros quando há valores medidos.
+- `backend/tests/test_nursing.py`: testes de regressão para sinais não aferidos com relógio do aparelho adiantado e para a rejeição de horário futuro em medições reais.
+- `src/App.tsx`: nova guia de Usuários e permissões no Superadministrador, reutilizando a interface de Administração do aplicativo; label de aba ajustado.
+- `src/components/SystemAdminGuide.tsx`, `docs/permissions.md` e `docs/system-admin-guide.md`: documentação dos fluxos atualizada.
+
+**Validação parcial:**
+- `npm run lint`: concluiu sem erros; há um warning `react-hooks/exhaustive-deps` em `src/App.tsx` sobre `availableTabs` ser recriado a cada render.
+- `npm run typecheck`: falhou em `src/App.tsx` por inferência estreita de tipos para `availableTabs` (`TS2345` nas chamadas `includes`/`setTab`, aproximadamente linhas 3060 e 3079). Corrigir anotando `availableTabs` como lista readonly de `typeof adminTabValues[number]` (ou solução equivalente estável) e rodar novamente.
+- `git diff --check`: passou.
+- Os testes backend não foram executados: a tentativa `python -m pytest backend/tests/test_nursing.py -q` falhou porque o comando `python` não existe. Já foi confirmado que estão disponíveis `/usr/bin/python3`, `/usr/bin/pytest` e `/home/rgarcez/.local/bin/uv`. Na retomada, usar `uv run pytest backend/tests/test_nursing.py -q` (ou `python3 -m pytest` se o ambiente já tiver dependências); não instalar dependências sem necessidade.
+- Ainda não foram executados `npm run build` nem `npm run test:e2e`.
+- O repositório está em `main`, com alterações não commitadas. Antes de continuar, inspecionar `git status` e preservar as alterações existentes.
+
+**Conta superadministradora:** nenhuma alteração de banco, conta, senha ou MFA foi feita nesta retomada. A verificação anterior encontrou um banco ativo com duas contas e sem `rgarcez`/superadministrador, mas esse banco não foi confirmado como o destino correto. Antes de qualquer ação operacional, identificar com o usuário o servidor, o projeto/contêiner e o banco de destino. O bootstrap com `0000` só é válido numa instalação vazia, com token de bootstrap configurado; em base já inicializada, não executar bootstrap nem fazer edição direta do banco sem procedimento autorizado e auditável. A conta existente não deve ser resetada para uma senha compartilhada sem validar o ambiente.
+
+### Retomada concluída — 28/10/2026
+
+- `src/App.tsx`: `availableTabs` agora tem o tipo readonly esperado e identidade estável entre renderizações, corrigindo o erro de TypeScript e o aviso de dependências do hook.
+- `backend/scpo_services/nursing.py`: registros sem valores aferidos preservam `measured_at: null` também na serialização; medições com valores continuam rejeitando horários futuros. Os testes cobrem os dois casos.
+- `e2e/reception-triage-physician.spec.mjs`: o fluxo E2E seleciona a seção Triagem pelo seletor responsivo de Enfermagem.
+- Validação concluída: `npm run lint`, `npm run typecheck`, `npm run build`, `npm run test:e2e`, `uv run pytest backend/tests/test_nursing.py -q` e `git diff --check` aprovados. O build ainda exibe o aviso conhecido de chunk JavaScript acima de 500 kB.
+- Nenhuma conta, senha, MFA, banco ou implantação foi alterada. A operação pendente do superadministrador continua condicionada à confirmação explícita da instância correta e a procedimento autorizado.
 
 ## Referências técnicas
 

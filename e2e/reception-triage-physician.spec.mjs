@@ -66,7 +66,7 @@ test('Recepção registra chegada, Enfermagem tria e Médico recebe o atendiment
   await expect(page.locator('.reception-arrival-list').getByText(patientName)).toBeVisible()
 
   await page.getByRole('button', { name: 'Enfermagem', exact: true }).click()
-  await page.getByRole('tab', { name: 'Triagem' }).click()
+  await page.getByRole('combobox', { name: 'Seções de Enfermagem' }).selectOption('triage')
   await page.locator('.nursing-triage-arrival').filter({ hasText: patientName }).click()
   await page.getByLabel('Alergias neste atendimento').selectOption('none_known')
   await page.getByLabel('Condições, comorbidades ou tratamentos relatados')

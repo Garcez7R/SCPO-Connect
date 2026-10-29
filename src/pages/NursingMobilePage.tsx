@@ -58,7 +58,7 @@ type QueuedVital = {
     values: Record<string, string>
     glucose_unit: 'mg/dL' | 'mmol/L'
     not_applicable: VitalKey[]
-    measured_at: string
+    measured_at?: string
     client_action_id: string
   }
   sync_error?: string
@@ -104,9 +104,9 @@ const emptyVitals: VitalsDraft = {
   glucose: '',
 }
 
-const vitalFields: { key: VitalKey; label: string; unit: string; inputMode: 'decimal' | 'numeric'; placeholder?: string }[] = [
+const vitalFields: { key: VitalKey; label: string; unit: string; inputMode: 'decimal' | 'numeric' | 'text'; placeholder?: string }[] = [
   { key: 'saturation', label: 'Saturação', unit: '%', inputMode: 'decimal', placeholder: 'Ex.: 98' },
-  { key: 'pressure', label: 'Pressão arterial', unit: 'mmHg', inputMode: 'numeric', placeholder: 'Ex.: 120/80' },
+  { key: 'pressure', label: 'Pressão arterial', unit: 'mmHg', inputMode: 'text', placeholder: 'Ex.: 120/80 ou 12/8' },
   { key: 'heartRate', label: 'Frequência cardíaca', unit: 'bpm', inputMode: 'numeric', placeholder: 'Ex.: 78' },
   { key: 'respiratoryRate', label: 'Frequência respiratória', unit: 'rpm', inputMode: 'numeric', placeholder: 'Ex.: 18' },
   { key: 'temperature', label: 'Temperatura', unit: '°C', inputMode: 'decimal', placeholder: 'Ex.: 36,5' },
@@ -510,7 +510,7 @@ export default function NursingMobilePage({
       created_at: createdAt,
       expires_at: new Date(Date.parse(createdAt) + offlineRetentionMs).toISOString(),
       patient_name: patientName,
-      body,
+      body: { ...body, measured_at: body.measured_at ?? createdAt },
     }
     await persistOfflineData({ ...current, pending_vitals: [...current.pending_vitals, action] })
     setServerAvailable(false)
@@ -539,7 +539,7 @@ export default function NursingMobilePage({
       values,
       glucose_unit: glucoseUnit,
       not_applicable: notApplicable,
-      measured_at: new Date().toISOString(),
+      ...(serverAvailable ? {} : { measured_at: new Date().toISOString() }),
       client_action_id: clientActionId,
     }
     setBusy(true)
@@ -813,6 +813,7 @@ export default function NursingMobilePage({
 
     {tab === 'rounds' && <section className="nursing-mobile-panel">
       <div className="nursing-mobile-section-title"><div><p className="eyebrow">ACOMPANHAMENTO DE INTERNADOS</p><h2><Clock3 size={19} /> Verificação horária</h2></div><button className="nursing-mobile-refresh" type="button" onClick={() => void loadData()} disabled={loading || busy} aria-label="Atualizar verificação"><RefreshCw size={17} /></button></div>
+      <p className="nursing-mobile-footnote">Toque em <strong>Registrar verificação</strong> para enviar imediatamente ao servidor. Sem comunicação, a ação fica cifrada no aparelho e é sincronizada quando o servidor voltar a ficar acessível.</p>
       {loading ? <div className="nursing-mobile-loading" role="status"><span className="spinner" /> Atualizando verificação…</div> : !round ? <div className="nursing-mobile-round-empty"><span className="nursing-mobile-empty-icon"><Clock3 size={21} /></span><strong>Nenhuma verificação em andamento</strong><p>A nova verificação inclui pacientes ativos com quarto e leito.</p><button className="button button-primary nursing-mobile-submit" type="button" onClick={() => void startRound()} disabled={busy || !dataReady || !online || !canStartRounds || !inpatientPatients.length}>{busy ? 'Iniciando…' : 'Iniciar verificação horária'}</button>{!canStartRounds && <small>Seu perfil não pode iniciar uma verificação.</small>}{inpatientPatients.length === 0 && <small>Não há pacientes com quarto e leito cadastrados.</small>}</div> : <div className="nursing-mobile-round">
         <div className="nursing-mobile-round-summary"><span><strong>{syncedRoundCount}</strong> confirmados pelo servidor · <strong>{pendingCount}</strong> ainda não verificados</span><span>Iniciada às {formatTime(round.started_at)} · {round.started_by_name}</span></div>
         <div className="nursing-mobile-round-list">{round.patients.map((patient) => <article className={`nursing-mobile-round-patient nursing-round-${patient.status}`} key={patient.patient_reference}>
@@ -825,7 +826,7 @@ export default function NursingMobilePage({
               <label className="field"><span className="field-label">Ocorrência</span><select value={exceptionType} onChange={(event) => setExceptionType(event.target.value)}>{Object.entries(exceptionTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label className="field"><span className="field-label">Descrição breve</span><input required minLength={3} maxLength={500} value={exceptionNote} onChange={(event) => setExceptionNote(event.target.value)} /></label>
               <div><button className="button button-primary" type="submit" disabled={busy}>Registrar ocorrência</button><button className="button button-secondary" type="button" onClick={() => { setExceptionPatient(''); setExceptionNote('') }} disabled={busy}>Cancelar</button></div>
-            </form> : <><button className="button button-primary" type="button" onClick={() => void updateRoundPatient(patient, { status: 'checked' })} disabled={busy}><Check size={16} /> Verificado</button><button className="button button-secondary" type="button" onClick={() => { setExceptionPatient(patient.patient_reference); setExceptionType('away'); setExceptionNote('') }} disabled={busy}><AlertTriangle size={16} /> Ocorrência</button></>}
+            </form> : <><button className="button button-primary" type="button" onClick={() => void updateRoundPatient(patient, { status: 'checked' })} disabled={busy}><Check size={16} /> {serverAvailable ? 'Registrar verificação' : 'Guardar verificação'}</button><button className="button button-secondary" type="button" onClick={() => { setExceptionPatient(patient.patient_reference); setExceptionType('away'); setExceptionNote('') }} disabled={busy}><AlertTriangle size={16} /> Ocorrência</button></>}
           </div>}
           {patient.status === 'pending' && !canUpdateRounds && <p className="nursing-mobile-empty">Seu perfil não pode registrar verificações.</p>}
         </article>)}</div>

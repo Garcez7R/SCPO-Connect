@@ -678,6 +678,8 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .module-tab-select select { width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
 .module-navigation-many > .module-tab-select { display: block; }
 .module-navigation-many > .module-tab-buttons { display: none; }
+.module-navigation.module-navigation-buttons-only > .module-tab-select { display: none; }
+.module-navigation.module-navigation-buttons-only > .module-tab-buttons { display: flex; }
 .reception-primary-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
 .reception-primary-tabs .button { flex: 1 0 auto; justify-content: center; white-space: nowrap; }
 .nursing-tabs { margin-bottom: 0; }
