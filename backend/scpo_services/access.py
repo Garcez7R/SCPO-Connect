@@ -233,7 +233,7 @@ def _require_account_admin(request: Request, db: Session) -> tuple[AppUser, Demo
 def _require_system_admin(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
     user, _ = _current_user(request, db)
     if not user.is_superuser:
-        raise HTTPException(status_code=403, detail="Acesso restrito à Administração do Sistema")
+        raise HTTPException(status_code=403, detail="Acesso não autorizado para esta operação")
     principal = DemoPrincipal(
         user.id,
         user.username,
@@ -250,7 +250,7 @@ def _prevent_superuser_changes(target: AppUser) -> None:
     if target.is_superuser:
         raise HTTPException(
             status_code=403,
-            detail="A conta de superadministrador não pode ser alterada pela Administração comum",
+            detail="Esta conta não pode ser alterada por esta operação",
         )
 
 
@@ -617,7 +617,7 @@ async def create_user(
     if db.scalar(select(AppUser.id).where(AppUser.username == username)):
         raise HTTPException(status_code=409, detail="Este usuário já existe")
     if username == SYSTEM_SUPERADMIN_USERNAME:
-        raise HTTPException(status_code=409, detail="Este usuário está reservado à conta de superadministrador")
+        raise HTTPException(status_code=409, detail="Este nome de usuário não está disponível")
     modules = (
         sorted(MODULES)
         if "management" in payload.modules

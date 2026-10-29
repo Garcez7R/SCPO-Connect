@@ -144,12 +144,13 @@ def create_event(
 
 @app.get("/api/v1/audit/events")
 def list_events(
-    _: Annotated[DemoPrincipal, Depends(ADMIN_ROLE)],
+    principal: Annotated[DemoPrincipal, Depends(ADMIN_ROLE)],
     db: Annotated[Session, Depends(get_audit_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    events = db.scalars(
-        select(AuditEvent).order_by(AuditEvent.id.desc()).limit(100)
-    ).all()
+    query = select(AuditEvent)
+    if not principal.is_superuser:
+        query = query.where(AuditEvent.actor_role != "system_admin")
+    events = db.scalars(query.order_by(AuditEvent.id.desc()).limit(100)).all()
     return {"events": [serialize_event(event) for event in events]}
 
 

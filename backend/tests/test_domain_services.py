@@ -68,6 +68,53 @@ def test_superadmin_is_explicit_and_reserved() -> None:
     with pytest.raises(HTTPException) as error:
         access._prevent_superuser_changes(user)
     assert error.value.status_code == 403
+    assert "super" not in str(error.value.detail).lower()
+
+
+def test_common_admin_audit_hides_system_admin_events(
+    domain_database: dict[str, Session],
+) -> None:
+    db = domain_database["audit"]
+    db.add_all([
+        audit.AuditEvent(
+            actor_name="Administrador",
+            actor_role="admin",
+            action="user_created",
+            module="access",
+            target_id="account-1",
+            happened_at=datetime.now(UTC),
+            source_event_id="common-admin-event",
+            previous_hash="0" * 64,
+            event_hash="1" * 64,
+        ),
+        audit.AuditEvent(
+            actor_name="Conta protegida",
+            actor_role="system_admin",
+            action="system_backup_exported",
+            module="management",
+            target_id="all_databases",
+            happened_at=datetime.now(UTC),
+            source_event_id="system-admin-event",
+            previous_hash="1" * 64,
+            event_hash="2" * 64,
+        ),
+    ])
+    db.commit()
+    common_admin = DemoPrincipal(
+        "admin-id", "admin", "Administrador", "admin", ["admin"], {"admin": ["consultar"]}
+    )
+    system_admin = DemoPrincipal(
+        "system-id", "system", "Conta protegida", "system_admin", ["admin"], {"admin": ["consultar"]},
+        is_superuser=True,
+    )
+
+    assert [event["source_event_id"] for event in audit.list_events(common_admin, db)["events"]] == [
+        "common-admin-event"
+    ]
+    assert {event["source_event_id"] for event in audit.list_events(system_admin, db)["events"]} == {
+        "common-admin-event",
+        "system-admin-event",
+    }
 
 
 def test_administration_scopes_are_independent() -> None:
