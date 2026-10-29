@@ -11,6 +11,8 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 
 import httpx
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi import Header, HTTPException, Request
 from sqlalchemy import (
     DateTime,
@@ -105,7 +107,10 @@ def verify_database_migrated(service: str) -> None:
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one_or_none()
-    expected_revision = "0052_nursing_offline_actions"
+    migration_config = Config(str(_repo_root / "alembic.ini"))
+    expected_revision = ScriptDirectory.from_config(
+        migration_config
+    ).get_current_head()
     if revision != expected_revision:
         raise RuntimeError(
             f"Banco de {service} desatualizado ({revision}). Execute 'SCPO_SERVICE={service} alembic upgrade head'."

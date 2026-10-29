@@ -42,7 +42,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         revision = connection.exec_driver_sql(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
-    assert revision == "0052_nursing_offline_actions"
+    assert revision == ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
     if service == "nursing":
         assert len(tables) == 32
         assert "nursing_offline_action_receipts" in tables

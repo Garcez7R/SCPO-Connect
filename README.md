@@ -126,6 +126,21 @@ Para desenvolver a interface com atualização instantânea no computador, use `
 
 ## Instalação com Docker Compose
 
+### Instalação automática em Debian 13 minimal
+
+No computador de administração, conecte ao servidor por SSH, instale o Git se necessário e clone o repositório na versão aprovada. Depois, no servidor:
+
+```bash
+cd SCPO-Connect
+sudo bash scripts/install-server-debian13.sh
+```
+
+O instalador configura o repositório oficial do Docker, instala Docker Engine e Compose, cria um `.env` com segredos aleatórios apenas se ainda não existir, solicita o IP/DNS estável, constrói e inicia os containers e aguarda as APIs ficarem saudáveis. Suporta Debian 13 com systemd. O `sudo` solicitará a senha diretamente no terminal; não a informe como argumento nem a grave em arquivos.
+
+É seguro repetir o comando: o script não substitui `.env`, não remove volumes e não importa dados. Em instalações novas, o token de bootstrap é guardado com permissões restritas em `data/local/bootstrap-admin.token`. O certificado raiz público do Caddy é exportado para `data/local/scpo-local-root.crt`; confira sua impressão digital por canal independente e instale-o nos dispositivos autorizados. Firewall, DNS/IP reservado, encaminhamento de portas e distribuição confiável do certificado continuam sendo tarefas da infraestrutura.
+
+Este fluxo automatiza uma **instalação de validação**; não transfere o banco do PC atual e não representa autorização para dados reais. Para importar dados, use um backup cifrado e execute primeiro a restauração isolada descrita em [Backup e restauração](docs/backups.md). Nunca use `docker compose down -v` para atualizar ou reinstalar.
+
 Copie o modelo de configuração e preencha os segredos antes de iniciar:
 
 ```bash
