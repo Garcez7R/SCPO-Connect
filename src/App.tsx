@@ -201,6 +201,7 @@ type TherapyActivityStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancel
 type TherapyParticipant = { patient_reference: string; attendance: 'pending' | 'attended' | 'absent' }
 type TherapyPatient = { reference: string; name: string; birth_date: string | null; room?: string; bed?: string; suppressClinicalData: true }
 type TherapyActivity = { id: string; title: string; activity_type: string; description: string; location: string; starts_at: string; ends_at: string | null; patient_reference: string | null; participants: TherapyParticipant[]; status: TherapyActivityStatus; activity_report: string; report_updated_by: string | null; report_updated_at: string | null; created_by: string; created_at: string }
+type TherapyActivityPayload = Pick<TherapyActivity, 'title' | 'activity_type' | 'description' | 'location' | 'starts_at' | 'ends_at' | 'patient_reference'> & { participant_references: string[] }
 type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; fasting_at?: string | null; fasting_reason?: string; actor_name: string; created_at: string }
 type NutritionPlan = { allergies: string; assessment_date: string | null; diet_type: string; restrictions: string; fasting_at: string | null; fasting_reason: string }
 
@@ -1963,16 +1964,26 @@ function TherapyPage({ profile }: { profile: Profile }) {
     if (!form.activity_type) { setError('Selecione a modalidade da atividade.'); return }
     if (form.location.trim().length < 2) { setError('Informe o local da atividade.'); return }
     if (!form.starts_at || !Number.isFinite(new Date(form.starts_at).getTime())) { setError('Informe uma data e hora de início válidas.'); return }
+    const payload: TherapyActivityPayload = {
+      title: form.title.trim(),
+      activity_type: form.activity_type,
+      description: form.description.trim(),
+      location: form.location.trim(),
+      starts_at: new Date(form.starts_at).toISOString(),
+      ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
+      patient_reference: form.patient_reference || null,
+      participant_references: form.participant_references,
+    }
     setSaving(true); setError(''); setNotice('')
     try {
-      const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, starts_at: new Date(form.starts_at).toISOString(), ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null, patient_reference: form.patient_reference || null }) })
+      const response = await fetch('/api/v1/therapy/activities', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const data = await readApiResponse<TherapyActivity>(response)
       if (new Date(data.starts_at).getFullYear() === month.getFullYear() && new Date(data.starts_at).getMonth() === month.getMonth()) { setActivities((items) => [...items, data].sort((a, b) => a.starts_at.localeCompare(b.starts_at))); setReportDrafts((items) => ({ ...items, [data.id]: data.activity_report ?? '' })); setReportStatuses((items) => ({ ...items, [data.id]: data.status })) }
       setForm({ title: '', activity_type: '', description: '', location: 'Oficina Terapêutica', starts_at: '', ends_at: '', patient_reference: '', participant_references: [] }); setNewParticipantReference(''); setShowForm(false); setNotice('Atividade incluída na agenda.')
     } catch (submitError) {
       const message = readableApiError(submitError)
       setError(message === 'Campo obrigatório: Dados da solicitação.'
-        ? 'A API recebeu a solicitação sem identificar os campos. Confira nome da atividade, modalidade, início e local; se persistir, atualize a página e avise o suporte.'
+        ? 'A API não recebeu o conteúdo da atividade. Atualize a página ou feche e reabra o aplicativo; se o erro persistir, informe o suporte e o horário da tentativa.'
         : message)
     } finally { setSaving(false) }
   }
@@ -3201,7 +3212,12 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
   const [resettingPassword, setResettingPassword] = useState(false)
   const [deleteUserTarget, setDeleteUserTarget] = useState<Account | null>(null)
   const [deletingUser, setDeletingUser] = useState(false)
-  const [accountFilter, setAccountFilter] = useState<'all' | 'administrative' | 'operational' | 'inactive'>('all')
+  const [accountFilter, setAccountFilter] = useState<'all' | 'administrative' | 'operational'>('all')
+  const [accountModuleFilter, setAccountModuleFilter] = useState('')
+  const [accountStatusFilter, setAccountStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [accountCredentialFilter, setAccountCredentialFilter] = useState<'all' | 'password' | 'mfa'>('all')
+  const [accountSearch, setAccountSearch] = useState('')
+  const [groupAccountsByArea, setGroupAccountsByArea] = useState(false)
 
   useEffect(() => {
     if (!availableTabs.includes(tab)) setTab(availableTabs[0] ?? 'reports')
@@ -3369,11 +3385,25 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
   }
 
   const visibleAccounts = users.filter((account) => {
-    if (accountFilter === 'inactive') return !account.active
-    if (accountFilter === 'administrative') return account.active && ['admin', 'management'].includes(account.role)
-    if (accountFilter === 'operational') return account.active && !['admin', 'management'].includes(account.role)
-    return true
+    if (accountFilter === 'administrative' && !['admin', 'management'].includes(account.role)) return false
+    if (accountFilter === 'operational' && ['admin', 'management'].includes(account.role)) return false
+    if (accountModuleFilter && !account.modules.includes(accountModuleFilter)) return false
+    if (accountStatusFilter === 'active' && !account.active) return false
+    if (accountStatusFilter === 'inactive' && account.active) return false
+    if (accountCredentialFilter === 'password' && !account.must_change_password) return false
+    if (accountCredentialFilter === 'mfa' && account.mfa_enabled) return false
+    const search = accountSearch.trim().toLocaleLowerCase('pt-BR')
+    return !search || `${account.name} ${account.username}`.toLocaleLowerCase('pt-BR').includes(search)
   })
+  const accountGroups = groupAccountsByArea
+    ? [...new Set(visibleAccounts.map((account) => account.role || ''))]
+      .sort((left, right) => (moduleLabels[left] ?? 'Área não definida').localeCompare(moduleLabels[right] ?? 'Área não definida', 'pt-BR'))
+      .map((role) => ({
+        key: role || 'unassigned',
+        label: moduleLabels[role] ?? 'Área não definida',
+        accounts: visibleAccounts.filter((account) => account.role === role),
+      }))
+    : [{ key: 'all', label: '', accounts: visibleAccounts }]
 
   return <section className="admin-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div><p className="eyebrow">ADMINISTRAÇÃO</p><h1>{adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div>{canManageApp && <span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span>}</div>
@@ -3422,7 +3452,30 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
       <button className="button button-primary" type="button" onClick={() => void retryPhysicianProfile()} disabled={saving}>{saving ? 'Salvando…' : 'Tentar salvar perfil médico'}</button>
     </section>}
     </>}
-    <section className="users-panel"><div className="users-heading"><div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2></div><span className="module-total">{visibleAccounts.length} de {users.length} contas</span></div><div className="admin-tabs module-tabs account-filters" role="group" aria-label="Filtrar tipos de conta"><button className={`button ${accountFilter === 'all' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'all'} onClick={() => setAccountFilter('all')}>Todas</button><button className={`button ${accountFilter === 'administrative' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'administrative'} onClick={() => setAccountFilter('administrative')}>Administração / Gestão</button><button className={`button ${accountFilter === 'operational' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'operational'} onClick={() => setAccountFilter('operational')}>Operacionais</button><button className={`button ${accountFilter === 'inactive' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'inactive'} onClick={() => setAccountFilter('inactive')}>Inativas</button></div><div className="account-list">{visibleAccounts.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} onResetPassword={resetUserPassword} onDelete={deleteUser} currentUserId={user.id} availableModules={assignableModules} canManageBroadAccess={canManageApp} canDeleteAccounts={canDeleteAccounts} />)}{status === 'ready' && visibleAccounts.length === 0 && <p className="account-empty">Nenhuma conta corresponde a este filtro.</p>}</div></section>
+    <section className="users-panel">
+      <div className="users-heading">
+        <div><p className="eyebrow">CONTAS LOCAIS</p><h2>Usuários cadastrados</h2><p className="welcome-copy">Os filtros de nome, módulo, situação e pendências podem ser combinados; os módulos exibidos em cada conta são os acessos efetivos.</p></div>
+        <span className="module-total">{visibleAccounts.length} de {users.length} contas</span>
+      </div>
+      <div className="account-filter-controls">
+        <label className="field"><span className="field-label">Buscar por nome ou login</span><input type="search" value={accountSearch} onChange={(event) => setAccountSearch(event.target.value)} placeholder="Digite parte do nome ou usuário" /></label>
+        <label className="field"><span className="field-label">Área / módulo acessível</span><select value={accountModuleFilter} onChange={(event) => setAccountModuleFilter(event.target.value)}><option value="">Todos os módulos</option>{assignableModules.map(([module, label]) => <option key={module} value={module}>{label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Situação da conta</span><select value={accountStatusFilter} onChange={(event) => setAccountStatusFilter(event.target.value as typeof accountStatusFilter)}><option value="all">Ativas e inativas</option><option value="active">Somente ativas</option><option value="inactive">Somente inativas</option></select></label>
+        <label className="field"><span className="field-label">Pendência de acesso</span><select value={accountCredentialFilter} onChange={(event) => setAccountCredentialFilter(event.target.value as typeof accountCredentialFilter)}><option value="all">Qualquer situação</option><option value="password">Troca de senha pendente</option><option value="mfa">Configuração de MFA pendente</option></select></label>
+        <label className="field"><span className="field-label">Organização</span><select value={groupAccountsByArea ? 'area' : 'list'} onChange={(event) => setGroupAccountsByArea(event.target.value === 'area')}><option value="list">Lista única</option><option value="area">Agrupar por área principal</option></select></label>
+      </div>
+      <div className="admin-tabs module-tabs account-filters" role="group" aria-label="Filtrar tipos de conta">
+        <button className={`button ${accountFilter === 'all' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'all'} onClick={() => setAccountFilter('all')}>Todas as categorias</button>
+        <button className={`button ${accountFilter === 'administrative' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'administrative'} onClick={() => setAccountFilter('administrative')}>Administração / Gestão</button>
+        <button className={`button ${accountFilter === 'operational' ? 'button-primary' : 'button-secondary'}`} type="button" aria-pressed={accountFilter === 'operational'} onClick={() => setAccountFilter('operational')}>Operacionais</button>
+        <button className="button button-secondary" type="button" onClick={() => { setAccountSearch(''); setAccountModuleFilter(''); setAccountStatusFilter('all'); setAccountCredentialFilter('all'); setAccountFilter('all'); setGroupAccountsByArea(false) }}>Limpar filtros</button>
+      </div>
+      {status === 'ready' && visibleAccounts.length === 0 && <p className="account-empty">Nenhuma conta corresponde à combinação de filtros selecionada.</p>}
+      {accountGroups.map((group) => <section className="account-group" key={group.key}>
+        {groupAccountsByArea && <div className="account-group-heading"><h3>{group.label}</h3><span>{group.accounts.length} usuário(s)</span></div>}
+        <div className="account-list">{group.accounts.map((account) => <AccountRow key={account.id} user={account} onUpdate={updateAccount} onResetPassword={resetUserPassword} onDelete={deleteUser} currentUserId={user.id} availableModules={assignableModules} canManageBroadAccess={canManageApp} canDeleteAccounts={canDeleteAccounts} />)}</div>
+      </section>)}
+    </section>
     <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia ações operacionais em todos os módulos, mas não administra contas</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
     </>}
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}

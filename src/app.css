@@ -1630,12 +1630,19 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .account-access-editor { display: grid; gap: 10px; margin: 12px 0 0 43px; padding: 13px; border-radius: 6px; background: #f7f9fa; }
 .account-access-editor .button { justify-self: start; }
 .account-filters { margin: 0 0 12px; }
+.account-filter-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: end; gap: 12px; margin: 0 16px 14px; }
+.account-group + .account-group { margin-top: 16px; }
+.account-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); background: var(--page); }
+.account-group-heading h3 { margin: 0; color: var(--ink); font-size: 13px; }
+.account-group-heading span { color: var(--muted); font-size: 11px; }
+.account-group .account-list { padding: 0 16px; }
 .account-superuser-note { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .account-superuser-note svg { flex: 0 0 auto; color: var(--blue); }
 .account-empty { padding: 20px 0; color: var(--muted); }
 .session-role { color: var(--muted); font-size: 11px; }
 .logout-button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; }
 @media (max-width: 900px) { .account-row-main { grid-template-columns: minmax(0, 1fr) auto; } .account-row .user-modules { grid-column: 1 / -1; grid-row: 2; } .account-row .account-state { grid-row: 1; grid-column: 2; } .account-row-actions { grid-column: 1 / -1; justify-content: flex-start; } .account-row .user-action { min-height: 38px; } }
+@media (max-width: 620px) { .account-filter-controls { grid-template-columns: 1fr; margin-inline: 12px; } .account-group .account-list { padding-inline: 12px; } .account-group-heading { padding-inline: 12px; } }
 @media (max-width: 620px) { .auth-card { padding: 28px 22px 22px; } .auth-brand { width: calc(100% + 44px); min-height: 154px; gap: 12px; margin: -28px -22px 23px; padding: 12px 18px; } .auth-brand img { width: 120px !important; min-width: 120px; max-width: 120px; height: 120px !important; flex-basis: 120px; } .auth-brand strong { font-size: 20px; } .auth-brand span { font-size: 11px; } .auth-card h1 { margin-bottom: 20px; } .module-permission-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .account-create-panel { padding: 15px; } .account-row-main { gap: 9px; } .account-row .user-modules { grid-row: auto; } .topbar-right { gap: 6px; } .session-role { display: none; } .logout-button { padding: 7px; font-size: 11px; } }
 
 @media (max-width: 760px) {
