@@ -44,11 +44,12 @@ test('Recepção registra chegada, Enfermagem tria e Médico recebe o atendiment
   await page.getByLabel('Token de bootstrap').fill(bootstrapToken)
   await page.getByRole('button', { name: 'Criar administrador' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Troque sua senha inicial' })).toBeVisible()
-  await page.getByLabel('Nova senha').fill('E2e-local-2026!Senha')
+  await expect(page.getByRole('heading', { name: 'Passo 1 de 2: crie sua senha' })).toBeVisible()
+  await page.getByLabel('Nova senha', { exact: true }).fill('E2e-local-2026!Senha')
+  await page.getByLabel('Confirme a nova senha', { exact: true }).fill('E2e-local-2026!Senha')
   await page.getByRole('button', { name: 'Salvar nova senha' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Ative a autenticação em duas etapas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Passo 2 de 2: ative a confirmação em duas etapas' })).toBeVisible()
   const mfaSecretElement = page.locator('.auth-mfa-instructions code')
   await expect(mfaSecretElement).not.toHaveText('Carregando chave segura…')
   const mfaSecret = await mfaSecretElement.innerText()
@@ -83,4 +84,10 @@ test('Recepção registra chegada, Enfermagem tria e Médico recebe o atendiment
   await expect(physicianCard).toContainText('98%')
   await physicianCard.getByRole('button', { name: 'Abrir ficha do paciente' }).click()
   await expect(page.locator('.physician-care-roster-item.is-selected')).toContainText(patientName)
+
+  await page.getByRole('button', { name: 'Ativar tema escuro' }).click()
+  await page.getByRole('button', { name: 'Abrir minha conta' }).click()
+  await expect(page.getByLabel('Nome de exibição')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+  await expect(page.getByLabel('Nome de exibição')).toHaveCSS('color', 'rgb(24, 50, 74)')
+  await expect(page.getByLabel('Senha atual')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
 })

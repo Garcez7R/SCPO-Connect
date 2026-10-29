@@ -2145,6 +2145,17 @@ html[data-theme="dark"] .behavioral-status-red { border-color: #693b40; backgrou
 .account-settings-password { margin-top: 6px; padding-top: 16px; border-top: 1px solid var(--line); }
 .auth-validation-message { margin: 0; color: var(--status-critical-ink); font-size: 12px; }
 .account-settings-button { display: inline-flex; align-items: center; gap: 6px; }
+html[data-theme="dark"] .account-settings-dialog .field :is(input, select, textarea) {
+  border-color: #cfdbe2;
+  background-color: #fff;
+  color: #18324a;
+  color-scheme: light;
+}
+html[data-theme="dark"] .account-settings-dialog .field :is(input, textarea)::placeholder { color: #526371; opacity: 1; }
+html[data-theme="dark"] .account-settings-dialog .field :is(input, select):disabled {
+  background-color: #f3f6f8;
+  color: #526371;
+}
 .screensaver-delete-icon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: var(--status-critical-background); color: var(--status-critical-ink); }
 .screensaver-delete-dialog .form-actions { margin-top: 20px; }
 @keyframes info-card-enter {
