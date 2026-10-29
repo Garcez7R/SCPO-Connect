@@ -6,6 +6,7 @@ import { readOfflineVault, removeOfflineVault, writeOfflineVault } from '../offl
 type OperationsMobileUser = {
   id: string
   name: string
+  display_name?: string
   role: string
   modules: string[]
   permissions: Record<string, string[]>
@@ -444,7 +445,7 @@ export default function OperationsMobilePage({
       <button className="nursing-mobile-logout" type="button" onClick={() => void logout()} aria-label="Sair"><LogOut size={18} /></button>
     </header>
     <section className="nursing-mobile-identity">
-      <div><p className="eyebrow">CONSULTA DE ORDENS</p><h1>Olá, {user.name.split(/\s+/)[0]}</h1></div>
+      <div><p className="eyebrow">CONSULTA DE ORDENS</p><h1>Olá, {(user.display_name || user.name).split(/\s+/)[0]}</h1></div>
       <span className={`nursing-mobile-connection ${serverAvailable ? 'is-online' : 'is-offline'}`}><i />{serverAvailable ? <><Wifi size={14} /> Servidor conectado</> : <><WifiOff size={14} /> {online ? 'Servidor indisponível' : 'Sem conexão'}</>}</span>
     </section>
     {!serverAvailable && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Consulta offline somente leitura com dados salvos em cache. Para alterar status ou concluir uma ordem, conecte ao servidor.</span></div>}

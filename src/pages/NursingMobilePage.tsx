@@ -7,6 +7,7 @@ import { readOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
 type NursingMobileUser = {
   id: string
   name: string
+  display_name?: string
   modules: string[]
   permissions: Record<string, string[]>
 }
@@ -699,7 +700,7 @@ export default function NursingMobilePage({
             status: body.status,
             exception_type: body.exception_type ?? '',
             note: body.note ?? '',
-            checked_by_name: user.name,
+            checked_by_name: user.display_name || user.name,
             checked_at: body.occurred_at,
           }
           : item,
@@ -765,7 +766,7 @@ export default function NursingMobilePage({
       <button className="nursing-mobile-logout" type="button" onClick={() => { void fetch('/api/v1/auth/logout', { method: 'POST' }); onLogout() }} aria-label="Sair"><LogOut size={18} /></button>
     </header>
     <section className="nursing-mobile-identity">
-      <div><p className="eyebrow">COLETA ASSISTENCIAL</p><h1>Olá, {user.name.split(/\s+/)[0]}</h1></div>
+      <div><p className="eyebrow">COLETA ASSISTENCIAL</p><h1>Olá, {(user.display_name || user.name).split(/\s+/)[0]}</h1></div>
       <span className={`nursing-mobile-connection ${serverAvailable ? 'is-online' : 'is-offline'}`}><i />{serverAvailable ? <><Wifi size={14} /> {serverLabel}</> : <><WifiOff size={14} /> {serverLabel}</>}</span>
     </section>
     {!serverAvailable && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Sem comunicação com o servidor. Você pode registrar usando a lista cifrada salva neste aparelho; os registros só entram no histórico após a sincronização confirmada.</span></div>}

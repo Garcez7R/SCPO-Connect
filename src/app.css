@@ -2081,6 +2081,13 @@ html[data-theme="dark"] .behavioral-status-red { border-color: #693b40; backgrou
 .credential-reset-heading { display: flex; align-items: center; gap: 12px; }
 .credential-reset-heading img { width: 48px; height: 48px; object-fit: contain; }
 .credential-reset-heading h2 { margin: 3px 0 0; }
+.account-settings-dialog { width: min(600px, calc(100% - 32px)); max-height: 92vh; overflow-y: auto; }
+.account-settings-form { display: grid; gap: 12px; }
+.account-settings-form h3 { margin: 0; color: var(--ink); font-size: 15px; }
+.account-settings-form > .button { justify-self: start; }
+.account-settings-password { margin-top: 6px; padding-top: 16px; border-top: 1px solid var(--line); }
+.auth-validation-message { margin: 0; color: var(--status-critical-ink); font-size: 12px; }
+.account-settings-button { display: inline-flex; align-items: center; gap: 6px; }
 .screensaver-delete-icon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 12px; background: var(--status-critical-background); color: var(--status-critical-ink); }
 .screensaver-delete-dialog .form-actions { margin-top: 20px; }
 @keyframes info-card-enter {
@@ -2517,6 +2524,7 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
 .credential-reset-dialog { align-self: center; }
 .credential-reset-dialog h2 { margin: 4px 0 0; }
 .credential-reset-value { display: block; padding: 14px 16px; border: 1px dashed var(--line); border-radius: 8px; background: var(--page); color: var(--ink); font-size: 20px; font-weight: 700; letter-spacing: .08em; text-align: center; overflow-wrap: anywhere; }
+@media (max-width: 620px) { .account-settings-button { padding: 7px; font-size: 11px; } .account-settings-button span { display: none; } }
 .waiting-room-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .waiting-room-counts article { display: grid; gap: 5px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .waiting-room-counts strong { color: var(--ink); font-size: 24px; }

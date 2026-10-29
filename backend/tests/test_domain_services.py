@@ -71,6 +71,75 @@ def test_superadmin_is_explicit_and_reserved() -> None:
     assert "super" not in str(error.value.detail).lower()
 
 
+@pytest.mark.parametrize(
+    ("username", "name", "modules", "permissions", "is_superuser"),
+    [
+        ("rgarcez", "Rafael Garcez", ["management"], access._all_permissions(), True),
+        ("admin", "Administradora", ["admin"], {"admin": ["consultar", "administrar"]}, False),
+    ],
+)
+def test_account_owner_can_customize_display_name_and_change_own_password(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+    username: str,
+    name: str,
+    modules: list[str],
+    permissions: dict[str, list[str]],
+    is_superuser: bool,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    user = access._new_user(username, name, modules, permissions)
+    user.is_superuser = is_superuser
+    user.must_change_password = False
+    user.mfa_enabled = True
+    db.add(user)
+    db.commit()
+    token = issue_session(user.id, "active", user.session_version)
+    request = Request({
+        "type": "http",
+        "method": "PATCH",
+        "path": "/api/v1/auth/profile",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+
+    async def record_audit(*_args) -> None:
+        return None
+
+    monkeypatch.setattr(access, "record_audit_event", record_audit)
+    profile = asyncio.run(access.update_own_profile(access.ProfileUpdatePayload(display_name="Rafael"), request, db))
+
+    assert profile["user"]["name"] == "Rafael Garcez"
+    assert profile["user"]["display_name"] == "Rafael"
+
+    with pytest.raises(HTTPException) as wrong_password:
+        asyncio.run(
+            access.change_password(
+                access.PasswordChangePayload(current_password="incorrect", new_password="new-password-123"),
+                request,
+                Response(),
+                db,
+            )
+        )
+    assert wrong_password.value.status_code == 401
+
+    response = Response()
+    result = asyncio.run(
+        access.change_password(
+            access.PasswordChangePayload(current_password="0000", new_password="new-password-123"),
+            request,
+            response,
+            db,
+        )
+    )
+    db.refresh(user)
+    assert verify_password("new-password-123", user.password_hash)
+    assert user.session_version == 2
+    assert result["user"]["display_name"] == "Rafael"
+    assert response.headers["set-cookie"]
+
+
 def test_common_admin_audit_hides_system_admin_events(
     domain_database: dict[str, Session],
 ) -> None:

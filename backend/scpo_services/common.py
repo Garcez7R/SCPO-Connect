@@ -271,7 +271,7 @@ async def authenticated_principal(request: Request) -> DemoPrincipal:
         return DemoPrincipal(
             user_id=str(data["id"]),
             username=str(data["username"]),
-            actor_name=str(data["name"]),
+            actor_name=str(data.get("display_name") or data["name"]),
             role="system_admin" if data.get("is_superuser") else str(data["role"]),
             modules=list(data["modules"]),
             permissions={str(k): list(v) for k, v in data["permissions"].items()},

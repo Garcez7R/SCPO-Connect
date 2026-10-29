@@ -70,7 +70,7 @@ import { BehavioralStatusBadge, type BehavioralStatus } from './components/Behav
 import TherapyMaterialsPanel from './components/TherapyMaterialsPanel'
 import NursingMobilePage from './pages/NursingMobilePage'
 import OperationsMobilePage from './pages/OperationsMobilePage'
-import SystemAdminGuide from './components/SystemAdminGuide'
+import HelpGuide from './components/HelpGuide'
 import QRCode from 'qrcode'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
@@ -85,8 +85,8 @@ const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior',
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'reports', 'materials'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios', materials: 'Materiais e imagens' }
-const systemAdminTabValues = ['guide', 'accounts', 'backup', 'recovery'] as const
-const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { guide: 'Guia e soluções', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemAdminTabValues = ['accounts', 'backup', 'recovery'] as const
+const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const patientRegistryTabLabels = { registry: 'Novo cadastro', list: 'Lista de pacientes', reports: 'Relatórios' } as const
 type Patient = {
   reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; same_number?: string; mother_name?: string; health_plan?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
@@ -235,7 +235,7 @@ type Profile = {
   modules: ModuleId[]
 }
 
-type AuthUser = { id: string; username: string; name: string; role: ProfileId; modules: ModuleId[]; permissions: Record<string, string[]>; mfa_enabled: boolean; is_superuser: boolean }
+type AuthUser = { id: string; username: string; name: string; display_name: string; role: ProfileId; modules: ModuleId[]; permissions: Record<string, string[]>; mfa_enabled: boolean; is_superuser: boolean }
 
 const roleLabels: Record<ProfileId, string> = {
   patients: 'Cadastro de pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
@@ -429,7 +429,14 @@ function AuthenticatedAppEntry() {
     setSessionExpired(false)
     setUser(authenticatedUser)
   }} />
-  return <AuthenticatedApp user={user} sessionExpiresAt={sessionExpiresAt} onSessionExpired={() => {
+  return <AuthenticatedApp user={user} sessionExpiresAt={sessionExpiresAt} onUserUpdated={(updatedUser, sessionExpiration) => {
+    setUser(updatedUser)
+    if (sessionExpiration) {
+      const expiresAt = sessionExpiration * 1000
+      window.localStorage.setItem('scpo-auth-session-expires-at', String(expiresAt))
+      setSessionExpiresAt(expiresAt)
+    }
+  }} onSessionExpired={() => {
     setUser(null)
     setSessionExpired(true)
   }} onLogout={() => {
@@ -444,7 +451,7 @@ function StartupScreen() {
   return <main className="startup-screen" role="status" aria-live="polite" aria-busy="true"><div className="startup-brand"><span className="startup-orbit startup-orbit-one" /><span className="startup-orbit startup-orbit-two" /><span className="startup-mark"><img className="startup-mark-base" src="/scpo-connect-icon.png" alt="" /><img className="startup-mark-fill" src="/scpo-connect-icon.png" alt="" /></span><span className="startup-glow" /></div><strong>SCPO Connect</strong><span>Preparando seu espaço de trabalho</span><div className="startup-progress"><i /></div></main>
 }
 
-function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }: { user: AuthUser; sessionExpiresAt: number | null; onSessionExpired: () => void; onLogout: () => void }) {
+function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpired, onLogout }: { user: AuthUser; sessionExpiresAt: number | null; onUserUpdated: (user: AuthUser, sessionExpiresAt?: number) => void; onSessionExpired: () => void; onLogout: () => void }) {
   const [activeModule, setActiveModule] = useState<ModuleId>(() => {
     try {
       const saved = navigation.find((item) => item.id === window.sessionStorage.getItem(`scpo-active-module:${user.id}`))
@@ -473,6 +480,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
     })
   }, [])
   const [menuOpen, setMenuOpen] = useState(false)
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return window.localStorage.getItem('scpo-sidebar-collapsed') === '1'
@@ -518,9 +526,9 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
   const role = user.role
   const profile: Profile = {
     id: role,
-    name: user.name,
+    name: user.display_name || user.name,
     role: user.is_superuser ? 'Superadministrador do Sistema' : roleLabels[role],
-    initials: user.name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join(''),
+    initials: (user.display_name || user.name).split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join(''),
     modules: ['home', ...user.modules, 'about'],
   }
   const canReviewTherapyReports = profile.modules.includes('management')
@@ -627,6 +635,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
             <span className="session-role">{getGreeting()}, {profile.name.split(/\s+/)[0]}</span>
             <div className="accessibility-controls" aria-label="Acessibilidade e aparência"><button className={`icon-button appearance-button ${mobileFeedback ? 'feedback-enabled' : ''}`} type="button" aria-label={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} aria-pressed={mobileFeedback} title={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} onClick={() => { const enabled = !mobileFeedback; setMobileFeedback(enabled); window.localStorage.setItem(MOBILE_FEEDBACK_STORAGE_KEY, enabled ? 'enabled' : 'disabled') }}><Vibrate size={17} /></button><button className="icon-button appearance-button" type="button" aria-label={`Aumentar texto (${Math.round(fontZoom * 100)}%)`} title="Aumentar texto" onClick={() => setFontZoom((current) => current >= 1.2 ? 1 : Math.round((current + 0.1) * 10) / 10)}><span>A+</span></button><button className="icon-button appearance-button" type="button" aria-label={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} title={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} onClick={() => setDarkMode((current) => !current)}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}</button></div>
             <InstallAppButton />
+            <button className="button button-secondary account-settings-button" type="button" aria-label="Abrir minha conta" onClick={() => setAccountSettingsOpen(true)}><UserRound size={15} /><span>Minha conta</span></button>
             <button className="button button-secondary logout-button" type="button" onClick={async () => { await fetch('/api/v1/auth/logout', { method: 'POST' }); onLogout() }}><LogOut size={15} /> Sair</button>
           </div>
         </header>
@@ -658,9 +667,95 @@ function AuthenticatedApp({ user, sessionExpiresAt, onSessionExpired, onLogout }
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
       {showBetaPopup && <BetaCelebration onClose={closeBetaPopup} iconError={betaIconError} onIconError={() => setBetaIconError(true)} />}
+      {accountSettingsOpen && <MyAccountDialog user={user} onUpdated={onUserUpdated} onClose={() => setAccountSettingsOpen(false)} />}
       </PageNavigationContext.Provider>
     </div>
   )
+}
+
+function MyAccountDialog({ user, onUpdated, onClose }: { user: AuthUser; onUpdated: (user: AuthUser, sessionExpiresAt?: number) => void; onClose: () => void }) {
+  const [displayName, setDisplayName] = useState(user.display_name || user.name)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [profileMessage, setProfileMessage] = useState('')
+  const [passwordMessage, setPasswordMessage] = useState('')
+  const [profileError, setProfileError] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
+
+  async function saveDisplayName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSavingProfile(true)
+    setProfileMessage('')
+    setProfileError('')
+    try {
+      const data = await readApiResponse<{ user: AuthUser }>(await fetch('/api/v1/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: displayName.trim() }),
+      }))
+      onUpdated(data.user)
+      setDisplayName(data.user.display_name)
+      setProfileMessage('Nome de exibição atualizado.')
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Não foi possível salvar o nome de exibição.')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  async function changeOwnPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPasswordMessage('')
+    setPasswordError('')
+    if (newPassword !== confirmPassword) {
+      setPasswordError('As novas senhas não coincidem.')
+      return
+    }
+    setSavingPassword(true)
+    try {
+      const data = await readApiResponse<{ user: AuthUser; session_expires_at: number }>(await fetch('/api/v1/auth/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      }))
+      onUpdated(data.user, data.session_expires_at)
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setPasswordMessage('Senha alterada. Sua sessão atual continua ativa.')
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : 'Não foi possível alterar a senha.')
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
+  return <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !savingProfile && !savingPassword) onClose() }}>
+    <section className="patient-archive-dialog credential-reset-dialog account-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="account-settings-title">
+      <div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">PREFERÊNCIAS DA CONTA</p><h2 id="account-settings-title">Minha conta</h2></div></div>
+      <p>Seu usuário de acesso é <strong>{user.username}</strong> e não pode ser alterado aqui. Escolha como seu nome aparece nas telas de trabalho.</p>
+      <form className="account-settings-form" onSubmit={(event) => void saveDisplayName(event)}>
+        <label className="field"><span className="field-label">Nome de exibição</span><input required minLength={1} maxLength={80} autoComplete="nickname" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /><span className="field-hint">Esse nome aparece no espaço de trabalho e nos registros de autoria.</span></label>
+        {profileMessage && <ToastMessage variant="success">{profileMessage}</ToastMessage>}
+        {profileError && <ToastMessage variant="error">{profileError}</ToastMessage>}
+        <button className="button button-primary" type="submit" disabled={savingProfile || !displayName.trim()}>{savingProfile ? 'Salvando…' : 'Salvar nome'}</button>
+      </form>
+      <form className="account-settings-form account-settings-password" onSubmit={(event) => void changeOwnPassword(event)}>
+        <h3>Alterar minha senha</h3>
+        <label className="field"><span className="field-label">Senha atual</span><input required type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+        <label className="field"><span className="field-label">Nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><span className="field-hint">Use pelo menos 12 caracteres.</span></label>
+        <label className="field"><span className="field-label">Confirme a nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+        {newPassword && confirmPassword && newPassword !== confirmPassword && <p className="auth-validation-message" role="alert">As novas senhas não coincidem.</p>}
+        {passwordMessage && <ToastMessage variant="success">{passwordMessage}</ToastMessage>}
+        {passwordError && <ToastMessage variant="error">{passwordError}</ToastMessage>}
+        <button className="button button-secondary" type="submit" disabled={savingPassword || !currentPassword || newPassword.length < 12 || newPassword !== confirmPassword}>{savingPassword ? 'Alterando…' : 'Alterar senha'}</button>
+      </form>
+      <div className="form-actions"><button className="button button-secondary" type="button" onClick={onClose} disabled={savingProfile || savingPassword}>Fechar</button></div>
+    </section>
+  </div>
 }
 
 function BetaCelebration({ onClose, iconError, onIconError }: { onClose: () => void; iconError: boolean; onIconError: () => void }) {
@@ -692,6 +787,7 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [totpCode, setTotpCode] = useState('')
   const [bootstrapToken, setBootstrapToken] = useState('')
   const [mfaSecret, setMfaSecret] = useState('')
@@ -727,6 +823,10 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (stage === 'password' && newPassword !== confirmNewPassword) {
+      setMessage('As senhas não coincidem.')
+      return
+    }
     setBusy(true)
     setMessage('')
     try {
@@ -760,12 +860,14 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
         setStage('password')
       } else if (stage === 'login') {
         setPassword('')
+        setTotpCode('')
         setPasswordVisible(false)
         if (data.must_change_password) setStage('password')
         else if (data.mfa_setup_required) setStage('mfa')
         else if (data.user) onAuthenticated(data.user, data.session_expires_at)
       } else if (stage === 'password') {
         setNewPassword('')
+        setConfirmNewPassword('')
         setStage('mfa')
       } else if (data.user) {
         onAuthenticated(data.user, data.session_expires_at)
@@ -777,17 +879,17 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
     }
   }
 
-  const title = stage === 'bootstrap' ? 'Configurar administrador master' : stage === 'login' ? 'Entrar no SCPO Connect' : stage === 'password' ? 'Troque sua senha inicial' : 'Ative a autenticação em duas etapas'
+  const title = stage === 'bootstrap' ? 'Configurar administrador master' : stage === 'login' ? 'Entrar no SCPO Connect' : stage === 'password' ? 'Passo 1 de 2: crie sua senha' : 'Passo 2 de 2: ative a confirmação em duas etapas'
   return <main className="auth-page"><section className="auth-card"><div className="auth-brand"><img src="/scpo-connect-icon.png" alt="" /><div><strong>SCPO Connect</strong><span>Santa Casa de Pedro Osório</span></div></div><p className="eyebrow">ACESSO SEGURO</p><h1>{title}</h1>
     {sessionExpired && <div className="admin-warning session-expired-notice" role="status"><Clock3 size={18} /><div><strong>Sessão encerrada</strong><span>O limite de 12 horas foi atingido. Entre novamente para continuar.</span></div></div>}
-    {stage === 'mfa' && <div className="auth-mfa-instructions"><strong>Aplicativo autenticador</strong><p>Leia o QR code com seu aplicativo autenticador ou copie a chave para cadastrá-la manualmente. Depois, informe o código de seis dígitos:</p>{mfaQrDataUrl ? <img className="auth-mfa-qr" src={mfaQrDataUrl} alt="QR code para configurar a autenticação em duas etapas" /> : <span className="auth-mfa-qr-loading">Gerando QR code seguro…</span>}<code>{mfaSecret || 'Carregando chave segura…'}</code><button className="button button-secondary auth-mfa-copy" type="button" onClick={() => void copyMfaSecret()} disabled={!mfaSecret}>Copiar chave</button>{mfaCopyMessage && <span className="auth-mfa-copy-message" role="status">{mfaCopyMessage}</span>}</div>}
+    {stage === 'mfa' && <div className="auth-mfa-instructions"><strong>Configure um aplicativo autenticador</strong><p>1. Abra um autenticador no celular, como Google Authenticator ou Microsoft Authenticator. 2. Leia este QR code ou copie a chave. 3. Digite abaixo o código de seis dígitos que o aplicativo gerar.</p>{mfaQrDataUrl ? <img className="auth-mfa-qr" src={mfaQrDataUrl} alt="QR code para configurar a autenticação em duas etapas" /> : <span className="auth-mfa-qr-loading">Gerando QR code seguro…</span>}<code>{mfaSecret || 'Carregando chave segura…'}</code><button className="button button-secondary auth-mfa-copy" type="button" onClick={() => void copyMfaSecret()} disabled={!mfaSecret}>Copiar chave</button>{mfaCopyMessage && <span className="auth-mfa-copy-message" role="status">{mfaCopyMessage}</span>}</div>}
     <form className="auth-form" onSubmit={submit}>
       {stage === 'bootstrap' && <><label className="field"><span className="field-label">Nome do administrador</span><input required minLength={2} maxLength={120} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" title="Use pelo menos 3 caracteres: letras sem acento, números, ponto, hífen, sublinhado ou @." autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Token de bootstrap</span><input required type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label><p className="auth-help">O usuário deve ter ao menos 3 caracteres e usar letras sem acento, números, ponto, hífen, sublinhado ou @.</p><p className="auth-help">O token fica no arquivo <code>bootstrap-admin.token</code> no diretório de dados definido pelo servidor. Guarde-o como segredo.</p></>}
-      {stage === 'login' && <><label className="field"><span className="field-label">Usuário</span><input required autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Senha</span><span className="auth-password-control"><input required type={passwordVisible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label><label className="field"><span className="field-label">Código MFA (6 dígitos)</span><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label></>}
-      {stage === 'password' && <><p className="auth-help">A senha inicial é temporária. Escolha uma nova senha com pelo menos 12 caracteres.</p><label className="field"><span className="field-label">Nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label></>}
+      {stage === 'login' && <><label className="field"><span className="field-label">Usuário</span><input required autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Senha</span><span className="auth-password-control"><input required type={passwordVisible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label><label className="field"><span className="field-label">Código do autenticador (se já configurado)</span><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label><p className="auth-help">Primeiro acesso de uma conta recém-criada? Use seu usuário e a senha temporária recebida e deixe o código vazio. Se sua senha foi redefinida em uma conta já configurada, informe também seu código MFA.</p></>}
+      {stage === 'password' && <><p className="auth-help">Use a senha temporária recebida apenas para entrar. Agora escolha uma senha pessoal com pelo menos 12 caracteres e confirme-a abaixo. Depois, configure o aplicativo autenticador seguindo os passos na tela.</p><label className="field"><span className="field-label">Nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label><label className="field"><span className="field-label">Confirme a nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} /></label>{confirmNewPassword && newPassword !== confirmNewPassword && <p className="auth-validation-message" role="alert">As senhas não coincidem.</p>}</>}
       {stage === 'mfa' && <label className="field"><span className="field-label">Código do aplicativo</span><input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label>}
       {message && <ToastMessage variant="error">{message}</ToastMessage>}
-      <button className="button button-primary auth-submit" type="submit" disabled={busy || (stage === 'mfa' && !mfaSecret)}>{busy ? 'Aguarde…' : stage === 'login' ? 'Entrar' : stage === 'bootstrap' ? 'Criar administrador' : stage === 'password' ? 'Salvar nova senha' : 'Ativar MFA'}</button>
+      <button className="button button-primary auth-submit" type="submit" disabled={busy || (stage === 'mfa' && !mfaSecret) || (stage === 'password' && (!newPassword || newPassword !== confirmNewPassword))}>{busy ? 'Aguarde…' : stage === 'login' ? 'Entrar' : stage === 'bootstrap' ? 'Criar administrador' : stage === 'password' ? 'Salvar nova senha' : 'Ativar MFA'}</button>
     </form>
     <InstallAppButton showDescription />
   </section></main>
@@ -1970,7 +2072,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
 }
 
 function AboutPage() {
-  const [tab, setTab] = useState<'overview' | 'compliance'>('overview')
+  const [tab, setTab] = useState<'overview' | 'help' | 'compliance'>('overview')
   const systemOverview = [
     { title: '1. Acesso individual', details: 'Cada pessoa utiliza sua própria conta. O acesso exige credenciais individuais e configuração de autenticação adicional; não compartilhe senhas ou códigos.' },
     { title: '2. Espaços de trabalho', details: 'A navegação apresenta os módulos disponíveis para o perfil da pessoa. As permissões definem quais ações podem ser feitas em cada módulo.' },
@@ -1989,11 +2091,14 @@ function AboutPage() {
     <div className="page-title-row"><span className="module-icon module-icon-about"><Info size={23} /></span><div><p className="eyebrow">SCPO CONNECT</p><h1>Sobre e conformidade</h1><p className="welcome-copy">Entenda os fluxos do sistema e consulte referências legais e de privacidade.</p></div></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções sobre o SCPO Connect">
       <button id="about-tab-overview" className={`button ${tab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'overview'} aria-controls="about-panel-overview" onClick={() => setTab('overview')}>Como o sistema funciona</button>
+      <button id="about-tab-help" className={`button ${tab === 'help' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'help'} aria-controls="about-panel-help" onClick={() => setTab('help')}>Dúvidas e solução de problemas</button>
       <button id="about-tab-compliance" className={`button ${tab === 'compliance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'compliance'} aria-controls="about-panel-compliance" onClick={() => setTab('compliance')}>Referências e conformidade</button>
     </div>
     {tab === 'overview'
       ? <div id="about-panel-overview" className="about-legal-grid" role="tabpanel" aria-labelledby="about-tab-overview" tabIndex={0}>{systemOverview.map((item) => <article className="about-legal-card" key={item.title}><p className="eyebrow">VISÃO GERAL</p><h2>{item.title}</h2><p>{item.details}</p></article>)}</div>
-      : <div id="about-panel-compliance" className="about-legal-grid" role="tabpanel" aria-labelledby="about-tab-compliance" tabIndex={0}>{legalReferences.map((item) => <article className="about-legal-card" key={item.title}><p className="eyebrow">REFERÊNCIA OFICIAL</p><h2>{item.title}</h2><p>{item.articles}</p><a href={item.href} target="_blank" rel="noreferrer">Consultar fonte oficial <ArrowRight size={15} /></a><small>{item.source}</small></article>)}</div>}
+      : tab === 'help'
+        ? <div id="about-panel-help" role="tabpanel" aria-labelledby="about-tab-help" tabIndex={0}><HelpGuide /></div>
+        : <div id="about-panel-compliance" className="about-legal-grid" role="tabpanel" aria-labelledby="about-tab-compliance" tabIndex={0}>{legalReferences.map((item) => <article className="about-legal-card" key={item.title}><p className="eyebrow">REFERÊNCIA OFICIAL</p><h2>{item.title}</h2><p>{item.articles}</p><a href={item.href} target="_blank" rel="noreferrer">Consultar fonte oficial <ArrowRight size={15} /></a><small>{item.source}</small></article>)}</div>}
     <section className="patient-list-panel about-version"><span className="about-product-brand startup-brand" aria-hidden="true"><span className="startup-orbit startup-orbit-one" /><span className="startup-orbit startup-orbit-two" /><span className="startup-mark"><img className="startup-mark-base" src="/scpo-connect-icon.png" alt="" /><img className="startup-mark-fill" src="/scpo-connect-icon.png" alt="" /></span><span className="startup-glow" /></span><div><p className="eyebrow">IDENTIFICAÇÃO DO PRODUTO</p><h2>SCPO Connect · v{APP_VERSION}</h2><p className="welcome-copy">Versão inicial de produto em evolução. Desenvolvimento mantido pela equipe do SCPO Connect.</p></div></section>
   </section>
 }
@@ -3191,7 +3296,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
           physicianProfileMessage = ` A conta foi criada, mas o perfil médico não foi salvo: ${error instanceof Error ? error.message : 'serviço indisponível'}. Complete o cadastro abaixo.`
         }
       }
-      setNotice(`Conta ${data.username} criada. Senha temporária de uso único: ${data.initial_password}. Entregue-a diretamente ao usuário; a troca e a ativação do MFA serão obrigatórias no primeiro acesso.${physicianProfileMessage}`)
+      setNotice(`Conta ${data.username} criada. Senha temporária de uso único: ${data.initial_password}. Entregue-a diretamente ao usuário por canal seguro. No primeiro acesso, ele informa o usuário e essa senha, deixa o campo de código vazio, cria e confirma uma senha pessoal com 12 ou mais caracteres e, por fim, configura o autenticador pelo QR code.${physicianProfileMessage}`)
       await loadUsers()
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Falha ao criar a conta.')
@@ -4321,7 +4426,7 @@ function BackupExportPanel() {
       <div className="section-heading"><div><p className="eyebrow">RESTAURAÇÃO DE BACKUP</p><h3>Substituir dados atuais</h3><p className="welcome-copy">Restaura os sete bancos do sistema a partir de um arquivo protegido por senha.</p></div></div>
       <div className="admin-warning backup-restore-guidance" role="alert"><ShieldCheck size={18} /><div><strong>Operação destrutiva e com indisponibilidade</strong><span>Esta ação substituirá todos os dados atuais. Agende uma janela de manutenção, avise os usuários e confirme que escolheu o arquivo correto. Antes da substituição, o sistema valida o arquivo e cria cópias temporárias dos bancos atuais para recuperação automática se a operação falhar. A substituição dos sete bancos não é atômica: mantenha o serviço sem uso durante todo o processo.</span></div></div>
       <form className="backup-restore-form" onSubmit={(event) => void restoreBackup(event)}>
-        <label className="field"><span className="field-label">Arquivo de backup</span><input id="backup-restore-file" required type="file" accept=".rgs,application/vnd.scpo.rgs" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} /><span className="field-hint">Somente pacotes .rgs exportados com senha pela Administração do Sistema.</span></label>
+        <div className="field"><span className="field-label">Arquivo de backup</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id="backup-restore-file" required type="file" accept=".rgs,application/vnd.scpo.rgs" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor="backup-restore-file">Escolher arquivo</label><span title={restoreFile?.name}>{restoreFile?.name ?? 'Nenhum arquivo selecionado'}</span></div><span className="field-hint">Somente pacotes .rgs exportados com senha pela Administração do Sistema.</span></div>
         <label className="field"><span className="field-label">Senha do backup</span><input required minLength={12} maxLength={128} type="password" autoComplete="current-password" value={restorePassword} onChange={(event) => setRestorePassword(event.target.value)} /></label>
         <label className="field"><span className="field-label">Confirmação obrigatória</span><input required value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value)} placeholder="SUBSTITUIR TODOS OS DADOS" autoComplete="off" /><span className="field-hint">Digite exatamente SUBSTITUIR TODOS OS DADOS para habilitar a restauração.</span></label>
         <button className="button button-danger" type="submit" disabled={!restoreReady || restoring || busy}>{restoring ? 'Validando e restaurando…' : 'Restaurar backup e substituir dados'}</button>
@@ -4335,6 +4440,8 @@ function BackupExportPanel() {
 const auditActionLabels: Record<string, string> = {
   user_created: 'Conta criada',
   user_access_changed: 'Acessos da conta atualizados',
+  user_display_name_changed: 'Nome de exibição alterado',
+  user_password_changed: 'Senha alterada pelo titular',
   user_password_reset: 'Senha redefinida',
   user_credentials_reset: 'Credenciais redefinidas',
   user_deleted: 'Conta excluída',
@@ -4430,7 +4537,7 @@ function AuditLogPanel() {
 }
 
 function SystemAdminPage({ user }: { user: AuthUser }) {
-  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${user.id}`, 'guide', systemAdminTabValues, systemAdminTabLabels)
+  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${user.id}`, 'accounts', systemAdminTabValues, systemAdminTabLabels)
   const [users, setUsers] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -4504,7 +4611,6 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
   return <section className="system-admin-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
-    {tab === 'guide' && <SystemAdminGuide />}
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}
     {tab === 'backup' && <BackupExportPanel />}
     {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel"><div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha e o MFA atuais serão revogados. Cada usuário receberá uma senha temporária aleatória, de uso único, e deverá configurar novos fatores de autenticação.</p></div></div><div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · a conta superadministradora é sempre excluída</span><button className="button button-danger" type="button" onClick={() => void resetAllCredentials()} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>Mostradas somente nesta sessão. Copie e entregue cada senha ao titular por canal seguro; não feche nem atualize a página antes de registrá-las.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}{!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((account) => <article key={account.id}><span>{account.name} · {account.username}{account.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(account)} disabled={busy}>Redefinir senha e MFA</button><button className="button button-danger" type="button" onClick={() => void deleteSystemUser(account)} disabled={busy}>{deletingUserId === account.id ? 'Excluindo…' : 'Excluir conta'}</button></article>)}</div></details>}</section>}

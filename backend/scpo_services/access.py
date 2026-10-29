@@ -51,6 +51,7 @@ class AppUser(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     modules: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     permissions: Mapped[dict[str, list[str]]] = mapped_column(JSON, nullable=False)
@@ -101,7 +102,21 @@ class LoginPayload(BaseModel):
 
 class PasswordChangePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    current_password: str | None = Field(default=None, min_length=1, max_length=256)
     new_password: str = Field(min_length=12, max_length=256)
+
+
+class ProfileUpdatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("Informe um nome de exibição")
+        return clean
 
 
 class TotpPayload(BaseModel):
@@ -221,7 +236,7 @@ def _require_account_admin(request: Request, db: Session) -> tuple[AppUser, Demo
     principal = DemoPrincipal(
         user.id,
         user.username,
-        user.name,
+        user.display_name or user.name,
         "system_admin" if user.is_superuser else "admin",
         user.modules,
         user.permissions,
@@ -237,7 +252,7 @@ def _require_system_admin(request: Request, db: Session) -> tuple[AppUser, DemoP
     principal = DemoPrincipal(
         user.id,
         user.username,
-        user.name,
+        user.display_name or user.name,
         "system_admin",
         user.modules,
         user.permissions,
@@ -304,6 +319,7 @@ def _user_response(user: AppUser) -> dict[str, object]:
         "id": user.id,
         "username": user.username,
         "name": user.name,
+        "display_name": user.display_name or user.name,
         "role": role,
         "modules": modules,
         "permissions": permissions,
@@ -400,21 +416,59 @@ def login(
 
 
 @app.post("/api/v1/auth/password")
-def change_password(
+async def change_password(
     payload: PasswordChangePayload,
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    user, _ = _current_user(request, db, {"password_change", "active"})
+    user, claims = _current_user(request, db, {"password_change", "active"})
+    if claims.get("stage") == "active":
+        if not payload.current_password or not verify_password(payload.current_password, user.password_hash):
+            raise HTTPException(status_code=401, detail="A senha atual está incorreta")
+        if verify_password(payload.new_password, user.password_hash):
+            raise HTTPException(status_code=422, detail="Escolha uma senha diferente da senha atual")
     if payload.new_password == INITIAL_PASSWORD:
         raise HTTPException(status_code=422, detail="Escolha uma senha diferente da senha inicial")
+    principal = DemoPrincipal(
+        user.id,
+        user.username,
+        user.display_name or user.name,
+        "system_admin" if user.is_superuser else ("admin" if "admin" in user.modules else (user.modules[0] if user.modules else "")),
+        user.modules,
+        user.permissions,
+        is_superuser=user.is_superuser,
+    )
+    await record_audit_event(principal, user.id, "user_password_changed", db)
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
     user.session_version += 1
     db.commit()
     session_expires_at = _set_cookie(response, user, "mfa_setup" if not user.mfa_enabled else "active")
     return {"user": _user_response(user), "mfa_setup_required": not user.mfa_enabled, "session_expires_at": session_expires_at}
+
+
+@app.patch("/api/v1/auth/profile")
+async def update_own_profile(
+    payload: ProfileUpdatePayload,
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    user, _ = _current_user(request, db, {"active"})
+    if user.display_name != payload.display_name:
+        principal = DemoPrincipal(
+            user.id,
+            user.username,
+            user.display_name or user.name,
+            "system_admin" if user.is_superuser else ("admin" if "admin" in user.modules else (user.modules[0] if user.modules else "")),
+            user.modules,
+            user.permissions,
+            is_superuser=user.is_superuser,
+        )
+        await record_audit_event(principal, user.id, "user_display_name_changed", db)
+        user.display_name = payload.display_name
+        db.commit()
+    return {"user": _user_response(user)}
 
 
 @app.get("/api/v1/auth/mfa/setup")
