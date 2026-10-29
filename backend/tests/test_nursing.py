@@ -454,7 +454,7 @@ def test_reception_appointment_requires_timezone_and_valid_future_interval() -> 
         )
 
 
-def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
+def test_public_waiting_room_queue_exposes_first_name_and_surname_without_codes(
     nursing_db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -462,6 +462,8 @@ def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
     local_day_start = now.astimezone(ZoneInfo("America/Sao_Paulo")).replace(
         hour=0, minute=0, second=0, microsecond=0
     ).astimezone(UTC)
+    ana_id = str(uuid.uuid4())
+    bruna_id = str(uuid.uuid4())
     nursing_db.add_all(
         [
             nursing.EmergencyArrival(
@@ -479,9 +481,9 @@ def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
                 queue_type="common",
             ),
             nursing.EmergencyArrival(
-                id=str(uuid.uuid4()),
+                id=ana_id,
                 patient_reference=None,
-                patient_name="Ana Exemplo Sobrenome",
+                patient_name="Ana da Silva Exemplo",
                 arrival_mode="walk_in",
                 reason="Motivo privado",
                 status="waiting",
@@ -493,7 +495,7 @@ def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
                 queue_type="common",
             ),
             nursing.EmergencyArrival(
-                id=str(uuid.uuid4()),
+                id=bruna_id,
                 patient_reference=None,
                 patient_name="Bruna Exemplo Sobrenome",
                 arrival_mode="walk_in",
@@ -517,27 +519,27 @@ def test_public_waiting_room_queue_exposes_only_first_names_and_daily_codes(
         payload = response.json()
         assert payload["items"] == [
             {
-                "id": "C001",
+                "id": nursing.hashlib.sha256(f"arrival:{ana_id}".encode()).hexdigest()[:16],
                 "type": "arrival",
-                "code": "C001",
-                "first_name": "Ana",
+                "display_name": "Ana da Silva",
                 "status": "waiting",
                 "queue_type": "common",
                 "arrived_at": payload["items"][0]["arrived_at"],
                 "updated_at": payload["items"][0]["updated_at"],
             },
             {
-                "id": "P001",
+                "id": nursing.hashlib.sha256(f"arrival:{bruna_id}".encode()).hexdigest()[:16],
                 "type": "arrival",
-                "code": "P001",
-                "first_name": "Bruna",
+                "display_name": "Bruna Exemplo",
                 "status": "called",
                 "queue_type": "priority",
                 "arrived_at": payload["items"][1]["arrived_at"],
                 "updated_at": payload["items"][1]["updated_at"],
             },
         ]
+        assert "Ana da Silva Exemplo" not in response.text
         assert "Sobrenome" not in response.text
+        assert '"code"' not in response.text
         assert "Ontem" not in response.text
         assert "Motivo privado" not in response.text
         assert response.headers["cache-control"] == "no-store"

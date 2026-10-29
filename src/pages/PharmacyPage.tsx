@@ -60,10 +60,10 @@ function playBarcodeTone(audioContext: AudioContext | null) {
   oscillator.stop(audioContext.currentTime + 0.13)
 }
 
-function PharmacyPage({ user }: { user: AuthUser }) {
+function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode?: boolean }) {
   const canManagePurchases = (user.modules.includes('pharmacy') && Boolean(user.permissions.pharmacy?.includes('criar') || user.permissions.pharmacy?.includes('alterar'))) || (user.modules.includes('management') && Boolean(user.permissions.management?.includes('consultar')))
-  const availablePharmacyTabs = canManagePurchases ? pharmacyTabs : pharmacyTabsWithoutPurchases
-  const [pharmacyTab, setPharmacyTab] = usePersistentTab(`scpo-tab-pharmacy-${user.id}`, 'stock', availablePharmacyTabs, pharmacyTabLabels)
+  const availablePharmacyTabs = !mobileMode && canManagePurchases ? pharmacyTabs : pharmacyTabsWithoutPurchases
+  const [pharmacyTab, setPharmacyTab] = usePersistentTab(`scpo-tab-pharmacy${mobileMode ? '-mobile' : ''}-${user.id}`, 'stock', availablePharmacyTabs, pharmacyTabLabels)
   const [items, setItems] = useState<PharmacyItem[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [dispensations, setDispensations] = useState<MedicationDispensation[]>([])
@@ -524,14 +524,14 @@ function PharmacyPage({ user }: { user: AuthUser }) {
   const unitsPerPackage = Number(form.units_per_purchase_unit.replace(',', '.'))
   const convertedBalance = requestedPackages * unitsPerPackage
 
-  return <section className="pharmacy-page page-enter">
-    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">MÓDULO · FARMÁCIA</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Cadastre lotes com conversão explícita para a unidade de controle.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
+  return <section className={`pharmacy-page page-enter${mobileMode ? ' pharmacy-page-mobile' : ''}`}>
+    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'PWA · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir PWA móvel</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
     <ModuleTabNavigation
       className="pharmacy-tabs"
       ariaLabel="Seções da Farmácia"
       value={pharmacyTab}
       onChange={setPharmacyTab}
-      options={pharmacyTabs.filter((value) => value !== 'purchases' || canManagePurchases).map((value) => ({
+      options={availablePharmacyTabs.map((value) => ({
         value,
         label: pharmacyTabLabels[value],
         content: value === 'stock' || value === 'inventory'

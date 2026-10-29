@@ -10,6 +10,7 @@ export default defineConfig({
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         nursing: fileURLToPath(new URL('./nursing.html', import.meta.url)),
         operations: fileURLToPath(new URL('./operations.html', import.meta.url)),
+        pharmacy: fileURLToPath(new URL('./pharmacy.html', import.meta.url)),
       },
     },
   },

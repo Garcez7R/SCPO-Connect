@@ -3047,20 +3047,25 @@ def list_public_reception_queue(
         )
 
     queue_entries.sort(key=lambda item: (item[0], item[1]))
-    sequence_by_queue = {"common": 0, "priority": 0}
     public_items: list[dict[str, str]] = []
     for arrived_at, item_id, patient_name, status, queue_type, item_type, updated_at, announcement_version in queue_entries:
-        sequence_by_queue[queue_type] += 1
-        prefix = "P" if queue_type == "priority" else "C"
         if status not in {"waiting", "arrived", "called", "in_service"}:
             continue
-        code = f"{prefix}{sequence_by_queue[queue_type]:03d}"
+        name_parts = patient_name.split()
+        surname_index = next(
+            (
+                index
+                for index in range(1, len(name_parts))
+                if name_parts[index].casefold() not in {"da", "das", "de", "do", "dos", "e"}
+            ),
+            1,
+        )
+        display_name = " ".join(name_parts[:surname_index + 1])
         public_items.append(
             {
-                "id": code,
+                "id": hashlib.sha256(f"{item_type}:{item_id}".encode("utf-8")).hexdigest()[:16],
                 "type": item_type,
-                "code": code,
-                "first_name": patient_name.strip().split(maxsplit=1)[0] if patient_name.strip() else "",
+                "display_name": display_name,
                 "status": "waiting" if status in {"waiting", "arrived"} else status,
                 "queue_type": queue_type,
                 "arrived_at": arrived_at.isoformat(),

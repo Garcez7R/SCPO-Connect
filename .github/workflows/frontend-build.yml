@@ -19,5 +19,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Verify Nursing entry
-        run: test -s dist/nursing.html
+      - name: Verify all mobile app entries and manifests
+        run: test -s dist/nursing.html && test -s dist/nursing.webmanifest && test -s dist/operations.html && test -s dist/operations.webmanifest && test -s dist/pharmacy.html && test -s dist/pharmacy.webmanifest

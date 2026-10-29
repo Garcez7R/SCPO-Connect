@@ -1849,6 +1849,33 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 }
 
 .nursing-mobile-page { display: grid; width: min(100%, 560px); min-height: 100dvh; align-content: start; gap: 18px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)); color: var(--ink); }
+.pharmacy-mobile-shell { display: grid; width: min(100%, 760px); min-height: 100dvh; align-content: start; gap: 14px; margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom)); color: var(--ink); }
+.pharmacy-mobile-header, .pharmacy-mobile-brand, .pharmacy-mobile-brand h1 { display: flex; align-items: center; }
+.pharmacy-mobile-header { justify-content: space-between; gap: 10px; }
+.pharmacy-mobile-brand { min-width: 0; gap: 9px; }
+.pharmacy-mobile-brand > img { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 9px; background: #fff; object-fit: contain; }
+.pharmacy-mobile-brand > div { display: grid; min-width: 0; gap: 2px; }
+.pharmacy-mobile-brand .eyebrow { margin: 0; font-size: 9px; }
+.pharmacy-mobile-brand h1 { gap: 6px; margin: 0; font-size: 17px; }
+.pharmacy-mobile-brand span { color: var(--muted); font-size: 10px; }
+.pharmacy-mobile-logout { min-height: 40px; flex: 0 0 auto; padding: 8px 10px; }
+.pharmacy-mobile-shell .pharmacy-page { gap: 13px; }
+.pharmacy-mobile-shell .pharmacy-page .page-title-row { align-items: flex-start; gap: 9px; padding: 14px; }
+.pharmacy-mobile-shell .pharmacy-page .page-title-row h1 { font-size: clamp(20px, 5vw, 25px); }
+.pharmacy-mobile-shell .pharmacy-page .page-title-row .module-icon { display: none; }
+.pharmacy-mobile-shell .pharmacy-page .page-title-row > .button { min-height: 42px; padding-inline: 10px; }
+.pharmacy-page-mobile .pharmacy-tabs { position: sticky; z-index: 4; top: 0; margin: 0 -2px; padding: 4px 2px; background: var(--page); }
+.pharmacy-page-mobile .pharmacy-tabs .module-tab-buttons { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.pharmacy-page-mobile .pharmacy-tabs .button { min-height: 42px; white-space: nowrap; }
+.pharmacy-page-mobile .pharmacy-summary { gap: 8px; }
+.pharmacy-page-mobile .pharmacy-summary article { padding: 12px; }
+.pharmacy-page-mobile .pharmacy-inventory,
+.pharmacy-page-mobile .pharmacy-dispensation-panel,
+.pharmacy-page-mobile .pharmacy-alphabetic-inventory { padding: 14px; }
+.pharmacy-page-mobile .button { min-height: 42px; }
+.pharmacy-page-mobile input,
+.pharmacy-page-mobile select,
+.pharmacy-page-mobile textarea { min-height: 44px; font-size: 16px; }
 .nursing-mobile-header, .nursing-mobile-brand, .nursing-mobile-identity, .nursing-mobile-section-title, .nursing-mobile-connection, .nursing-mobile-message, .nursing-mobile-round-patient-heading, .nursing-mobile-footer, .nursing-mobile-round-result, .nursing-mobile-section-title h2 { display: flex; align-items: center; }
 .nursing-mobile-header { justify-content: space-between; }
 .nursing-mobile-brand { gap: 10px; }
@@ -2069,9 +2096,11 @@ html[data-theme="dark"] .behavioral-status-red { border-color: #693b40; backgrou
 @keyframes waiting-room-call-flash { 0%, 100% { opacity: 0; } 12% { opacity: 1; } 42% { opacity: .55; } }
 .waiting-room-kiosk-current .waiting-room-kiosk-card { container-type: inline-size; width: min(100%, 1500px); min-height: min(58vh, 680px); grid-template-columns: minmax(0, 1fr); justify-items: center; gap: clamp(12px, 2.5vw, 30px); padding: clamp(22px, 5vw, 72px); border-top-width: 0; border-left: 12px solid var(--blue); text-align: center; }
 .waiting-room-kiosk-current .waiting-room-kiosk-card-priority { border-left-color: var(--red); }
+.waiting-room-kiosk-current .waiting-room-kiosk-card-priority { background: #fff1ef; }
+.waiting-room-kiosk-current .waiting-room-kiosk-card-common { border-left-color: var(--green); background: #eaf7ef; }
 .waiting-room-kiosk-current .waiting-room-kiosk-card > strong { grid-row: auto; font-size: clamp(58px, 12vw, 180px); line-height: 1; }
 .waiting-room-kiosk-current .waiting-room-kiosk-card > b { grid-row: auto; max-width: 100%; overflow: hidden; font-size: clamp(56px, 10vw, 176px); text-overflow: ellipsis; white-space: nowrap; }
-.waiting-room-kiosk-priority { grid-column: 1 / -1; padding: 8px 14px; border-radius: 5px; background: var(--blue-pale); color: var(--blue-dark); font-size: clamp(16px, 2.2vw, 28px); font-weight: 700; }
+.waiting-room-kiosk-priority { grid-column: 1 / -1; padding: 8px 14px; border-radius: 5px; background: #dcefe3; color: #155d36; font-size: clamp(16px, 2.2vw, 28px); font-weight: 700; }
 .waiting-room-kiosk-priority.priority { background: #fff1ef; color: #a62f27; }
 @media (prefers-reduced-motion: reduce) {
   .waiting-room-kiosk-call-highlight::after { animation: none; opacity: .18; }

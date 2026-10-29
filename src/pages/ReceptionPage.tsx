@@ -408,12 +408,11 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
 type WaitingRoomItem = {
   id: string
   patient_name: string
-  first_name?: string
+  display_name?: string
   status: 'waiting' | 'called' | 'in_service' | 'other'
   type: 'appointment' | 'arrival'
   arrived_at: string
   updated_at?: string
-  code: string
   clinical_priority: EmergencyArrival['clinical_priority']
   queue_type: 'common' | 'priority'
 }
@@ -659,8 +658,8 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
       setError('Este navegador não oferece anúncio por voz. A chamada visual continua disponível.')
       return Promise.resolve()
     }
-    const patientName = item.first_name ?? item.patient_name.trim().split(/\s+/)[0]
-    const utterance = new SpeechSynthesisUtterance(`Senha ${item.code}. ${patientName}. Dirija-se ao atendimento.`)
+    const patientName = item.display_name ?? item.patient_name.trim().split(/\s+/).slice(0, 2).join(' ')
+    const utterance = new SpeechSynthesisUtterance(`${patientName}. Dirija-se ao atendimento.`)
     utterance.lang = 'pt-BR'
     return new Promise<void>((resolve) => {
       utterance.onend = () => resolve()
@@ -736,7 +735,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         previousCalledRef.current = calledNow
         setItems(publicItems.map((item) => ({
           ...item,
-          patient_name: item.first_name ?? '',
+          patient_name: item.display_name ?? '',
           clinical_priority: item.queue_type === 'priority' ? 'priority' : 'routine',
         })))
         setError('')
@@ -789,7 +788,6 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
           arrived_at: item.arrived_at ?? item.starts_at,
           status: item.status === 'called' ? 'called' : item.status === 'arrived' ? 'waiting' : 'other',
           type: 'appointment',
-          code: '',
           clinical_priority: 'routine',
           queue_type: 'common',
         }))
@@ -807,28 +805,20 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
             ? 'called'
             : item.status === 'waiting' ? 'waiting' : 'other',
           type: 'arrival',
-          code: '',
           clinical_priority: item.clinical_priority,
           queue_type: item.queue_type ?? (item.clinical_priority === 'priority' || item.clinical_priority === 'urgent' ? 'priority' : 'common'),
         }))
-      const numberedQueues = new Map<string, number>()
       const arrivalOrdered = [...appointments, ...arrivals].sort((left, right) =>
         left.arrived_at.localeCompare(right.arrived_at)
         || left.id.localeCompare(right.id),
       )
-      const numberedItems = arrivalOrdered.map((item) => {
-        const queue = item.queue_type === 'priority' ? 'P' : 'C'
-        const nextNumber = (numberedQueues.get(queue) ?? 0) + 1
-        numberedQueues.set(queue, nextNumber)
-        return { ...item, code: `${queue}${String(nextNumber).padStart(3, '0')}` }
-      })
-      const calledNow = new Set(numberedItems.filter((item) => item.status === 'called').map((item) => `${item.type}-${item.id}`))
+      const calledNow = new Set(arrivalOrdered.filter((item) => item.status === 'called').map((item) => `${item.type}-${item.id}`))
       previousCalledRef.current = calledNow
       const queueSettingsResponse = await fetch('/api/v1/reception/queue-settings')
       const queueSettings = await readApiResponse<{ normal_before_priority: number; normal_calls_since_priority: number }>(queueSettingsResponse)
       setNormalBeforePriority(queueSettings.normal_before_priority)
       setNormalCallsSincePriority(queueSettings.normal_calls_since_priority)
-      setItems(numberedItems.filter((item) => item.status !== 'other').sort((left, right) =>
+      setItems(arrivalOrdered.filter((item) => item.status !== 'other').sort((left, right) =>
         Number(left.status === 'called') - Number(right.status === 'called')
         || priorityOrder[left.clinical_priority] - priorityOrder[right.clinical_priority]
         || left.arrived_at.localeCompare(right.arrived_at),
@@ -882,7 +872,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'called' }),
       }))
-      setNotice(`${item.code} · ${item.patient_name} foi chamado. O painel público anunciará a chamada automaticamente.`)
+      setNotice(`${item.patient_name} foi chamado pelo nome. O painel público anunciará a chamada automaticamente.`)
       await loadQueue()
     } catch (callError) {
       setError(callError instanceof Error ? callError.message : 'Não foi possível chamar o paciente.')
@@ -950,12 +940,12 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
     const currentCall = [calledFor(priorityItems), calledFor(commonItems)]
       .filter((item): item is WaitingRoomItem => Boolean(item))
       .sort((left, right) => (right.updated_at ?? right.arrived_at).localeCompare(left.updated_at ?? left.arrived_at))[0]
-    const currentCallName = currentCall?.first_name ?? currentCall?.patient_name.trim().split(/\s+/)[0] ?? ''
+    const currentCallName = currentCall?.display_name ?? currentCall?.patient_name.trim().split(/\s+/).slice(0, 2).join(' ') ?? ''
     return <main className={`waiting-room-kiosk${isCallHighlighting ? ' waiting-room-kiosk-call-highlight' : ''}`} aria-label="Chamadas da Santa Casa Pedro Osório">
       <header>
         <div className="waiting-room-kiosk-brand">
           <img src="/scpo-connect-icon.png" alt="" />
-          <div><h1>Santa Casa de Pedro Osório</h1><strong>Aguarde ser atendido</strong><span>Chamadas por nome e senha</span></div>
+          <div><h1>Santa Casa de Pedro Osório</h1><strong>Aguarde ser atendido</strong><span>Chamadas pelo primeiro nome e primeiro sobrenome</span><span>Cartão vermelho: prioritário · cartão verde: comum</span></div>
         </div>
         <div className="waiting-room-kiosk-tools">
           <time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(clock)}</time>
@@ -972,7 +962,6 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
               <span className={`waiting-room-kiosk-priority ${currentCall.queue_type}`}>
                 {currentCall.queue_type === 'priority' ? 'Atendimento prioritário' : 'Atendimento'}
               </span>
-              <strong>{currentCall.code}</strong>
               <b style={{ fontSize: `clamp(18px, calc(88cqi / ${Math.max([...currentCallName].length, 1)}), 176px)` }}>{currentCallName}</b>
             </article>
             : <p className="waiting-room-display-empty">Aguarde. Em breve uma chamada será exibida.</p>}
@@ -1015,7 +1004,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         return <section className="waiting-room-operator-column" key={queueType}>
           <h3>{queueType === 'priority' ? 'Prioritários' : 'Comuns'}</h3>
           <div className="waiting-room-operator-list">{queueItems.map((item) => <article className={`waiting-room-operator-row ${item.status === 'called' ? 'is-called' : ''}`} key={`${item.type}-${item.id}`}>
-            <span className={`waiting-room-code ${queueType}`}>{item.code}</span>
+            <span className={`waiting-room-code ${queueType}`}>{queueType === 'priority' ? 'Prioritário' : 'Comum'}</span>
             <strong>{item.patient_name}</strong>
             <small>{item.status === 'called' ? 'Chamado' : 'Aguardando'} · {dateTime(item.arrived_at)}</small>
             {canUpdate && item.status === 'waiting' && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callPatient(item)}>Chamar este paciente</button></div>}

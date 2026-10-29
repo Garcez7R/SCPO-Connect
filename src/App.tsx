@@ -67,11 +67,7 @@ import { MOBILE_FEEDBACK_STORAGE_KEY, triggerMobileFeedback } from './mobileFeed
 import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 import { squareImageFile, squareVideoFrame } from './patientPhoto'
 import { BehavioralStatusBadge, type BehavioralStatus } from './components/BehavioralStatusBadge'
-import TherapyMaterialsPanel from './components/TherapyMaterialsPanel'
-import NursingMobilePage from './pages/NursingMobilePage'
-import OperationsMobilePage from './pages/OperationsMobilePage'
 import HelpGuide from './components/HelpGuide'
-import QRCode from 'qrcode'
 import { AppDialogProvider } from './components/AppDialogs'
 import { useAppDialogs } from './components/appDialogContext'
 
@@ -213,6 +209,10 @@ const WaitingRoomKioskPage = lazy(() =>
   })),
 )
 const PharmacyPage = lazy(() => import('./pages/PharmacyPage'))
+const TherapyMaterialsPanel = lazy(() => import('./components/TherapyMaterialsPanel'))
+const NursingMobilePage = lazy(() => import('./pages/NursingMobilePage'))
+const OperationsMobilePage = lazy(() => import('./pages/OperationsMobilePage'))
+const PharmacyMobilePage = lazy(() => import('./pages/PharmacyMobilePage'))
 const XrayModulePage = lazy(() => import('./pages/XrayPage'))
 const PhysicianPage = lazy(() => import('./pages/PhysicianPage'))
 const PatientOperationsPage = lazy(() =>
@@ -583,10 +583,13 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   const breadcrumbItems = [...tabBreadcrumbs].sort((left, right) => left.depth - right.depth)
 
   if (window.location.pathname === '/nursing.html') {
-    return <NursingMobilePage user={user} onLogout={onLogout} />
+    return <Suspense fallback={<StartupScreen />}><NursingMobilePage user={user} onLogout={onLogout} /></Suspense>
   }
   if (window.location.pathname === '/operations.html') {
-    return <OperationsMobilePage user={user} onLogout={onLogout} />
+    return <Suspense fallback={<StartupScreen />}><OperationsMobilePage user={user} onLogout={onLogout} /></Suspense>
+  }
+  if (window.location.pathname === '/pharmacy.html') {
+    return <Suspense fallback={<StartupScreen />}><PharmacyMobilePage user={user} onLogout={onLogout} /></Suspense>
   }
 
   return (
@@ -808,6 +811,7 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
     fetch('/api/v1/auth/mfa/setup').then(async (response) => {
       if (!response.ok) throw new Error('Não foi possível iniciar a configuração do MFA.')
       const data = await response.json() as { secret: string; otpauth_uri: string }
+      const { default: QRCode } = await import('qrcode')
       const qrDataUrl = await QRCode.toDataURL(data.otpauth_uri, { errorCorrectionLevel: 'M', margin: 2, width: 220 })
       if (active) {
         setMfaSecret(data.secret)
@@ -2150,7 +2154,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
     </section>
     </>}
     {tab === 'attendance' && <TherapyAttendanceManager activities={activities} patients={patients} canEdit={profile.modules.includes('therapy')} selectedActivityId={selectedActivityId} onSelectActivity={setSelectedActivityId} onSaved={(updated) => setActivities((current) => current.map((activity) => activity.id === updated.id ? updated : activity))} />}
-    {tab === 'materials' && <TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} />}
+    {tab === 'materials' && <Suspense fallback={<div className="history-empty" role="status">Carregando materiais…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} /></Suspense>}
   </section>
 }
 
