@@ -1844,19 +1844,20 @@ async function loadTherapyActivities(endpoint: string): Promise<TherapyActivity[
   return activities
 }
 
-function TherapyAttendanceManager({ activities, patients, canEdit, onSaved }: {
+function TherapyAttendanceManager({ activities, patients, canEdit, selectedActivityId, onSelectActivity, onSaved }: {
   activities: TherapyActivity[]
   patients: TherapyPatient[]
   canEdit: boolean
+  selectedActivityId: string
+  onSelectActivity: (activityId: string) => void
   onSaved: (activity: TherapyActivity) => void
 }) {
-  const [activityId, setActivityId] = useState('')
-  const activity = activities.find((item) => item.id === activityId) ?? activities[0]
+  const activity = activities.find((item) => item.id === selectedActivityId) ?? activities[0]
 
   return <section className="therapy-attendance-panel">
-    <div className="section-heading"><div><p className="eyebrow">PARTICIPAÇÃO</p><h2>Lista de participantes e presença</h2></div></div>
+    <div className="section-heading"><div><p className="eyebrow">ETAPAS 2 E 3 · PARTICIPANTES E PRESENÇA</p><h2>Quem vai participar?</h2><p className="welcome-copy">Selecione a atividade, adicione os participantes e marque cada pessoa como presente ou ausente. Salve para concluir esta etapa.</p></div></div>
     {!activities.length ? <div className="history-empty">Agende uma atividade para registrar participantes e presenças.</div> : <>
-      <label className="field"><span className="field-label">Atividade</span><select value={activity?.id ?? ''} onChange={(event) => setActivityId(event.target.value)}>{activities.map((item) => <option key={item.id} value={item.id}>{item.title} · {dateTime(item.starts_at)}</option>)}</select></label>
+      <label className="field"><span className="field-label">Atividade</span><select value={activity?.id ?? ''} onChange={(event) => onSelectActivity(event.target.value)}>{activities.map((item) => <option key={item.id} value={item.id}>{item.title} · {dateTime(item.starts_at)}</option>)}</select></label>
       {activity && <TherapyAttendanceEditor key={activity.id} activity={activity} patients={patients} canEdit={canEdit} onSaved={onSaved} />}
     </>}
   </section>
@@ -1928,6 +1929,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
   const [savingReportId, setSavingReportId] = useState('')
   const [activityFilter, setActivityFilter] = useState<'all' | TherapyActivityStatus>('all')
   const [activityQuery, setActivityQuery] = useState('')
+  const [selectedActivityId, setSelectedActivityId] = useState('')
   const [month, setMonth] = useState(() => { const current = new Date(); return new Date(current.getFullYear(), current.getMonth(), 1) })
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -2025,7 +2027,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
   }
 
   function printActivityReport() {
-    if (!printRows(`Relatório de atividades · ${monthLabel}`, therapyPrintRows.filter((row) => visibleActivities.some((activity) => activity.id === row.id)))) {
+    if (!printRows(`Relatório de atividades · ${monthLabel}`, therapyPrintRows.filter((row) => reportActivities.some((activity) => activity.id === row.id)))) {
       setError('Permita a janela de impressão para este site e tente novamente.')
       return
     }
@@ -2054,6 +2056,8 @@ function TherapyPage({ profile }: { profile: Profile }) {
     return (activityFilter === 'all' || status === activityFilter)
       && `${activity.title} ${activity.location} ${activity.activity_type} ${patient?.name ?? ''}`.toLocaleLowerCase('pt-BR').includes(activityQuery.trim().toLocaleLowerCase('pt-BR'))
   })
+  const focusedActivity = activities.find((activity) => activity.id === selectedActivityId)
+  const reportActivities = focusedActivity ? [focusedActivity] : activities
   const therapyPrintRows: PrintRow[] = activities.map((activity) => {
     const patient = patients.find((item) => item.reference === activity.patient_reference)
     return { id: activity.id, date: activity.starts_at, title: activity.title, fields: [['Modalidade', activity.activity_type], ['Status', therapyActivityStatusLabels[reportStatuses[activity.id] ?? activity.status]], ['Horário', dateTime(activity.starts_at)], ['Local', activity.location], ['Participante', patient?.name ?? (activity.participants?.length ? `${activity.participants.length} participante(s)` : 'Grupo')], ['Objetivo', activity.description], ['Relatório', reportDrafts[activity.id] ?? activity.activity_report], ['Responsável pelo relatório', activity.report_updated_by || '']] }
@@ -2076,12 +2080,76 @@ function TherapyPage({ profile }: { profile: Profile }) {
       <PatientSelect label="Paciente principal (opcional)" patients={patients} value={form.patient_reference} onChange={selectActivityPatient} emptyLabel="Atividade coletiva sem paciente principal" />
       <section className="therapy-participant-picker" aria-label="Participantes da atividade"><div><strong>Participantes</strong><span>Selecione os pacientes que participarão da oficina.</span></div><div className="therapy-participant-add"><PatientSelect label="Adicionar paciente" patients={patients.filter((patient) => !form.participant_references.includes(patient.reference))} value={newParticipantReference} onChange={setNewParticipantReference} /><button className="button button-secondary" type="button" onClick={addActivityParticipant} disabled={!newParticipantReference}>Adicionar</button></div>{form.participant_references.length ? <ul className="therapy-selected-participants">{form.participant_references.map((reference) => { const patient = patients.find((item) => item.reference === reference); return <li key={reference}><span>{patient?.name ?? 'Paciente não localizado'}</span><button className="button button-secondary" type="button" onClick={() => removeActivityParticipant(reference)} aria-label={`Remover ${patient?.name ?? 'paciente'}`}>Remover</button></li> })}</ul> : <p className="history-empty">Nenhum participante selecionado.</p>}</section>
     </div><p className="field-hint">Local padrão registrado: Oficina Terapêutica.</p><label className="field"><span className="field-label">Objetivo operacional (sem narrativa clínica)</span><textarea maxLength={1000} rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label><div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => setShowForm(false)} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Salvar atividade'} <ArrowRight size={16} /></button></div></form>}
-    <section className="therapy-activity-list"><div className="section-heading"><div><p className="eyebrow">PROGRAMAÇÃO</p><h2>Atividades de {monthLabel}</h2></div><span className="module-total">{visibleActivities.length} / {activities.length}</span></div><div className="psychology-filter-row"><label className="field"><span className="field-label">Buscar por atividade, local ou paciente</span><input value={activityQuery} onChange={(event) => setActivityQuery(event.target.value)} placeholder="Nome, local ou paciente" /></label><label className="field"><span className="field-label">Situação</span><select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value as typeof activityFilter)}><option value="all">Todas</option>{Object.entries(therapyActivityStatusLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label></div>{loading ? <div className="history-empty">Carregando agenda…</div> : visibleActivities.length ? <div className="therapy-activity-grid">{visibleActivities.map((activity) => { const patient = patients.find((item) => item.reference === activity.patient_reference); return <article key={activity.id} className="therapy-activity-card"><span className="therapy-activity-date"><strong>{new Intl.DateTimeFormat('pt-BR', { day: '2-digit' }).format(new Date(activity.starts_at))}</strong><small>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(new Date(activity.starts_at))}</small></span><div><span className="eyebrow">{activity.activity_type} · {new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(activity.starts_at))} · {therapyActivityStatusLabels[reportStatuses[activity.id] ?? activity.status]}</span><h3>{activity.title}</h3><p>{activity.location}{patient ? ` · ${patient.name}` : ' · Grupo'}</p>{patient && <PatientAllergyAlert patient={patient} />}{activity.description && <small>{activity.description}</small>}</div></article> })}</div> : <div className="history-empty">{activities.length ? 'Nenhuma atividade corresponde aos filtros selecionados.' : 'Nenhuma atividade agendada para este mês.'}</div>}</section>
+    <ol className="therapy-workflow-steps" aria-label="Etapas da atividade">
+      <li><span>1</span><div><strong>Agendar</strong><small>Defina modalidade e horário.</small></div></li>
+      <li><span>2</span><div><strong>Participantes</strong><small>Inclua as pessoas na atividade.</small></div></li>
+      <li><span>3</span><div><strong>Presença</strong><small>Marque quem participou.</small></div></li>
+      <li><span>4</span><div><strong>Relatório</strong><small>Registre o resultado realizado.</small></div></li>
+    </ol>
+    <section className="therapy-activity-list">
+      <div className="section-heading"><div><p className="eyebrow">PROGRAMAÇÃO</p><h2>Atividades de {monthLabel}</h2></div><span className="module-total">{visibleActivities.length} / {activities.length}</span></div>
+      <div className="psychology-filter-row">
+        <label className="field"><span className="field-label">Buscar por atividade, local ou paciente</span><input value={activityQuery} onChange={(event) => setActivityQuery(event.target.value)} placeholder="Nome, local ou paciente" /></label>
+        <label className="field"><span className="field-label">Situação</span><select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value as typeof activityFilter)}><option value="all">Todas</option>{Object.entries(therapyActivityStatusLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label>
+      </div>
+      {loading ? <div className="history-empty">Carregando agenda…</div> : visibleActivities.length ? <div className="therapy-activity-grid">{visibleActivities.map((activity) => {
+        const patient = patients.find((item) => item.reference === activity.patient_reference)
+        const activityStatus = reportStatuses[activity.id] ?? activity.status
+        const participants = activity.participants ?? []
+        const presentCount = participants.filter((participant) => participant.attendance === 'attended').length
+        return <article key={activity.id} className="therapy-activity-card">
+          <span className="therapy-activity-date"><strong>{new Intl.DateTimeFormat('pt-BR', { day: '2-digit' }).format(new Date(activity.starts_at))}</strong><small>{new Intl.DateTimeFormat('pt-BR', { month: 'short' }).format(new Date(activity.starts_at))}</small></span>
+          <div className="therapy-activity-details">
+            <div className="therapy-activity-summary">
+              <span className="therapy-activity-status">{therapyActivityStatusLabels[activityStatus]}</span>
+              <h3>{activity.title}</h3>
+              <p>{new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(new Date(activity.starts_at))} · {activity.location} · {patient?.name ?? 'Atividade em grupo'}</p>
+              <small>{activity.activity_type} · {participants.length ? `${presentCount}/${participants.length} presenças` : 'Sem participantes'}</small>
+              {activity.description && <details className="therapy-activity-objective"><summary>Ver objetivo</summary><p>{activity.description}</p></details>}
+            </div>
+            <div className="therapy-activity-actions">
+              <button className="button button-secondary" type="button" onClick={() => { setSelectedActivityId(activity.id); setTab('attendance') }}>Participantes e presença</button>
+              <button className="button button-primary" type="button" onClick={() => { setSelectedActivityId(activity.id); setTab('reports') }}>Registrar resultado</button>
+            </div>
+          </div>
+        </article>
+      })}</div> : <div className="history-empty">{activities.length ? 'Nenhuma atividade corresponde aos filtros selecionados.' : 'Nenhuma atividade agendada para este mês.'}</div>}
+    </section>
     </>}
     {tab === 'reports' && <>
-    <section className="therapy-report-panel"><div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO</p><h2>Relatório de atividades · {monthLabel}</h2><p className="welcome-copy">{profile.modules.includes('therapy') ? 'Registre os resultados realizados e apresente o relatório à Gestão Hospitalar.' : 'Consulte os resultados registrados pela Oficina Terapêutica e imprima o relatório mensal.'}</p></div><button className="button button-secondary therapy-report-print-button" type="button" onClick={printActivityReport} disabled={!visibleActivities.length}><ClipboardList size={16} /> Imprimir relatório</button></div>{loading ? <div className="history-empty">Carregando relatórios…</div> : visibleActivities.length ? <div className="therapy-report-list">{visibleActivities.map((activity) => { const patient = patients.find((item) => item.reference === activity.patient_reference); const reportStatus = reportStatuses[activity.id] ?? activity.status; return <article className="therapy-report-card" key={`report-${activity.id}`}><div className="therapy-report-heading"><div><p className="eyebrow">{dateTime(activity.starts_at)} · {activity.activity_type}</p><h3>{activity.title}</h3><p>{activity.location}{patient ? ` · ${patient.name}${patient.room && patient.bed ? ` · Quarto ${patient.room}, leito ${patient.bed}` : ''}` : ' · Grupo'}</p>{patient && <PatientAllergyAlert patient={patient} />}</div><span className={`therapy-report-status therapy-report-status-${reportStatus}`}>{therapyActivityStatusLabels[reportStatus]}</span></div>{profile.modules.includes('therapy') ? <><label className="field"><span className="field-label">Relato da atividade</span><textarea rows={4} maxLength={4000} value={reportDrafts[activity.id] ?? ''} onChange={(event) => setReportDrafts((items) => ({ ...items, [activity.id]: event.target.value }))} placeholder="Descreva a participação, os resultados observados e os encaminhamentos necessários." /></label><div className="therapy-report-actions"><label className="field"><span className="field-label">Situação</span><select value={reportStatus} onChange={(event) => setReportStatuses((items) => ({ ...items, [activity.id]: event.target.value as TherapyActivityStatus }))}><option value="scheduled">Agendada</option><option value="in_progress">Em andamento</option><option value="completed">Realizada</option><option value="cancelled">Cancelada</option></select></label><button className="button button-primary" type="button" onClick={() => void saveActivityReport(activity)} disabled={savingReportId === activity.id}>{savingReportId === activity.id ? 'Salvando…' : 'Salvar relatório'}</button></div></> : <p className="therapy-report-content">{activity.activity_report || 'Relatório ainda não registrado.'}</p>}{activity.report_updated_by && <small className="therapy-report-author">Última atualização por {activity.report_updated_by}{activity.report_updated_at ? ` · ${dateTime(activity.report_updated_at)}` : ''}</small>}</article> })}</div> : <div className="history-empty">{activities.length ? 'Nenhuma atividade corresponde aos filtros selecionados.' : 'Agende uma atividade para iniciar o relatório do mês.'}</div>}</section>
+    <section className="therapy-report-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">ACOMPANHAMENTO</p>
+          <h2>Relatório de atividades · {monthLabel}</h2>
+          <p className="welcome-copy">{profile.modules.includes('therapy') ? 'Registre os resultados realizados e apresente o relatório à Gestão Hospitalar.' : 'Consulte os resultados registrados pela Oficina Terapêutica e imprima o relatório mensal.'}</p>
+        </div>
+        <div className="therapy-report-header-actions">
+          {focusedActivity && <button className="button button-secondary" type="button" onClick={() => setSelectedActivityId('')}>Mostrar todas</button>}
+          <button className="button button-secondary therapy-report-print-button" type="button" onClick={printActivityReport} disabled={!reportActivities.length}><ClipboardList size={16} /> Imprimir relatório</button>
+        </div>
+      </div>
+      {loading ? <div className="history-empty">Carregando relatórios…</div> : reportActivities.length ? <div className="therapy-report-list">{reportActivities.map((activity) => {
+        const patient = patients.find((item) => item.reference === activity.patient_reference)
+        const reportStatus = reportStatuses[activity.id] ?? activity.status
+        return <article className="therapy-report-card" key={`report-${activity.id}`}>
+          <div className="therapy-report-heading">
+            <div><p className="eyebrow">{dateTime(activity.starts_at)} · {activity.activity_type}</p><h3>{activity.title}</h3><p>{activity.location}{patient ? ` · ${patient.name}${patient.room && patient.bed ? ` · Quarto ${patient.room}, leito ${patient.bed}` : ''}` : ' · Grupo'}</p>{patient && <PatientAllergyAlert patient={patient} />}</div>
+            <span className={`therapy-report-status therapy-report-status-${reportStatus}`}>{therapyActivityStatusLabels[reportStatus]}</span>
+          </div>
+          {profile.modules.includes('therapy') ? <>
+            <label className="field"><span className="field-label">Relato da atividade</span><textarea rows={4} maxLength={4000} value={reportDrafts[activity.id] ?? ''} onChange={(event) => setReportDrafts((items) => ({ ...items, [activity.id]: event.target.value }))} placeholder="Descreva a participação, os resultados observados e os encaminhamentos necessários." /></label>
+            <div className="therapy-report-actions">
+              <label className="field"><span className="field-label">Situação</span><select value={reportStatus} onChange={(event) => setReportStatuses((items) => ({ ...items, [activity.id]: event.target.value as TherapyActivityStatus }))}><option value="scheduled">Agendada</option><option value="in_progress">Em andamento</option><option value="completed">Realizada</option><option value="cancelled">Cancelada</option></select></label>
+              <button className="button button-primary" type="button" onClick={() => void saveActivityReport(activity)} disabled={savingReportId === activity.id}>{savingReportId === activity.id ? 'Salvando…' : 'Salvar relatório'}</button>
+            </div>
+          </> : <p className="therapy-report-content">{activity.activity_report || 'Relatório ainda não registrado.'}</p>}
+          {activity.report_updated_by && <small className="therapy-report-author">Última atualização por {activity.report_updated_by}{activity.report_updated_at ? ` · ${dateTime(activity.report_updated_at)}` : ''}</small>}
+        </article>
+      })}</div> : <div className="history-empty">{activities.length ? 'Nenhuma atividade corresponde aos filtros selecionados.' : 'Agende uma atividade para iniciar o relatório do mês.'}</div>}
+    </section>
     </>}
-    {tab === 'attendance' && <TherapyAttendanceManager activities={activities} patients={patients} canEdit={profile.modules.includes('therapy')} onSaved={(updated) => setActivities((current) => current.map((activity) => activity.id === updated.id ? updated : activity))} />}
+    {tab === 'attendance' && <TherapyAttendanceManager activities={activities} patients={patients} canEdit={profile.modules.includes('therapy')} selectedActivityId={selectedActivityId} onSelectActivity={setSelectedActivityId} onSaved={(updated) => setActivities((current) => current.map((activity) => activity.id === updated.id ? updated : activity))} />}
     {tab === 'materials' && <TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} />}
   </section>
 }

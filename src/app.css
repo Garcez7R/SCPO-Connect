@@ -1247,13 +1247,27 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-birthday-list strong { color: var(--ink); font-size: 11px; }
 .therapy-birthday-list small { color: var(--muted); font-size: 10px; }
 .therapy-birthday-panel > .field-hint { margin: 0; line-height: 1.5; }
+.therapy-workflow-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.therapy-workflow-steps li { display: flex; min-width: 0; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.therapy-workflow-steps li > span { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--blue-pale); color: var(--blue-dark); font-size: 11px; font-weight: 700; }
+.therapy-workflow-steps li > div { display: grid; min-width: 0; gap: 2px; }
+.therapy-workflow-steps strong { color: var(--ink); font-size: 11px; }
+.therapy-workflow-steps small { color: var(--muted); font-size: 10px; line-height: 1.35; }
 .therapy-activity-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.therapy-activity-card { display: flex; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: white; }
-.therapy-activity-card { background: var(--surface); }
+.therapy-activity-card { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: start; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .therapy-activity-date { display: grid; width: 48px; height: 54px; flex: 0 0 auto; align-content: center; justify-items: center; border-radius: 6px; background: #edf4f6; color: var(--blue-dark); }
 .therapy-activity-date strong { font-size: 18px; line-height: 1.1; }
 .therapy-activity-date small { font-size: 10px; text-transform: capitalize; }
-.therapy-activity-card > div { min-width: 0; }
+.therapy-activity-details { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.therapy-activity-summary { display: grid; min-width: 0; gap: 3px; }
+.therapy-activity-status { width: fit-content; color: var(--blue-dark); font-size: 9px; font-weight: 650; }
+.therapy-activity-summary h3 { margin: 0; color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
+.therapy-activity-summary p, .therapy-activity-summary small { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.therapy-activity-objective { color: var(--muted); font-size: 10px; }
+.therapy-activity-objective summary { width: fit-content; color: var(--blue-dark); cursor: pointer; font-weight: 600; }
+.therapy-activity-objective p { margin-top: 5px; white-space: pre-wrap; }
+.therapy-activity-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.therapy-activity-actions .button { min-height: 36px; padding: 7px 9px; font-size: 10px; }
 .therapy-attendance-panel { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .therapy-attendance-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; }
 .therapy-attendance-list { display: grid; gap: 9px; }
@@ -1271,6 +1285,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-report-panel > .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .therapy-report-panel .section-heading h2 { margin: 2px 0 4px; font-size: 18px; }
 .therapy-report-panel .section-heading .welcome-copy { margin: 0; }
+.therapy-report-header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .therapy-report-list { display: grid; gap: 13px; }
 .therapy-report-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 .therapy-report-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -1547,11 +1562,17 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
   .admin-patient-status-form > .button { width: 100%; }
   .management-operations-grid .account-create-panel > .button { width: 100%; justify-content: center; }
   .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .therapy-workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .therapy-calendar-day { min-height: 66px; padding: 4px; }
   .therapy-calendar-tag { font-size: 8px; }
   .therapy-activity-grid { grid-template-columns: 1fr; }
+  .therapy-activity-details { grid-template-columns: minmax(0, 1fr); }
+  .therapy-activity-actions { justify-content: flex-start; }
+  .therapy-activity-actions .button { flex: 1 1 auto; }
   .therapy-report-panel { gap: 13px; padding: 15px; }
   .therapy-report-panel > .section-heading { align-items: stretch; flex-direction: column; }
+  .therapy-report-header-actions { justify-content: stretch; }
+  .therapy-report-header-actions .button { flex: 1 1 auto; justify-content: center; }
   .therapy-report-print-button { width: 100%; justify-content: center; }
   .therapy-report-actions { align-items: stretch; flex-direction: column; }
   .therapy-report-actions > .field { width: 100%; }
@@ -2390,6 +2411,9 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
   .reception-arrival-heading { align-items: flex-start; flex-direction: column; }
   .pharmacy-movement-ledger .section-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
   .pharmacy-ledger-pagination { align-items: flex-start; flex-direction: column; }
+  .therapy-workflow-steps { grid-template-columns: 1fr; }
+  .therapy-activity-card { grid-template-columns: 42px minmax(0, 1fr); gap: 8px; padding: 9px; }
+  .therapy-activity-date { width: 42px; height: 48px; }
 }
 
 .auth-password-control { position: relative; display: block; }
