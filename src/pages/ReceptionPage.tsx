@@ -659,7 +659,10 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
       return Promise.resolve()
     }
     const patientName = item.display_name ?? item.patient_name.trim().split(/\s+/).slice(0, 2).join(' ')
-    const utterance = new SpeechSynthesisUtterance(`${patientName}. Dirija-se ao atendimento.`)
+    const announcement = item.queue_type === 'priority'
+      ? `Chamada prioritária para ${patientName}. Por favor, dirija-se ao atendimento.`
+      : `${patientName}, por favor, dirija-se ao atendimento.`
+    const utterance = new SpeechSynthesisUtterance(announcement)
     utterance.lang = 'pt-BR'
     return new Promise<void>((resolve) => {
       utterance.onend = () => resolve()
