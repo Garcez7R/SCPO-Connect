@@ -72,6 +72,8 @@ import NursingMobilePage from './pages/NursingMobilePage'
 import OperationsMobilePage from './pages/OperationsMobilePage'
 import HelpGuide from './components/HelpGuide'
 import QRCode from 'qrcode'
+import { AppDialogProvider } from './components/AppDialogs'
+import { useAppDialogs } from './components/appDialogContext'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight'
@@ -87,6 +89,7 @@ const therapyTabValues = ['calendar', 'attendance', 'reports', 'materials'] as c
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios', materials: 'Materiais e imagens' }
 const systemAdminTabValues = ['accounts', 'backup', 'recovery'] as const
 const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const resetAllConfirmationText = 'REDEFINIR CREDENCIAIS DE TODOS OS USUÁRIOS'
 const patientRegistryTabLabels = { registry: 'Novo cadastro', list: 'Lista de pacientes', reports: 'Relatórios' } as const
 type Patient = {
   reference: string; name: string; room: string; bed: string; cpf?: string; sus_card?: string; same_number?: string; mother_name?: string; health_plan?: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known'; birth_date?: string | null; sex?: string; phone?: string; email?: string
@@ -372,10 +375,11 @@ class ModuleErrorBoundary extends Component<
 }
 
 function App() {
-  if (window.location.pathname === '/painel-sala-espera' || window.location.pathname === '/painel') {
-    return <Suspense fallback={<StartupScreen />}><WaitingRoomKioskPage /></Suspense>
-  }
-  return <AuthenticatedAppEntry />
+  return <AppDialogProvider>
+    {window.location.pathname === '/painel-sala-espera' || window.location.pathname === '/painel'
+      ? <Suspense fallback={<StartupScreen />}><WaitingRoomKioskPage /></Suspense>
+      : <AuthenticatedAppEntry />}
+  </AppDialogProvider>
 }
 
 function AuthenticatedAppEntry() {
@@ -2163,6 +2167,7 @@ function InstallAppButton({ showDescription = false }: { showDescription?: boole
 }
 
 function NursingHistoryPage({ onBack }: { onBack: () => void }) {
+  const { prompt } = useAppDialogs()
   useBreadcrumb('nursing-history', 'Coletas de sinais vitais')
   const pageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
@@ -2244,7 +2249,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
   }
 
   async function voidRecord(recordId: number) {
-    const reason = window.prompt('Motivo para arquivar esta coleta incorreta (ela será preservada na auditoria):')
+    const reason = await prompt('Motivo para arquivar esta coleta incorreta (ela será preservada na auditoria):', 'Arquivar coleta', 'Motivo')
     if (!reason?.trim()) return
     const response = await fetch(`/api/v1/nursing/vitals/${recordId}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) })
     const data = await response.json() as { detail?: string }
@@ -2898,6 +2903,7 @@ function ClinicalQueuePanel({ canUpdate }: { canUpdate: boolean }) {
 }
 
 function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patients: Patient[]; canUpdate: boolean; onPatientUpdated: (patient: Patient) => void }) {
+  const { prompt } = useAppDialogs()
   const [selectedReference, setSelectedReference] = useState('')
   const [flowType, setFlowType] = useState<'transfer' | 'discharge'>('transfer')
   const [destinationBedId, setDestinationBedId] = useState('')
@@ -3019,7 +3025,7 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
 
   async function resolveRisk(riskId: number | string) {
     if (typeof riskId !== 'number') return
-    const resolutionReason = window.prompt('Informe o motivo clínico para resolver esta contraindicação:')
+    const resolutionReason = await prompt('Informe o motivo clínico para resolver esta contraindicação:', 'Resolver contraindicação', 'Motivo clínico')
     if (!resolutionReason?.trim()) return
     setBusy(true); setError(''); setNotice('')
     try {
@@ -3421,7 +3427,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
     </>}
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
     {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
-    {resetPasswordTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !resettingPassword) { setResetPasswordTarget(null); setTemporaryPassword('') } }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-reset-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CREDENCIAIS</p><h2 id="credential-reset-title">{temporaryPassword ? 'Senha temporária gerada' : 'Redefinir senha?'}</h2></div></div>{temporaryPassword ? <><p>A senha atual e as sessões foram invalidadas. Entregue esta senha temporária diretamente a <strong>{resetPasswordTarget.name}</strong> por canal seguro. A troca será obrigatória no próximo acesso; o MFA permanece configurado.</p><code className="credential-reset-value">{temporaryPassword}</code><div className="form-actions"><button className="button button-primary" type="button" onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Concluir</button></div></> : <><p>Será gerada uma senha de uso único para <strong>{resetPasswordTarget.name}</strong>. A senha atual e todas as sessões serão invalidadas; a troca será obrigatória no próximo acesso. O MFA permanecerá configurado.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={resettingPassword} onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Cancelar</button><button className="button button-danger" type="button" disabled={resettingPassword} onClick={() => void confirmPasswordReset()}>{resettingPassword ? 'Redefinindo…' : 'Confirmar redefinição'}</button></div></>}</section></div>}
+    {resetPasswordTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !resettingPassword) { setResetPasswordTarget(null); setTemporaryPassword('') } }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-reset-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CREDENCIAIS</p><h2 id="credential-reset-title">{temporaryPassword ? 'Senha temporária gerada' : 'Redefinir senha?'}</h2></div></div>{temporaryPassword ? <><p>A senha da conta foi redefinida e as sessões encerradas. Entregue ao titular, por canal seguro, a senha temporária <strong>0000</strong>. Se a conta já usa MFA, ele deve informar o código atual do aplicativo autenticador; depois, deverá criar uma nova senha.</p><code className="credential-reset-value">{temporaryPassword}</code><div className="form-actions"><button className="button button-primary" type="button" onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Concluir</button></div></> : <><p>A senha de <strong>{resetPasswordTarget.name}</strong> será redefinida para 0000 e as sessões serão encerradas. O MFA atual, se configurado, será preservado. No próximo acesso, a pessoa deverá criar uma nova senha; se já usa MFA, também precisará do código atual do autenticador.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={resettingPassword} onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Cancelar</button><button className="button button-danger" type="button" disabled={resettingPassword} onClick={() => void confirmPasswordReset()}>{resettingPassword ? 'Redefinindo…' : 'Confirmar redefinição'}</button></div></>}</section></div>}
     {deleteUserTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingUser) setDeleteUserTarget(null) }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-user-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CONTAS</p><h2 id="delete-user-title">Excluir usuário?</h2></div></div><p>A conta de <strong>{deleteUserTarget.name}</strong> e seu acesso serão removidos permanentemente. O histórico de auditoria permanece preservado. Essa ação não pode ser desfeita.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={deletingUser} onClick={() => setDeleteUserTarget(null)}>Cancelar</button><button className="button button-danger" type="button" disabled={deletingUser} onClick={() => void confirmUserDelete()}>{deletingUser ? 'Excluindo…' : 'Confirmar exclusão'}</button></div></section></div>}
   </section>
 }
@@ -3456,6 +3462,7 @@ function AccountRow({ user, onUpdate, onResetPassword, onDelete, currentUserId, 
 }
 
 function NutritionPage() {
+  const { prompt } = useAppDialogs()
   const [patients, setPatients] = useState<Patient[]>([])
   const [records, setRecords] = useState<NutritionRecordData[]>([])
   const [recordsTotal, setRecordsTotal] = useState(0)
@@ -3549,7 +3556,7 @@ function NutritionPage() {
         <button className="button button-secondary" type="button" disabled={recordsLoading || (!recordPatientFilter && !recordQuery)} onClick={() => { setRecordPatientFilter(''); setRecordQuery(''); void loadRecords('', '', 0) }}>Limpar filtros</button>
       </form>
       {recordsLoading ? <div className="history-empty">Carregando histórico…</div> : records.length ? <>
-        <div className="nutrition-record-list">{records.map((record) => <article className="nutrition-record-card" key={record.id}><div><h3>{patientName(record.patient_reference)}</h3><p>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${record.assessment_date}T00:00:00Z`))} · {record.diet_type || 'Dieta não informada'}</p>{record.weight_kg && <small>Peso: {record.weight_kg} kg</small>}{record.allergies && <small>Alergias: {record.allergies}</small>}{record.restrictions && <small>Restrições: {record.restrictions}</small>}{record.fasting_at && <small className="fasting-alert">Jejum programado: {dateTime(record.fasting_at)} · {record.fasting_reason || 'sem observação'}</small>}{record.notes && <small>{record.notes}</small>}</div><div className="nutrition-record-actions"><span className="nutrition-author">{record.actor_name}</span><button className="button button-danger" type="button" onClick={async () => { const reason = window.prompt('Motivo para corrigir/remover esta avaliação (o registro será preservado na auditoria):'); if (!reason?.trim()) return; try { const response = await fetch(`/api/v1/nursing/nutrition/${record.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) }); await readApiResponse(response); await loadRecords(recordPatientFilter, recordQuery, recordsOffset) } catch (archiveError) { setError(archiveError instanceof Error ? archiveError.message : 'Não foi possível arquivar a avaliação.') } }}>Arquivar</button></div></article>)}</div>
+        <div className="nutrition-record-list">{records.map((record) => <article className="nutrition-record-card" key={record.id}><div><h3>{patientName(record.patient_reference)}</h3><p>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${record.assessment_date}T00:00:00Z`))} · {record.diet_type || 'Dieta não informada'}</p>{record.weight_kg && <small>Peso: {record.weight_kg} kg</small>}{record.allergies && <small>Alergias: {record.allergies}</small>}{record.restrictions && <small>Restrições: {record.restrictions}</small>}{record.fasting_at && <small className="fasting-alert">Jejum programado: {dateTime(record.fasting_at)} · {record.fasting_reason || 'sem observação'}</small>}{record.notes && <small>{record.notes}</small>}</div><div className="nutrition-record-actions"><span className="nutrition-author">{record.actor_name}</span><button className="button button-danger" type="button" onClick={async () => { const reason = await prompt('Motivo para corrigir/remover esta avaliação (o registro será preservado na auditoria):', 'Arquivar avaliação', 'Motivo'); if (!reason?.trim()) return; try { const response = await fetch(`/api/v1/nursing/nutrition/${record.id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }) }); await readApiResponse(response); await loadRecords(recordPatientFilter, recordQuery, recordsOffset) } catch (archiveError) { setError(archiveError instanceof Error ? archiveError.message : 'Não foi possível arquivar a avaliação.') } }}>Arquivar</button></div></article>)}</div>
         <div className="pharmacy-ledger-pagination"><span>{recordsOffset + 1}–{Math.min(recordsOffset + records.length, recordsTotal)} de {recordsTotal}</span><div><button className="button button-secondary" type="button" disabled={recordsLoading || recordsOffset === 0} onClick={() => void loadRecords(recordPatientFilter, recordQuery, Math.max(0, recordsOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={recordsLoading || recordsOffset + records.length >= recordsTotal} onClick={() => void loadRecords(recordPatientFilter, recordQuery, recordsOffset + 25)}>Próxima</button></div></div>
       </> : <div className="history-empty">Nenhuma avaliação corresponde aos filtros atuais.</div>}
     </section>
@@ -4358,10 +4365,12 @@ function ManagementBehavioralStatusBoard() {
 
 function BackupExportPanel() {
   const [password, setPassword] = useState('')
+  const [showBackupPassword, setShowBackupPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [restorePassword, setRestorePassword] = useState('')
+  const [showRestorePassword, setShowRestorePassword] = useState(false)
   const [restoreFile, setRestoreFile] = useState<File | null>(null)
   const [restoreConfirmation, setRestoreConfirmation] = useState('')
   const [restoring, setRestoring] = useState(false)
@@ -4417,7 +4426,7 @@ function BackupExportPanel() {
       <span className="module-icon module-icon-admin"><ShieldCheck size={20} /></span>
     </div>
     <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
-      <label className="field"><span className="field-label">Senha de criptografia</span><input required minLength={12} maxLength={128} type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
+      <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
       <button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar backup'}</button>
     </form>
     {message && <ToastMessage variant="success">{message}</ToastMessage>}
@@ -4427,7 +4436,7 @@ function BackupExportPanel() {
       <div className="admin-warning backup-restore-guidance" role="alert"><ShieldCheck size={18} /><div><strong>Operação destrutiva e com indisponibilidade</strong><span>Esta ação substituirá todos os dados atuais. Agende uma janela de manutenção, avise os usuários e confirme que escolheu o arquivo correto. Antes da substituição, o sistema valida o arquivo e cria cópias temporárias dos bancos atuais para recuperação automática se a operação falhar. A substituição dos sete bancos não é atômica: mantenha o serviço sem uso durante todo o processo.</span></div></div>
       <form className="backup-restore-form" onSubmit={(event) => void restoreBackup(event)}>
         <div className="field"><span className="field-label">Arquivo de backup</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id="backup-restore-file" required type="file" accept=".rgs,application/vnd.scpo.rgs" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor="backup-restore-file">Escolher arquivo</label><span title={restoreFile?.name}>{restoreFile?.name ?? 'Nenhum arquivo selecionado'}</span></div><span className="field-hint">Somente pacotes .rgs exportados com senha pela Administração do Sistema.</span></div>
-        <label className="field"><span className="field-label">Senha do backup</span><input required minLength={12} maxLength={128} type="password" autoComplete="current-password" value={restorePassword} onChange={(event) => setRestorePassword(event.target.value)} /></label>
+        <label className="field"><span className="field-label">Senha do backup</span><span className="auth-password-control"><input required minLength={12} maxLength={128} type={showRestorePassword ? 'text' : 'password'} autoComplete="current-password" value={restorePassword} onChange={(event) => setRestorePassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={showRestorePassword ? 'Ocultar senha do backup' : 'Mostrar senha do backup'} aria-pressed={showRestorePassword} onClick={() => setShowRestorePassword((visible) => !visible)}>{showRestorePassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label>
         <label className="field"><span className="field-label">Confirmação obrigatória</span><input required value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value)} placeholder="SUBSTITUIR TODOS OS DADOS" autoComplete="off" /><span className="field-hint">Digite exatamente SUBSTITUIR TODOS OS DADOS para habilitar a restauração.</span></label>
         <button className="button button-danger" type="submit" disabled={!restoreReady || restoring || busy}>{restoring ? 'Validando e restaurando…' : 'Restaurar backup e substituir dados'}</button>
       </form>
@@ -4537,6 +4546,7 @@ function AuditLogPanel() {
 }
 
 function SystemAdminPage({ user }: { user: AuthUser }) {
+  const { confirm } = useAppDialogs()
   const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${user.id}`, 'accounts', systemAdminTabValues, systemAdminTabLabels)
   const [users, setUsers] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -4544,6 +4554,10 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
   const [deletingUserId, setDeletingUserId] = useState('')
   const [error, setError] = useState('')
   const [resetAccounts, setResetAccounts] = useState<{ username: string; temporary_password: string }[]>([])
+  const [resetAllConfirmationOpen, setResetAllConfirmationOpen] = useState(false)
+  const [resetAllPassword, setResetAllPassword] = useState('')
+  const [resetAllPhrase, setResetAllPhrase] = useState('')
+  const [showResetAllPassword, setShowResetAllPassword] = useState(false)
   const loadUsers = useCallback(async () => {
     setLoading(true)
     try {
@@ -4561,15 +4575,22 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     const timer = window.setTimeout(() => void loadUsers(), 0)
     return () => window.clearTimeout(timer)
   }, [loadUsers])
-  async function resetAllCredentials() {
-    if (!window.confirm(`Isto redefinirá senha e MFA de ${users.length} conta(s), encerrará as sessões e exigirá novo cadastro de senha e MFA. Continuar?`)) return
+  async function resetAllCredentials(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     setBusy(true)
     setError('')
     setResetAccounts([])
     try {
-      const response = await fetch('/api/v1/system-admin/reset-credentials', { method: 'POST' })
+      const response = await fetch('/api/v1/system-admin/reset-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: resetAllPassword, confirmation: resetAllPhrase }),
+      })
       const data = await readApiResponse<{ accounts?: { username: string; temporary_password: string }[] }>(response)
       setResetAccounts(data.accounts ?? [])
+      setResetAllConfirmationOpen(false)
+      setResetAllPassword('')
+      setResetAllPhrase('')
       await loadUsers()
     } catch (resetError) {
       setError(resetError instanceof Error ? resetError.message : 'Não foi possível redefinir as credenciais.')
@@ -4578,7 +4599,7 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     }
   }
   async function resetOneCredentials(user: Account) {
-    if (!window.confirm(`Redefinir senha, MFA e sessões de ${user.name}?`)) return
+    if (!await confirm(`Redefinir a senha e encerrar as sessões de ${user.name}? A senha temporária será 0000, o MFA atual será mantido e o usuário precisará informar o código do autenticador no próximo acesso.`)) return
     setBusy(true)
     setError('')
     setResetAccounts([])
@@ -4594,7 +4615,7 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     }
   }
   async function deleteSystemUser(user: Account) {
-    if (!window.confirm(`Excluir permanentemente a conta ${user.username} (${user.name})? Esta ação não pode ser desfeita.`)) return
+    if (!await confirm(`Excluir permanentemente a conta ${user.username} (${user.name})? Esta ação não pode ser desfeita.`)) return
     setBusy(true)
     setDeletingUserId(user.id)
     setError('')
@@ -4613,7 +4634,25 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}
     {tab === 'backup' && <BackupExportPanel />}
-    {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel"><div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha e o MFA atuais serão revogados. Cada usuário receberá uma senha temporária aleatória, de uso único, e deverá configurar novos fatores de autenticação.</p></div></div><div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · a conta superadministradora é sempre excluída</span><button className="button button-danger" type="button" onClick={() => void resetAllCredentials()} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>Mostradas somente nesta sessão. Copie e entregue cada senha ao titular por canal seguro; não feche nem atualize a página antes de registrá-las.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}{!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((account) => <article key={account.id}><span>{account.name} · {account.username}{account.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(account)} disabled={busy}>Redefinir senha e MFA</button><button className="button button-danger" type="button" onClick={() => void deleteSystemUser(account)} disabled={busy}>{deletingUserId === account.id ? 'Excluindo…' : 'Excluir conta'}</button></article>)}</div></details>}</section>}
+    {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel">
+      <div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha das contas comuns será redefinida para 0000 e as sessões serão encerradas. O MFA já cadastrado será mantido; no próximo acesso, quem já tem MFA deverá informar o código atual e criar uma nova senha. Contas sem MFA serão orientadas a configurá-lo.</p></div></div>
+      <div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · sua própria conta não será alterada</span><button className="button button-danger" type="button" onClick={() => { setError(''); setResetAllPassword(''); setResetAllPhrase(''); setResetAllConfirmationOpen(true) }} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>
+      {error && !resetAllConfirmationOpen && <ToastMessage variant="error">{error}</ToastMessage>}
+      {resetAccounts.length > 0 && <div className="temporary-credentials" role="status"><div><strong>{resetAccounts.length > 1 ? 'Senhas temporárias geradas' : 'Senha temporária gerada'}</strong><span>A senha temporária de cada conta é 0000. Entregue o login e a senha ao titular por canal seguro. Contas que já usam MFA mantêm o cadastro e devem usar o código atual; contas sem MFA precisarão configurá-lo.</span></div><div className="temporary-credential-list">{resetAccounts.map((account) => <p key={account.username}><strong>{account.username}</strong><code>{account.temporary_password}</code></p>)}</div><button className="button button-secondary" type="button" onClick={() => setResetAccounts([])}>Ocultar senhas</button></div>}
+      {!loading && users.length > 0 && <details className="system-account-list"><summary>Contas abrangidas ({users.length})</summary><div>{users.map((account) => <article key={account.id}><span>{account.name} · {account.username}{account.active ? '' : ' · inativa'}</span><button className="button button-secondary" type="button" onClick={() => void resetOneCredentials(account)} disabled={busy}>Redefinir senha</button><button className="button button-danger" type="button" onClick={() => void deleteSystemUser(account)} disabled={busy}>{deletingUserId === account.id ? 'Excluindo…' : 'Excluir conta'}</button></article>)}</div></details>}
+      {resetAllConfirmationOpen && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setResetAllConfirmationOpen(false) }}>
+        <section className="patient-archive-dialog credential-reset-dialog recovery-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="recovery-confirm-title">
+          <div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">CONFIRMAÇÃO DE SEGURANÇA</p><h2 id="recovery-confirm-title">Redefinir todas as credenciais?</h2></div></div>
+          <p>Esta ação redefine as senhas para <strong>0000</strong> e encerra as sessões de {users.length} conta(s). O MFA já cadastrado será mantido; quem já usa o autenticador precisará do código atual e deverá criar uma nova senha. Contas sem MFA precisarão configurá-lo novamente.</p>
+          <form className="recovery-confirm-form" onSubmit={(event) => void resetAllCredentials(event)}>
+            <label className="field"><span className="field-label">Confirme sua senha de acesso</span><span className="auth-password-control"><input required type={showResetAllPassword ? 'text' : 'password'} autoComplete="current-password" value={resetAllPassword} onChange={(event) => setResetAllPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={showResetAllPassword ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={showResetAllPassword} onClick={() => setShowResetAllPassword((visible) => !visible)}>{showResetAllPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label>
+            <label className="field"><span className="field-label">Digite o texto abaixo para confirmar</span><input required value={resetAllPhrase} onChange={(event) => setResetAllPhrase(event.target.value)} placeholder={resetAllConfirmationText} autoComplete="off" /><span className="field-hint">Digite exatamente: {resetAllConfirmationText}</span></label>
+            {error && <ToastMessage variant="error">{error}</ToastMessage>}
+            <div className="form-actions"><button className="button button-secondary" type="button" disabled={busy} onClick={() => setResetAllConfirmationOpen(false)}>Cancelar</button><button className="button button-danger" type="submit" disabled={busy || !resetAllPassword || resetAllPhrase !== resetAllConfirmationText}>{busy ? 'Redefinindo…' : 'Confirmar redefinição'}</button></div>
+          </form>
+        </section>
+      </div>}
+    </section>}
   </section>
 }
 

@@ -487,14 +487,41 @@ def test_management_cannot_recover_credentials_or_change_superadmin(
         "headers": [(b"cookie", f"{SESSION_COOKIE}={root_token}".encode())],
         "query_string": b"",
     })
-    result = asyncio.run(access.reset_all_user_credentials(root_request, Response(), db))
+    with pytest.raises(HTTPException) as bad_password:
+        asyncio.run(access.reset_all_user_credentials(
+            access.ResetAllCredentialsPayload(
+                current_password="wrong-password",
+                confirmation="REDEFINIR CREDENCIAIS DE TODOS OS USUÁRIOS",
+            ),
+            root_request,
+            Response(),
+            db,
+        ))
+    assert bad_password.value.status_code == 401
+    with pytest.raises(HTTPException) as bad_confirmation:
+        asyncio.run(access.reset_all_user_credentials(
+            access.ResetAllCredentialsPayload(current_password="0000", confirmation="CONFIRMAR"),
+            root_request,
+            Response(),
+            db,
+        ))
+    assert bad_confirmation.value.status_code == 422
+    result = asyncio.run(access.reset_all_user_credentials(
+        access.ResetAllCredentialsPayload(
+            current_password="0000",
+            confirmation="REDEFINIR CREDENCIAIS DE TODOS OS USUÁRIOS",
+        ),
+        root_request,
+        Response(),
+        db,
+    ))
     assert {account["username"] for account in result["accounts"]} == {"manager", "nurse"}
     manager_result = next(account for account in result["accounts"] if account["username"] == "manager")
     db.refresh(manager)
     assert verify_password(manager_result["temporary_password"], manager.password_hash)
     assert manager.must_change_password is True
-    assert manager.mfa_enabled is False
-    assert manager.mfa_secret_encrypted is None
+    assert manager.mfa_enabled is True
+    assert manager.mfa_secret_encrypted == "encrypted"
     assert manager.session_version == 2
     assert root.session_version == 1
     with pytest.raises(HTTPException) as error:
@@ -533,6 +560,7 @@ def test_app_admin_can_reset_another_users_password_without_disabling_mfa(
     result = asyncio.run(access.reset_user_password(target.id, request, response, db))
 
     db.refresh(target)
+    assert result["initial_password"] == "0000"
     assert verify_password(str(result["initial_password"]), target.password_hash)
     assert target.must_change_password is True
     assert target.mfa_enabled is True

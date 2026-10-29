@@ -119,6 +119,12 @@ class ProfileUpdatePayload(BaseModel):
         return clean
 
 
+class ResetAllCredentialsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=256)
+    confirmation: str = Field(min_length=1, max_length=80)
+
+
 class TotpPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(pattern=r"^\d{6}$")
@@ -270,11 +276,9 @@ def _prevent_superuser_changes(target: AppUser) -> None:
 
 
 def _reset_credentials(user: AppUser) -> str:
-    temporary_password = secrets.token_urlsafe(18)
+    temporary_password = INITIAL_PASSWORD
     user.password_hash = hash_password(temporary_password)
     user.must_change_password = True
-    user.mfa_enabled = False
-    user.mfa_secret_encrypted = None
     user.session_version += 1
     user.failed_attempts = 0
     user.locked_until = None
@@ -282,7 +286,7 @@ def _reset_credentials(user: AppUser) -> str:
 
 
 def _reset_password(user: AppUser) -> str:
-    temporary_password = secrets.token_urlsafe(18)
+    temporary_password = INITIAL_PASSWORD
     user.password_hash = hash_password(temporary_password)
     user.must_change_password = True
     user.session_version += 1
@@ -595,11 +599,16 @@ def list_system_admin_users(
 
 @app.post("/api/v1/system-admin/reset-credentials")
 async def reset_all_user_credentials(
+    payload: ResetAllCredentialsPayload,
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
-    _, principal = _require_system_admin(request, db)
+    actor, principal = _require_system_admin(request, db)
+    if not verify_password(payload.current_password, actor.password_hash):
+        raise HTTPException(status_code=401, detail="A senha do superusuário está incorreta")
+    if payload.confirmation != "REDEFINIR CREDENCIAIS DE TODOS OS USUÁRIOS":
+        raise HTTPException(status_code=422, detail="A confirmação digitada não corresponde ao texto solicitado")
     users = db.scalars(
         select(AppUser).where(AppUser.is_superuser.is_(False)).order_by(AppUser.username)
     ).all()
