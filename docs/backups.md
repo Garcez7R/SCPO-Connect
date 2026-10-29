@@ -29,6 +29,8 @@ Antes de iniciar ou reiniciar os containers, confirme que o dispositivo está re
 
 O pacote `.rgs` não inclui esse diretório. Faça backup separado das imagens para um destino institucional protegido, com retenção e teste de restauração definidos; preservar somente o banco não recupera os arquivos da biblioteca, e preservar somente as imagens não recupera seus metadados.
 
+Para validar a integração do volume, use somente uma imagem sintética e sem dados pessoais: abra Oficina Terapêutica → Materiais → Biblioteca de imagens, envie a imagem, confira se ela aparece na lista e abra-a pela própria interface. Confirme no host que o arquivo correspondente foi criado dentro do ponto de montagem configurado e, por fim, remova a imagem pela interface e confira que o arquivo e o registro foram removidos. A suíte direcionada automatizada também exercita upload, leitura e exclusão em diretório temporário; isso não comprova montagem, permissão, persistência após reinicialização nem restauração do disco externo real.
+
 Para validar/importar o pacote sem trocar os bancos ativos, restaure em um conjunto novo e isolado:
 
 ```sh

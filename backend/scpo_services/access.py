@@ -1,4 +1,6 @@
+import asyncio
 import hmac
+import logging
 import os
 import secrets
 import uuid
@@ -10,7 +12,8 @@ from typing import Annotated
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, select
+from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .common import (
@@ -18,6 +21,7 @@ from .common import (
     DemoPrincipal,
     database_session,
     emit_audit_event,
+    get_engine,
     require_service_token,
     verify_database_migrated,
 )
@@ -66,6 +70,22 @@ class AppUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class PhysicianProfileDeletionOutbox(Base):
+    __tablename__ = "physician_profile_deletion_outbox"
+    __table_args__ = (
+        Index("ix_physician_profile_deletion_outbox_next_attempt", "next_attempt_at"),
+    )
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(40), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+
+
 def get_access_db():
     yield from database_session("access")
 
@@ -76,7 +96,15 @@ async def lifespan(_: FastAPI):
     from .common import audit_outbox_lifespan
 
     async with audit_outbox_lifespan("access"):
-        yield
+        task = asyncio.create_task(_run_physician_profile_deletion_dispatcher())
+        try:
+            yield
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
@@ -85,6 +113,75 @@ app = FastAPI(
     description="Contas locais individuais, MFA e permissões por módulo.",
     lifespan=lifespan,
 )
+_logger = logging.getLogger("scpo.access")
+
+
+def dispatch_pending_physician_profile_deletions(limit: int = 25) -> int:
+    service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
+    nursing_url = os.getenv("SCPO_NURSING_API_URL", "http://nursing:8000").rstrip("/")
+    now = datetime.now(UTC)
+    completed = 0
+    with Session(get_engine("access")) as db:
+        pending = db.scalars(
+            select(PhysicianProfileDeletionOutbox)
+            .where(PhysicianProfileDeletionOutbox.next_attempt_at <= now)
+            .order_by(PhysicianProfileDeletionOutbox.requested_at)
+            .limit(limit)
+        ).all()
+        for deletion in pending:
+            try:
+                if not service_token:
+                    raise RuntimeError("Token interno de serviços não configurado")
+                response = httpx.delete(
+                    f"{nursing_url}/internal/v1/physicians/profiles/{deletion.user_id}",
+                    headers={"X-Service-Token": service_token},
+                    timeout=3.0,
+                )
+                response.raise_for_status()
+            except (httpx.HTTPError, RuntimeError) as exc:
+                deletion.attempts += 1
+                delay = min(3600, 2 ** min(deletion.attempts, 11))
+                deletion.next_attempt_at = datetime.now(UTC) + timedelta(seconds=delay)
+                deletion.last_error = str(exc)[:500]
+                _logger.error(
+                    "Physician profile deletion deferred (user %s, attempt %s): %s",
+                    deletion.user_id,
+                    deletion.attempts,
+                    exc,
+                )
+                continue
+            user = db.get(AppUser, deletion.user_id)
+            if user is not None:
+                principal = DemoPrincipal(
+                    user_id=deletion.actor_id,
+                    username="",
+                    actor_name=deletion.actor_name,
+                    role=deletion.actor_role,
+                    modules=[],
+                    permissions={},
+                )
+                emit_audit_event(
+                    principal, "management", "user_deleted", user.id, db=db, service="access"
+                )
+                db.delete(user)
+            db.delete(deletion)
+            completed += 1
+        db.commit()
+    return completed
+
+
+async def _run_physician_profile_deletion_dispatcher() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(dispatch_pending_physician_profile_deletions)
+        except SQLAlchemyError:
+            _logger.exception("Physician profile deletion dispatcher database error")
+        await asyncio.sleep(5)
+
+
+def _ensure_not_deletion_pending(db: Session, user_id: str) -> None:
+    if db.get(PhysicianProfileDeletionOutbox, user_id) is not None:
+        raise HTTPException(status_code=409, detail="A exclusão desta conta está em andamento")
 
 
 class BootstrapPayload(BaseModel):
@@ -312,7 +409,7 @@ def _set_cookie(response: Response, user: AppUser, stage: str) -> int:
     return int(claims["exp"])
 
 
-def _user_response(user: AppUser) -> dict[str, object]:
+def _user_response(user: AppUser, deletion_pending: bool = False) -> dict[str, object]:
     is_management = user.is_superuser or "management" in user.modules
     is_app_admin = "admin" in user.modules
     has_all_modules = is_management or is_app_admin
@@ -331,6 +428,7 @@ def _user_response(user: AppUser) -> dict[str, object]:
         "is_superuser": user.is_superuser,
         "must_change_password": user.must_change_password,
         "mfa_enabled": user.mfa_enabled,
+        "deletion_pending": deletion_pending,
     }
 
 
@@ -582,7 +680,8 @@ def list_users(
         .where(AppUser.is_superuser.is_(False))
         .order_by(AppUser.name)
     ).all()
-    return {"users": [_user_response(user) for user in users]}
+    pending_ids = set(db.scalars(select(PhysicianProfileDeletionOutbox.user_id)).all())
+    return {"users": [_user_response(user, user.id in pending_ids) for user in users]}
 
 
 @app.get("/api/v1/system-admin/users")
@@ -594,7 +693,8 @@ def list_system_admin_users(
     users = db.scalars(
         select(AppUser).where(AppUser.is_superuser.is_(False)).order_by(AppUser.name)
     ).all()
-    return {"users": [_user_response(user) for user in users]}
+    pending_ids = set(db.scalars(select(PhysicianProfileDeletionOutbox.user_id)).all())
+    return {"users": [_user_response(user, user.id in pending_ids) for user in users]}
 
 
 @app.post("/api/v1/system-admin/reset-credentials")
@@ -610,7 +710,12 @@ async def reset_all_user_credentials(
     if payload.confirmation != "REDEFINIR CREDENCIAIS DE TODOS OS USUÁRIOS":
         raise HTTPException(status_code=422, detail="A confirmação digitada não corresponde ao texto solicitado")
     users = db.scalars(
-        select(AppUser).where(AppUser.is_superuser.is_(False)).order_by(AppUser.username)
+        select(AppUser)
+        .where(
+            AppUser.is_superuser.is_(False),
+            ~AppUser.id.in_(select(PhysicianProfileDeletionOutbox.user_id)),
+        )
+        .order_by(AppUser.username)
     ).all()
     await record_audit_event(principal, "non_superuser_accounts", "all_user_credentials_reset", db)
     reset_accounts = []
@@ -635,6 +740,7 @@ async def reset_one_user_credentials(
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     _prevent_superuser_changes(user)
+    _ensure_not_deletion_pending(db, user.id)
     await record_audit_event(principal, user.id, "user_credentials_reset", db)
     temporary_password = _reset_credentials(user)
     db.commit()
@@ -654,6 +760,7 @@ async def reset_user_password(
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     _prevent_superuser_changes(user)
+    _ensure_not_deletion_pending(db, user.id)
     if user.id == actor.id:
         raise HTTPException(status_code=409, detail="Use a troca de senha da própria conta")
     await record_audit_event(principal, user.id, "user_password_reset", db)
@@ -711,6 +818,7 @@ async def update_user(
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     _prevent_superuser_changes(user)
+    _ensure_not_deletion_pending(db, user.id)
     changes = payload.model_dump(exclude_unset=True)
     if user.id == actor.id and changes.get("active") is False:
         raise HTTPException(status_code=409, detail="Não é possível desativar a própria conta")
@@ -755,13 +863,17 @@ async def update_user(
 async def delete_user(
     user_id: str,
     request: Request,
+    response: Response,
     db: Annotated[Session, Depends(get_access_db)],
-) -> dict[str, str]:
+) -> dict[str, object]:
     actor, principal = _require_account_admin(request, db)
     user = db.get(AppUser, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     _prevent_superuser_changes(user)
+    if db.get(PhysicianProfileDeletionOutbox, user.id) is not None:
+        response.status_code = 202
+        return {"message": "A exclusão do perfil médico está em andamento", "deletion_pending": True}
     if user.id == actor.id:
         raise HTTPException(status_code=409, detail="Não é possível excluir a própria conta")
     if "management" in user.modules:
@@ -775,19 +887,25 @@ async def delete_user(
         if not any("management" in candidate.modules for candidate in other_managers):
             raise HTTPException(status_code=409, detail="Mantenha ao menos uma conta de Gestão Hospitalar ativa")
     if "physician" in user.modules:
-        service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
-        nursing_url = os.getenv("SCPO_NURSING_API_URL", "http://nursing:8000").rstrip("/")
-        if not service_token:
-            raise HTTPException(status_code=503, detail="Não foi possível remover o perfil médico associado")
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                profile_response = await client.delete(
-                    f"{nursing_url}/internal/v1/physicians/profiles/{user.id}",
-                    headers={"X-Service-Token": service_token},
-                )
-                profile_response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise HTTPException(status_code=503, detail="Não foi possível remover o perfil médico associado") from exc
+        now = datetime.now(UTC)
+        db.add(
+            PhysicianProfileDeletionOutbox(
+                user_id=user.id,
+                actor_id=actor.id,
+                actor_name=principal.actor_name[:100],
+                actor_role=principal.role[:40],
+                requested_at=now,
+                next_attempt_at=now,
+            )
+        )
+        user.active = False
+        user.session_version += 1
+        emit_audit_event(
+            principal, "management", "user_deletion_requested", user.id, db=db, service="access"
+        )
+        db.commit()
+        response.status_code = 202
+        return {"message": "A conta foi desativada; a remoção do perfil médico está em andamento", "deletion_pending": True}
     await record_audit_event(principal, user.id, "user_deleted", db)
     db.delete(user)
     db.commit()

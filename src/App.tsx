@@ -200,6 +200,7 @@ type TherapyActivity = { id: string; title: string; activity_type: string; descr
 type TherapyActivityPayload = Pick<TherapyActivity, 'title' | 'activity_type' | 'description' | 'location' | 'starts_at' | 'ends_at' | 'patient_reference'> & { participant_references: string[] }
 type NutritionRecordData = { id: number; patient_reference: string; assessment_date: string; weight_kg: string; height_cm: string; diet_type: string; allergies: string; restrictions: string; appetite: string; hydration: string; notes: string; fasting_at?: string | null; fasting_reason?: string; actor_name: string; created_at: string }
 type NutritionPlan = { allergies: string; assessment_date: string | null; diet_type: string; restrictions: string; fasting_at: string | null; fasting_reason: string }
+type NutritionKitchenPatient = { patient_reference: string; patient_name: string; room: string; bed: string; diet_type: string; assessment_date: string | null; allergies_status: NonNullable<Patient['allergies_status']>; allergies: string; restrictions: string; fasting_at: string | null; fasting_reason: string }
 
 const ReceptionPage = lazy(() => import('./pages/ReceptionPage'))
 const NursingTriagePanel = lazy(() => import('./components/NursingTriagePanel'))
@@ -213,6 +214,7 @@ const TherapyMaterialsPanel = lazy(() => import('./components/TherapyMaterialsPa
 const NursingMobilePage = lazy(() => import('./pages/NursingMobilePage'))
 const OperationsMobilePage = lazy(() => import('./pages/OperationsMobilePage'))
 const PharmacyMobilePage = lazy(() => import('./pages/PharmacyMobilePage'))
+const PhysicianMobilePage = lazy(() => import('./pages/PhysicianMobilePage'))
 const XrayModulePage = lazy(() => import('./pages/XrayPage'))
 const PhysicianPage = lazy(() => import('./pages/PhysicianPage'))
 const PatientOperationsPage = lazy(() =>
@@ -590,6 +592,9 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   }
   if (window.location.pathname === '/pharmacy.html') {
     return <Suspense fallback={<StartupScreen />}><PharmacyMobilePage user={user} onLogout={onLogout} /></Suspense>
+  }
+  if (window.location.pathname === '/physician.html') {
+    return <Suspense fallback={<StartupScreen />}><PhysicianMobilePage user={user} onLogout={onLogout} /></Suspense>
   }
 
   return (
@@ -1987,10 +1992,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
       if (new Date(data.starts_at).getFullYear() === month.getFullYear() && new Date(data.starts_at).getMonth() === month.getMonth()) { setActivities((items) => [...items, data].sort((a, b) => a.starts_at.localeCompare(b.starts_at))); setReportDrafts((items) => ({ ...items, [data.id]: data.activity_report ?? '' })); setReportStatuses((items) => ({ ...items, [data.id]: data.status })) }
       setForm({ title: '', activity_type: '', description: '', location: 'Oficina Terapêutica', starts_at: '', ends_at: '', patient_reference: '', participant_references: [] }); setNewParticipantReference(''); setShowForm(false); setNotice('Atividade incluída na agenda.')
     } catch (submitError) {
-      const message = readableApiError(submitError)
-      setError(message === 'Campo obrigatório: Dados da solicitação.'
-        ? 'A API não recebeu o conteúdo da atividade. Atualize a página ou feche e reabra o aplicativo; se o erro persistir, informe o suporte e o horário da tentativa.'
-        : message)
+      setError(readableApiError(submitError))
     } finally { setSaving(false) }
   }
 
@@ -2159,7 +2161,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
 }
 
 function AboutPage() {
-  const [tab, setTab] = useState<'overview' | 'help' | 'compliance'>('overview')
+  const [tab, setTab] = useState<'overview' | 'help' | 'compliance'>('compliance')
   const systemOverview = [
     { title: '1. Acesso individual', details: 'Cada pessoa utiliza sua própria conta. O acesso exige credenciais individuais e configuração de autenticação adicional; não compartilhe senhas ou códigos.' },
     { title: '2. Espaços de trabalho', details: 'A navegação apresenta os módulos disponíveis para o perfil da pessoa. As permissões definem quais ações podem ser feitas em cada módulo.' },
@@ -2177,9 +2179,9 @@ function AboutPage() {
   return <section className="about-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-about"><Info size={23} /></span><div><p className="eyebrow">SCPO CONNECT</p><h1>Sobre e conformidade</h1><p className="welcome-copy">Entenda os fluxos do sistema e consulte referências legais e de privacidade.</p></div></div>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções sobre o SCPO Connect">
+      <button id="about-tab-compliance" className={`button ${tab === 'compliance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'compliance'} aria-controls="about-panel-compliance" onClick={() => setTab('compliance')}>Referências e conformidade</button>
       <button id="about-tab-overview" className={`button ${tab === 'overview' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'overview'} aria-controls="about-panel-overview" onClick={() => setTab('overview')}>Como o sistema funciona</button>
       <button id="about-tab-help" className={`button ${tab === 'help' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'help'} aria-controls="about-panel-help" onClick={() => setTab('help')}>Dúvidas e solução de problemas</button>
-      <button id="about-tab-compliance" className={`button ${tab === 'compliance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'compliance'} aria-controls="about-panel-compliance" onClick={() => setTab('compliance')}>Referências e conformidade</button>
     </div>
     {tab === 'overview'
       ? <div id="about-panel-overview" className="about-legal-grid" role="tabpanel" aria-labelledby="about-tab-overview" tabIndex={0}>{systemOverview.map((item) => <article className="about-legal-card" key={item.title}><p className="eyebrow">VISÃO GERAL</p><h2>{item.title}</h2><p>{item.details}</p></article>)}</div>
@@ -3241,7 +3243,7 @@ function SavedConfirmation({ savedAt, actorName, patient, onReset }: { savedAt: 
   )
 }
 
-type Account = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]>; active: boolean; must_change_password: boolean; mfa_enabled: boolean; is_superuser: boolean }
+type Account = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]>; active: boolean; must_change_password: boolean; mfa_enabled: boolean; is_superuser: boolean; deletion_pending?: boolean }
 
 const moduleLabels: Record<string, string> = {
   patients: 'Pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
@@ -3445,9 +3447,16 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
     setDeletingUser(true)
     setMutationError('')
     try {
-      await readApiResponse(await fetch(`/api/v1/access/users/${encodeURIComponent(deleteUserTarget.id)}`, { method: 'DELETE' }))
-      setUsers((current) => current.filter((account) => account.id !== deleteUserTarget.id))
-      setNotice(`Conta de ${deleteUserTarget.name} excluída.`)
+      const result = await readApiResponse<{ deletion_pending?: boolean; message?: string }>(await fetch(`/api/v1/access/users/${encodeURIComponent(deleteUserTarget.id)}`, { method: 'DELETE' }))
+      if (result.deletion_pending) {
+        setUsers((current) => current.map((account) => account.id === deleteUserTarget.id
+          ? { ...account, active: false, deletion_pending: true }
+          : account))
+        setNotice(result.message ?? `A conta de ${deleteUserTarget.name} foi desativada; a remoção do perfil médico está em andamento.`)
+      } else {
+        setUsers((current) => current.filter((account) => account.id !== deleteUserTarget.id))
+        setNotice(`Conta de ${deleteUserTarget.name} excluída.`)
+      }
       setDeleteUserTarget(null)
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Não foi possível excluir a conta.')
@@ -3553,7 +3562,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
     {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
     {resetPasswordTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !resettingPassword) { setResetPasswordTarget(null); setTemporaryPassword('') } }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-reset-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CREDENCIAIS</p><h2 id="credential-reset-title">{temporaryPassword ? 'Senha temporária gerada' : 'Redefinir senha?'}</h2></div></div>{temporaryPassword ? <><p>A senha da conta foi redefinida e as sessões encerradas. Entregue ao titular, por canal seguro, a senha temporária <strong>0000</strong>. Se a conta já usa MFA, ele deve informar o código atual do aplicativo autenticador; depois, deverá criar uma nova senha.</p><code className="credential-reset-value">{temporaryPassword}</code><div className="form-actions"><button className="button button-primary" type="button" onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Concluir</button></div></> : <><p>A senha de <strong>{resetPasswordTarget.name}</strong> será redefinida para 0000 e as sessões serão encerradas. O MFA atual, se configurado, será preservado. No próximo acesso, a pessoa deverá criar uma nova senha; se já usa MFA, também precisará do código atual do autenticador.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={resettingPassword} onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Cancelar</button><button className="button button-danger" type="button" disabled={resettingPassword} onClick={() => void confirmPasswordReset()}>{resettingPassword ? 'Redefinindo…' : 'Confirmar redefinição'}</button></div></>}</section></div>}
-    {deleteUserTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingUser) setDeleteUserTarget(null) }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-user-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CONTAS</p><h2 id="delete-user-title">Excluir usuário?</h2></div></div><p>A conta de <strong>{deleteUserTarget.name}</strong> e seu acesso serão removidos permanentemente. O histórico de auditoria permanece preservado. Essa ação não pode ser desfeita.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={deletingUser} onClick={() => setDeleteUserTarget(null)}>Cancelar</button><button className="button button-danger" type="button" disabled={deletingUser} onClick={() => void confirmUserDelete()}>{deletingUser ? 'Excluindo…' : 'Confirmar exclusão'}</button></div></section></div>}
+    {deleteUserTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !deletingUser) setDeleteUserTarget(null) }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-user-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CONTAS</p><h2 id="delete-user-title">Excluir usuário?</h2></div></div>{deleteUserTarget.modules.includes('physician') ? <p>A conta de <strong>{deleteUserTarget.name}</strong> será desativada imediatamente. A exclusão da conta e do perfil médico será concluída quando o serviço de Enfermagem confirmar a remoção; a solicitação será repetida automaticamente se o serviço estiver indisponível. O histórico de auditoria permanece preservado.</p> : <p>A conta de <strong>{deleteUserTarget.name}</strong> e seu acesso serão removidos permanentemente. O histórico de auditoria permanece preservado. Essa ação não pode ser desfeita.</p>}{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={deletingUser} onClick={() => setDeleteUserTarget(null)}>Cancelar</button><button className="button button-danger" type="button" disabled={deletingUser} onClick={() => void confirmUserDelete()}>{deletingUser ? 'Excluindo…' : 'Confirmar exclusão'}</button></div></section></div>}
   </section>
 }
 
@@ -3563,17 +3572,17 @@ function AccountRow({ user, onUpdate, onResetPassword, onDelete, currentUserId, 
   const [expanded, setExpanded] = useState(false)
   const mayEditBroad = canManageBroadAccess || user.role !== 'management'
   const assignedModules = user.role === 'admin' ? ['admin'] : user.modules
-  return <article className="account-row">
+  return <article className={`account-row${user.deletion_pending ? ' account-row-deletion-pending' : ''}`}>
     <div className="account-row-main">
       <div className="user-name"><span className="avatar avatar-small">{user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span><strong>{user.name}<small>{user.username}{user.must_change_password ? ' · troca de senha pendente' : ''}{!user.mfa_enabled ? ' · MFA pendente' : ''}</small></strong></div>
       <div className="user-modules">{user.modules.map((module) => <span key={module}>{moduleLabels[module] ?? module}</span>)}</div>
-      <span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.active ? 'Ativa' : 'Inativa'}</span>
+      <span className={`account-state ${user.active ? 'account-active' : 'account-disabled'}`}><span className="status-dot" />{user.deletion_pending ? 'Exclusão pendente' : user.active ? 'Ativa' : 'Inativa'}</span>
       <div className="account-row-actions">
-        {user.id !== currentUserId && <button className="user-action" type="button" onClick={() => void onResetPassword(user)}>Redefinir senha</button>}
+        {!user.deletion_pending && user.id !== currentUserId && <button className="user-action" type="button" onClick={() => void onResetPassword(user)}>Redefinir senha</button>}
         {mayEditBroad && <>
-          <button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button>
-          <button className="user-action" type="button" onClick={() => { setEditModules(assignedModules); setEditPermissions(user.role === 'admin' ? { admin: user.permissions.admin ?? ['consultar', 'criar', 'alterar', 'administrar'] } : user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button>
-          {canDeleteAccounts && user.id !== currentUserId && !user.is_superuser && <button className="user-action user-action-danger" type="button" onClick={() => void onDelete(user)}>Excluir usuário</button>}
+          {!user.deletion_pending && <button className="user-action" type="button" onClick={() => void onUpdate(user, { active: !user.active }, `Conta ${user.active ? 'desativada' : 'ativada'}.`)}>{user.active ? 'Desativar' : 'Ativar'}</button>}
+          {!user.deletion_pending && <button className="user-action" type="button" onClick={() => { setEditModules(assignedModules); setEditPermissions(user.role === 'admin' ? { admin: user.permissions.admin ?? ['consultar', 'criar', 'alterar', 'administrar'] } : user.permissions); setExpanded((value) => !value) }}>{expanded ? 'Fechar acessos' : 'Editar acessos'}</button>}
+          {canDeleteAccounts && user.id !== currentUserId && !user.is_superuser && !user.deletion_pending && <button className="user-action user-action-danger" type="button" onClick={() => void onDelete(user)}>Excluir usuário</button>}
         </>}
       </div>
     </div>
@@ -3588,8 +3597,13 @@ function AccountRow({ user, onUpdate, onResetPassword, onDelete, currentUserId, 
 
 function NutritionPage() {
   const { prompt } = useAppDialogs()
+  const [nutritionTab, setNutritionTab] = useState<'assessment' | 'kitchen'>('assessment')
   const [patients, setPatients] = useState<Patient[]>([])
   const [records, setRecords] = useState<NutritionRecordData[]>([])
+  const [kitchenPatients, setKitchenPatients] = useState<NutritionKitchenPatient[]>([])
+  const [kitchenLoading, setKitchenLoading] = useState(false)
+  const [kitchenQuery, setKitchenQuery] = useState('')
+  const [kitchenUpdatedAt, setKitchenUpdatedAt] = useState('')
   const [recordsTotal, setRecordsTotal] = useState(0)
   const [recordsOffset, setRecordsOffset] = useState(0)
   const [selectedPatient, setSelectedPatient] = useState('')
@@ -3618,6 +3632,21 @@ function NutritionPage() {
     } catch (loadError) { setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os registros.') }
     finally { setRecordsLoading(false) }
   }, [recordPatientFilter, recordQuery])
+  const loadKitchenRoster = useCallback(async () => {
+    setKitchenLoading(true)
+    try {
+      const data = await readApiResponse<{ patients?: NutritionKitchenPatient[]; updated_at?: string }>(
+        await fetch('/api/v1/nursing/nutrition/kitchen'),
+      )
+      setKitchenPatients(data.patients ?? [])
+      setKitchenUpdatedAt(data.updated_at ?? '')
+      setError('')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o mapa de dietas da cozinha.')
+    } finally {
+      setKitchenLoading(false)
+    }
+  }, [])
   useEffect(() => {
     void (async () => {
       try {
@@ -3656,9 +3685,37 @@ function NutritionPage() {
   }
   const patientName = (reference: string) => { const patient = patients.find((item) => item.reference === reference); return patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente' }
   const nutritionPrintRows: PrintRow[] = records.map((record) => ({ id: String(record.id), date: record.assessment_date, title: patientName(record.patient_reference), fields: [['Peso', record.weight_kg ? `${record.weight_kg} kg` : ''], ['Altura', record.height_cm ? `${record.height_cm} cm` : ''], ['Dieta', record.diet_type], ['Alergias', record.allergies], ['Restrições', record.restrictions], ['Jejum', record.fasting_at ? `${dateTime(record.fasting_at)} · ${record.fasting_reason || ''}` : ''], ['Aceitação', record.appetite], ['Hidratação', record.hydration], ['Observações', record.notes], ['Profissional', record.actor_name]] }))
+  const visibleKitchenPatients = kitchenPatients.filter((patient) =>
+    `${patient.patient_name} ${patient.room} ${patient.bed} ${patient.diet_type} ${patient.allergies} ${patient.restrictions}`.toLocaleLowerCase('pt-BR').includes(kitchenQuery.trim().toLocaleLowerCase('pt-BR')),
+  )
+  const kitchenPrintRows: PrintRow[] = visibleKitchenPatients.map((patient) => ({
+    id: patient.patient_reference,
+    date: kitchenUpdatedAt ?? '',
+    title: `${patient.patient_name} · Quarto ${patient.room}, leito ${patient.bed}`,
+    fields: [
+      ['Dieta', patient.diet_type || 'Não informada · confirmar com Nutrição'],
+      ['Alergias', patient.allergies_status === 'known' ? patient.allergies : patient.allergies_status === 'none_known' ? 'Sem alergia conhecida' : 'Não confirmado'],
+      ['Restrições', patient.restrictions],
+      ['Jejum', patient.fasting_at ? `${dateTime(patient.fasting_at)} · ${patient.fasting_reason || ''}` : ''],
+    ],
+  }))
   return <section className="nutrition-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliação, dieta prescrita, alergias, restrições e aceitação alimentar.</p></div><span className="module-icon module-icon-nutrition"><UtensilsCrossed size={24} /></span></div>
     {message && <ToastMessage variant="success">{message}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
+    <div className="admin-tabs module-tabs nutrition-tabs" role="tablist" aria-label="Áreas de Nutrição">
+      <button className={`button ${nutritionTab === 'assessment' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nutritionTab === 'assessment'} onClick={() => setNutritionTab('assessment')}>Avaliações</button>
+      <button className={`button ${nutritionTab === 'kitchen' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nutritionTab === 'kitchen'} onClick={() => { setNutritionTab('kitchen'); void loadKitchenRoster() }}>Mapa da cozinha</button>
+    </div>
+    {nutritionTab === 'kitchen' ? <section className="patient-list-panel nutrition-kitchen-panel" role="tabpanel">
+      <div className="section-heading"><div><p className="eyebrow">PRODUÇÃO ALIMENTAR · INTERNADOS</p><h2>Mapa de dietas e restrições</h2><p className="welcome-copy">Consulte dieta, alergias alimentares e jejum informado para apoiar a montagem das refeições. Não substitui a conferência da prescrição e da identificação à beira-leito.</p></div><button className="button button-secondary" type="button" onClick={() => void loadKitchenRoster()} disabled={kitchenLoading}>{kitchenLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
+      <PrintSelectionPanel title="Mapa da cozinha" rows={kitchenPrintRows} />
+      <label className="field nutrition-kitchen-search"><span className="field-label">Buscar paciente, localização, dieta ou restrição</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={kitchenQuery} onChange={(event) => setKitchenQuery(event.target.value)} placeholder="Nome, quarto, leito ou dieta" /></span></label>
+      {kitchenUpdatedAt && <p className="field-hint">Atualizado em {dateTime(kitchenUpdatedAt)}. Confirme alergias e restrições antes de preparar ou entregar refeições.</p>}
+      {kitchenLoading ? <div className="history-empty">Carregando mapa da cozinha…</div> : visibleKitchenPatients.length ? <div className="nutrition-kitchen-list">{visibleKitchenPatients.map((patient) => <article className="nutrition-kitchen-card" key={patient.patient_reference}>
+        <div className="nutrition-kitchen-heading"><strong>{patient.patient_name}</strong><span>Quarto {patient.room} · Leito {patient.bed}</span></div>
+        <div className="nutrition-kitchen-details"><span><small>Dieta</small><strong>{patient.diet_type || 'Não informada · confirmar com Nutrição'}</strong></span><span><small>Alergias</small><strong className={patient.allergies_status === 'known' ? 'nutrition-kitchen-alert' : ''}>{patient.allergies_status === 'known' ? patient.allergies : patient.allergies_status === 'none_known' ? 'Sem alergia conhecida' : 'Não confirmado'}</strong></span>{patient.restrictions && <span><small>Restrições</small><strong>{patient.restrictions}</strong></span>}{patient.fasting_at && <span className="nutrition-kitchen-fasting"><small>Jejum programado</small><strong>{dateTime(patient.fasting_at)}{patient.fasting_reason ? ` · ${patient.fasting_reason}` : ''}</strong></span>}</div>
+      </article>)}</div> : <div className="history-empty">{kitchenPatients.length ? 'Nenhum paciente corresponde à busca.' : 'Nenhum paciente internado disponível para o mapa de dietas.'}</div>}
+    </section> : <>
     <PrintSelectionPanel title="Avaliações nutricionais" rows={nutritionPrintRows} />
     <form className="nutrition-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVA AVALIAÇÃO</p><h2>Dados nutricionais</h2></div></div>
@@ -3685,6 +3742,7 @@ function NutritionPage() {
         <div className="pharmacy-ledger-pagination"><span>{recordsOffset + 1}–{Math.min(recordsOffset + records.length, recordsTotal)} de {recordsTotal}</span><div><button className="button button-secondary" type="button" disabled={recordsLoading || recordsOffset === 0} onClick={() => void loadRecords(recordPatientFilter, recordQuery, Math.max(0, recordsOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={recordsLoading || recordsOffset + records.length >= recordsTotal} onClick={() => void loadRecords(recordPatientFilter, recordQuery, recordsOffset + 25)}>Próxima</button></div></div>
       </> : <div className="history-empty">Nenhuma avaliação corresponde aos filtros atuais.</div>}
     </section>
+    </>}
   </section>
 }
 

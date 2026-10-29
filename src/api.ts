@@ -41,6 +41,16 @@ function readableApiError(detail: unknown): string {
         : message
       return [translatedMessage.startsWith('Campo obrigatório:') ? translatedMessage : `${label}: ${translatedMessage}`]
     })
+    if (detail.some((issue) => {
+      if (!issue || typeof issue !== 'object') return false
+      const item = issue as { loc?: unknown[]; msg?: unknown }
+      return Array.isArray(item.loc)
+        && item.loc.length === 1
+        && item.loc[0] === 'body'
+        && /^field required$/i.test(typeof item.msg === 'string' ? item.msg : '')
+    })) {
+      return 'O servidor recebeu a solicitação sem os dados esperados. Atualize o módulo e tente novamente; se persistir, informe ao suporte qual ação realizou e o horário da ocorrência.'
+    }
     if (issues.length) return issues.join(' ')
   }
   if (detail && typeof detail === 'object' && 'message' in detail) {

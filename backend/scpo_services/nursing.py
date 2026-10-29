@@ -5896,6 +5896,85 @@ def list_nutrition_records(
     }
 
 
+@app.get("/api/v1/nursing/nutrition/kitchen")
+def list_nutrition_kitchen_roster(
+    principal: Annotated[DemoPrincipal, Depends(NUTRITION_REPORT_ACCESS)],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    latest = (
+        select(
+            NutritionRecord.patient_reference.label("patient_reference"),
+            NutritionRecord.assessment_date.label("assessment_date"),
+            NutritionRecord.diet_type.label("diet_type"),
+            NutritionRecord.restrictions.label("restrictions"),
+            func.row_number()
+            .over(
+                partition_by=NutritionRecord.patient_reference,
+                order_by=(NutritionRecord.assessment_date.desc(), NutritionRecord.id.desc()),
+            )
+            .label("position"),
+        )
+        .where(NutritionRecord.voided_at.is_(None))
+        .subquery()
+    )
+    patients_and_diets = db.execute(
+        select(
+            Patient,
+            latest.c.assessment_date,
+            latest.c.diet_type,
+            latest.c.restrictions,
+        )
+        .outerjoin(
+            latest,
+            (latest.c.patient_reference == Patient.reference) & (latest.c.position == 1),
+        )
+        .where(
+            Patient.active.is_(True),
+            Patient.room != "",
+            Patient.bed != "",
+        )
+        .order_by(Patient.room, Patient.bed, Patient.name)
+    ).all()
+    now = datetime.now(UTC)
+    upcoming_fasts = db.execute(
+        select(
+            NutritionRecord.patient_reference,
+            NutritionRecord.fasting_at,
+            NutritionRecord.fasting_reason,
+        )
+        .join(Patient, Patient.reference == NutritionRecord.patient_reference)
+        .where(
+            Patient.active.is_(True),
+            Patient.room != "",
+            Patient.bed != "",
+            NutritionRecord.voided_at.is_(None),
+            NutritionRecord.fasting_at >= now,
+        )
+        .order_by(NutritionRecord.fasting_at, NutritionRecord.id.desc())
+    ).all()
+    fasting_by_patient: dict[str, tuple[datetime, str]] = {}
+    for patient_reference, fasting_at, fasting_reason in upcoming_fasts:
+        fasting_by_patient.setdefault(patient_reference, (fasting_at, fasting_reason))
+    roster = []
+    for patient, assessment_date, diet_type, restrictions in patients_and_diets:
+        fasting = fasting_by_patient.get(patient.reference)
+        roster.append({
+            "patient_reference": patient.reference,
+            "patient_name": patient.name,
+            "room": patient.room,
+            "bed": patient.bed,
+            "diet_type": diet_type or "",
+            "assessment_date": assessment_date.isoformat() if assessment_date else None,
+            "allergies_status": patient.allergies_status,
+            "allergies": patient.allergies if patient.allergies_status == "known" else "",
+            "restrictions": restrictions or "",
+            "fasting_at": fasting[0].isoformat() if fasting else None,
+            "fasting_reason": fasting[1] if fasting else "",
+        })
+    emit_audit_event(principal, "nutrition", "nutrition_kitchen_roster_read", "current_inpatients")
+    return {"patients": roster, "updated_at": now.isoformat()}
+
+
 @app.get("/api/v1/nursing/patients/{patient_reference}/nutrition-plan")
 def get_patient_nutrition_plan(
     patient_reference: str,

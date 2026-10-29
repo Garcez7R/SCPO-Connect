@@ -73,7 +73,7 @@ const emptyForm: PrescriptionForm = {
   is_controlled: false,
 }
 
-function PhysicianPage({ userId, onOpenPatientHistory }: { userId: string; onOpenPatientHistory: (reference: string) => void }) {
+function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { userId: string; onOpenPatientHistory: (reference: string) => void; mobileMode?: boolean }) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientTotal, setPatientTotal] = useState(0)
   const [patientPage, setPatientPage] = useState(0)
@@ -274,16 +274,16 @@ function PhysicianPage({ userId, onOpenPatientHistory }: { userId: string; onOpe
     }
   }
 
-  return <section className="page-enter physician-page">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · ASSISTÊNCIA MÉDICA</p><h1>Médico</h1><p className="welcome-copy">Fila de atendimentos triados, ficha clínica, sinais vitais e prescrições internas.</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span></div>
+  return <section className={`page-enter physician-page${mobileMode ? ' physician-page-mobile' : ''}`}>
+    <div className="page-title-row"><div><p className="eyebrow">{mobileMode ? 'PWA · MÉDICO' : 'MÓDULO · ASSISTÊNCIA MÉDICA'}</p><h1>Médico</h1><p className="welcome-copy">{mobileMode ? 'Fila, prontuário e prescrições em uma interface compacta. Requer conexão com o servidor.' : 'Fila de atendimentos triados, ficha clínica, sinais vitais e prescrições internas.'}</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span>{!mobileMode && <a className="button button-secondary" href="/physician.html" target="_blank" rel="noreferrer">Abrir PWA móvel</a>}</div>
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {error && !loading && <button className="button button-secondary physician-retry" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><RefreshCw size={15} /> Tentar carregar novamente</button>}
     {loading ? <div className="history-empty" role="status">Carregando dados clínicos…</div> : <>
-      <section className="patient-list-panel">
+      {!mobileMode && <section className="patient-list-panel">
         <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfil do prescritor</h2><p className="welcome-copy">Nome e CRM/UF vinculados às prescrições e à receita impressa.</p></div></div>
         {profile ? <div className="physician-profile-summary"><strong>{profile.name}</strong><span>CRM {profile.crm}/{profile.crm_state}</span></div> : <div className="admin-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira seu nome e CRM/UF antes de registrar prescrições.</span></div></div>}
-      </section>
+      </section>}
         <div className="admin-tabs module-tabs physician-tabs" role="tablist" aria-label="Fluxo de trabalho médico">
           <button className={`button ${physicianTab === 'queue' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'queue'} onClick={() => setPhysicianTab('queue')}>1. Fila de atendimento</button>
           <button className={`button ${physicianTab === 'records' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'records'} onClick={() => setPhysicianTab('records')}>2. Prontuário e prescrições</button>
@@ -311,7 +311,7 @@ function PhysicianPage({ userId, onOpenPatientHistory }: { userId: string; onOpe
       </div>
       {selectedPatient && <>
         <section className="patient-list-panel">
-          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">{selectedPatient.room && selectedPatient.bed ? `Internado · Quarto ${selectedPatient.room} · leito ${selectedPatient.bed}` : 'Cadastro ativo sem internação'} · Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'}</p></div><div className="patient-row-actions"><PatientCareTrackBadge track={selectedPatient.treatment_track} /><button className="button button-secondary" type="button" onClick={() => onOpenPatientHistory(selectedPatient.reference)}>Histórico assistencial</button></div></div>
+          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">{selectedPatient.room && selectedPatient.bed ? `Internado · Quarto ${selectedPatient.room} · leito ${selectedPatient.bed}` : 'Cadastro ativo sem internação'} · Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'}</p></div><div className="patient-row-actions"><PatientCareTrackBadge track={selectedPatient.treatment_track} />{!mobileMode && <button className="button button-secondary" type="button" onClick={() => onOpenPatientHistory(selectedPatient.reference)}>Histórico assistencial</button>}</div></div>
           {selectedPatient.allergies_status === 'known' && selectedPatient.allergies
             ? <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alergia registrada</strong><span>{selectedPatient.allergies}</span></div></div>
             : <div className={`clinical-alert ${selectedPatient.allergies_status === 'none_known' ? 'clinical-alert-clear' : 'clinical-alert-unknown'}`} role="status"><AlertTriangle size={18} /><div><strong>{selectedPatient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Alergias não verificadas'}</strong><span>Confirme as informações clínicas antes de prescrever.</span></div></div>}

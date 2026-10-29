@@ -110,7 +110,7 @@ def test_account_owner_can_customize_display_name_and_change_own_password(
     monkeypatch.setattr(access, "record_audit_event", record_audit)
     profile = asyncio.run(access.update_own_profile(access.ProfileUpdatePayload(display_name="Rafael"), request, db))
 
-    assert profile["user"]["name"] == "Rafael Garcez"
+    assert profile["user"]["name"] == name
     assert profile["user"]["display_name"] == "Rafael"
 
     with pytest.raises(HTTPException) as wrong_password:
@@ -431,6 +431,7 @@ def test_management_cannot_create_or_delete_accounts(
             access.delete_user(
                 target.id,
                 request("DELETE", f"/api/v1/access/users/{target.id}"),
+                Response(),
                 db,
             )
         )
@@ -595,11 +596,72 @@ def test_app_admin_can_delete_non_superuser_account(
 
     monkeypatch.setattr(access, "record_audit_event", record_audit)
 
-    result = asyncio.run(access.delete_user(target.id, request, db))
+    result = asyncio.run(access.delete_user(target.id, request, Response(), db))
 
     assert result["message"] == "Conta excluída"
     assert db.get(access.AppUser, target.id) is None
     assert [user["username"] for user in access.list_users(request, db)["users"]] == ["admin"]
+
+
+def test_physician_account_deletion_is_queued_and_retried_until_profile_cleanup(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    monkeypatch.setenv("SCPO_SERVICE_TOKEN", "service-token")
+    admin = access._new_user("admin", "Admin", ["admin"], {"admin": ["consultar", "administrar"]})
+    target = access._new_user(
+        "doctor",
+        "Médica",
+        ["physician"],
+        {"physician": ["consultar", "criar", "alterar"]},
+    )
+    target_id = target.id
+    db.add_all([admin, target])
+    db.commit()
+    token = issue_session(admin.id, "active", admin.session_version)
+    request = Request({
+        "type": "http",
+        "method": "DELETE",
+        "path": f"/api/v1/access/users/{target_id}",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+    response = Response()
+
+    result = asyncio.run(access.delete_user(target_id, request, response, db))
+
+    db.refresh(target)
+    pending = db.get(access.PhysicianProfileDeletionOutbox, target_id)
+    assert response.status_code == 202
+    assert result["deletion_pending"] is True
+    assert target.active is False
+    assert target.session_version == 2
+    assert pending is not None
+    assert next(user for user in access.list_users(request, db)["users"] if user["id"] == target_id)["deletion_pending"] is True
+
+    def fail_cleanup(*_args, **_kwargs):
+        raise access.httpx.ConnectError("Nursing unavailable")
+
+    monkeypatch.setattr(access.httpx, "delete", fail_cleanup)
+    assert access.dispatch_pending_physician_profile_deletions() == 0
+    db.refresh(pending)
+    assert pending.attempts == 1
+    assert pending.last_error == "Nursing unavailable"
+    assert db.get(access.AppUser, target_id) is not None
+
+    pending.next_attempt_at = datetime.now(UTC)
+    db.commit()
+
+    class SuccessfulResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr(access.httpx, "delete", lambda *_args, **_kwargs: SuccessfulResponse())
+    assert access.dispatch_pending_physician_profile_deletions() == 1
+    assert db.get(access.AppUser, target_id) is None
+    assert db.get(access.PhysicianProfileDeletionOutbox, target_id) is None
 
 
 def test_system_superuser_can_delete_non_superuser_account_but_not_themselves(
@@ -629,13 +691,13 @@ def test_system_superuser_can_delete_non_superuser_account_but_not_themselves(
 
     monkeypatch.setattr(access, "record_audit_event", record_audit)
 
-    result = asyncio.run(access.delete_user(target.id, request_for(target.id), db))
+    result = asyncio.run(access.delete_user(target.id, request_for(target.id), Response(), db))
 
     assert result["message"] == "Conta excluída"
     assert db.get(access.AppUser, target.id) is None
     assert [user["username"] for user in access.list_system_admin_users(request_for(target.id), db)["users"]] == []
     with pytest.raises(HTTPException) as cannot_delete_self:
-        asyncio.run(access.delete_user(root.id, request_for(root.id), db))
+        asyncio.run(access.delete_user(root.id, request_for(root.id), Response(), db))
     assert cannot_delete_self.value.status_code == 403
 
 

@@ -1133,6 +1133,62 @@ def test_nutrition_can_confirm_no_known_allergies_and_clear_shared_alert(
     assert history["events"][0]["reason"] == "Confirmação durante avaliação nutricional"
 
 
+def test_nutrition_kitchen_roster_shows_current_minimum_food_service_fields(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    patient_data = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Paciente da cozinha",
+            room="2",
+            bed="A",
+            allergies="Amendoim",
+            allergies_status="known",
+        ),
+        nurse,
+        nursing_db,
+    )
+    nutritionist = DemoPrincipal(
+        "nutrition-id",
+        "nutrition",
+        "Nutricionista",
+        "nutrition",
+        ["nutrition"],
+        {"nutrition": ["consultar", "criar"]},
+    )
+    nursing.create_nutrition_record(
+        nursing.NutritionPayload(
+            patient_reference=str(patient_data["reference"]),
+            assessment_date=date.today(),
+            diet_type="Pastosa",
+            restrictions="Sem alimentos duros",
+            allergies_status="known",
+            allergies="Amendoim",
+            notes="Informação clínica que não deve ir para a cozinha.",
+            fasting_at=datetime.now(UTC) + timedelta(hours=2),
+            fasting_reason="Exame",
+        ),
+        nutritionist,
+        nursing_db,
+    )
+
+    result = nursing.list_nutrition_kitchen_roster(nutritionist, nursing_db)
+
+    assert len(result["patients"]) == 1
+    patient = result["patients"][0]
+    assert patient["patient_name"] == "Paciente da cozinha"
+    assert patient["diet_type"] == "Pastosa"
+    assert patient["allergies_status"] == "known"
+    assert patient["allergies"] == "Amendoim"
+    assert patient["restrictions"] == "Sem alimentos duros"
+    assert patient["fasting_at"] is not None
+    assert patient["fasting_reason"] == "Exame"
+    assert "notes" not in patient
+    assert "weight_kg" not in patient
+
+
 def test_transfer_and_discharge_release_beds_and_preserve_audit_history(
     nursing_db: Session,
     nurse: DemoPrincipal,

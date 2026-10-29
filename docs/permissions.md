@@ -2,7 +2,7 @@
 
 ## Estado atual
 
-O login local, troca obrigatória da senha inicial, MFA TOTP, sessão HttpOnly assinada e verificação de permissões no backend foram implementados. `X-Demo-Role` deixou de ser aceito. A integração com AD Zentyal está adiada. A implementação ainda precisa de revisão e validação antes de qualquer uso com dados reais. A trilha registra operações administrativas e alguns eventos de leitura e alteração clínica, mas a cobertura clínica ainda não é integral; não tratar a tela de auditoria como um histórico completo de prontuário.
+O login local, troca obrigatória da senha inicial, MFA TOTP, sessão HttpOnly assinada e verificação de permissões no backend foram implementados. `X-Demo-Role` deixou de ser aceito. A integração com AD Zentyal está adiada. A implementação ainda precisa de revisão e validação antes de qualquer uso com dados reais. Os eventos instrumentados são enfileirados na mesma transação do serviço de origem, enviados com retentativas e registrados em uma cadeia de hashes append-only, com endpoint de verificação de integridade. A cobertura clínica não é integral, e a trilha depende dos bancos e backups da implantação: não tratá-la como prontuário completo ou cópia imutável externa.
 
 O perfil **Superadministrador do Sistema** é um privilégio independente dos módulos de Gestão Hospitalar e Administração. O login definido por `SCPO_SUPERADMIN_USERNAME` (padrão `rgarcez`) é marcado na migração ou no bootstrap. A conta não pode ser alterada pelos administradores comuns; redefinição de credenciais, encerramento de sessões, MFA e backup são operações exclusivas do superadministrador. A conta criada pelo bootstrap autorizado de uma instalação vazia recebe a senha inicial `0000`, que deve ser trocada no primeiro acesso; a migração que marca uma conta existente como superadministradora não altera sua senha. Não use o bootstrap para sobrescrever um banco já inicializado nem altere manualmente uma conta antes de confirmar o ambiente correto. Contas criadas depois pela Administração recebem senhas aleatórias, exibidas uma única vez, e exigem troca e novo cadastro de MFA. O serviço não oferece um fluxo alternativo para promover outra conta.
 
@@ -33,7 +33,7 @@ Antes de uso real, os responsáveis de cada área devem aprovar uma matriz nomin
 | Identidade de usuário | Contas locais com senha e MFA TOTP | Revisar requisitos, recuperação, rotação de segredos e procedimento de suporte |
 | Permissões por módulo | Persistidas por conta e conferidas nas rotas | Validar matriz institucional por usuário, módulo, ação e campo |
 | Autoria | ID estável da conta autenticada no registro de sinais vitais | Auditar todos os acessos e alterações clínicas e revisar retenção |
-| Auditoria clínica | Consultas e mudanças clínicas ainda não cobertas | Registrar eventos clínicos sem payload sensível e proteger/reter a trilha |
+| Auditoria | Outbox transacional por serviço, retentativas, cadeia SHA-256 append-only e verificação de integridade | Ampliar cobertura, monitorar pendências, definir retenção e manter cópia imutável externa |
 | AD Zentyal | Adiado por orçamento | Integrar futuramente, se aprovado, mantendo identidade e acesso individual |
 
 Não use dados pessoais ou clínicos reais até concluir os controles acima e a validação institucional descrita em [Preparação para piloto com dados reais](pilot-security-readiness.md).
@@ -43,8 +43,8 @@ Não use dados pessoais ou clínicos reais até concluir os controles acima e a 
 - Identidade individual, MFA conforme política da Santa Casa e procedimento seguro de recuperação de conta.
 - Autorização no backend em cada endpoint; a interface serve apenas para navegação.
 - Privilégio mínimo, revisão periódica de acessos e revogação imediata no desligamento.
-- Auditoria de leituras e mudanças com identificador institucional, horário confiável, ação, recurso e resultado; não registrar sinais vitais, nomes de pacientes ou outros dados clínicos no log.
-- Proteção contra alteração indevida, acesso restrito e política de retenção para a trilha.
+- Completar a auditoria de leituras e mudanças com identificador institucional, horário confiável, ação, recurso e resultado; não registrar sinais vitais, nomes de pacientes ou outros dados clínicos no log.
+- Monitorar o backlog das outboxes, manter cópia externa imutável, restringir acesso e aprovar política de retenção para a trilha.
 - Sessão e transporte protegidos por HTTPS com certificado confiável nos dispositivos.
 
 Os grupos, regras de acesso e prazos de retenção devem ser aprovados pela instituição. Este documento não declara conformidade legal.
