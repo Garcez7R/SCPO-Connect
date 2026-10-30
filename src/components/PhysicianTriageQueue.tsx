@@ -21,7 +21,7 @@ function formatDateTime(value: string) {
   }).format(new Date(value))
 }
 
-export default function PhysicianTriageQueue({ onOpenPatient }: { onOpenPatient: (reference: string) => void }) {
+export default function PhysicianTriageQueue({ onOpenPatient, compact = false }: { onOpenPatient: (reference: string) => void; compact?: boolean }) {
   const [arrivals, setArrivals] = useState<TriageArrival[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -46,8 +46,8 @@ export default function PhysicianTriageQueue({ onOpenPatient }: { onOpenPatient:
     return () => window.clearTimeout(timer)
   }, [refresh])
 
-  return <section className="physician-triage-queue patient-list-panel">
-    <div className="section-heading"><div><p className="eyebrow">ENFERMAGEM → MÉDICO</p><h2>Aguardando avaliação médica</h2><p className="welcome-copy">Atendimentos da Recepção com triagem registrada, separados da consulta aos pacientes do cadastro.</p></div><button className="button button-secondary" type="button" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15} /> Atualizar</button></div>
+  return <section className={`physician-triage-queue patient-list-panel${compact ? ' physician-triage-queue-compact' : ''}`}>
+    <div className="section-heading"><div><p className="eyebrow">ENFERMAGEM → MÉDICO</p><h2>{compact ? 'Aguardando avaliação' : 'Aguardando avaliação médica'}</h2><p className="welcome-copy">{compact ? 'Abra uma ficha para continuar o atendimento.' : 'Atendimentos da Recepção com triagem registrada, separados da consulta aos pacientes do cadastro.'}</p></div><button className="button button-secondary" type="button" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15} /> Atualizar</button></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {loading ? <p className="history-empty">Carregando atendimentos triados…</p> : arrivals.length ? <div className="physician-triage-list">{arrivals.map((arrival) => {
       const triage = arrival.triage
@@ -62,7 +62,7 @@ export default function PhysicianTriageQueue({ onOpenPatient }: { onOpenPatient:
         </div>
         <p className="physician-triage-meta">Registrado por {triage.registered_by} em {formatDateTime(triage.registered_at)} · Chegada {formatDateTime(arrival.created_at)}</p>
         {arrival.patient_reference
-          ? <button className="button button-primary" type="button" onClick={() => onOpenPatient(arrival.patient_reference!)}>Abrir ficha do paciente <ArrowRight size={16} /></button>
+          ? <button className="button button-primary" type="button" onClick={() => onOpenPatient(arrival.patient_reference!)}>{compact ? 'Abrir ficha' : 'Abrir ficha do paciente'} <ArrowRight size={16} /></button>
           : <p className="form-message form-message-warning">Esta chegada não está vinculada a um cadastro. Vincule/regularize a identificação antes de usar prescrições internas.</p>}
         <p className="field-hint">Alergias e condições exibidas são o registro deste atendimento; confirme clinicamente antes de decidir condutas. Não há diagnóstico ou classificação automática.</p>
       </article>

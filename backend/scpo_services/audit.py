@@ -3,12 +3,12 @@ import hmac
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import DateTime, Integer, String, select
+from sqlalchemy import DateTime, Integer, String, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -146,12 +146,49 @@ def create_event(
 def list_events(
     principal: Annotated[DemoPrincipal, Depends(ADMIN_ROLE)],
     db: Annotated[Session, Depends(get_audit_db)],
-) -> dict[str, list[dict[str, object]]]:
-    query = select(AuditEvent)
+    from_date: date | None = None,
+    to_date: date | None = None,
+    module: Annotated[str | None, Query(max_length=40)] = None,
+    search: Annotated[str | None, Query(max_length=120)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(status_code=422, detail="A data inicial deve ser anterior ou igual à data final")
+
+    statement = select(AuditEvent)
     if not principal.is_superuser:
-        query = query.where(AuditEvent.actor_role != "system_admin")
-    events = db.scalars(query.order_by(AuditEvent.id.desc()).limit(100)).all()
-    return {"events": [serialize_event(event) for event in events]}
+        statement = statement.where(AuditEvent.actor_role != "system_admin")
+    if from_date:
+        statement = statement.where(
+            AuditEvent.happened_at >= datetime.combine(from_date, time.min, tzinfo=UTC)
+        )
+    if to_date:
+        statement = statement.where(
+            AuditEvent.happened_at <= datetime.combine(to_date, time.max, tzinfo=UTC)
+        )
+    if module:
+        statement = statement.where(AuditEvent.module == module)
+    if normalized_search := (search or "").strip():
+        pattern = f"%{normalized_search}%"
+        statement = statement.where(
+            or_(
+                AuditEvent.actor_name.ilike(pattern),
+                AuditEvent.action.ilike(pattern),
+                AuditEvent.module.ilike(pattern),
+                AuditEvent.target_id.ilike(pattern),
+            )
+        )
+    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
+    events = db.scalars(
+        statement.order_by(AuditEvent.id.desc()).limit(limit).offset(offset)
+    ).all()
+    return {
+        "events": [serialize_event(event) for event in events],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @app.get("/api/v1/audit/integrity")

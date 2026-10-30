@@ -119,6 +119,25 @@ class TherapyMaterialImage(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     uploaded_by: Mapped[str] = mapped_column(String(120), nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    folder_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "therapy_material_image_folders.id",
+            name="fk_therapy_material_images_folder_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+
+
+class TherapyMaterialImageFolder(Base):
+    __tablename__ = "therapy_material_image_folders"
+    __table_args__ = (UniqueConstraint("name", name="uq_therapy_material_image_folders_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 def get_therapy_db():
@@ -141,6 +160,39 @@ MATERIAL_IMAGE_TYPES = {
     "image/webp": ".webp",
 }
 MATERIAL_IMAGE_MAX_BYTES = 12 * 1024 * 1024
+
+
+class TherapyMaterialImageFolderPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def validate_folder_name(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        name = value.strip()
+        if not name or name in {".", ".."} or any(
+            character in name for character in ("/", "\\")
+        ) or any(ord(character) < 32 for character in name):
+            raise ValueError("Informe um nome de pasta válido, sem separadores de caminho")
+        return name
+
+
+class TherapyMaterialImageUpdatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, min_length=2, max_length=120)
+    folder_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def trim_title(cls, value: object) -> object:
+        if isinstance(value, str):
+            title = value.strip()
+            if not title:
+                raise ValueError("O título da imagem não pode ficar vazio")
+            return title
+        return value
 
 
 def therapy_materials_directory() -> Path:
@@ -182,7 +234,10 @@ def serialize_material(material: TherapyMaterial) -> dict[str, object]:
     }
 
 
-def serialize_material_image(image: TherapyMaterialImage) -> dict[str, object]:
+def serialize_material_image(
+    image: TherapyMaterialImage,
+    folder: TherapyMaterialImageFolder | None = None,
+) -> dict[str, object]:
     return {
         "id": image.id,
         "filename": image.filename,
@@ -191,6 +246,8 @@ def serialize_material_image(image: TherapyMaterialImage) -> dict[str, object]:
         "size_bytes": image.size_bytes,
         "uploaded_by": image.uploaded_by,
         "uploaded_at": image.uploaded_at.isoformat(),
+        "folder_id": image.folder_id,
+        "folder_name": folder.name if folder else "",
         "url": f"/api/v1/therapy/material-images/{image.filename}",
     }
 
@@ -473,8 +530,124 @@ def list_therapy_material_images(
     images = db.scalars(
         select(TherapyMaterialImage).order_by(TherapyMaterialImage.title, TherapyMaterialImage.uploaded_at.desc())
     ).all()
+    folders = db.scalars(
+        select(TherapyMaterialImageFolder).order_by(TherapyMaterialImageFolder.name)
+    ).all()
+    folders_by_id = {folder.id: folder for folder in folders}
     emit_audit_event(principal, "therapy", "therapy_material_images_read", "therapy_material_images")
-    return {"images": [serialize_material_image(image) for image in images]}
+    return {
+        "images": [serialize_material_image(image, folders_by_id.get(image.folder_id or "")) for image in images],
+        "folders": [serialize_material_image_folder(folder, db) for folder in folders],
+    }
+
+
+def serialize_material_image_folder(
+    folder: TherapyMaterialImageFolder,
+    db: Session,
+) -> dict[str, object]:
+    image_count = db.scalar(
+        select(func.count()).select_from(TherapyMaterialImage).where(
+            TherapyMaterialImage.folder_id == folder.id
+        )
+    ) or 0
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "image_count": image_count,
+        "created_by": folder.created_by,
+        "created_at": folder.created_at.isoformat(),
+    }
+
+
+@app.post("/api/v1/therapy/material-images/folders", status_code=201)
+def create_therapy_material_image_folder(
+    payload: TherapyMaterialImageFolderPayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    folder_name = payload.name.casefold()
+    existing_folders = db.scalars(select(TherapyMaterialImageFolder)).all()
+    if any(folder.name.casefold() == folder_name for folder in existing_folders):
+        raise HTTPException(status_code=409, detail="Já existe uma pasta com esse nome")
+    folder = TherapyMaterialImageFolder(
+        id=str(uuid.uuid4()),
+        name=payload.name,
+        created_by=principal.actor_name,
+        created_at=datetime.now(UTC),
+    )
+    db.add(folder)
+    emit_audit_event(principal, "therapy", "therapy_material_image_folder_created", folder.id, db=db)
+    db.commit()
+    db.refresh(folder)
+    return serialize_material_image_folder(folder, db)
+
+
+@app.patch("/api/v1/therapy/material-images/folders/{folder_id}")
+def rename_therapy_material_image_folder(
+    folder_id: str,
+    payload: TherapyMaterialImageFolderPayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    folder = db.get(TherapyMaterialImageFolder, folder_id)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Pasta não encontrada")
+    folder_name = payload.name.casefold()
+    duplicate = db.scalars(select(TherapyMaterialImageFolder).where(
+        TherapyMaterialImageFolder.id != folder_id
+    )).all()
+    if any(item.name.casefold() == folder_name for item in duplicate):
+        raise HTTPException(status_code=409, detail="Já existe uma pasta com esse nome")
+    folder.name = payload.name
+    emit_audit_event(principal, "therapy", "therapy_material_image_folder_renamed", folder.id, db=db)
+    db.commit()
+    db.refresh(folder)
+    return serialize_material_image_folder(folder, db)
+
+
+@app.delete("/api/v1/therapy/material-images/folders/{folder_id}", status_code=204)
+def delete_therapy_material_image_folder(
+    folder_id: str,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> Response:
+    folder = db.get(TherapyMaterialImageFolder, folder_id)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Pasta não encontrada")
+    image_count = db.scalar(
+        select(func.count()).select_from(TherapyMaterialImage).where(
+            TherapyMaterialImage.folder_id == folder.id
+        )
+    ) or 0
+    if image_count:
+        raise HTTPException(status_code=409, detail="Mova ou exclua as imagens antes de excluir a pasta")
+    emit_audit_event(principal, "therapy", "therapy_material_image_folder_deleted", folder.id, db=db)
+    db.delete(folder)
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.patch("/api/v1/therapy/material-images/{image_id}")
+def update_therapy_material_image(
+    image_id: str,
+    payload: TherapyMaterialImageUpdatePayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    image = db.get(TherapyMaterialImage, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    if "title" in payload.model_fields_set and payload.title is not None:
+        image.title = payload.title
+    if "folder_id" in payload.model_fields_set:
+        if payload.folder_id is not None and db.get(TherapyMaterialImageFolder, payload.folder_id) is None:
+            raise HTTPException(status_code=404, detail="Pasta não encontrada")
+        image.folder_id = payload.folder_id
+    emit_audit_event(principal, "therapy", "therapy_material_image_updated", image.id, db=db)
+    db.commit()
+    db.refresh(image)
+    folder = db.get(TherapyMaterialImageFolder, image.folder_id) if image.folder_id else None
+    return serialize_material_image(image, folder)
 
 
 @app.post("/api/v1/therapy/material-images", status_code=201)
@@ -483,6 +656,7 @@ async def upload_therapy_material_image(
     title: Annotated[str, Query(min_length=2, max_length=120)],
     principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
     db: Annotated[Session, Depends(get_therapy_db)],
+    folder_id: str | None = None,
 ) -> dict[str, object]:
     title = title.strip()
     if len(title) < 2:
@@ -498,6 +672,8 @@ async def upload_therapy_material_image(
             raise HTTPException(status_code=413, detail="Cada imagem deve ter no máximo 12 MB.")
     if not valid_material_image(content_type, content):
         raise HTTPException(status_code=422, detail="O arquivo não corresponde a uma imagem válida do formato informado.")
+    if folder_id is not None and db.get(TherapyMaterialImageFolder, folder_id) is None:
+        raise HTTPException(status_code=404, detail="Pasta não encontrada")
     filename = f"{uuid.uuid4().hex}{extension}"
     image_path = therapy_materials_directory() / filename
     image = TherapyMaterialImage(
@@ -508,6 +684,7 @@ async def upload_therapy_material_image(
         size_bytes=len(content),
         uploaded_by=principal.actor_name,
         uploaded_at=datetime.now(UTC),
+        folder_id=folder_id,
     )
     try:
         image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -522,7 +699,8 @@ async def upload_therapy_material_image(
         except OSError as cleanup_error:
             raise RuntimeError("Não foi possível finalizar ou limpar o upload da imagem.") from cleanup_error
         raise
-    return serialize_material_image(image)
+    folder = db.get(TherapyMaterialImageFolder, image.folder_id) if image.folder_id else None
+    return serialize_material_image(image, folder)
 
 
 @app.get("/api/v1/therapy/material-images/{filename}")

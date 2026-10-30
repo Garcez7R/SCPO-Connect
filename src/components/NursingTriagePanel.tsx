@@ -59,7 +59,7 @@ function toForm(arrival?: TriageArrival): TriageForm {
   }
 }
 
-export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }) {
+export default function NursingTriagePanel({ canUpdate, isOnline = true }: { canUpdate: boolean; isOnline?: boolean }) {
   const [arrivals, setArrivals] = useState<TriageArrival[]>([])
   const [selectedArrivalId, setSelectedArrivalId] = useState('')
   const [form, setForm] = useState<TriageForm>(emptyTriageForm)
@@ -75,6 +75,14 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
   )
 
   const refresh = useCallback(async () => {
+    if (!isOnline) {
+      setLoading(false)
+      setArrivals([])
+      setSelectedArrivalId('')
+      setForm(emptyTriageForm())
+      setError('A triagem só pode ser consultada com conexão ao servidor. Nenhum dado de triagem é salvo offline.')
+      return
+    }
     if (!hasLoadedRef.current) setLoading(true)
     try {
       const data = await readApiResponse<{ arrivals: TriageArrival[] }>(
@@ -88,16 +96,17 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isOnline])
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void refresh(), 0)
+    if (!isOnline) return () => window.clearTimeout(initialLoad)
     const interval = window.setInterval(() => void refresh(), 20_000)
     return () => {
       window.clearTimeout(initialLoad)
       window.clearInterval(interval)
     }
-  }, [refresh])
+  }, [isOnline, refresh])
 
   function selectArrival(arrival: TriageArrival) {
     setSelectedArrivalId(arrival.arrival_id)
@@ -108,6 +117,10 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!isOnline) {
+      setError('A triagem só pode ser registrada com conexão ao servidor. Nenhum dado foi salvo.')
+      return
+    }
     if (!selectedArrival) return
     setSaving(true)
     setError('')
@@ -137,6 +150,10 @@ export default function NursingTriagePanel({ canUpdate }: { canUpdate: boolean }
   }
 
   const priorityCount = arrivals.filter((arrival) => arrival.queue_type === 'priority').length
+
+  if (!isOnline) return <section className="nursing-triage-panel">
+    <div className="form-message form-message-warning" role="status">A triagem exige conexão ativa com o servidor. Para proteger os dados clínicos, o formulário e a fila não ficam disponíveis offline, e nenhum rascunho é salvo neste aparelho.</div>
+  </section>
 
   return <section className="nursing-triage-panel">
     <div className="section-heading">

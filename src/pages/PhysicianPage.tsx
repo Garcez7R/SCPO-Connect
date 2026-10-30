@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle, ClipboardPlus, Printer, RefreshCw, Stethoscope } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
@@ -107,12 +107,24 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
   const [savingPrescription, setSavingPrescription] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const encounterSectionRef = useRef<HTMLElement | null>(null)
 
   const visiblePatients = patients
   const selectedPatient = useMemo(
     () => visiblePatients.find((patient) => patient.reference === patientReference),
     [visiblePatients, patientReference],
   )
+
+  useEffect(() => {
+    if (!mobileMode || physicianTab !== 'records' || !selectedPatient) return
+    const timer = window.setTimeout(() => {
+      encounterSectionRef.current?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [mobileMode, physicianTab, selectedPatient])
 
   useEffect(() => {
     let active = true
@@ -285,18 +297,18 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
         {profile ? <div className="physician-profile-summary"><strong>{profile.name}</strong><span>CRM {profile.crm}/{profile.crm_state}</span></div> : <div className="admin-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira seu nome e CRM/UF antes de registrar prescrições.</span></div></div>}
       </section>}
         <div className="admin-tabs module-tabs physician-tabs" role="tablist" aria-label="Fluxo de trabalho médico">
-          <button className={`button ${physicianTab === 'queue' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'queue'} onClick={() => setPhysicianTab('queue')}>1. Fila de atendimento</button>
-          <button className={`button ${physicianTab === 'records' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'records'} onClick={() => setPhysicianTab('records')}>2. Prontuário e prescrições</button>
+          <button className={`button ${physicianTab === 'queue' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'queue'} onClick={() => setPhysicianTab('queue')}>{mobileMode ? 'Fila' : '1. Fila de atendimento'}</button>
+          <button className={`button ${physicianTab === 'records' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'records'} onClick={() => setPhysicianTab('records')}>{mobileMode ? 'Atender paciente' : '2. Prontuário e prescrições'}</button>
       </div>
-        <p className="field-hint physician-workflow-help">{physicianTab === 'queue' ? 'Revise a triagem e abra o paciente para seguir ao prontuário. Atendimentos sem triagem podem ser localizados na busca de pacientes.' : 'Escolha o grupo e o perfil de cuidado; selecione uma linha para abrir ou recolher o prontuário e registrar prescrições.'}</p>
-        {physicianTab === 'queue' && <PhysicianTriageQueue onOpenPatient={(reference) => void openPatientFromTriage(reference)} />}
+        <p className="field-hint physician-workflow-help">{physicianTab === 'queue' ? mobileMode ? 'Revise os atendimentos triados e toque em “Abrir ficha” para iniciar.' : 'Revise a triagem e abra o paciente para seguir ao prontuário. Atendimentos sem triagem podem ser localizados na busca de pacientes.' : mobileMode ? 'Busque e selecione um paciente para conferir os dados e registrar uma prescrição.' : 'Escolha o grupo e o perfil de cuidado; selecione uma linha para abrir ou recolher o prontuário e registrar prescrições.'}</p>
+        {physicianTab === 'queue' && <PhysicianTriageQueue compact={mobileMode} onOpenPatient={(reference) => void openPatientFromTriage(reference)} />}
         {physicianTab === 'records' && <>
       <div className="patient-list-panel physician-patient-groups">
         <div className="admin-tabs module-tabs" role="tablist" aria-label="Separar pacientes cadastrados e internados">
           <button className={`button ${patientGroup === 'inpatients' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={patientGroup === 'inpatients'} onClick={() => { setPatientGroup('inpatients'); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>Internados</button>
-          <button className={`button ${patientGroup === 'registered' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={patientGroup === 'registered'} onClick={() => { setPatientGroup('registered'); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>Cadastrados sem internação</button>
+          <button className={`button ${patientGroup === 'registered' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={patientGroup === 'registered'} onClick={() => { setPatientGroup('registered'); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>{mobileMode ? 'Outros cadastros' : 'Cadastrados sem internação'}</button>
         </div>
-        <div className="physician-patient-filters"><label className="field physician-care-filter"><span className="field-label">Perfil de cuidado</span><select value={treatmentTrackFilter} onChange={(event) => { setTreatmentTrackFilter(event.target.value as typeof treatmentTrackFilter); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}><option value="all">Todos os perfis</option><option value="clinical">Clínico</option><option value="psychiatric">Psiquiátrico</option><option value="combined">Clínico e psiquiátrico</option><option value="unclassified">Não classificado</option></select></label><label className="field physician-patient-search"><span className="field-label">Buscar paciente</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }} placeholder="Nome ou identificador" /></label></div>
+        <div className="physician-patient-filters">{!mobileMode && <label className="field physician-care-filter"><span className="field-label">Perfil de cuidado</span><select value={treatmentTrackFilter} onChange={(event) => { setTreatmentTrackFilter(event.target.value as typeof treatmentTrackFilter); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}><option value="all">Todos os perfis</option><option value="clinical">Clínico</option><option value="psychiatric">Psiquiátrico</option><option value="combined">Clínico e psiquiátrico</option><option value="unclassified">Não classificado</option></select></label>}<label className="field physician-patient-search"><span className="field-label">{mobileMode ? 'Buscar paciente por nome' : 'Buscar paciente'}</span><input type="search" value={patientSearch} onChange={(event) => { setPatientSearch(event.target.value); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }} placeholder="Nome ou identificador" /></label></div>
         <p className="field-hint">O perfil de cuidado é uma classificação operacional e não substitui diagnóstico.</p>
         {patientListError && <ToastMessage variant="error">{patientListError}</ToastMessage>}
         {behavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${behavioralStatusError}`}</ToastMessage>}
@@ -310,8 +322,8 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
         {!patientListLoading && patientTotal > 50 && <nav className="history-pagination" aria-label="Paginação dos pacientes médicos"><span>Exibindo {patientPage * 50 + 1}–{Math.min((patientPage + 1) * 50, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={patientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}>Anterior</button><button className="button button-secondary" type="button" disabled={(patientPage + 1) * 50 >= patientTotal} onClick={() => setPatientPage((page) => page + 1)}>Próxima</button></div></nav>}
       </div>
       {selectedPatient && <>
-        <section className="patient-list-panel">
-          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">{selectedPatient.room && selectedPatient.bed ? `Internado · Quarto ${selectedPatient.room} · leito ${selectedPatient.bed}` : 'Cadastro ativo sem internação'} · Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'}</p></div><div className="patient-row-actions"><PatientCareTrackBadge track={selectedPatient.treatment_track} />{!mobileMode && <button className="button button-secondary" type="button" onClick={() => onOpenPatientHistory(selectedPatient.reference)}>Histórico assistencial</button>}</div></div>
+        <section className="patient-list-panel" ref={encounterSectionRef}>
+          <div className="section-heading"><div><p className="eyebrow">FICHA CLÍNICA</p><h2>{selectedPatient.name}</h2><p className="welcome-copy">{selectedPatient.room && selectedPatient.bed ? `Internado · Quarto ${selectedPatient.room} · leito ${selectedPatient.bed}` : 'Cadastro ativo sem internação'} · Nascimento: {selectedPatient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${selectedPatient.birth_date}T12:00:00Z`)) : 'não informado'}</p></div><div className="patient-row-actions"><PatientCareTrackBadge track={selectedPatient.treatment_track} />{!mobileMode && <button className="button button-secondary" type="button" onClick={() => onOpenPatientHistory(selectedPatient.reference)}>Histórico assistencial</button>}{mobileMode && <button className="button button-secondary" type="button" onClick={() => { setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>Trocar paciente</button>}</div></div>
           {selectedPatient.allergies_status === 'known' && selectedPatient.allergies
             ? <div className="clinical-alert" role="alert"><AlertTriangle size={18} /><div><strong>Alergia registrada</strong><span>{selectedPatient.allergies}</span></div></div>
             : <div className={`clinical-alert ${selectedPatient.allergies_status === 'none_known' ? 'clinical-alert-clear' : 'clinical-alert-unknown'}`} role="status"><AlertTriangle size={18} /><div><strong>{selectedPatient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Alergias não verificadas'}</strong><span>Confirme as informações clínicas antes de prescrever.</span></div></div>}

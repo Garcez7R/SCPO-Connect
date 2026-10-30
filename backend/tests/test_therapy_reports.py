@@ -270,6 +270,18 @@ def test_therapy_material_image_upload_and_delete_use_configured_storage(
         "therapist-id", "therapist", "Profissional da oficina",
         "therapy", ["therapy"], {"therapy": ["consultar", "criar", "alterar"]},
     )
+    folder = therapy.create_therapy_material_image_folder(
+        therapy.TherapyMaterialImageFolderPayload(name="Desenhos"),
+        therapist,
+        therapy_database,
+    )
+    with pytest.raises(HTTPException) as duplicate_folder:
+        therapy.create_therapy_material_image_folder(
+            therapy.TherapyMaterialImageFolderPayload(name=" desenhos "),
+            therapist,
+            therapy_database,
+        )
+    assert duplicate_folder.value.status_code == 409
     image_bytes = b"\x89PNG\r\n\x1a\n" + b"test-image-content"
     request_sent = False
 
@@ -295,12 +307,42 @@ def test_therapy_material_image_upload_and_delete_use_configured_storage(
     )
     uploaded = asyncio.run(
         therapy.upload_therapy_material_image(
-            request, "Formas para pintar", therapist, therapy_database
+            request, "Formas para pintar", therapist, therapy_database, folder["id"]
         )
     )
     image_path = tmp_path / "therapy-images" / uploaded["filename"]
     assert image_path.read_bytes() == image_bytes
-    assert therapy.list_therapy_material_images(therapist, therapy_database)["images"][0]["title"] == "Formas para pintar"
+    library = therapy.list_therapy_material_images(therapist, therapy_database)
+    assert library["images"][0]["title"] == "Formas para pintar"
+    assert library["images"][0]["folder_name"] == "Desenhos"
+    assert library["folders"][0]["image_count"] == 1
+    with pytest.raises(HTTPException) as nonempty_folder:
+        therapy.delete_therapy_material_image_folder(folder["id"], therapist, therapy_database)
+    assert nonempty_folder.value.status_code == 409
+    renamed_folder = therapy.rename_therapy_material_image_folder(
+        folder["id"],
+        therapy.TherapyMaterialImageFolderPayload(name="Atividades"),
+        therapist,
+        therapy_database,
+    )
+    assert renamed_folder["name"] == "Atividades"
+    renamed_image = therapy.update_therapy_material_image(
+        uploaded["id"],
+        therapy.TherapyMaterialImageUpdatePayload(title="Formas coloridas"),
+        therapist,
+        therapy_database,
+    )
+    assert renamed_image["title"] == "Formas coloridas"
+    moved_image = therapy.update_therapy_material_image(
+        uploaded["id"],
+        therapy.TherapyMaterialImageUpdatePayload(folder_id=None),
+        therapist,
+        therapy_database,
+    )
+    assert moved_image["folder_id"] is None
+    assert therapy.delete_therapy_material_image_folder(
+        folder["id"], therapist, therapy_database
+    ).status_code == 204
     file_response = therapy.get_therapy_material_image(
         uploaded["filename"], therapist, therapy_database
     )

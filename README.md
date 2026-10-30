@@ -31,12 +31,12 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
 - Central de Exames: abas de Raio X e exames laboratoriais, requisições vinculadas ao paciente, fila por situação e formulário de solicitação para impressão.
-- Médico: consulta de alergias e sinais vitais com gráficos, perfil CRM/UF, prescrição interna integrada à Farmácia e Enfermagem e receita simples para impressão (sem assinatura digital e sem medicamentos controlados).
+- Médico: consulta de alergias e sinais vitais com gráficos, perfil CRM/UF, prescrição interna integrada à Farmácia e Enfermagem e receita simples para impressão (sem assinatura digital e sem medicamentos controlados). O PWA `/physician.html` oferece atalhos para a fila e para localizar pacientes, mantendo conexão, autenticação e permissões do módulo.
 - Serviço Social: encaminhamentos ligados ao paciente, com busca, filtros e atualização de situação até o encerramento.
 - Farmácia: inventário normalizado por produto, lote e local; movimentações com autoria e saldo resultante; leitura GS1, sugestões de identificação pelo catálogo público Anvisa/CMED e indicação informativa do lote válido com vencimento mais próximo (FEFO), sem seleção automática.
 - Farmácia: consulta alfabética consolidada do estoque de medicamentos e fila de prescrições médicas pendentes para conferência e dispensação.
 - Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado; a guia **Mapa da cozinha** para computador resume internados, alergias, dietas ausentes e jejuns. O PWA `/kitchen.html` oferece busca simples e consulta móvel de dieta, alergias, restrições e jejum, sem expor peso ou notas clínicas. O PWA exige conexão, não guarda dados para uso offline e não registra preparo/entrega.
-- Oficina Terapêutica: imagens da biblioteca ficam em volume próprio no host, separado do banco; inclua esse diretório em backup protegido e teste sua restauração conforme [Backup e restauração](docs/backups.md).
+- Oficina Terapêutica: biblioteca de imagens com envio, busca, pastas simples, renomeação, movimentação, download e exclusão confirmada. Pastas só podem ser excluídas quando vazias. Os arquivos ficam em volume próprio no host, separado do banco; inclua esse diretório em backup protegido e teste sua restauração conforme [Backup e restauração](docs/backups.md).
 - Exclusão de contas com módulo Médico: o acesso é revogado imediatamente e a remoção da conta aguarda confirmação da exclusão do perfil no serviço de Enfermagem; falhas temporárias são repetidas automaticamente e ficam visíveis como exclusão pendente.
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
 - Recepção: ficha ambulatorial entra na fila do pronto atendimento e permite classificar a chamada como comum ou prioritária, conforme o critério institucional.
@@ -50,9 +50,9 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Psicologia / Psiquiatria: fila de triagem com prioridade e situação, histórico individual de atendimentos e evolução estruturada, restritos às contas autorizadas no módulo.
 - Higienização: solicitações por tipo de serviço, unidade e área, com prioridade, responsável e situação em fila própria, separada das ordens de manutenção.
 - Caixa de tarefas: filas acionáveis de Recepção, Enfermagem, Farmácia, Manutenção e Higienização, filtradas pelas permissões da conta.
-- Eventos instrumentados são enfileirados na mesma transação do serviço de origem, enviados com retentativas e registrados em cadeia de hashes append-only; há verificação de integridade e ações do Superadministrador não são exibidas a administradores comuns. A cobertura da auditoria não é completa; monitoramento de filas, retenção institucional e cópia imutável externa continuam pendentes.
+- Eventos instrumentados são enfileirados na mesma transação do serviço de origem, enviados com retentativas e registrados em cadeia de hashes append-only. A auditoria permite busca por usuário/ação/registro, filtro por módulo e período, paginação e verificação de integridade; ações do Superadministrador não são exibidas a administradores comuns. A cobertura da auditoria não é completa; monitoramento de filas, retenção institucional e cópia imutável externa continuam pendentes.
 - Aplicação PWA principal, com instalação pela interface e atualização dos arquivos do app.
-- PWA móvel da Enfermagem em `/nursing.html`, com manifesto próprio e acesso autenticado para coleta de sinais vitais e verificação horária; ações offline ficam cifradas por até 24 horas e são deduplicadas ao sincronizar. O login offline não é permitido.
+- PWA móvel da Enfermagem em `/nursing.html`, com manifesto próprio e acesso autenticado para coleta de sinais vitais, verificação horária e triagem. A triagem exige conexão e não guarda rascunhos clínicos offline; ações offline de sinais vitais e verificação horária ficam cifradas por até 24 horas e são deduplicadas ao sincronizar. O login offline não é permitido.
 - PWA de Manutenção/Higienização em `/operations.html`, com manifesto próprio, consulta offline cifrada por até 24 horas e somente leitura. Quando conectado, permite atualizar o status e concluir ordens conforme as permissões da conta; ao sair, o cache operacional do aparelho é apagado. O login offline não é permitido.
 - PWA da Farmácia em `/pharmacy.html`, com manifesto próprio, atalhos móveis para estoque, leitura de código pela câmera, prescrições e dispensação, usando as mesmas APIs e permissões da versão completa. O cadastro de compras continua na versão desktop; o PWA não guarda dados clínicos nem registra movimentações offline.
 - PWA do Médico em `/physician.html`, com manifesto próprio e interface compacta para fila, prontuário e prescrições, usando as mesmas APIs/permissões do módulo completo. Exige conexão para consultar e salvar; não armazena prontuários localmente nem permite acesso offline.
@@ -174,18 +174,36 @@ Configure também `SCPO_INTERNAL_HOST` com o endereço estável da VM e inicie o
 docker compose up -d --build
 ```
 
+Se o terminal responder `docker: command not found`, o Docker Engine/CLI não está instalado ou não está no `PATH`; o Compose não pode ser executado até isso ser corrigido. O comando de inicialização acima é `docker compose up -d --build` — `--compose` não é uma opção de `up`. Em Debian 13 com systemd, a partir da raiz do repositório, instale os componentes e inicie os serviços com:
+
+```bash
+sudo bash scripts/install-server-debian13.sh
+docker --version
+docker compose version
+```
+
+O instalador pedirá a senha do `sudo` diretamente no terminal. Em outra distribuição, siga a documentação oficial de instalação do Docker Engine e do plugin Docker Compose correspondente antes de executar `docker compose`.
+
 O Caddy publica HTTP na porta `8080` para redirecionamento e HTTPS na porta `7777`. Exporte a raiz pública da CA com `bash scripts/export-caddy-ca.sh`, confira sua impressão digital e distribua-a por um canal controlado pela instituição. Preserve os volumes `postgres_data` e `caddy_data`; eles contêm, respectivamente, os bancos do sistema e a autoridade certificadora usada pelos dispositivos.
 
 Após iniciar ou atualizar a implantação, confira `docker compose ps`: os serviços de API devem aparecer como `healthy`. Cada API possui um healthcheck HTTP em `/health`; o proxy aguarda as APIs ficarem saudáveis antes de iniciar. Essa verificação confirma disponibilidade básica, não valida fluxos do usuário nem substitui testes de restauração. Para investigar falhas, consulte `docker compose logs --tail=100 <serviço>` e confirme nos logs que as migrações terminaram.
 
 ## Verificações de desenvolvimento
 
+Execute a partir da raiz do repositório, nesta ordem:
+
 ```bash
-npm run build
+export PATH="$HOME/.local/bin:$PATH"
+npm ci       # somente na primeira instalação ou após mudanças em package-lock.json
+uv sync      # somente na primeira instalação ou após mudanças nas dependências Python
+npm run typecheck
 npm run lint
-uv run pytest
+npm run build
+uv run pytest backend/tests/test_therapy_reports.py backend/tests/test_audit.py backend/tests/test_migrations.py
 uv run ruff check backend
 ```
+
+`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Neste ambiente, Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis, mas `docker compose config --services` não pôde ser validado porque as variáveis secretas obrigatórias não estão configuradas neste clone; não foi feito build nem iniciado container. Os testes E2E permanecem pausados.
 
 ## Segurança e dados
 

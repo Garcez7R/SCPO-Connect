@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Activity, AlertTriangle, Check, ChevronLeft, Clock3, HeartPulse, LogOut, RefreshCw, ShieldCheck, UsersRound, Wifi, WifiOff } from 'lucide-react'
 import { ApiResponseError, readApiResponse, readableApiError } from '../api'
 import { readOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
+import NursingTriagePanel from '../components/NursingTriagePanel'
 
 type NursingMobileUser = {
   id: string
@@ -92,7 +93,7 @@ type NursingOfflineData = {
   expired_count: number
 }
 
-type Tab = 'vitals' | 'rounds'
+type Tab = 'vitals' | 'rounds' | 'triage'
 type VitalKey = keyof VitalsDraft
 const offlineRetentionMs = 24 * 60 * 60 * 1000
 
@@ -769,7 +770,7 @@ export default function NursingMobilePage({
       <div><p className="eyebrow">COLETA ASSISTENCIAL</p><h1>Olá, {(user.display_name || user.name).split(/\s+/)[0]}</h1></div>
       <span className={`nursing-mobile-connection ${serverAvailable ? 'is-online' : 'is-offline'}`}><i />{serverAvailable ? <><Wifi size={14} /> {serverLabel}</> : <><WifiOff size={14} /> {serverLabel}</>}</span>
     </section>
-    {!serverAvailable && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Sem comunicação com o servidor. Você pode registrar usando a lista cifrada salva neste aparelho; os registros só entram no histórico após a sincronização confirmada.</span></div>}
+    {!serverAvailable && tab !== 'triage' && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Sem comunicação com o servidor. Você pode registrar sinais vitais e verificações usando a lista cifrada salva neste aparelho; os registros só entram no histórico após a sincronização confirmada. Triagem exige conexão e não fica salva offline.</span></div>}
     {offlineData.expired_count > 0 && <div className="nursing-mobile-message nursing-mobile-error" role="alert"><AlertTriangle size={17} /><span>{offlineData.expired_count} registro(s) offline expiraram após 24 horas e foram removidos conforme a política de retenção. Confirme e registre novamente conforme o procedimento da equipe.</span></div>}
     {pendingTotal > 0 && <section className="nursing-mobile-pending" aria-label="Registros pendentes de sincronização">
     <div className="nursing-mobile-pending-heading"><strong>{syncing ? 'Sincronizando registros…' : `${pendingTotal} registro(s) pendente(s)`}</strong>{serverAvailable && !syncing && <button className="button button-secondary" type="button" onClick={() => void syncPendingActions(true)}><RefreshCw size={15} /> Sincronizar agora</button>}</div>
@@ -783,7 +784,12 @@ export default function NursingMobilePage({
     <nav className="nursing-mobile-tabs" aria-label="Tarefas da Enfermagem">
       <button type="button" aria-pressed={tab === 'vitals'} className={tab === 'vitals' ? 'is-active' : ''} onClick={() => { setTab('vitals'); setError(''); setNotice('') }}><HeartPulse size={18} /> Sinais vitais</button>
       <button type="button" aria-pressed={tab === 'rounds'} className={tab === 'rounds' ? 'is-active' : ''} onClick={() => { setTab('rounds'); setError(''); setNotice('') }}><Clock3 size={18} /> Verificação horária{round && <span className="nursing-mobile-tab-count">{pendingCount}</span>}</button>
+      <button type="button" aria-pressed={tab === 'triage'} className={tab === 'triage' ? 'is-active' : ''} onClick={() => { setTab('triage'); setError(''); setNotice('') }}><ShieldCheck size={18} /> Triagem</button>
     </nav>
+
+    {tab === 'triage' && <section className="nursing-mobile-panel">
+      <NursingTriagePanel canUpdate={canCreateVitals && serverAvailable && online} isOnline={serverAvailable && online} />
+    </section>}
 
     {tab === 'vitals' && <section className="nursing-mobile-panel">
       <div className="nursing-mobile-section-title"><div><p className="eyebrow">REGISTRO NO SERVIDOR</p><h2><Activity size={19} /> Sinais vitais</h2></div><button className="nursing-mobile-refresh" type="button" onClick={() => void loadData()} disabled={loading || busy} aria-label="Atualizar pacientes"><RefreshCw size={17} /></button></div>

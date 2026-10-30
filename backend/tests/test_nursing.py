@@ -1401,7 +1401,44 @@ def test_management_dashboard_returns_aggregate_counts_only(
     result = nursing.get_management_dashboard(manager, nursing_db)
     assert result["active_patients"] == 1
     assert result["occupied_beds"] == 1
+    assert result["mapped_occupied_beds"] == 0
+    assert result["unreconciled_legacy_patients"] == 1
+    assert result["occupancy_percent"] is None
     assert "patient_reference" not in result
+
+
+def test_management_dashboard_counts_only_mapped_physical_bed_occupancy(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    patient = create_patient(nursing_db, nurse)
+    bed = create_physical_bed(nursing_db, "3", "B")
+    nursing_db.add(
+        nursing.BedAssignment(
+            bed_id=str(bed["id"]),
+            patient_reference=str(patient["reference"]),
+            assigned_at=datetime.now(UTC),
+            assigned_by=nurse.actor_name,
+        )
+    )
+    manager = DemoPrincipal(
+        "manager-id",
+        "manager",
+        "Gestora",
+        "management",
+        ["management"],
+        {"management": ["consultar"]},
+    )
+
+    result = nursing.get_management_dashboard(manager, nursing_db)
+
+    assert result["physical_beds"] == 1
+    assert result["mapped_occupied_beds"] == 1
+    assert result["available_beds"] == 0
+    assert result["occupancy_percent"] == 100.0
+    assert result["unreconciled_legacy_patients"] == 0
 
 
 def test_management_dashboard_reports_administrative_indicators(

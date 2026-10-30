@@ -254,7 +254,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-card-status { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 9px; color: var(--muted); font-size: 10px; }
 .module-card-status .status-dot { width: 6px; height: 6px; }
 .status-ready { color: #377052; }
-.status-later { color: var(--subtle); }
+.status-denied { color: #8a4b0d; font-weight: 650; }
 .module-arrow { position: absolute; right: 15px; bottom: 15px; color: #628094; }
 html[data-theme="dark"] .module-icon-nursing { background: #1e3b4c; color: #a8ddf3; }
 html[data-theme="dark"] .module-icon-pharmacy { background: #20392e; color: #a2dfbb; }
@@ -1437,21 +1437,70 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-material-error { border-color: var(--status-critical-border); background: var(--status-critical-background); color: var(--status-critical-ink); }
 .therapy-image-upload { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
 .therapy-image-upload > .button { width: fit-content; }
+.therapy-image-manager { display: grid; grid-template-columns: minmax(190px, 235px) minmax(0, 1fr); min-height: 390px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.therapy-image-sidebar { display: grid; align-content: start; gap: 5px; padding: 14px 10px; border-right: 1px solid var(--line); background: var(--page); }
+.therapy-image-sidebar-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px 8px; color: var(--muted); font-size: 11px; }
+.therapy-image-sidebar-heading span { min-width: 22px; padding: 2px 6px; border-radius: 10px; background: var(--surface); text-align: center; }
+.therapy-image-folder-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; border-radius: 6px; }
+.therapy-image-folder { display: flex; min-width: 0; min-height: 37px; align-items: center; gap: 8px; padding: 7px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.therapy-image-folder > span { flex: 1; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.therapy-image-folder > b { color: var(--muted); font-size: 10px; }
+.therapy-image-folder:hover, .therapy-image-folder-row:hover { background: var(--blue-pale); }
+.therapy-image-folder.is-selected, .therapy-image-folder-row.is-selected { background: var(--blue-pale); color: var(--blue-dark); }
+.therapy-image-folder-row > .therapy-image-folder { flex: 1; }
+.therapy-image-folder-actions { display: flex; gap: 1px; padding-right: 4px; }
+.therapy-image-icon-button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; }
+.therapy-image-icon-button:hover:not(:disabled) { background: var(--surface); color: var(--blue-dark); }
+.therapy-image-icon-button:disabled { cursor: not-allowed; opacity: .4; }
+.therapy-image-folder-rename { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; padding: 4px; }
+.therapy-image-folder-rename input { min-width: 0; width: 100%; }
+.therapy-image-folder-rename .button { min-height: 34px; padding: 6px; }
+.therapy-image-new-folder { display: grid; gap: 8px; margin-top: 12px; padding: 12px 6px 4px; border-top: 1px solid var(--line); }
+.therapy-image-new-folder .button { justify-content: center; }
+.therapy-image-browser { display: grid; min-width: 0; align-content: start; gap: 13px; padding: 16px; }
+.therapy-image-browser-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.therapy-image-browser-header h2 { display: flex; align-items: center; gap: 7px; margin: 3px 0 4px; color: var(--ink); font-size: 16px; }
+.therapy-image-browser-header .welcome-copy { margin: 0; }
+.therapy-image-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; }
+.therapy-image-search { display: flex; min-width: min(100%, 290px); align-items: center; gap: 7px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); }
+.therapy-image-search input { width: 100%; min-height: 36px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 12px; }
+.therapy-image-search:focus-within { outline: 3px solid rgba(36, 107, 142, .25); outline-offset: 1px; }
+.admin-report-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 9px; margin: 4px 0 10px; }
+.admin-report-summary article { display: grid; min-width: 0; gap: 3px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.admin-report-summary article strong { color: var(--ink); font-size: 17px; overflow-wrap: anywhere; }
+.admin-report-summary article span { color: var(--muted); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.admin-report-summary .admin-report-status-summary strong { font-size: 11px; }
+.audit-log-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.audit-log-controls { margin: 14px 0; }
+.audit-integrity-panel { margin: 12px 0; padding: 10px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.audit-integrity-panel > p { display: grid; gap: 3px; margin: 0; font-size: 11px; }
+.audit-integrity-panel > p > span { color: var(--muted); font-size: 10px; }
+.audit-integrity-valid strong { color: var(--status-success-ink); }
+.audit-integrity-invalid strong { color: var(--status-critical-ink); }
 .therapy-image-file-picker { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .therapy-image-file-picker > .button { flex: 0 0 auto; cursor: pointer; }
 .therapy-image-file-picker > span { min-width: 0; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .therapy-image-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; }
 .therapy-image-file-input:focus-visible + .button { outline: 3px solid var(--focus-ring, #78b9d1); outline-offset: 2px; }
-.therapy-image-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.therapy-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 215px), 1fr)); gap: 12px; }
 .therapy-image-card { display: grid; min-width: 0; align-content: start; gap: 10px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
 .therapy-image-card > img { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--surface); object-fit: contain; }
-.therapy-image-card > div:not(.therapy-material-actions) { padding: 0 12px; }
+.therapy-image-card-details { display: grid; align-content: start; gap: 4px; padding: 0 12px; }
 .therapy-image-card h3 { margin: 0 0 4px; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
 .therapy-image-card p, .therapy-image-card small { margin: 0; color: var(--muted); font-size: 10px; }
 .therapy-image-card .therapy-material-actions { padding: 0 12px 12px; }
 .therapy-image-card .therapy-material-actions .button { text-decoration: none; }
+.therapy-image-move { display: grid; min-width: 100px; flex: 1 1 130px; gap: 4px; }
+.therapy-image-move select { min-height: 34px; padding: 5px 7px; font-size: 11px; }
+.therapy-image-rename { display: grid; gap: 7px; }
+.therapy-image-rename .button { width: fit-content; }
 html[data-theme="dark"] .therapy-material-card,
-html[data-theme="dark"] .therapy-image-card { background: var(--surface); }
+html[data-theme="dark"] .therapy-image-card,
+html[data-theme="dark"] .therapy-image-sidebar { background: var(--surface); }
+html[data-theme="dark"] .therapy-image-folder:hover,
+html[data-theme="dark"] .therapy-image-folder-row:hover,
+html[data-theme="dark"] .therapy-image-folder.is-selected,
+html[data-theme="dark"] .therapy-image-folder-row.is-selected { background: #203d4b; color: #b7dcea; }
 .therapy-participant-picker { display: grid; min-width: 0; gap: 11px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .therapy-participant-picker > div:first-child { display: grid; gap: 3px; }
 .therapy-participant-picker > div:first-child strong { color: var(--ink); font-size: 12px; }
@@ -1465,10 +1514,19 @@ html[data-theme="dark"] .therapy-image-card { background: var(--surface); }
 html[data-theme="dark"] .therapy-participant-picker,
 html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--line); background: var(--surface); }
 @media (max-width: 760px) {
+  .audit-log-header-actions { width: 100%; }
+  .audit-log-header-actions .button { flex: 1; justify-content: center; }
+  .audit-log-controls { grid-template-columns: 1fr; }
+  .admin-report-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .therapy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .therapy-material-form, .therapy-material-section { gap: 13px; padding: 15px; }
   .therapy-material-fields, .therapy-material-list, .therapy-image-grid { grid-template-columns: 1fr; }
   .therapy-material-edit, .therapy-image-upload { grid-template-columns: 1fr; }
+  .therapy-image-manager { grid-template-columns: minmax(0, 1fr); }
+  .therapy-image-sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+  .therapy-image-browser { padding: 13px; }
+  .therapy-image-browser-header { align-items: flex-start; }
+  .therapy-image-folder { min-height: 42px; }
 }
 .beta-celebration { position: fixed; z-index: 1800; inset: 0; display: grid; place-items: center; overflow: hidden; padding: 20px; }
 .beta-celebration-backdrop { position: absolute; inset: 0; background: rgba(18, 37, 49, .54); animation: beta-backdrop-in .2s ease-out both; }
@@ -1883,6 +1941,7 @@ html[data-theme="dark"] .account-superuser-note { border-color: var(--line); bac
 .page-error-boundary h2 { margin: 0; color: var(--ink); font-size: 19px; }
 .page-error-boundary p { margin: 0 0 5px; color: var(--muted); line-height: 1.55; }
 html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, .module-card-status, .field-hint, .patient-registry-identity p, .patient-registry-identity small, .work-order-meta, .pharmacy-item-description, .pharmacy-item-meta, .session-row, .app-footer, .breadcrumbs, .history-empty) { color: var(--muted); }
+html[data-theme="dark"] .module-card-status.status-denied { color: #f1ce86; }
 html[data-theme="dark"] .brand-image { background: #fff; }
 html[data-theme="dark"] .unit-label { border-color: var(--line); background: #263944; color: var(--ink); }
 html[data-theme="dark"] .therapy-calendar-empty { border-color: var(--line); background: #17232b; }
@@ -1974,6 +2033,15 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 .physician-page-mobile .physician-tabs .button { min-height: 44px; }
 .physician-page-mobile .patient-list-panel,
 .physician-page-mobile .physician-patient-groups { padding: 14px; }
+.physician-page-mobile .physician-workflow-help { margin: -5px 0 0; }
+.physician-page-mobile .physician-care-filter { display: none; }
+.physician-page-mobile .physician-care-roster-item { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.physician-page-mobile .physician-care-roster-item > .physician-care-badge { grid-column: 1 / -1; }
+.physician-page-mobile .physician-care-roster-action { font-size: 10px; }
+.physician-page-mobile .physician-triage-card { gap: 12px; padding: 13px; }
+.physician-page-mobile .physician-triage-details { grid-template-columns: 1fr; }
+.physician-page-mobile .physician-triage-card > .button { min-height: 44px; justify-content: center; }
+.physician-page-mobile .patient-list-panel:has(> .section-heading > div > .eyebrow) { scroll-margin-top: 64px; }
 .physician-page-mobile .physician-care-roster-item { min-height: 72px; }
 .physician-page-mobile input,
 .physician-page-mobile select,
@@ -2023,7 +2091,7 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 .nursing-mobile-message { border-color: var(--line); background: var(--surface); color: var(--ink); }
 .nursing-mobile-error { border-color: var(--status-critical-border); background: var(--status-critical-background); color: var(--status-critical-ink); }
 .nursing-mobile-success { border-color: var(--status-success-border); background: var(--status-success-background); color: var(--status-success-ink); }
-.nursing-mobile-tabs { position: sticky; z-index: 3; top: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+.nursing-mobile-tabs { position: sticky; z-index: 3; top: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
 .nursing-mobile-tabs button { display: flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; padding: 7px 5px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
 .nursing-mobile-tabs button.is-active { background: var(--blue-pale); color: var(--blue-dark); }
 .nursing-mobile-tab-count { display: grid; min-width: 19px; height: 19px; place-items: center; padding: 0 5px; border-radius: 10px; background: var(--blue); color: #fff; font-size: 10px; }
@@ -2421,6 +2489,7 @@ html[data-theme="dark"] .toast-message-success { border-left-color: #79c49a; }
 .executive-kpis { grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
 .executive-kpis article { min-height: 78px; transition: transform 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
 .executive-kpis article:hover { transform: translateY(-2px); border-color: #a9c6d3; box-shadow: var(--shadow); }
+.executive-data-source { color: var(--subtle); font-size: 9px; line-height: 1.35; }
 .executive-risk-strip { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #e6c98f; border-radius: 7px; background: #fff8e9; color: #76500f; font-size: 12px; line-height: 1.55; }
 .executive-risk-strip svg { flex: 0 0 auto; }
 .executive-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

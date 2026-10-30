@@ -44,7 +44,7 @@ def test_each_service_migration_creates_only_its_owned_table(
         ).scalar_one()
     assert revision == ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
     if service == "nursing":
-        assert len(tables) == 32
+        assert len(tables) == 33
         assert "nursing_offline_action_receipts" in tables
         assert {"nursing_hourly_rounds", "nursing_hourly_round_patients"} <= tables
         assert {"physician_profiles", "physician_prescriptions"} <= tables
@@ -94,7 +94,16 @@ def test_each_service_migration_creates_only_its_owned_table(
             "therapy_materials",
             "therapy_material_movements",
             "therapy_material_images",
+            "therapy_material_image_folders",
         } <= tables
+        assert "folder_id" in {
+            column["name"]
+            for column in inspect(get_engine(service)).get_columns("therapy_material_images")
+        }
+        assert any(
+            foreign_key["name"] == "fk_therapy_material_images_folder_id"
+            for foreign_key in inspect(get_engine(service)).get_foreign_keys("therapy_material_images")
+        )
         assert "same_number" in {
             column["name"] for column in inspect(get_engine(service)).get_columns("patients")
         }

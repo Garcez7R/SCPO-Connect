@@ -695,6 +695,9 @@ function MyAccountDialog({ user, onUpdated, onClose }: { user: AuthUser; onUpdat
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [currentPasswordVisible, setCurrentPasswordVisible] = useState(false)
+  const [newPasswordVisible, setNewPasswordVisible] = useState(false)
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
   const [passwordMessage, setPasswordMessage] = useState('')
   const [profileError, setProfileError] = useState('')
@@ -742,6 +745,9 @@ function MyAccountDialog({ user, onUpdated, onClose }: { user: AuthUser; onUpdat
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
+      setCurrentPasswordVisible(false)
+      setNewPasswordVisible(false)
+      setConfirmPasswordVisible(false)
       setPasswordMessage('Senha alterada. Sua sessão atual continua ativa.')
     } catch (error) {
       setPasswordError(error instanceof Error ? error.message : 'Não foi possível alterar a senha.')
@@ -762,9 +768,9 @@ function MyAccountDialog({ user, onUpdated, onClose }: { user: AuthUser; onUpdat
       </form>
       <form className="account-settings-form account-settings-password" onSubmit={(event) => void changeOwnPassword(event)}>
         <h3>Alterar minha senha</h3>
-        <label className="field"><span className="field-label">Senha atual</span><input required type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
-        <label className="field"><span className="field-label">Nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><span className="field-hint">Use pelo menos 12 caracteres.</span></label>
-        <label className="field"><span className="field-label">Confirme a nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+        <label className="field"><span className="field-label">Senha atual</span><span className="auth-password-control"><input required type={currentPasswordVisible ? 'text' : 'password'} autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={currentPasswordVisible ? 'Ocultar senha atual' : 'Mostrar senha atual'} aria-pressed={currentPasswordVisible} onClick={() => setCurrentPasswordVisible((visible) => !visible)}>{currentPasswordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label>
+        <label className="field"><span className="field-label">Nova senha</span><span className="auth-password-control"><input required minLength={12} type={newPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={newPasswordVisible ? 'Ocultar nova senha' : 'Mostrar nova senha'} aria-pressed={newPasswordVisible} onClick={() => setNewPasswordVisible((visible) => !visible)}>{newPasswordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">Use pelo menos 12 caracteres.</span></label>
+        <label className="field"><span className="field-label">Confirme a nova senha</span><span className="auth-password-control"><input required minLength={12} type={confirmPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={confirmPasswordVisible ? 'Ocultar confirmação da senha' : 'Mostrar confirmação da senha'} aria-pressed={confirmPasswordVisible} onClick={() => setConfirmPasswordVisible((visible) => !visible)}>{confirmPasswordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label>
         {newPassword && confirmPassword && newPassword !== confirmPassword && <p className="auth-validation-message" role="alert">As novas senhas não coincidem.</p>}
         {passwordMessage && <ToastMessage variant="success">{passwordMessage}</ToastMessage>}
         {passwordError && <ToastMessage variant="error">{passwordError}</ToastMessage>}
@@ -2213,11 +2219,11 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
         {modules.map(({ id, label, icon: Icon, description }) => {
           const available = profile.modules.includes(id) || (id === 'therapy' && profile.modules.includes('management'))
           return (
-            <button key={id} type="button" className={`module-card ${available ? 'module-card-available' : 'module-card-locked'}`} onClick={() => available && onNavigate(id)} disabled={!available}>
+            <button key={id} type="button" className={`module-card ${available ? 'module-card-available' : 'module-card-locked'}`} onClick={() => available && onNavigate(id)} disabled={!available} aria-label={available ? label : `${label}: acesso não concedido. Solicite liberação ao administrador.`}>
               <span className={`module-icon module-icon-${id}`}><Icon size={29} strokeWidth={1.8} /></span>
               <span className="module-card-title">{label}</span>
               <span className="module-card-description">{description}</span>
-              <span className={`module-card-status ${available ? 'status-ready' : 'status-later'}`}>{available ? <><span className="status-dot" /> Disponível no perfil</> : <><LockKeyhole size={13} /> Acesso não concedido</>}</span>
+              <span className={`module-card-status ${available ? 'status-ready' : 'status-denied'}`}>{available ? <><span className="status-dot" /> Disponível no perfil</> : <><LockKeyhole size={13} /> Sem acesso · solicite ao administrador</>}</span>
               {available && <ArrowRight className="module-arrow" size={17} aria-hidden="true" />}
             </button>
           )
@@ -2752,6 +2758,7 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
         value={nursingTab}
         onChange={setNursingTab}
         options={nursingTabValues.map((value) => ({ value, label: nursingTabLabels[value] }))}
+        alwaysShowButtons
       />
       {nursingTab === 'triage' && <Suspense fallback={<div className="history-empty" role="status">Carregando fila de triagem…</div>}><NursingTriagePanel canUpdate={user.permissions.nursing?.includes('criar') ?? false} /></Suspense>}
       {nursingTab === 'medications' && <>
@@ -3853,26 +3860,27 @@ function ExecutiveDashboard() {
     {errors.map((message) => <ToastMessage variant="error" key={message}>{message}</ToastMessage>)}
     {loading && !summary ? <div className="history-empty">Carregando indicadores…</div> : <>
       <div className="hygiene-summary executive-kpis">
-        <article className="status-tone-neutral"><strong>{summary?.occupied_beds ?? '—'}</strong><span>Pacientes com localização registrada</span></article>
-        <article className="status-tone-neutral"><strong>{summary?.physical_beds ?? '—'}</strong><span>Leitos físicos cadastrados</span></article>
-        <article className="status-tone-progress"><strong>{summary?.occupancy_percent === null || summary?.occupancy_percent === undefined ? '—' : `${summary.occupancy_percent}%`}</strong><span>Ocupação física validada</span></article>
-        <article className="status-tone-neutral"><strong>{summary?.active_patients ?? '—'}</strong><span>Pacientes ativos</span></article>
-        <article className="status-tone-progress"><strong>{summary?.open_emergency_arrivals ?? '—'}</strong><span>Chegadas em atendimento</span></article>
-        <article className="status-tone-neutral"><strong>{summary?.emergency_arrivals_today ?? '—'}</strong><span>Chegadas hoje</span></article>
-        <article className="status-tone-progress"><strong>{summary?.vital_records_today ?? '—'}</strong><span>Coletas de enfermagem hoje</span></article>
-        <article className="status-tone-neutral"><strong>{summary?.appointments_today ?? '—'}</strong><span>Agendamentos hoje</span></article>
-        <article className={summary && summary.beds_in_cleaning + summary.beds_in_maintenance > 0 ? 'status-tone-warning' : 'status-tone-success'}><strong>{summary ? summary.beds_in_cleaning + summary.beds_in_maintenance : '—'}</strong><span>Leitos em higienização/manutenção</span></article>
-        <article className={summary?.open_safety_incidents ? 'status-tone-critical' : 'status-tone-success'}><strong>{summary?.open_safety_incidents ?? '—'}</strong><span>Incidentes de segurança abertos</span></article>
-        <article className={summary?.documents_pending_review ? 'status-tone-warning' : 'status-tone-success'}><strong>{summary?.documents_pending_review ?? '—'}</strong><span>Documentos aguardando revisão</span></article>
-        <article className={!stockAvailable ? 'status-tone-neutral' : criticalStock ? 'status-tone-critical' : 'status-tone-success'}><strong>{stockAvailable ? criticalStock : '—'}</strong><span>Itens abaixo do mínimo</span></article>
+        <article className="status-tone-neutral"><strong>{summary?.occupied_beds ?? '—'}</strong><span>Pacientes com localização cadastrada</span><small className="executive-data-source">Fonte: cadastro de pacientes</small></article>
+        <article className="status-tone-neutral"><strong>{summary?.physical_beds ?? '—'}</strong><span>Leitos físicos cadastrados</span><small className="executive-data-source">Fonte: mapa de leitos</small></article>
+        <article className="status-tone-neutral"><strong>{summary?.mapped_occupied_beds ?? '—'}</strong><span>Leitos ocupados no mapa físico</span><small className="executive-data-source">Fonte: mapa e atribuições de leitos</small></article>
+        <article className="status-tone-progress"><strong>{summary?.occupancy_percent === null || summary?.occupancy_percent === undefined ? '—' : `${summary.occupancy_percent}%`}</strong><span>Ocupação física validada</span><small className="executive-data-source">Leitos ocupados ÷ leitos operacionais</small></article>
+        <article className="status-tone-neutral"><strong>{summary?.active_patients ?? '—'}</strong><span>Pacientes ativos</span><small className="executive-data-source">Fonte: cadastro de pacientes</small></article>
+        <article className="status-tone-progress"><strong>{summary?.open_emergency_arrivals ?? '—'}</strong><span>Chegadas em atendimento</span><small className="executive-data-source">Fonte: fila da Recepção</small></article>
+        <article className="status-tone-neutral"><strong>{summary?.emergency_arrivals_today ?? '—'}</strong><span>Chegadas hoje</span><small className="executive-data-source">Fonte: fila da Recepção</small></article>
+        <article className="status-tone-progress"><strong>{summary?.vital_records_today ?? '—'}</strong><span>Coletas de enfermagem hoje</span><small className="executive-data-source">Fonte: registros de sinais vitais</small></article>
+        <article className="status-tone-neutral"><strong>{summary?.appointments_today ?? '—'}</strong><span>Agendamentos hoje</span><small className="executive-data-source">Fonte: agenda da Recepção</small></article>
+        <article className={summary && summary.beds_in_cleaning + summary.beds_in_maintenance > 0 ? 'status-tone-warning' : 'status-tone-success'}><strong>{summary ? summary.beds_in_cleaning + summary.beds_in_maintenance : '—'}</strong><span>Leitos em higienização/manutenção</span><small className="executive-data-source">Fonte: mapa de leitos</small></article>
+        <article className={summary?.open_safety_incidents ? 'status-tone-critical' : 'status-tone-success'}><strong>{summary?.open_safety_incidents ?? '—'}</strong><span>Incidentes de segurança abertos</span><small className="executive-data-source">Fonte: notificações de segurança</small></article>
+        <article className={summary?.documents_pending_review ? 'status-tone-warning' : 'status-tone-success'}><strong>{summary?.documents_pending_review ?? '—'}</strong><span>Documentos aguardando revisão</span><small className="executive-data-source">Fonte: documentos institucionais</small></article>
+        <article className={!stockAvailable ? 'status-tone-neutral' : criticalStock ? 'status-tone-critical' : 'status-tone-success'}><strong>{stockAvailable ? criticalStock : '—'}</strong><span>Itens abaixo do mínimo</span><small className="executive-data-source">Fonte: alertas da Farmácia</small></article>
       </div>
-      <div className="executive-risk-strip" role="status"><AlertTriangle size={18} /><span><strong>Alertas assistenciais:</strong> {summary?.patients_with_known_allergies ?? '—'} paciente(s) com alergia conhecida, {summary?.patients_without_allergy_confirmation ?? '—'} sem confirmação e {summary?.active_contraindications ?? '—'} contraindicação(ões) ativa(s).</span></div>
+      <div className="executive-risk-strip" role="status"><AlertTriangle size={18} /><span><strong>Alertas assistenciais:</strong> {summary?.patients_with_known_allergies ?? '—'} paciente(s) com alergia conhecida, {summary?.patients_without_allergy_confirmation ?? '—'} sem confirmação e {summary?.active_contraindications ?? '—'} contraindicação(ões) ativa(s). Fonte: cadastro de pacientes e riscos clínicos.</span></div>
       <div className="executive-summary-grid">
-        <article className="status-tone-progress"><strong>Fluxo de leitos hoje</strong><span>{summary?.patient_admissions_today ?? '—'} admissões · {summary?.patient_transfers_today ?? '—'} transferências · {summary?.patient_discharges_today ?? '—'} altas</span></article>
-        <article className="status-tone-neutral"><strong>Agenda de hoje</strong><span>{summary?.appointments_pending_today ?? '—'} pendentes · {summary?.appointments_no_show_today ?? '—'} não compareceram</span></article>
-        <article className={summary?.open_safety_incidents ? 'status-tone-critical' : 'status-tone-success'}><strong>Segurança do paciente</strong><span>{summary?.open_safety_incidents ?? '—'} incidentes abertos · {summary?.serious_open_safety_incidents ?? '—'} graves/críticos</span></article>
-        <article className={summary?.documents_pending_review || summary?.approved_documents_expired ? 'status-tone-warning' : 'status-tone-success'}><strong>Documentos institucionais</strong><span>{summary?.documents_pending_review ?? '—'} aguardando revisão · {summary?.approved_documents_expired ?? '—'} vencidos · {summary?.approved_documents_expiring_soon ?? '—'} vencem em até 30 dias</span></article>
-        <article className={!stockAvailable ? 'status-tone-neutral' : expiredStock ? 'status-tone-critical' : expiringStock ? 'status-tone-warning' : 'status-tone-success'}><strong>Validade de estoque</strong><span>{stockAvailable ? `${expiredStock} lote(s) vencido(s) · ${expiringStock} vencendo em até 30 dias` : 'Indicador indisponível'}</span></article>
+        <article className="status-tone-progress"><strong>Fluxo de leitos hoje</strong><span>{summary?.patient_admissions_today ?? '—'} admissões · {summary?.patient_transfers_today ?? '—'} transferências · {summary?.patient_discharges_today ?? '—'} altas</span><small className="executive-data-source">Fonte: eventos de fluxo do paciente</small></article>
+        <article className="status-tone-neutral"><strong>Agenda de hoje</strong><span>{summary?.appointments_pending_today ?? '—'} pendentes · {summary?.appointments_no_show_today ?? '—'} não compareceram</span><small className="executive-data-source">Fonte: agenda da Recepção</small></article>
+        <article className={summary?.open_safety_incidents ? 'status-tone-critical' : 'status-tone-success'}><strong>Segurança do paciente</strong><span>{summary?.open_safety_incidents ?? '—'} incidentes abertos · {summary?.serious_open_safety_incidents ?? '—'} graves/críticos</span><small className="executive-data-source">Fonte: notificações de segurança</small></article>
+        <article className={summary?.documents_pending_review || summary?.approved_documents_expired ? 'status-tone-warning' : 'status-tone-success'}><strong>Documentos institucionais</strong><span>{summary?.documents_pending_review ?? '—'} aguardando revisão · {summary?.approved_documents_expired ?? '—'} vencidos · {summary?.approved_documents_expiring_soon ?? '—'} vencem em até 30 dias</span><small className="executive-data-source">Fonte: documentos institucionais</small></article>
+        <article className={!stockAvailable ? 'status-tone-neutral' : expiredStock ? 'status-tone-critical' : expiringStock ? 'status-tone-warning' : 'status-tone-success'}><strong>Validade de estoque</strong><span>{stockAvailable ? `${expiredStock} lote(s) vencido(s) · ${expiringStock} vencendo em até 30 dias` : 'Indicador indisponível'}</span><small className="executive-data-source">Fonte: lotes da Farmácia</small></article>
       </div>
       {stockAlerts.length > 0 && <section className="executive-stock-alerts"><div className="section-heading"><div><p className="eyebrow">LOGÍSTICA · AÇÃO NECESSÁRIA</p><h3>Estoque crítico e validade</h3></div><span className="module-total">{stockAlerts.length} alertas</span></div><div className="collection-list">{stockAlerts.slice(0, 8).map((alert) => <article className="collection-row" key={alert.item_id}><div className="collection-row-heading"><strong>{alert.item_name}</strong><span>{alert.balance} {alert.unit} disponíveis</span></div><small>{alert.alert_types.includes('expired') ? 'Lote vencido' : alert.alert_types.includes('expiring') ? `Vencimento em ${Math.max(0, alert.days_to_expiry)} dias` : 'Abaixo do mínimo'} · Reposição sugerida: {alert.suggested_replenishment} {alert.unit} · Validade {alert.expiry_date}</small></article>)}</div></section>}
       {summary?.updated_at && <p className="field-hint">Atualizado em {dateTime(summary.updated_at)}. {summary.unreconciled_legacy_patients > 0 ? `${summary.unreconciled_legacy_patients} localização(ões) legada(s) aguardam reconciliação; o percentual não é calculado.` : summary.occupancy_percent === null ? 'Percentual indisponível até haver leitos físicos operacionais cadastrados.' : `Ocupação calculada sobre ${summary.operational_beds} leito(s) operacional(is), com ${summary.available_beds} disponível(is).`} Agenda considera o dia local de São Paulo; incidentes são os não encerrados e a validade documental considera documentos aprovados.</p>}
@@ -4249,6 +4257,7 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
   const [toDate, setToDate] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [reportLoadedAt, setReportLoadedAt] = useState('')
   const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
   const managementReportSourceIds = ['arrivals', 'hourly-rounds', 'patient-status', 'triages', 'outpatient']
   const visibleSources = scope === 'management'
@@ -4302,6 +4311,7 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
       }
       setRows(loadedRows)
       setReportTotal(total)
+      setReportLoadedAt(new Date().toISOString())
       if (total !== null && loadedRows.length < total) {
         throw new Error(`A consulta retornou ${loadedRows.length} de ${total} registros. Atualize o relatório antes de usá-lo.`)
       }
@@ -4322,7 +4332,7 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
   const filteredRows = rows.filter((row) => {
     if (invalidPeriod) return false
     const rowDate = reportRowDate(row)
-    const matchesPeriod = !rowDate || (
+    const matchesPeriod = !fromDate && !toDate ? true : Boolean(rowDate) && (
       (!fromDate || new Date(rowDate).getTime() >= new Date(fromDate).getTime())
       && (!toDate || new Date(rowDate).getTime() <= new Date(toDate).getTime())
     )
@@ -4331,7 +4341,15 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
   const reportPageCount = Math.max(1, Math.ceil(filteredRows.length / reportPageSize))
   const currentReportPage = Math.min(reportPage, reportPageCount - 1)
   const visibleRows = filteredRows.slice(currentReportPage * reportPageSize, (currentReportPage + 1) * reportPageSize)
-  const recordsWithDate = rows.filter((row) => reportRowDate(row)).length
+  const recordsWithDate = filteredRows.filter((row) => reportRowDate(row)).length
+  const recordsWithoutDate = rows.filter((row) => !reportRowDate(row)).length
+  const statusSummary = [...filteredRows.reduce((counts, row) => {
+    const status = reportStatusText(row)
+    if (status) counts.set(status, (counts.get(status) ?? 0) + 1)
+    return counts
+  }, new Map<string, number>()).entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 4)
   const printData: PrintRow[] = filteredRows.map((record, index) => {
     const patient = reportPatientName(record)
     const title = reportRecordText(record, ['title', 'item_name', 'medication_name', 'patient_name', 'name', 'request_type'])
@@ -4385,7 +4403,13 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
       </div>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {invalidPeriod && <ToastMessage variant="error">A data e hora inicial devem ser anteriores ou iguais à data e hora final.</ToastMessage>}
-      <p className="field-hint">A consulta percorre as páginas disponíveis do módulo. {reportTotal !== null ? `Total confirmado pela API: ${reportTotal} registro(s). ` : ''}{recordsWithDate < rows.length ? 'Registros sem data são mantidos no resultado.' : ''}</p>
+      <div className="admin-report-summary" aria-label="Resumo dos resultados">
+        <article><strong>{filteredRows.length}</strong><span>Correspondem aos filtros</span></article>
+        <article><strong>{reportTotal ?? rows.length}</strong><span>Total informado pela origem</span></article>
+        <article><strong>{recordsWithDate}</strong><span>Com data identificada</span></article>
+        {statusSummary.length > 0 && <article className="admin-report-status-summary"><strong>Situação mais comum</strong><span>{statusSummary.map(([status, count]) => `${status}: ${count}`).join(' · ')}</span></article>}
+      </div>
+      <p className="field-hint">A consulta percorre as páginas disponíveis do módulo. {reportLoadedAt ? `Atualizado em ${dateTime(reportLoadedAt)}. ` : ''}{recordsWithoutDate ? `${recordsWithoutDate} registro(s) da origem não têm data e só aparecem sem filtro de período.` : ''}</p>
       {sourceId === 'patient-status' && <p className="field-hint">Os status são registros de acompanhamento identificados por cor. Alterar aqui acrescenta uma anotação ao histórico; nenhum registro anterior é sobrescrito.</p>}
       {!sourceId ? <div className="history-empty">Selecione uma área para exibir os dados do relatório.</div> : invalidPeriod ? null : loading ? <div className="history-empty" role="status">Carregando {source.label}…</div> : filteredRows.length ? <><div className="admin-report-list">{visibleRows.map((record, index) => {
         if (sourceId === 'patient-status') {
@@ -4692,18 +4716,50 @@ function localizedAuditAction(action: string) {
 }
 
 function AuditLogPanel() {
+  const pageSize = 25
   const [events, setEvents] = useState<AuditEvent[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [search, setSearch] = useState('')
+  const [module, setModule] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [targetLabels, setTargetLabels] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [targetLabelError, setTargetLabelError] = useState('')
+  const [integrity, setIntegrity] = useState<{
+    valid: boolean
+    events_checked: number
+    invalid_event_id: number | null
+    chain_head_matches: boolean
+    verified_at: string
+  } | null>(null)
+  const [integrityLoading, setIntegrityLoading] = useState(false)
+  const [integrityError, setIntegrityError] = useState('')
+  const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
   const loadEvents = useCallback(async () => {
+    if (invalidPeriod) {
+      setEvents([])
+      setTotal(0)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
-      const response = await fetch('/api/v1/audit/events')
-      const data = await readApiResponse<{ events?: AuditEvent[] }>(response)
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      })
+      if (search.trim()) params.set('search', search.trim())
+      if (module) params.set('module', module)
+      if (fromDate) params.set('from_date', fromDate)
+      if (toDate) params.set('to_date', toDate)
+      const response = await fetch(`/api/v1/audit/events?${params}`)
+      const data = await readApiResponse<{ events?: AuditEvent[]; total?: number }>(response)
       const loadedEvents = data.events ?? []
       setEvents(loadedEvents)
+      setTotal(data.total ?? 0)
       setTargetLabels({})
       setError('')
       try {
@@ -4727,11 +4783,25 @@ function AuditLogPanel() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fromDate, invalidPeriod, module, offset, search, toDate])
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadEvents(), 0)
+    const timer = window.setTimeout(() => void loadEvents(), search.trim() ? 250 : 0)
     return () => window.clearTimeout(timer)
-  }, [loadEvents])
+  }, [loadEvents, search])
+  async function verifyIntegrity() {
+    setIntegrityLoading(true)
+    setIntegrityError('')
+    try {
+      const result = await readApiResponse<NonNullable<typeof integrity>>(
+        await fetch('/api/v1/audit/integrity', { cache: 'no-store' }),
+      )
+      setIntegrity(result)
+    } catch (verificationError) {
+      setIntegrityError(verificationError instanceof Error ? verificationError.message : 'Não foi possível verificar a cadeia de auditoria.')
+    } finally {
+      setIntegrityLoading(false)
+    }
+  }
   const knownAuditTargets: Record<string, string> = {
     all: 'Todos os registros',
     hospital_summary: 'Resumo hospitalar',
@@ -4743,7 +4813,34 @@ function AuditLogPanel() {
     const key = `${event.module}:${event.action}:${event.target_id}`
     return targetLabels[key] ?? knownAuditTargets[event.target_id] ?? 'Registro relacionado'
   }
-  return <section className="patient-list-panel"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Registros de auditoria</h2><p className="welcome-copy">Eventos administrativos recentes, sem conteúdo clínico detalhado.</p></div><button className="button button-secondary" type="button" onClick={() => void loadEvents()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar registros'}</button></div>{error && <ToastMessage variant="error">{error}</ToastMessage>}{targetLabelError && <ToastMessage variant="error">{targetLabelError}</ToastMessage>}{loading && !events.length ? <div className="history-empty">Carregando registros…</div> : events.length ? <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}><div className="collection-row-heading"><strong>{event.actor_name} · {roleLabels[event.actor_role as ProfileId] ?? 'Equipe autorizada'}</strong><time>{dateTime(event.happened_at)}</time></div><div className="collection-values"><span><small>Ação</small><strong>{localizedAuditAction(event.action)}</strong></span><span><small>Módulo</small><strong>{moduleLabels[event.module] ?? 'Sistema'}</strong></span><span><small>Registro</small><strong>{auditTargetLabel(event)}</strong>{!targetLabels[`${event.module}:${event.action}:${event.target_id}`] && !knownAuditTargets[event.target_id] && <small>Identificador interno: {event.target_id.length > 16 ? `${event.target_id.slice(0, 12)}…` : event.target_id}</small>}</span></div></article>)}</div> : <div className="history-empty">Nenhum evento registrado.</div>}</section>
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  const currentPage = Math.min(Math.floor(offset / pageSize), pageCount - 1)
+
+  return <section className="patient-list-panel audit-log-panel">
+    <div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Auditoria de ações</h2><p className="welcome-copy">Pesquise por usuário, ação ou identificador; filtre por módulo e período. Os eventos não exibem conteúdo clínico.</p></div><div className="audit-log-header-actions"><button className="button button-secondary" type="button" onClick={() => void loadEvents()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button><button className="button button-secondary" type="button" onClick={() => void verifyIntegrity()} disabled={integrityLoading}>{integrityLoading ? 'Verificando…' : 'Verificar integridade'}</button></div></div>
+    <section className="audit-integrity-panel" aria-live="polite">
+      {!integrity && !integrityError && <p>Verificação da cadeia ainda não executada.</p>}
+      {integrity && <p className={integrity.valid ? 'audit-integrity-valid' : 'audit-integrity-invalid'}><strong>{integrity.valid ? 'Cadeia íntegra' : 'Falha de integridade detectada'}</strong><span>{integrity.events_checked} eventos verificados · {dateTime(integrity.verified_at)}{integrity.invalid_event_id !== null ? ` · primeiro evento inválido: ${integrity.invalid_event_id}` : ''}{!integrity.chain_head_matches ? ' · o último hash não corresponde ao ponto de controle' : ''}</span></p>}
+      {integrityError && <ToastMessage variant="error">{integrityError}</ToastMessage>}
+    </section>
+    <div className="admin-report-controls audit-log-controls">
+      <label className="field"><span className="field-label">Pesquisar usuário, ação ou registro</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={search} onChange={(event) => { setOffset(0); setSearch(event.target.value) }} placeholder="Nome, evento ou identificador" /></span></label>
+      <label className="field"><span className="field-label">Módulo</span><select value={module} onChange={(event) => { setOffset(0); setModule(event.target.value) }}><option value="">Todos os módulos</option>{Object.entries(moduleLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+      <label className="field"><span className="field-label">De</span><input type="date" value={fromDate} max={toDate || undefined} onChange={(event) => { setOffset(0); setFromDate(event.target.value) }} /></label>
+      <label className="field"><span className="field-label">Até</span><input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setOffset(0); setToDate(event.target.value) }} /></label>
+      <div className="admin-report-actions"><span className="module-total">{total} eventos</span><button className="button button-secondary" type="button" onClick={() => { setSearch(''); setModule(''); setFromDate(''); setToDate(''); setOffset(0) }} disabled={!search && !module && !fromDate && !toDate}>Limpar filtros</button></div>
+    </div>
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {targetLabelError && <ToastMessage variant="error">{targetLabelError}</ToastMessage>}
+    {invalidPeriod && <ToastMessage variant="error">A data inicial deve ser anterior ou igual à data final.</ToastMessage>}
+    {loading ? <div className="history-empty" role="status">Carregando eventos de auditoria…</div> : events.length ? <>
+      <div className="collection-list">{events.map((event) => <article className="collection-row" key={event.id}>
+        <div className="collection-row-heading"><strong>{event.actor_name} · {roleLabels[event.actor_role as ProfileId] ?? 'Equipe autorizada'}</strong><time>{dateTime(event.happened_at)}</time></div>
+        <div className="collection-values"><span><small>Ação</small><strong>{localizedAuditAction(event.action)}</strong></span><span><small>Módulo</small><strong>{moduleLabels[event.module] ?? 'Sistema'}</strong></span><span><small>Registro</small><strong>{auditTargetLabel(event)}</strong>{!targetLabels[`${event.module}:${event.action}:${event.target_id}`] && !knownAuditTargets[event.target_id] && <small>Identificador interno: {event.target_id.length > 16 ? `${event.target_id.slice(0, 12)}…` : event.target_id}</small>}</span></div>
+      </article>)}</div>
+      {total > pageSize && <nav className="history-pagination" aria-label="Paginação dos eventos de auditoria"><span>Exibindo {offset + 1}–{Math.min(offset + events.length, total)} de {total} · Página {currentPage + 1} de {pageCount}</span><div><button className="button button-secondary" type="button" disabled={loading || offset === 0} onClick={() => setOffset((value) => Math.max(0, value - pageSize))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={loading || offset + pageSize >= total} onClick={() => setOffset((value) => value + pageSize)}>Próxima <ArrowRight size={15} /></button></div></nav>}
+    </> : <div className="history-empty">{total ? 'Nenhum evento nesta página.' : 'Nenhum evento corresponde aos filtros atuais.'}</div>}
+  </section>
 }
 
 function SystemAdminPage({ user }: { user: AuthUser }) {
