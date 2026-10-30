@@ -145,6 +145,18 @@ O instalador configura o repositório oficial do Docker, instala Docker Engine e
 
 Este fluxo automatiza uma **instalação de validação**; não transfere o banco do PC atual e não representa autorização para dados reais. Para importar dados, use um backup cifrado e execute primeiro a restauração isolada descrita em [Backup e restauração](docs/backups.md). Nunca use `docker compose down -v` para atualizar ou reinstalar.
 
+### Publicar uma atualização no servidor de testes
+
+No computador que contém este repositório, após fazer commit das alterações, execute:
+
+```bash
+bash scripts/deploy-test-server.sh
+```
+
+O script publica o `HEAD` limpo por SSH para `connect@192.168.1.216`, extrai os arquivos versionados em `/home/connect/apps/SCPO-Connect` e executa o instalador Debian 13 para reconstruir e verificar os serviços. A chave SSH do computador precisa estar autorizada no servidor; o `sudo` remoto pode solicitar a senha no terminal. Para outro destino ou diretório, defina `SCPO_TEST_SERVER` ou `SCPO_TEST_APP_DIR` antes de executar.
+
+O script recusa alterações locais não commitadas. Ele não envia `.env`, bancos, volumes nem arquivos ignorados pelo Git; a configuração e os dados que já existem no servidor são preservados. Use-o apenas para a instalação de validação.
+
 Copie o modelo de configuração e preencha os segredos antes de iniciar:
 
 ```bash
