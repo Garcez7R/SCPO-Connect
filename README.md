@@ -35,7 +35,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Serviço Social: encaminhamentos ligados ao paciente, com busca, filtros e atualização de situação até o encerramento.
 - Farmácia: inventário normalizado por produto, lote e local; movimentações com autoria e saldo resultante; leitura GS1, sugestões de identificação pelo catálogo público Anvisa/CMED e indicação informativa do lote válido com vencimento mais próximo (FEFO), sem seleção automática.
 - Farmácia: consulta alfabética consolidada do estoque de medicamentos e fila de prescrições médicas pendentes para conferência e dispensação.
-- Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado; a guia **Mapa da cozinha** consolida dieta, alergias, restrições e jejuns dos pacientes internados, sem expor peso ou notas clínicas à lista operacional.
+- Nutrição: avaliação vinculada ao paciente, alerta cadastral de alergias, contexto da última avaliação e histórico paginado; a guia **Mapa da cozinha** para computador resume internados, alergias, dietas ausentes e jejuns. O PWA `/kitchen.html` oferece busca simples e consulta móvel de dieta, alergias, restrições e jejum, sem expor peso ou notas clínicas. O PWA exige conexão, não guarda dados para uso offline e não registra preparo/entrega.
 - Oficina Terapêutica: imagens da biblioteca ficam em volume próprio no host, separado do banco; inclua esse diretório em backup protegido e teste sua restauração conforme [Backup e restauração](docs/backups.md).
 - Exclusão de contas com módulo Médico: o acesso é revogado imediatamente e a remoção da conta aguarda confirmação da exclusão do perfil no serviço de Enfermagem; falhas temporárias são repetidas automaticamente e ficam visíveis como exclusão pendente.
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
@@ -56,6 +56,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - PWA de Manutenção/Higienização em `/operations.html`, com manifesto próprio, consulta offline cifrada por até 24 horas e somente leitura. Quando conectado, permite atualizar o status e concluir ordens conforme as permissões da conta; ao sair, o cache operacional do aparelho é apagado. O login offline não é permitido.
 - PWA da Farmácia em `/pharmacy.html`, com manifesto próprio, atalhos móveis para estoque, leitura de código pela câmera, prescrições e dispensação, usando as mesmas APIs e permissões da versão completa. O cadastro de compras continua na versão desktop; o PWA não guarda dados clínicos nem registra movimentações offline.
 - PWA do Médico em `/physician.html`, com manifesto próprio e interface compacta para fila, prontuário e prescrições, usando as mesmas APIs/permissões do módulo completo. Exige conexão para consultar e salvar; não armazena prontuários localmente nem permite acesso offline.
+- PWA da Cozinha em `/kitchen.html`, com manifesto próprio e consulta rápida dos dados alimentares necessários dos pacientes internados; exige conexão ao servidor, segue as permissões de Nutrição/Gestão/Administração e não grava andamento de preparo ou entrega.
 - Interface responsiva para computadores, celulares e tablets.
 - Menu lateral recolhível para uso mais eficiente em monitores menores e telas mais estreitas.
 - Tela inicial offline: verifica a conexão a cada 30 segundos e recarrega o app somente quando o servidor voltar a responder; a verificação não roda nas telas autenticadas.
@@ -93,7 +94,7 @@ As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem 
 
 - Node.js 24 ou superior e npm
 - Python 3.11 ou superior e [uv](https://docs.astral.sh/uv/)
-- Caddy 2 para servir o build local por HTTPS na rede
+- Caddy 2 para servir o build local por HTTPS na rede; a porta HTTPS padrão é `7777`
 
 Instale as dependências e gere os arquivos do PWA:
 
@@ -114,11 +115,11 @@ Em outro terminal, informe o IP ou nome DNS da VM e inicie o Caddy:
 ```bash
 read -r -p "IP ou DNS da VM: " SCPO_INTERNAL_HOST
 export SCPO_INTERNAL_HOST
-export SCPO_DEV_HTTPS_PORT=8444
+export SCPO_DEV_HTTPS_PORT=7777
 caddy run --config Caddyfile.local --adapter caddyfile
 ```
 
-Abra `https://<IP-ou-DNS-da-VM>:8444` em um dispositivo da rede local, substituindo o marcador pelo endereço informado. O Caddy local usa uma CA própria; para o navegador considerar a conexão confiável, instale a raiz pública `data/local/scpo-local-root.crt` em cada dispositivo e confira a impressão digital por um canal independente.
+Abra `https://<IP-ou-DNS-da-VM>:7777` em um dispositivo da rede local, substituindo o marcador pelo endereço informado. O Caddy local usa uma CA própria; para o navegador considerar a conexão confiável, instale a raiz pública `data/local/scpo-local-root.crt` em cada dispositivo e confira a impressão digital por um canal independente.
 
 O lançador de desenvolvimento usa `data/demo/` por padrão, onde já estão os sete pacientes fictícios e suas 210 aferições de 30 dias. Os bancos antigos em `data/local/` permanecem intactos. Na primeira abertura, crie a conta inicial usando o token em `data/demo/bootstrap-admin.token`; defina o login `rgarcez` para habilitar o perfil exclusivo de Superadministrador do Sistema (ou configure `SCPO_SUPERADMIN_USERNAME` antes da migração). A senha de bootstrap exige troca e ativação de MFA. Contas criadas posteriormente recebem senhas temporárias aleatórias de uso único. Mantenha tokens e bancos locais fora do Git. Não use o ambiente demo para dados reais.
 
@@ -126,7 +127,7 @@ O lançador de desenvolvimento usa `data/demo/` por padrão, onde já estão os 
 
 Somente a Administração do aplicativo e o Superadministrador do Sistema podem administrar contas. A Administração do aplicativo atribui os módulos necessários, inclusive Médico ou Gestão Hospitalar, conforme aprovação institucional. Após criar uma conta com o módulo Médico, a Administração cadastra o nome profissional e o CRM/UF em **Perfis médicos**; o próprio médico consulta esses dados, mas não pode criá-los nem alterá-los. Confira as informações antes da emissão de prescrições. O login `rgarcez` é reservado ao Superadministrador do Sistema; esse acesso é distinto da Gestão Hospitalar e não aparece na lista de contas dos demais administradores. As funções de backup e restauração são exclusivas do Superadministrador do Sistema. Nunca compartilhe sua conta ou credenciais.
 
-Para desenvolver a interface com atualização instantânea no computador, use `npm run dev -- --host 127.0.0.1`. Os logs locais são gravados em `.logs/`.
+Para desenvolver a interface com atualização instantânea, use `npm run dev -- --host 127.0.0.1`; o endereço local é `http://127.0.0.1:7777`. Para testar em outro computador da mesma rede, inicie o Vite com `npm run dev -- --host 0.0.0.0 --strictPort` e abra `http://<IP-da-VM>:7777` (por exemplo, `http://192.168.1.205:7777`). Esse modo usa HTTP sem TLS, serve apenas para testes controlados com dados demonstrativos e não deve ser exposto à Internet nem usado com dados reais. As APIs continuam escutando somente no loopback da VM. Se o acesso for bloqueado, libere a porta TCP `7777` na rede/firewall local. Os logs locais são gravados em `.logs/`.
 
 ## Instalação com Docker Compose
 
@@ -147,15 +148,13 @@ Este fluxo automatiza uma **instalação de validação**; não transfere o banc
 
 ### Publicar uma atualização no servidor de testes
 
-No computador que contém este repositório, após fazer commit das alterações, execute:
+Depois de testar e fazer commit da versão aprovada na VM de desenvolvimento, siga o [procedimento de publicação e atualização do servidor de testes](docs/deploy-test-server.md). O comando padrão é:
 
 ```bash
 bash scripts/deploy-test-server.sh
 ```
 
-O script publica o `HEAD` limpo por SSH para `connect@192.168.1.216`, extrai os arquivos versionados em `/home/connect/apps/SCPO-Connect` e executa o instalador Debian 13 para reconstruir e verificar os serviços. A chave SSH do computador precisa estar autorizada no servidor; o `sudo` remoto pode solicitar a senha no terminal. Para outro destino ou diretório, defina `SCPO_TEST_SERVER` ou `SCPO_TEST_APP_DIR` antes de executar.
-
-O script recusa alterações locais não commitadas. Ele não envia `.env`, bancos, volumes nem arquivos ignorados pelo Git; a configuração e os dados que já existem no servidor são preservados. Use-o apenas para a instalação de validação.
+O script recusa alterações locais não commitadas e publica o `HEAD` por SSH. Ele não envia `.env`, bancos nem volumes, preservando a configuração, os usuários e os dados persistentes existentes no servidor. Use-o apenas para a instalação de validação.
 
 Copie o modelo de configuração e preencha os segredos antes de iniciar:
 
@@ -175,7 +174,7 @@ Configure também `SCPO_INTERNAL_HOST` com o endereço estável da VM e inicie o
 docker compose up -d --build
 ```
 
-O Caddy publica HTTP na porta `8080` para redirecionamento e HTTPS na porta `8443`. Exporte a raiz pública da CA com `bash scripts/export-caddy-ca.sh`, confira sua impressão digital e distribua-a por um canal controlado pela instituição. Preserve os volumes `postgres_data` e `caddy_data`; eles contêm, respectivamente, os bancos do sistema e a autoridade certificadora usada pelos dispositivos.
+O Caddy publica HTTP na porta `8080` para redirecionamento e HTTPS na porta `7777`. Exporte a raiz pública da CA com `bash scripts/export-caddy-ca.sh`, confira sua impressão digital e distribua-a por um canal controlado pela instituição. Preserve os volumes `postgres_data` e `caddy_data`; eles contêm, respectivamente, os bancos do sistema e a autoridade certificadora usada pelos dispositivos.
 
 Após iniciar ou atualizar a implantação, confira `docker compose ps`: os serviços de API devem aparecer como `healthy`. Cada API possui um healthcheck HTTP em `/health`; o proxy aguarda as APIs ficarem saudáveis antes de iniciar. Essa verificação confirma disponibilidade básica, não valida fluxos do usuário nem substitui testes de restauração. Para investigar falhas, consulte `docker compose logs --tail=100 <serviço>` e confirme nos logs que as migrações terminaram.
 

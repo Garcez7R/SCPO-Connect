@@ -3,7 +3,7 @@
 	auto_https disable_redirects
 }
 
-{$SCPO_INTERNAL_HOST:127.0.0.1}:{$SCPO_DEV_HTTPS_PORT:8444} {
+{$SCPO_INTERNAL_HOST:127.0.0.1}:{$SCPO_DEV_HTTPS_PORT:7777} {
 	tls internal
 	encode zstd gzip
 	root * ./dist

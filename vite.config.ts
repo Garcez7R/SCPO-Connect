@@ -12,11 +12,13 @@ export default defineConfig({
         operations: fileURLToPath(new URL('./operations.html', import.meta.url)),
         pharmacy: fileURLToPath(new URL('./pharmacy.html', import.meta.url)),
         physician: fileURLToPath(new URL('./physician.html', import.meta.url)),
+        kitchen: fileURLToPath(new URL('./kitchen.html', import.meta.url)),
       },
     },
   },
   server: {
     host: '127.0.0.1',
+    port: 7777,
     proxy: {
       '/api/v1/auth': 'http://127.0.0.1:8002',
       '/api/v1/access': 'http://127.0.0.1:8002',

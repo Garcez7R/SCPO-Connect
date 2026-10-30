@@ -14,7 +14,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     ...devices['Desktop Chrome'],
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:7777',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -33,7 +33,7 @@ export default defineConfig({
     },
     {
       command: 'npm run dev -- --host 127.0.0.1 --strictPort',
-      url: 'http://127.0.0.1:5173',
+      url: 'http://127.0.0.1:7777',
       reuseExistingServer: false,
       timeout: 60_000,
     },

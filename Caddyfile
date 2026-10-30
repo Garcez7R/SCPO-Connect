@@ -12,7 +12,7 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 	}
 
 	handle {
-		redir https://{$SCPO_INTERNAL_HOST:localhost}:{$SCPO_HTTPS_PORT:8443}{uri} 308
+		redir https://{$SCPO_INTERNAL_HOST:localhost}:{$SCPO_HTTPS_PORT:7777}{uri} 308
 	}
 }
 

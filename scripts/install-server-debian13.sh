@@ -166,7 +166,7 @@ fi
 
 internal_host="$(sed -n 's/^SCPO_INTERNAL_HOST=//p' "${project_dir}/.env" | head -n 1)"
 https_port="$(sed -n 's/^SCPO_HTTPS_PORT=//p' "${project_dir}/.env" | head -n 1)"
-https_port="${https_port:-8443}"
+https_port="${https_port:-7777}"
 curl --silent --show-error --fail --insecure \
   --resolve "${internal_host}:${https_port}:127.0.0.1" \
   "https://${internal_host}:${https_port}/" >/dev/null \

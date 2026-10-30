@@ -917,7 +917,17 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .nutrition-form .section-heading { margin: 0; }
 .nutrition-tabs { margin: 4px 0; }
 .nutrition-kitchen-panel { display: grid; gap: 15px; }
+.nutrition-kitchen-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .nutrition-kitchen-search { max-width: 560px; }
+.nutrition-kitchen-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+.nutrition-kitchen-summary article { display: grid; min-height: 72px; align-content: center; gap: 5px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.nutrition-kitchen-summary strong { color: var(--ink); font-size: 22px; line-height: 1; }
+.nutrition-kitchen-summary span { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.nutrition-kitchen-summary .is-alert { border-color: var(--status-critical-border); background: var(--status-critical-background); }
+.nutrition-kitchen-summary .is-alert strong { color: var(--status-critical-ink); }
+.nutrition-kitchen-summary .is-warning { border-color: var(--status-warning-border); background: var(--status-warning-background); }
+.nutrition-kitchen-summary .is-warning strong { color: var(--status-warning-ink); }
+.nutrition-kitchen-summary .is-muted strong { color: var(--muted); }
 .nutrition-kitchen-list { display: grid; gap: 9px; }
 .nutrition-kitchen-card { display: grid; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .nutrition-kitchen-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
@@ -927,9 +937,81 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .nutrition-kitchen-details > span { display: grid; gap: 4px; min-width: 0; padding: 9px 10px; border-radius: 7px; background: var(--page); overflow-wrap: anywhere; }
 .nutrition-kitchen-details small { color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
 .nutrition-kitchen-details strong { color: var(--ink); font-size: 12px; line-height: 1.45; }
+.nutrition-kitchen-details .nutrition-kitchen-allergy { border: 1px solid var(--status-critical-border); background: var(--status-critical-background); }
+.nutrition-kitchen-details .nutrition-kitchen-allergy strong,
 .nutrition-kitchen-details .nutrition-kitchen-alert,
 .nutrition-kitchen-details .nutrition-kitchen-fasting strong { color: var(--status-critical-ink); }
+.nutrition-kitchen-details .nutrition-kitchen-unconfirmed { border: 1px solid var(--status-warning-border); background: var(--status-warning-background); }
+.nutrition-kitchen-details .nutrition-kitchen-missing { border: 1px solid var(--status-warning-border); background: var(--status-warning-background); }
+.nutrition-kitchen-details .nutrition-kitchen-assessment { font-size: 10px; font-weight: 500; text-transform: none; }
 .nutrition-kitchen-details .nutrition-kitchen-fasting { border: 1px solid var(--status-warning-border); background: var(--status-warning-background); }
+.kitchen-mobile-shell { display: grid; width: min(100%, 620px); min-height: 100dvh; align-content: start; gap: 13px; margin: 0 auto; padding: max(12px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom)); color: var(--ink); }
+.kitchen-mobile-header, .kitchen-mobile-brand { display: flex; align-items: center; }
+.kitchen-mobile-header { justify-content: space-between; gap: 10px; }
+.kitchen-mobile-brand { min-width: 0; gap: 9px; }
+.kitchen-mobile-brand > img { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 9px; background: #fff; object-fit: contain; }
+.kitchen-mobile-brand > div { display: grid; gap: 2px; }
+.kitchen-mobile-brand .eyebrow { margin: 0; font-size: 9px; }
+.kitchen-mobile-brand h1 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 17px; }
+.kitchen-mobile-brand h1 svg { color: var(--blue); }
+.kitchen-mobile-logout { min-height: 40px; flex: 0 0 auto; padding: 8px 10px; }
+.kitchen-mobile-content { display: grid; gap: 12px; }
+.kitchen-mobile-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.kitchen-mobile-title-row h2 { margin: 0; font-size: 19px; line-height: 1.2; }
+.kitchen-mobile-title-row p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.kitchen-mobile-refresh { min-height: 42px; flex: 0 0 auto; padding: 8px 10px; }
+.kitchen-mobile-refresh:disabled { opacity: .6; cursor: not-allowed; }
+.kitchen-mobile-spinning { animation: kitchen-mobile-spin 1s linear infinite; }
+@keyframes kitchen-mobile-spin { to { transform: rotate(360deg); } }
+.kitchen-mobile-connection { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.kitchen-mobile-connection svg { flex: 0 0 auto; }
+.kitchen-mobile-connection.is-online svg { color: var(--status-success-ink); }
+.kitchen-mobile-connection.is-offline svg { color: var(--status-critical-ink); }
+.kitchen-mobile-connection time { margin-left: auto; color: var(--subtle); }
+.kitchen-mobile-error { padding: 11px 12px; border: 1px solid var(--status-critical-border); border-radius: 8px; background: var(--status-critical-background); color: var(--status-critical-ink); font-size: 12px; line-height: 1.45; }
+.kitchen-mobile-search { display: flex; min-height: 46px; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); }
+.kitchen-mobile-search input { width: 100%; min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 16px; }
+.kitchen-mobile-search input::placeholder { color: var(--subtle); }
+.kitchen-mobile-search input:focus-visible { outline: none; }
+.kitchen-mobile-search:focus-within { outline: 3px solid rgba(36, 107, 142, 0.32); outline-offset: 2px; }
+.kitchen-mobile-count { margin: 0; color: var(--muted); font-size: 11px; font-weight: 600; }
+.kitchen-mobile-list { display: grid; gap: 10px; }
+.kitchen-mobile-card { display: grid; gap: 9px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.kitchen-mobile-card > header { display: grid; gap: 4px; }
+.kitchen-mobile-location { color: var(--blue); font-size: 11px; font-weight: 700; }
+.kitchen-mobile-location b { padding: 0 2px; color: var(--subtle); }
+.kitchen-mobile-card h3 { margin: 0; color: var(--ink); font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+.kitchen-mobile-diet, .kitchen-mobile-detail { display: grid; gap: 4px; padding: 9px 10px; border-radius: 8px; background: var(--page); overflow-wrap: anywhere; }
+.kitchen-mobile-diet small, .kitchen-mobile-detail small, .kitchen-mobile-allergy small, .kitchen-mobile-fasting small { color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .04em; }
+.kitchen-mobile-diet strong, .kitchen-mobile-detail strong, .kitchen-mobile-allergy strong, .kitchen-mobile-fasting strong { color: var(--ink); font-size: 12px; line-height: 1.45; }
+.kitchen-mobile-allergy, .kitchen-mobile-fasting { display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.kitchen-mobile-allergy > div, .kitchen-mobile-fasting > div { display: grid; min-width: 0; gap: 3px; }
+.kitchen-mobile-allergy.has-allergy { border-color: var(--status-critical-border); background: var(--status-critical-background); }
+.kitchen-mobile-allergy.has-allergy svg, .kitchen-mobile-allergy.has-allergy strong { color: var(--status-critical-ink); }
+.kitchen-mobile-allergy.allergy-unknown { border-color: var(--status-warning-border); background: var(--status-warning-background); }
+.kitchen-mobile-allergy-mark { display: grid; width: 17px; height: 17px; flex: 0 0 auto; place-items: center; border: 1.5px solid currentColor; border-radius: 50%; color: var(--status-warning-ink); font-size: 11px; font-weight: 750; }
+.kitchen-mobile-fasting { border-color: var(--status-warning-border); background: var(--status-warning-background); }
+.kitchen-mobile-fasting > svg { flex: 0 0 auto; margin-top: 1px; color: var(--status-warning-ink); }
+.kitchen-mobile-assessment { margin: -2px 0 0; color: var(--subtle); font-size: 10px; }
+.kitchen-mobile-state { margin: 0; padding: 22px 12px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; text-align: center; }
+.kitchen-mobile-footnote { margin: 0; color: var(--subtle); font-size: 10px; line-height: 1.5; text-align: center; }
+.kitchen-mobile-denied { align-content: center; justify-items: center; text-align: center; }
+.kitchen-mobile-denied > img { width: 76px; height: 76px; object-fit: contain; }
+.kitchen-mobile-denied > h1 { margin: 0; font-size: 21px; }
+.kitchen-mobile-denied > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.kitchen-mobile-denied > .button { width: min(100%, 300px); justify-content: center; }
+.kitchen-mobile-shell .button { min-height: 42px; }
+.kitchen-mobile-shell button:focus-visible { outline: 3px solid rgba(36, 107, 142, 0.32); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+@media (max-width: 760px) {
+  .nutrition-kitchen-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nutrition-kitchen-actions { justify-content: flex-start; }
+}
+@media (max-width: 390px) {
+  .kitchen-mobile-title-row { align-items: stretch; flex-direction: column; }
+  .kitchen-mobile-refresh { justify-content: center; }
+  .kitchen-mobile-connection time { width: 100%; margin-left: 22px; }
+}
 .nutrition-patient-select { max-width: 600px; }
 .nutrition-context-card { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; line-height: 1.5; }
 .nutrition-context-card strong { color: var(--ink); font-size: 12px; }

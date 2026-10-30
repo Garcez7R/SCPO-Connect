@@ -215,6 +215,7 @@ const NursingMobilePage = lazy(() => import('./pages/NursingMobilePage'))
 const OperationsMobilePage = lazy(() => import('./pages/OperationsMobilePage'))
 const PharmacyMobilePage = lazy(() => import('./pages/PharmacyMobilePage'))
 const PhysicianMobilePage = lazy(() => import('./pages/PhysicianMobilePage'))
+const KitchenMobilePage = lazy(() => import('./pages/KitchenMobilePage'))
 const XrayModulePage = lazy(() => import('./pages/XrayPage'))
 const PhysicianPage = lazy(() => import('./pages/PhysicianPage'))
 const PatientOperationsPage = lazy(() =>
@@ -595,6 +596,9 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   }
   if (window.location.pathname === '/physician.html') {
     return <Suspense fallback={<StartupScreen />}><PhysicianMobilePage user={user} onLogout={onLogout} /></Suspense>
+  }
+  if (window.location.pathname === '/kitchen.html') {
+    return <Suspense fallback={<StartupScreen />}><KitchenMobilePage user={user} onLogout={onLogout} /></Suspense>
   }
 
   return (
@@ -3686,8 +3690,15 @@ function NutritionPage() {
   const patientName = (reference: string) => { const patient = patients.find((item) => item.reference === reference); return patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente' }
   const nutritionPrintRows: PrintRow[] = records.map((record) => ({ id: String(record.id), date: record.assessment_date, title: patientName(record.patient_reference), fields: [['Peso', record.weight_kg ? `${record.weight_kg} kg` : ''], ['Altura', record.height_cm ? `${record.height_cm} cm` : ''], ['Dieta', record.diet_type], ['Alergias', record.allergies], ['Restrições', record.restrictions], ['Jejum', record.fasting_at ? `${dateTime(record.fasting_at)} · ${record.fasting_reason || ''}` : ''], ['Aceitação', record.appetite], ['Hidratação', record.hydration], ['Observações', record.notes], ['Profissional', record.actor_name]] }))
   const visibleKitchenPatients = kitchenPatients.filter((patient) =>
-    `${patient.patient_name} ${patient.room} ${patient.bed} ${patient.diet_type} ${patient.allergies} ${patient.restrictions}`.toLocaleLowerCase('pt-BR').includes(kitchenQuery.trim().toLocaleLowerCase('pt-BR')),
+    `${patient.patient_name} ${patient.room} ${patient.bed} ${patient.diet_type} ${patient.allergies} ${patient.restrictions} ${patient.fasting_reason}`.toLocaleLowerCase('pt-BR').includes(kitchenQuery.trim().toLocaleLowerCase('pt-BR')),
   )
+  const kitchenSummary = {
+    patients: kitchenPatients.length,
+    knownAllergies: kitchenPatients.filter((patient) => patient.allergies_status === 'known').length,
+    unconfirmedAllergies: kitchenPatients.filter((patient) => patient.allergies_status === 'unknown').length,
+    fasting: kitchenPatients.filter((patient) => Boolean(patient.fasting_at)).length,
+    missingDiet: kitchenPatients.filter((patient) => !patient.diet_type.trim()).length,
+  }
   const kitchenPrintRows: PrintRow[] = visibleKitchenPatients.map((patient) => ({
     id: patient.patient_reference,
     date: kitchenUpdatedAt ?? '',
@@ -3707,13 +3718,20 @@ function NutritionPage() {
       <button className={`button ${nutritionTab === 'kitchen' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nutritionTab === 'kitchen'} onClick={() => { setNutritionTab('kitchen'); void loadKitchenRoster() }}>Mapa da cozinha</button>
     </div>
     {nutritionTab === 'kitchen' ? <section className="patient-list-panel nutrition-kitchen-panel" role="tabpanel">
-      <div className="section-heading"><div><p className="eyebrow">PRODUÇÃO ALIMENTAR · INTERNADOS</p><h2>Mapa de dietas e restrições</h2><p className="welcome-copy">Consulte dieta, alergias alimentares e jejum informado para apoiar a montagem das refeições. Não substitui a conferência da prescrição e da identificação à beira-leito.</p></div><button className="button button-secondary" type="button" onClick={() => void loadKitchenRoster()} disabled={kitchenLoading}>{kitchenLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
+      <div className="section-heading"><div><p className="eyebrow">PRODUÇÃO ALIMENTAR · INTERNADOS</p><h2>Mapa de dietas e restrições</h2><p className="welcome-copy">Consulte dieta, alergias alimentares e jejum informado para apoiar a montagem das refeições. Não substitui a conferência da prescrição e da identificação à beira-leito.</p></div><div className="nutrition-kitchen-actions"><a className="button button-secondary" href="/kitchen.html" target="_blank" rel="noreferrer">Abrir PWA no celular</a><button className="button button-secondary" type="button" onClick={() => void loadKitchenRoster()} disabled={kitchenLoading}>{kitchenLoading ? 'Atualizando…' : 'Atualizar mapa'}</button></div></div>
       <PrintSelectionPanel title="Mapa da cozinha" rows={kitchenPrintRows} />
+      <div className="nutrition-kitchen-summary" aria-label="Resumo do mapa da cozinha">
+        <article><strong>{kitchenSummary.patients}</strong><span>Internados</span></article>
+        <article className="is-alert"><strong>{kitchenSummary.knownAllergies}</strong><span>Alergia conhecida</span></article>
+        <article className="is-warning"><strong>{kitchenSummary.unconfirmedAllergies}</strong><span>Alergia não confirmada</span></article>
+        <article className="is-warning"><strong>{kitchenSummary.fasting}</strong><span>Jejum programado</span></article>
+        <article className="is-muted"><strong>{kitchenSummary.missingDiet}</strong><span>Dieta não informada</span></article>
+      </div>
       <label className="field nutrition-kitchen-search"><span className="field-label">Buscar paciente, localização, dieta ou restrição</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={kitchenQuery} onChange={(event) => setKitchenQuery(event.target.value)} placeholder="Nome, quarto, leito ou dieta" /></span></label>
       {kitchenUpdatedAt && <p className="field-hint">Atualizado em {dateTime(kitchenUpdatedAt)}. Confirme alergias e restrições antes de preparar ou entregar refeições.</p>}
       {kitchenLoading ? <div className="history-empty">Carregando mapa da cozinha…</div> : visibleKitchenPatients.length ? <div className="nutrition-kitchen-list">{visibleKitchenPatients.map((patient) => <article className="nutrition-kitchen-card" key={patient.patient_reference}>
         <div className="nutrition-kitchen-heading"><strong>{patient.patient_name}</strong><span>Quarto {patient.room} · Leito {patient.bed}</span></div>
-        <div className="nutrition-kitchen-details"><span><small>Dieta</small><strong>{patient.diet_type || 'Não informada · confirmar com Nutrição'}</strong></span><span><small>Alergias</small><strong className={patient.allergies_status === 'known' ? 'nutrition-kitchen-alert' : ''}>{patient.allergies_status === 'known' ? patient.allergies : patient.allergies_status === 'none_known' ? 'Sem alergia conhecida' : 'Não confirmado'}</strong></span>{patient.restrictions && <span><small>Restrições</small><strong>{patient.restrictions}</strong></span>}{patient.fasting_at && <span className="nutrition-kitchen-fasting"><small>Jejum programado</small><strong>{dateTime(patient.fasting_at)}{patient.fasting_reason ? ` · ${patient.fasting_reason}` : ''}</strong></span>}</div>
+        <div className="nutrition-kitchen-details"><span className={!patient.diet_type ? 'nutrition-kitchen-missing' : ''}><small>Dieta</small><strong>{patient.diet_type || 'Não informada · confirmar com Nutrição'}</strong>{patient.assessment_date && <small className="nutrition-kitchen-assessment">Avaliada em {patient.assessment_date.split('-').reverse().join('/')}</small>}</span><span className={patient.allergies_status === 'known' ? 'nutrition-kitchen-allergy' : patient.allergies_status === 'unknown' ? 'nutrition-kitchen-unconfirmed' : ''}><small>Alergias</small><strong>{patient.allergies_status === 'known' ? patient.allergies : patient.allergies_status === 'none_known' ? 'Sem alergia conhecida' : 'Não confirmado'}</strong></span>{patient.restrictions && <span><small>Restrições</small><strong>{patient.restrictions}</strong></span>}{patient.fasting_at && <span className="nutrition-kitchen-fasting"><small>Jejum programado</small><strong>{dateTime(patient.fasting_at)}{patient.fasting_reason ? ` · ${patient.fasting_reason}` : ''}</strong></span>}</div>
       </article>)}</div> : <div className="history-empty">{kitchenPatients.length ? 'Nenhum paciente corresponde à busca.' : 'Nenhum paciente internado disponível para o mapa de dietas.'}</div>}
     </section> : <>
     <PrintSelectionPanel title="Avaliações nutricionais" rows={nutritionPrintRows} />

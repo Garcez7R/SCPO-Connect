@@ -171,10 +171,10 @@ services:
     restart: unless-stopped
     environment:
       SCPO_INTERNAL_HOST: ${SCPO_INTERNAL_HOST:-localhost}
-      SCPO_HTTPS_PORT: ${SCPO_HTTPS_PORT:-8443}
+      SCPO_HTTPS_PORT: ${SCPO_HTTPS_PORT:-7777}
     ports:
       - "${SCPO_BIND_ADDRESS:-0.0.0.0}:${SCPO_HTTP_PORT:-8080}:80"
-      - "${SCPO_BIND_ADDRESS:-0.0.0.0}:${SCPO_HTTPS_PORT:-8443}:443"
+      - "${SCPO_BIND_ADDRESS:-0.0.0.0}:${SCPO_HTTPS_PORT:-7777}:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

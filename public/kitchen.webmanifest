@@ -1,0 +1,18 @@
+{
+  "name": "SCPO Connect · Cozinha",
+  "short_name": "SCPO Cozinha",
+  "description": "Mapa móvel de dietas, alergias e restrições dos pacientes internados.",
+  "lang": "pt-BR",
+  "start_url": "/kitchen.html",
+  "id": "/kitchen.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fa",
+  "theme_color": "#246b8e",
+  "display_override": ["standalone", "minimal-ui"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/scpo-connect-install-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/scpo-connect-install.png", "sizes": "580x580", "type": "image/png", "purpose": "any" }
+  ]
+}
