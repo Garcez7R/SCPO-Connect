@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect
 
-revision = "0054_physician_profile_deletion_outbox"
+revision = "0054_physician_profile_outbox"
 down_revision = "0053_user_display_name"
 branch_labels = None
 depends_on = None

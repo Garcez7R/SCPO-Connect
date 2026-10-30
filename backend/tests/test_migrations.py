@@ -183,8 +183,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         }
         assert share_columns["expires_at"]["nullable"] is True
     elif service == "access":
-        assert len(tables) == 4
+        assert len(tables) == 5
         assert "audit_outbox" in tables
+        assert "physician_profile_deletion_outbox" in tables
         assert "is_superuser" in {
             column["name"] for column in inspect(get_engine(service)).get_columns("app_users")
         }
