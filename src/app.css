@@ -1926,7 +1926,7 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
 .account-superuser-note { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .account-superuser-note svg { flex: 0 0 auto; color: var(--blue); }
 .account-empty { padding: 20px 0; color: var(--muted); }
-.session-role { color: var(--muted); font-size: 11px; }
+.session-role { color: var(--ink); font-size: 13px; font-weight: 700; white-space: nowrap; }
 .logout-button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; }
 @media (max-width: 900px) { .account-row-main { grid-template-columns: minmax(0, 1fr) auto; } .account-row .user-modules { grid-column: 1 / -1; grid-row: 2; } .account-row .account-state { grid-row: 1; grid-column: 2; } .account-row-actions { grid-column: 1 / -1; justify-content: flex-start; } .account-row .user-action { min-height: 38px; } }
 @media (max-width: 620px) { .account-filter-controls { grid-template-columns: 1fr; margin-inline: 12px; } .account-group .account-list { padding-inline: 12px; } .account-group-heading { padding-inline: 12px; } }

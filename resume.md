@@ -29,12 +29,12 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Lavanderia/Rouparia: módulo desktop e PWA instalável em `/laundry.html`, com identidade e ícone próprios. Inclui catálogo de itens, abertura de solicitações, etapas de coleta/lavagem/devolução, atribuição de responsável, saldos rastreados por movimentações e auditoria no serviço de Manutenção existente. Migração e testes de domínio passaram; typecheck, lint e build também passaram. A instalação precisa ser conferida em dispositivos de teste; não houve deploy.
 - A Enfermagem (desktop e PWA) agora mantém o seletor em “Selecione um paciente” até a escolha explícita; ao atualizar, preserva a escolha ainda válida e limpa a referência se ela não estiver mais disponível. O menu lateral põe Visão geral primeiro, os demais itens em ordem alfabética, Administração ao final e Superusuário por último somente para a conta superadministradora. Os cartões da Visão geral seguem a mesma ordem, com Administração por último e borda esquerda azul no padrão dos cartões operacionais.
 - O build Docker frontend agora copia também `laundry.html` para o estágio Vite; o build local e `docker build -f Dockerfile.frontend ...` foram concluídos com sucesso, incluindo `dist/laundry.html`.
+- A saudação da barra superior agora tem maior destaque visual (13 px, negrito e cor de texto principal); mantém o comportamento responsivo anterior, sem ocupar espaço da barra em telas estreitas.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ## Próximas fases solicitadas
 
 - Revisar a Lavanderia/Rouparia em dispositivo de teste após publicar.
-- Aumentar e colocar em negrito a saudação do usuário na barra superior.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Revisar a senha provisória `0000` para contas comuns/administradores com troca obrigatória no primeiro login e o botão de revelar senha no bootstrap do superadministrador.
 - Confirmar os botões da Enfermagem em linha antes da busca de paciente; revisar alinhamento do botão de novo paciente e ampliar os cartões do painel de chamada.

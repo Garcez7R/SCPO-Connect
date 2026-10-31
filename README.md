@@ -67,7 +67,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Enfermagem: verificação horária separa pacientes com e sem risco de evasão; o risco começa ativo e pode ser alterado por profissional autorizado, com registro de auditoria.
 - Oficina terapêutica com abas de atividades/calendário, lista de presença e relatórios; resultados salvos ficam disponíveis digitalmente na aba Relatórios da Gestão Hospitalar, com impressão opcional.
 - Sobre e Conformidade inicia em **Referências e conformidade**; as guias de ajuda e funcionamento ficam disponíveis ao lado.
-- Saudação de bom dia, boa tarde ou boa noite conforme o horário de Brasília.
+- Saudação de bom dia, boa tarde ou boa noite em destaque e negrito na barra superior, conforme o horário de Brasília.
 
 Na Farmácia, a atualização do catálogo Anvisa/CMED é manual e consulta a lista pública de preços de medicamentos apenas para sugerir GTIN, nome, princípio ativo, apresentação, fabricante e referência de registro. A sugestão só preenche o rascunho após ação do usuário; não cria produto/lote nem movimenta saldo. A base não confirma autenticidade, registro ativo ou adequação clínica e não substitui a conferência da equipe.
 
