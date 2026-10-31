@@ -44,7 +44,7 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Em Sobre e conformidade, corrigir o logo alongado em todas as abas para proporção quadrada e reduzir os cards de “Como o sistema funciona” à altura visual dos itens de “Dúvidas e solução de problemas”.
 - Em Central de exames, renomear a terceira aba “Exames de sangue” com um nome claro sobre sua função e avaliar melhorias operacionais, cobertura de estados reais e referências existentes.
 - Auditar os módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Usar somente dados reais do módulo, sem sobrecarregar a tela e sem links/referências inexistentes.
-- Substituir o rótulo “Abrir PWA móvel” por texto compreensível ao usuário; posicionar o acesso da Cozinha no topo direito também nas guias Avaliações e Visão da cozinha, revisando o nome “Mapa da cozinha”.
+- Substituir o rótulo genérico “Abrir PWA móvel” por um texto que identifique o módulo aberto; o acesso da Cozinha já fica no cabeçalho nas guias Avaliações e Dietas e alertas.
 - Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
 
 ## Validações conhecidas
