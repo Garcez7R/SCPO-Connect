@@ -1,0 +1,18 @@
+{
+  "name": "SCPO Connect · Lavanderia/Rouparia",
+  "short_name": "SCPO Lavanderia",
+  "description": "Solicitações, processamento e controle de enxoval da Lavanderia/Rouparia.",
+  "lang": "pt-BR",
+  "start_url": "/laundry.html",
+  "id": "/laundry.html",
+  "scope": "/laundry.html",
+  "display": "standalone",
+  "background_color": "#f4f7fa",
+  "theme_color": "#455a64",
+  "display_override": ["standalone", "minimal-ui"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/scpo-connect-laundry-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/scpo-connect-laundry-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

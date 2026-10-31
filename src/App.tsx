@@ -48,6 +48,7 @@ import {
   Printer,
   SprayCan,
   ShieldCheck,
+  Shirt,
   Sun,
   Search,
   Stethoscope,
@@ -73,8 +74,8 @@ import HelpGuide from './components/HelpGuide'
 import { AppDialogProvider } from './components/AppDialogs'
 import { useAppDialogs } from './components/appDialogContext'
 
-type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
-type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'management' | 'admin' | 'oversight'
+type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
+type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight'
 type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 const sessionDurationMs = 12 * 60 * 60 * 1000
 const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds', 'triage'] as const
@@ -218,6 +219,7 @@ const OperationsMobilePage = lazy(() => import('./pages/OperationsMobilePage'))
 const PharmacyMobilePage = lazy(() => import('./pages/PharmacyMobilePage'))
 const PhysicianMobilePage = lazy(() => import('./pages/PhysicianMobilePage'))
 const KitchenMobilePage = lazy(() => import('./pages/KitchenMobilePage'))
+const LaundryPage = lazy(() => import('./pages/LaundryPage'))
 const XrayModulePage = lazy(() => import('./pages/XrayPage'))
 const PhysicianPage = lazy(() => import('./pages/PhysicianPage'))
 const PatientOperationsPage = lazy(() =>
@@ -249,7 +251,7 @@ type AuthUser = { id: string; username: string; name: string; display_name: stri
 const roleLabels: Record<ProfileId, string> = {
   patients: 'Cadastro de pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
   nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica',
-  psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção',
+  psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção', laundry: 'Lavanderia/Rouparia',
   management: 'Gestão Hospitalar',
   admin: 'Administração do aplicativo',
   oversight: 'Relatórios e auditoria',
@@ -267,6 +269,7 @@ const modules: { id: ModuleId; label: string; short: string; icon: LucideIcon; d
   { id: 'psychology', label: 'Psicologia / Psiquiatria', short: 'Psicologia', icon: Brain, description: 'Encaminhamentos e acompanhamento da fila de atendimento.' },
   { id: 'hygiene', label: 'Higienização', short: 'Higienização', icon: SprayCan, description: 'Pedidos de limpeza por área e acompanhamento da equipe.' },
   { id: 'maintenance', label: 'Manutenção', short: 'Manutenção', icon: Wrench, description: 'Ordens de serviço, prioridades e acompanhamento da execução.' },
+  { id: 'laundry', label: 'Lavanderia/Rouparia', short: 'Lavanderia', icon: Shirt, description: 'Solicitações, processamento e estoque de enxoval.' },
   { id: 'management', label: 'Gestão Hospitalar', short: 'Gestão hospitalar', icon: Building2, description: 'Indicadores operacionais agregados e acompanhamento da instituição.' },
   { id: 'admin', label: 'Administração', short: 'Administração', icon: ShieldCheck, description: 'Administração do aplicativo, relatórios e auditoria.' },
 ]
@@ -276,8 +279,8 @@ const navigation: { id: ModuleId; label: string; icon: LucideIcon }[] = [
   { id: 'work-orders', label: 'Abrir ordem de serviço', icon: ClipboardPlus },
   { id: 'patients', label: 'Pacientes', icon: UserRound },
   ...modules.map(({ id, label, icon }) => ({ id, label, icon })),
-  { id: 'system-admin', label: 'Administração do Sistema', icon: ShieldCheck },
   { id: 'about', label: 'Sobre e conformidade', icon: Info },
+  { id: 'system-admin', label: 'Superusuário', icon: ShieldCheck },
 ]
 
 const emptyRecord = {
@@ -640,7 +643,11 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     && Boolean(user.permissions.admin?.includes('administrar'))
   )
   const hasOversight = profile.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar'))
-  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || (item.id === 'system-admin' && user.is_superuser) || (item.id === 'admin' && (hasAppAdmin || hasOversight)) || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports))
+  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || (item.id === 'system-admin' && user.is_superuser) || (item.id === 'admin' && (hasAppAdmin || hasOversight)) || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports)).sort((left, right) => {
+    const order = (id: ModuleId) => id === 'home' ? 0 : id === 'admin' ? 2 : id === 'system-admin' ? 3 : 1
+    const orderDifference = order(left.id) - order(right.id)
+    return orderDifference || left.label.localeCompare(right.label, 'pt-BR')
+  })
 
   function navigate(id: ModuleId) {
     if (id === 'nursing-history' && !profile.modules.includes('nursing')) return
@@ -693,6 +700,9 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   }
   if (window.location.pathname === '/kitchen.html') {
     return <Suspense fallback={<StartupScreen />}><KitchenMobilePage user={user} onLogout={onLogout} /></Suspense>
+  }
+  if (window.location.pathname === '/laundry.html') {
+    return <Suspense fallback={<StartupScreen />}><LaundryPage user={user} mobileMode onLogout={onLogout} /></Suspense>
   }
 
   return (
@@ -761,6 +771,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
           {activeModule === 'physician' && <Suspense fallback={<div className="history-empty" role="status">Carregando módulo Médico…</div>}><PhysicianPage userId={user.id} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'physician')} /></Suspense>}
           {activeModule === 'work-orders' && <Suspense fallback={<div className="history-empty" role="status">Carregando ordens de serviço…</div>}><WorkOrdersPage user={user} /></Suspense>}
           {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage userId={user.id} /></Suspense>}
+          {activeModule === 'laundry' && <Suspense fallback={<div className="history-empty" role="status">Carregando Lavanderia/Rouparia…</div>}><LaundryPage user={user} /></Suspense>}
           {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
           {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage userId={user.id} canPrescribe={profile.modules.includes('physician')} onOpenPhysician={() => navigate('physician')} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'psychology')} /></Suspense>}
           {activeModule === 'patients' && <PatientRegistryPage onHistory={openPatientHistory} canDeletePatients={user.is_superuser || (user.modules.includes('admin') && (user.permissions.admin?.includes('excluir') === true || user.permissions.admin?.includes('administrar') === true))} />}
@@ -2305,7 +2316,12 @@ function AboutPage() {
 }
 
 function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id: ModuleId) => void }) {
-  const allowedModules = modules.filter((item) => profile.modules.includes(item.id) || (item.id === 'therapy' && profile.modules.includes('management')))
+  const dashboardModules = [...modules].sort((left, right) => {
+    if (left.id === 'admin') return 1
+    if (right.id === 'admin') return -1
+    return left.label.localeCompare(right.label, 'pt-BR')
+  })
+  const allowedModules = dashboardModules.filter((item) => profile.modules.includes(item.id) || (item.id === 'therapy' && profile.modules.includes('management')))
   const firstName = profile.name.split(' ')[0]
 
   return (
@@ -2318,7 +2334,7 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
 
       <div className="section-heading"><div><p className="eyebrow">ACESSO POR PERFIL</p><h2>Seus espaços de trabalho</h2></div><span className="module-total">{allowedModules.length} espaços disponíveis</span></div>
       <div className="module-grid">
-        {modules.map(({ id, label, icon: Icon, description }) => {
+        {dashboardModules.map(({ id, label, icon: Icon, description }) => {
           const available = profile.modules.includes(id) || (id === 'therapy' && profile.modules.includes('management'))
           return (
             <button key={id} type="button" className={`module-card ${available ? 'module-card-available' : 'module-card-locked'}`} onClick={() => available && onNavigate(id)} disabled={!available} aria-label={available ? label : `${label}: acesso não concedido. Solicite liberação ao administrador.`}>
@@ -2684,7 +2700,7 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
       const patientRows = patientData.patients ?? []
       setPatients(patientRows)
       setHistoryError('')
-      setPatientRef((selected) => patientRows.some((item) => item.reference === selected) ? selected : patientRows[0]?.reference ?? '')
+      setPatientRef((selected) => patientRows.some((item) => item.reference === selected) ? selected : '')
     }).catch((loadError) => { if (current) setHistoryError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os pacientes. Reinicie os serviços e confirme que as migrações foram aplicadas.') })
     return () => { current = false }
   }, [profile.id])
@@ -5436,7 +5452,7 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     }
   }
   return <section className="system-admin-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><a className="button button-secondary" href="/scpo-root-ca.crt" download="scpo-connect-root-ca.crt"><Download size={16} /> Baixar certificado do app</a><span className="module-icon"><ShieldCheck size={20} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Superusuário</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><a className="button button-secondary" href="/scpo-root-ca.crt" download="scpo-connect-root-ca.crt"><Download size={16} /> Baixar certificado do app</a><span className="module-icon"><ShieldCheck size={20} /></span></div>
     <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}

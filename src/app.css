@@ -205,7 +205,7 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .module-total { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .module-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
 .dashboard-page .module-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.dashboard-page .module-card { min-height: 132px; padding: 14px; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+.dashboard-page .module-card { min-height: 132px; padding: 14px; border-left: 4px solid var(--blue); transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
 .dashboard-page .module-card:hover { transform: translateY(-2px); border-color: #a9c6d3; box-shadow: var(--shadow); }
 .dashboard-page .module-card { animation: info-card-enter 340ms cubic-bezier(.2, .75, .25, 1) both; }
 .dashboard-page .module-card:nth-child(2) { animation-delay: 65ms; }
@@ -1640,10 +1640,81 @@ html[data-theme="dark"] .backup-operation-icon { background: #20343e; color: #b6
 .maintenance-filter-actions, .maintenance-actions { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
 .maintenance-report-summary { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .work-order-print-action { display: flex; justify-content: flex-end; }
+.laundry-page { width: 100%; }
+.laundry-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; }
+.laundry-header h1 { margin: 3px 0 5px; font-size: clamp(22px, 2.4vw, 29px); }
+.laundry-header .welcome-copy { margin: 0; }
+.laundry-header > .button { white-space: nowrap; }
+.laundry-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.laundry-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.laundry-summary > article { display: grid; align-content: center; gap: 5px; min-height: 88px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.laundry-summary strong { color: var(--blue-dark); font-size: 25px; line-height: 1; }
+.laundry-summary span { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.laundry-tabs { margin: 0; }
+.laundry-content { display: grid; gap: 18px; }
+.laundry-form-panel, .laundry-request-panel, .laundry-catalog-panel, .laundry-reports-panel { display: grid; gap: 16px; }
+.laundry-form-panel .section-heading, .laundry-request-panel .section-heading, .laundry-catalog-panel .section-heading, .laundry-reports-panel .section-heading { margin: 0; }
+.laundry-lines-fieldset { display: grid; gap: 12px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; }
+.laundry-lines-fieldset legend { padding-inline: 5px; color: var(--ink); font-size: 12px; font-weight: 650; }
+.laundry-line { display: grid; grid-template-columns: minmax(0, 2fr) minmax(130px, 1fr) auto; align-items: end; gap: 10px; }
+.laundry-submit { justify-self: end; min-height: 44px; }
+.laundry-request-list, .laundry-catalog-list, .laundry-stock-list, .laundry-movement-list { display: grid; gap: 10px; }
+.laundry-request-card { display: grid; gap: 11px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.laundry-request-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.laundry-request-heading h3 { margin: 5px 0 0; color: var(--ink); font-size: 15px; }
+.laundry-request-items { display: flex; flex-wrap: wrap; gap: 7px 18px; margin: 0; padding-left: 18px; color: var(--ink); font-size: 12px; }
+.laundry-request-card > p { margin: 0; color: var(--muted); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.laundry-request-card > small, .laundry-movement-list small { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.laundry-request-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; padding-top: 9px; border-top: 1px solid var(--line); }
+.laundry-request-actions .field { flex: 1 1 180px; }
+.laundry-request-actions .button { min-height: 42px; }
+.laundry-catalog-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.laundry-catalog-actions { display: flex; flex-wrap: wrap; gap: 8px; grid-column: 1 / -1; }
+.laundry-catalog-list > article, .laundry-stock-list > article, .laundry-movement-list > article { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.laundry-catalog-list > article > div, .laundry-stock-list > article > div, .laundry-movement-list > article > div { display: grid; gap: 4px; min-width: 0; }
+.laundry-catalog-list strong, .laundry-stock-list strong, .laundry-movement-list strong { color: var(--ink); font-size: 12px; }
+.laundry-catalog-list span, .laundry-stock-list span, .laundry-movement-list span { color: var(--muted); font-size: 11px; }
+.laundry-stock-list > article > span { display: grid; gap: 4px; min-width: 120px; }
+.laundry-stock-list > article > span > small { color: var(--muted); font-size: 10px; }
+.laundry-movement-list > article { grid-template-columns: minmax(0, 1fr) auto minmax(180px, auto); }
+.laundry-report-heading { margin-top: 12px !important; padding-top: 16px; border-top: 1px solid var(--line); }
+.laundry-access-note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+html[data-theme="dark"] :is(.laundry-summary > article, .laundry-request-card, .laundry-catalog-list > article, .laundry-stock-list > article, .laundry-movement-list > article) { border-color: var(--line); background: var(--surface); }
+html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); background: #17232b; }
 .backup-export-form { display: flex; align-items: end; gap: 14px; }
 .backup-export-form .field { flex: 1; }
 .backup-panel { margin-bottom: 18px; }
 @media (max-width: 700px) { .maintenance-filters { grid-template-columns: 1fr 1fr; } .maintenance-query { grid-column: span 2; } .maintenance-filter-actions { grid-column: span 2; } .maintenance-filter-actions .button { flex: 1; min-height: 44px; } .maintenance-actions { width: 100%; } .backup-export-form { align-items: stretch; flex-direction: column; } }
+@media (max-width: 760px) {
+  .laundry-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .laundry-catalog-form { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  .laundry-page-mobile { min-height: 100dvh; padding: 16px 13px calc(22px + env(safe-area-inset-bottom)); background: var(--page); }
+  .laundry-header { grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 10px; }
+  .laundry-header .module-icon { grid-row: 1; }
+  .laundry-header > div:nth-child(2) { grid-row: 1; }
+  .laundry-header > .button, .laundry-header-actions { grid-column: 1 / -1; justify-content: stretch; }
+  .laundry-header-actions .button { flex: 1; justify-content: center; }
+  .laundry-header h1 { font-size: 22px; }
+  .laundry-header .welcome-copy { font-size: 11px; }
+  .laundry-summary { gap: 8px; }
+  .laundry-summary > article { min-height: 76px; padding: 12px; }
+  .laundry-summary strong { font-size: 22px; }
+  .laundry-tabs .button { flex: 1 1 120px; }
+  .laundry-line { grid-template-columns: minmax(0, 1fr) 110px auto; gap: 7px; }
+  .laundry-request-heading { align-items: flex-start; flex-direction: column; }
+  .laundry-request-actions { align-items: stretch; flex-direction: column; }
+  .laundry-request-actions .button { justify-content: center; }
+  .laundry-catalog-form { grid-template-columns: 1fr; }
+  .laundry-catalog-actions { grid-column: auto; }
+  .laundry-catalog-actions .button { flex: 1; justify-content: center; }
+  .laundry-catalog-list > article { grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; padding: 11px; }
+  .laundry-catalog-list > article .button { padding-inline: 8px; }
+  .laundry-stock-list > article, .laundry-movement-list > article { grid-template-columns: minmax(0, 1fr) auto; }
+  .laundry-stock-list > article > span { min-width: 95px; }
+  .laundry-movement-list > article > small { grid-column: 1 / -1; }
+}
 @media print {
   body.print-maintenance-queue * { visibility: hidden !important; }
   body.print-maintenance-queue .maintenance-queue-page,

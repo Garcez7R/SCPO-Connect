@@ -18,6 +18,7 @@ const modules = [
   { name: 'pharmacy', color: '#2f855a', symbol: drawCapsule },
   { name: 'physician', color: '#1f5f99', symbol: drawStethoscope },
   { name: 'kitchen', color: '#c05621', symbol: drawUtensils },
+  { name: 'laundry', color: '#455a64', symbol: drawLaundry },
 ]
 
 for (const module of modules) {
@@ -141,6 +142,20 @@ function drawUtensils(image, centerX, centerY) {
   }
   drawLine(image, centerX + 18, centerY, centerX + 18, centerY + 31, 7, '#ffffff')
   drawLine(image, centerX + 18, centerY - 26, centerX + 18, centerY - 2, 18, '#ffffff')
+}
+
+function drawLaundry(image, centerX, centerY) {
+  const points = [
+    [-10, -28], [10, -28], [25, -17], [36, -8], [24, 5], [14, -2],
+    [14, 30], [-14, 30], [-14, -2], [-24, 5], [-36, -8], [-25, -17], [-10, -28],
+  ]
+  for (let index = 1; index < points.length; index += 1) {
+    const [previousX, previousY] = points[index - 1]
+    const [x, y] = points[index]
+    drawLine(image, centerX + previousX, centerY + previousY, centerX + x, centerY + y, 7, '#ffffff')
+  }
+  drawLine(image, centerX - 10, centerY - 28, centerX - 5, centerY - 17, 5, '#ffffff')
+  drawLine(image, centerX + 10, centerY - 28, centerX + 5, centerY - 17, 5, '#ffffff')
 }
 
 function resize(image, size) {

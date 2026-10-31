@@ -43,6 +43,7 @@ from .security import (
 MODULES = {
     "patients", "nursing", "pharmacy", "xray", "physician", "social", "nutrition", "hygiene",
     "reception", "therapy", "psychology", "maintenance", "management", "admin", "oversight",
+    "laundry",
 }
 ACTIONS = {"consultar", "criar", "alterar", "excluir", "administrar"}
 INITIAL_PASSWORD = "0000"

@@ -58,6 +58,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - PWA da Farmácia em `/pharmacy.html`, com manifesto próprio, atalhos móveis para estoque, leitura de código pela câmera, prescrições e dispensação, usando as mesmas APIs e permissões da versão completa. O cadastro de compras continua na versão desktop; o PWA não guarda dados clínicos nem registra movimentações offline.
 - PWA do Médico em `/physician.html`, com manifesto próprio e interface compacta para fila, prontuário e prescrições, usando as mesmas APIs/permissões do módulo completo. Exige conexão para consultar e salvar; não armazena prontuários localmente nem permite acesso offline.
 - PWA da Cozinha em `/kitchen.html`, com manifesto próprio e consulta rápida dos dados alimentares necessários dos pacientes internados; exige conexão ao servidor, segue as permissões de Nutrição/Gestão/Administração e não grava andamento de preparo ou entrega.
+- PWA da Lavanderia/Rouparia em `/laundry.html`, com manifesto e ícone próprios. Permite cadastrar tipos de enxoval, abrir solicitações por unidade e acompanhar coleta, lavagem, estoque e devolução conforme as permissões da conta; exige conexão ao servidor.
 - Interface responsiva para computadores, celulares e tablets.
 - Menu lateral recolhível para uso mais eficiente em monitores menores e telas mais estreitas.
 - Tela inicial offline: verifica a conexão a cada 30 segundos e recarrega o app somente quando o servidor voltar a responder; a verificação não roda nas telas autenticadas.

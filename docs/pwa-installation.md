@@ -10,6 +10,7 @@ O aplicativo completo e os PWAs dos módulos podem ser adicionados separadamente
 | Farmácia | `/pharmacy.html` |
 | Médico | `/physician.html` |
 | Cozinha | `/kitchen.html` |
+| Lavanderia/Rouparia | `/laundry.html` |
 
 ## Android
 
@@ -24,5 +25,7 @@ O aplicativo completo e os PWAs dos módulos podem ser adicionados separadamente
 3. Confira o nome e o ícone apresentados antes de confirmar. As opções e o comportamento podem variar entre versões do iOS/iPadOS.
 
 Os PWAs usam as mesmas contas, permissões e serviços do aplicativo completo; instalar um atalho não concede acesso adicional. A autenticação e os recursos de cada perfil continuam sujeitos às permissões do servidor. Os módulos móveis dependem de conexão com o servidor, salvo os fluxos offline explicitamente descritos pela equipe.
+
+O PWA da Lavanderia/Rouparia registra solicitações e movimentações de enxoval somente após confirmação do servidor; não há acesso offline nem armazenamento de dados operacionais no aparelho.
 
 O navegador controla o fluxo de instalação e pode agrupar atalhos do mesmo domínio ou apresentar opções diferentes. A imagem composta do módulo é a fornecida à instalação; não há garantia de que o sistema operacional acrescente automaticamente um selo do navegador.

@@ -3,6 +3,7 @@ import base64
 from collections.abc import Generator
 from contextlib import nullcontext
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from alembic import command
@@ -2396,6 +2397,115 @@ def test_hygiene_custom_request_requires_a_description() -> None:
             area="other",
             location="Corredor",
         )
+
+
+def test_laundry_requests_track_soiled_and_clean_inventory(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(maintenance, "emit_audit_event", lambda *args, **kwargs: None)
+    db = domain_database["maintenance"]
+    laundry_staff = DemoPrincipal(
+        "laundry-1",
+        "laundry",
+        "Equipe de Lavanderia",
+        "laundry",
+        ["laundry"],
+        {"laundry": ["consultar", "criar", "alterar", "excluir"]},
+    )
+    item = maintenance.create_laundry_item(
+        maintenance.LaundryCatalogItemPayload(
+            name="Lençol", category="Rouparia", unit="unidade"
+        ),
+        laundry_staff,
+        db,
+    )
+    request = maintenance.create_laundry_request(
+        maintenance.LaundryRequestCreate(
+            unit="Internação",
+            area="Quarto 2",
+            items=[
+                maintenance.LaundryRequestLinePayload(
+                    item_id=item["id"], quantity=Decimal(3)
+                )
+            ],
+        ),
+        laundry_staff,
+        db,
+    )
+    assert request["status"] == "open"
+    assert request["items"][0]["quantity"] == "3.000"
+    assert maintenance.get_laundry_reports(laundry_staff, db)["items"][0][
+        "soiled_balance"
+    ] == "0"
+
+    collected = maintenance.update_laundry_request(
+        request["id"],
+        maintenance.LaundryRequestUpdate(status="collected"),
+        laundry_staff,
+        db,
+    )
+    assert collected["status"] == "collected"
+    assert maintenance.get_laundry_reports(laundry_staff, db)["items"][0][
+        "soiled_balance"
+    ] == "3.000"
+
+    with pytest.raises(HTTPException) as invalid_transition:
+        maintenance.update_laundry_request(
+            request["id"],
+            maintenance.LaundryRequestUpdate(status="delivered"),
+            laundry_staff,
+            db,
+        )
+    assert invalid_transition.value.status_code == 409
+
+    maintenance.update_laundry_request(
+        request["id"],
+        maintenance.LaundryRequestUpdate(status="washing"),
+        laundry_staff,
+        db,
+    )
+    ready = maintenance.update_laundry_request(
+        request["id"],
+        maintenance.LaundryRequestUpdate(status="ready"),
+        laundry_staff,
+        db,
+    )
+    assert ready["status"] == "ready"
+    balances = maintenance.get_laundry_reports(laundry_staff, db)["items"][0]
+    assert balances["soiled_balance"] == "0.000"
+    assert balances["clean_balance"] == "3.000"
+
+    delivered = maintenance.update_laundry_request(
+        request["id"],
+        maintenance.LaundryRequestUpdate(status="delivered"),
+        laundry_staff,
+        db,
+    )
+    assert delivered["status"] == "delivered"
+    balances = maintenance.get_laundry_reports(laundry_staff, db)["items"][0]
+    assert balances["clean_balance"] == "0.000"
+    with pytest.raises(HTTPException) as historical_delete:
+        maintenance.delete_laundry_item(item["id"], laundry_staff, db)
+    assert historical_delete.value.status_code == 409
+
+
+def test_laundry_rejects_duplicate_item_lines_and_unauthorized_writes() -> None:
+    item_id = "00000000-0000-4000-8000-000000000001"
+    with pytest.raises(ValidationError, match="uma única vez"):
+        maintenance.LaundryRequestCreate(
+            unit="Internação",
+            area="Quarto 2",
+            items=[
+                {"item_id": item_id, "quantity": "1"},
+                {"item_id": item_id, "quantity": "2"},
+            ],
+        )
+    unauthorized = DemoPrincipal(
+        "other-1", "other", "Outro perfil", "nursing", ["nursing"], {}
+    )
+    with pytest.raises(HTTPException) as denied:
+        maintenance._require_laundry_write(unauthorized, "criar")
+    assert denied.value.status_code == 403
 
 
 @pytest.mark.parametrize("service_type", ["Higienização", "higienizacao"])

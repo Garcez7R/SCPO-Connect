@@ -3,6 +3,7 @@
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -13,7 +14,9 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
+    UniqueConstraint,
     case,
     func,
     select,
@@ -30,6 +33,7 @@ from .common import (
     emit_audit_event,
     register_audit_outbox_status_route,
     require_demo_role,
+    require_demo_role_or_superuser,
     update_hospital_bed_cleaning_state,
     verify_database_migrated,
     verify_patient_reference,
@@ -137,6 +141,75 @@ class PreventiveMaintenancePlan(Base):
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     asset: Mapped[EquipmentAsset] = relationship()
+
+
+class LaundryCatalogItem(Base):
+    __tablename__ = "laundry_catalog_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    unit: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LaundryRequest(Base):
+    __tablename__ = "laundry_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_number: Mapped[int] = mapped_column(
+        ForeignKey("service_request_numbers.id"), nullable=False, unique=True
+    )
+    unit: Mapped[str] = mapped_column(String(80), nullable=False)
+    area: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    priority: Mapped[str] = mapped_column(String(12), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    assignee: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    requester_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    requester_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LaundryRequestItem(Base):
+    __tablename__ = "laundry_request_items"
+    __table_args__ = (
+        UniqueConstraint("request_id", "item_id", name="uq_laundry_request_item"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_id: Mapped[str] = mapped_column(
+        ForeignKey("laundry_requests.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    item_id: Mapped[str] = mapped_column(
+        ForeignKey("laundry_catalog_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    item: Mapped[LaundryCatalogItem] = relationship()
+
+
+class LaundryInventoryMovement(Base):
+    __tablename__ = "laundry_inventory_movements"
+    __table_args__ = (Index("ix_laundry_inventory_item_created", "item_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[str] = mapped_column(
+        ForeignKey("laundry_catalog_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    request_id: Mapped[str] = mapped_column(
+        ForeignKey("laundry_requests.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    unit: Mapped[str] = mapped_column(String(80), nullable=False)
+    movement_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    item: Mapped[LaundryCatalogItem] = relationship()
 
 
 def get_maintenance_db():
@@ -482,6 +555,65 @@ class PreventiveMaintenanceCompletionPayload(BaseModel):
     status: Literal["completed"]
 
 
+class LaundryCatalogItemPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=120)
+    category: str = Field(min_length=2, max_length=80)
+    unit: Literal["unidade", "kg", "pacote"] = "unidade"
+
+    @field_validator("name", "category")
+    @classmethod
+    def trim_laundry_catalog_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Informe pelo menos dois caracteres")
+        return normalized
+
+
+class LaundryRequestLinePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    item_id: str = Field(min_length=36, max_length=36)
+    quantity: Decimal = Field(gt=0, le=999_999_999, max_digits=12, decimal_places=3)
+
+
+class LaundryRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unit: str = Field(min_length=2, max_length=80)
+    area: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=500)
+    priority: Literal["normal", "high", "urgent"] = "normal"
+    items: list[LaundryRequestLinePayload] = Field(min_length=1, max_length=50)
+
+    @field_validator("unit", "area", "description")
+    @classmethod
+    def trim_laundry_request_text(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def reject_duplicate_laundry_items(self) -> "LaundryRequestCreate":
+        item_ids = [item.item_id for item in self.items]
+        if len(set(item_ids)) != len(item_ids):
+            raise ValueError("Cada item deve aparecer uma única vez na solicitação")
+        return self
+
+
+class LaundryRequestUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["collected", "washing", "ready", "delivered", "cancelled"] | None = None
+    assignee: str | None = Field(default=None, max_length=120)
+
+    @field_validator("assignee")
+    @classmethod
+    def trim_laundry_assignee(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else value
+
+    @model_validator(mode="after")
+    def require_laundry_request_change(self) -> "LaundryRequestUpdate":
+        if self.status is None and self.assignee is None:
+            raise ValueError("Informe uma alteração para a solicitação")
+        return self
+
+
 def _require_maintenance(principal: DemoPrincipal, action: str) -> None:
     if "maintenance" not in principal.modules or action not in principal.permissions.get("maintenance", []):
         raise HTTPException(status_code=403, detail="A fila e a atualização de ordens são restritas à equipe de manutenção")
@@ -525,6 +657,389 @@ def _new_service_request_number(db: Session, issued_at: datetime) -> int:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"service": "maintenance", "status": "ok"}
+
+
+def _serialize_laundry_item(item: LaundryCatalogItem) -> dict[str, object]:
+    return {
+        "id": item.id,
+        "name": item.name,
+        "category": item.category,
+        "unit": item.unit,
+        "created_by": item.created_by,
+        "created_at": item.created_at.isoformat(),
+        "updated_at": item.updated_at.isoformat(),
+    }
+
+
+def _serialize_laundry_request(
+    request: LaundryRequest, items: list[LaundryRequestItem]
+) -> dict[str, object]:
+    return {
+        "id": request.id,
+        "request_number": f"{request.request_number:07d}",
+        "unit": request.unit,
+        "area": request.area,
+        "description": request.description,
+        "priority": request.priority,
+        "status": request.status,
+        "assignee": request.assignee,
+        "requester_name": request.requester_name,
+        "updated_by": request.updated_by,
+        "created_at": request.created_at.isoformat(),
+        "updated_at": request.updated_at.isoformat(),
+        "items": [
+            {
+                "item_id": line.item_id,
+                "name": line.item.name,
+                "category": line.item.category,
+                "unit": line.item.unit,
+                "quantity": str(line.quantity),
+            }
+            for line in items
+        ],
+    }
+
+
+def _laundry_request_lines(
+    db: Session, request_id: str
+) -> list[LaundryRequestItem]:
+    return db.scalars(
+        select(LaundryRequestItem)
+        .where(LaundryRequestItem.request_id == request_id)
+        .order_by(LaundryCatalogItem.name)
+        .join(LaundryCatalogItem)
+    ).all()
+
+
+def _require_laundry_write(principal: DemoPrincipal, action: str) -> None:
+    if principal.is_superuser:
+        return
+    if any(
+        module in principal.modules and action in principal.permissions.get(module, [])
+        for module in ("laundry", "management", "admin")
+    ):
+        return
+    raise HTTPException(
+        status_code=403, detail="Acesso não autorizado para a Lavanderia/Rouparia"
+    )
+
+
+@app.get("/api/v1/laundry/items")
+def list_laundry_items(
+    principal: Annotated[
+        DemoPrincipal, Depends(require_demo_role_or_superuser("laundry", "management", "admin", "oversight"))
+    ],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, list[dict[str, object]]]:
+    items = db.scalars(select(LaundryCatalogItem).order_by(LaundryCatalogItem.name)).all()
+    emit_audit_event(principal, "laundry", "laundry_catalog_read", "all")
+    return {"items": [_serialize_laundry_item(item) for item in items]}
+
+
+@app.post("/api/v1/laundry/items", status_code=201)
+def create_laundry_item(
+    payload: LaundryCatalogItemPayload,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    _require_laundry_write(principal, "criar")
+    duplicate = db.scalar(
+        select(LaundryCatalogItem).where(
+            func.lower(LaundryCatalogItem.name) == payload.name.casefold()
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="Já existe um item com esse nome")
+    now = datetime.now(UTC)
+    item = LaundryCatalogItem(
+        id=str(uuid.uuid4()),
+        **payload.model_dump(),
+        created_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(item)
+    emit_audit_event(principal, "laundry", "laundry_catalog_item_created", item.id, db=db)
+    db.commit()
+    db.refresh(item)
+    return _serialize_laundry_item(item)
+
+
+@app.patch("/api/v1/laundry/items/{item_id}")
+def update_laundry_item(
+    item_id: str,
+    payload: LaundryCatalogItemPayload,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    _require_laundry_write(principal, "alterar")
+    item = db.get(LaundryCatalogItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item da lavanderia não encontrado")
+    duplicate = db.scalar(
+        select(LaundryCatalogItem).where(
+            func.lower(LaundryCatalogItem.name) == payload.name.casefold(),
+            LaundryCatalogItem.id != item_id,
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="Já existe um item com esse nome")
+    for field, value in payload.model_dump().items():
+        setattr(item, field, value)
+    item.updated_at = datetime.now(UTC)
+    emit_audit_event(principal, "laundry", "laundry_catalog_item_updated", item.id, db=db)
+    db.commit()
+    db.refresh(item)
+    return _serialize_laundry_item(item)
+
+
+@app.delete("/api/v1/laundry/items/{item_id}", status_code=204)
+def delete_laundry_item(
+    item_id: str,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> None:
+    _require_laundry_write(principal, "excluir")
+    item = db.get(LaundryCatalogItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item da lavanderia não encontrado")
+    if db.scalar(
+        select(LaundryRequestItem.id).where(LaundryRequestItem.item_id == item_id).limit(1)
+    ) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="O item possui histórico de solicitações e não pode ser excluído",
+        )
+    if db.scalar(
+        select(LaundryInventoryMovement.id)
+        .where(LaundryInventoryMovement.item_id == item_id)
+        .limit(1)
+    ) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="O item possui movimentações de estoque e não pode ser excluído",
+        )
+    emit_audit_event(principal, "laundry", "laundry_catalog_item_deleted", item.id, db=db)
+    db.delete(item)
+    db.commit()
+
+
+@app.get("/api/v1/laundry/requests")
+def list_laundry_requests(
+    principal: Annotated[
+        DemoPrincipal, Depends(require_demo_role_or_superuser("laundry", "management", "admin", "oversight"))
+    ],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    query = select(LaundryRequest)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    requests = db.scalars(
+        query.order_by(LaundryRequest.created_at.desc(), LaundryRequest.id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    emit_audit_event(principal, "laundry", "laundry_requests_read", "all")
+    return {
+        "requests": [
+            _serialize_laundry_request(request, _laundry_request_lines(db, request.id))
+            for request in requests
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.post("/api/v1/laundry/requests", status_code=201)
+def create_laundry_request(
+    payload: LaundryRequestCreate,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    _require_laundry_write(principal, "criar")
+    items_by_id = {
+        item.id: item
+        for item in db.scalars(
+            select(LaundryCatalogItem).where(
+                LaundryCatalogItem.id.in_([line.item_id for line in payload.items])
+            )
+        ).all()
+    }
+    if len(items_by_id) != len(payload.items):
+        raise HTTPException(
+            status_code=422, detail="A solicitação contém itens inexistentes"
+        )
+    now = datetime.now(UTC)
+    request = LaundryRequest(
+        id=str(uuid.uuid4()),
+        request_number=_new_service_request_number(db, now),
+        unit=payload.unit,
+        area=payload.area,
+        description=payload.description,
+        priority=payload.priority,
+        status="open",
+        assignee="",
+        requester_id=principal.user_id,
+        requester_name=principal.actor_name,
+        updated_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(request)
+    db.flush()
+    lines = [
+        LaundryRequestItem(
+            id=str(uuid.uuid4()),
+            request_id=request.id,
+            item_id=line.item_id,
+            quantity=line.quantity,
+        )
+        for line in payload.items
+    ]
+    db.add_all(lines)
+    emit_audit_event(
+        principal, "laundry", "laundry_request_created", request.id, db=db
+    )
+    db.commit()
+    for line in lines:
+        db.refresh(line)
+    db.refresh(request)
+    return _serialize_laundry_request(request, _laundry_request_lines(db, request.id))
+
+
+@app.patch("/api/v1/laundry/requests/{request_id}")
+def update_laundry_request(
+    request_id: str,
+    payload: LaundryRequestUpdate,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    _require_laundry_write(principal, "alterar")
+    request = db.get(LaundryRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Solicitação de lavanderia não encontrada")
+    changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    next_status = changes.get("status")
+    transitions = {
+        "open": {"collected", "cancelled"},
+        "collected": {"washing"},
+        "washing": {"ready"},
+        "ready": {"delivered"},
+        "delivered": set(),
+        "cancelled": set(),
+    }
+    if next_status is not None and next_status != request.status:
+        if next_status not in transitions[request.status]:
+            raise HTTPException(
+                status_code=409,
+                detail="Etapa inválida; siga a sequência coleta, lavagem, pronto e devolvido",
+            )
+        lines = _laundry_request_lines(db, request.id)
+        movement_types = {
+            "collected": ("soiled_received",),
+            "ready": ("soiled_processed", "clean_received"),
+            "delivered": ("clean_delivered",),
+        }.get(next_status, ())
+        now = datetime.now(UTC)
+        db.add_all(
+            LaundryInventoryMovement(
+                item_id=line.item_id,
+                request_id=request.id,
+                unit=request.unit,
+                movement_type=movement_type,
+                quantity=line.quantity,
+                actor_id=principal.user_id,
+                actor_name=principal.actor_name,
+                created_at=now,
+            )
+            for line in lines
+            for movement_type in movement_types
+        )
+        request.status = next_status
+    if "assignee" in changes:
+        request.assignee = changes["assignee"]
+    request.updated_by = principal.actor_name
+    request.updated_at = datetime.now(UTC)
+    emit_audit_event(
+        principal, "laundry", "laundry_request_updated", request.id, db=db
+    )
+    db.commit()
+    db.refresh(request)
+    return _serialize_laundry_request(request, _laundry_request_lines(db, request.id))
+
+
+@app.get("/api/v1/laundry/reports")
+def get_laundry_reports(
+    principal: Annotated[
+        DemoPrincipal, Depends(require_demo_role_or_superuser("laundry", "management", "admin", "oversight"))
+    ],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    balances: dict[str, dict[str, Decimal]] = {}
+    rows = db.execute(
+        select(
+            LaundryInventoryMovement.item_id,
+            LaundryInventoryMovement.movement_type,
+            func.sum(LaundryInventoryMovement.quantity),
+        ).group_by(
+            LaundryInventoryMovement.item_id, LaundryInventoryMovement.movement_type
+        )
+    )
+    for item_id, movement_type, total in rows:
+        values = balances.setdefault(item_id, {"clean": Decimal(0), "soiled": Decimal(0)})
+        if movement_type == "soiled_received":
+            values["soiled"] += Decimal(total or 0)
+        elif movement_type == "soiled_processed":
+            values["soiled"] -= Decimal(total or 0)
+        elif movement_type == "clean_received":
+            values["clean"] += Decimal(total or 0)
+        elif movement_type == "clean_delivered":
+            values["clean"] -= Decimal(total or 0)
+    items = db.scalars(select(LaundryCatalogItem).order_by(LaundryCatalogItem.name)).all()
+    status_counts = {
+        status: db.scalar(
+            select(func.count()).select_from(LaundryRequest).where(
+                LaundryRequest.status == status
+            )
+        ) or 0
+        for status in ("open", "collected", "washing", "ready", "delivered", "cancelled")
+    }
+    movements = db.scalars(
+        select(LaundryInventoryMovement)
+        .order_by(
+            LaundryInventoryMovement.created_at.desc(),
+            LaundryInventoryMovement.id.desc(),
+        )
+        .limit(100)
+    ).all()
+    emit_audit_event(principal, "laundry", "laundry_reports_read", "all")
+    return {
+        "items": [
+            {
+                **_serialize_laundry_item(item),
+                "clean_balance": str(balances.get(item.id, {}).get("clean", Decimal(0))),
+                "soiled_balance": str(balances.get(item.id, {}).get("soiled", Decimal(0))),
+            }
+            for item in items
+        ],
+        "status_counts": status_counts,
+        "movements": [
+            {
+                "id": movement.id,
+                "item_id": movement.item_id,
+                "item_name": movement.item.name,
+                "request_id": movement.request_id,
+                "unit": movement.unit,
+                "movement_type": movement.movement_type,
+                "quantity": str(movement.quantity),
+                "actor_name": movement.actor_name,
+                "created_at": movement.created_at.isoformat(),
+            }
+            for movement in movements
+        ],
+    }
 
 
 @app.post("/api/v1/maintenance/orders", status_code=201)

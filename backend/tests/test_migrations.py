@@ -43,6 +43,13 @@ def test_each_service_migration_creates_only_its_owned_table(
             "SELECT version_num FROM alembic_version"
         ).scalar_one()
     assert revision == ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
+    if service == "maintenance":
+        assert {
+            "laundry_catalog_items",
+            "laundry_requests",
+            "laundry_request_items",
+            "laundry_inventory_movements",
+        } <= tables
     if service == "nursing":
         assert len(tables) == 33
         assert "nursing_offline_action_receipts" in tables
@@ -199,7 +206,7 @@ def test_each_service_migration_creates_only_its_owned_table(
             column["name"] for column in inspect(get_engine(service)).get_columns("app_users")
         }
     elif service == "maintenance":
-        assert len(tables) == 8
+        assert len(tables) == 12
         assert "audit_outbox" in tables
         assert "hygiene_requests" in tables
         hygiene_columns = {

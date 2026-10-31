@@ -374,7 +374,7 @@ export default function NursingMobilePage({
       setSelectedPatient((current) =>
         next.patients.some((patient) => patient.reference === current)
           ? current
-          : next.patients[0]?.reference ?? '',
+          : '',
       )
       setRound(next.round)
       offlineDataRef.current = next
@@ -426,7 +426,7 @@ export default function NursingMobilePage({
           setSelectedPatient((current) =>
             next.patients.some((patient) => patient.reference === current)
               ? current
-              : next.patients[0]?.reference ?? '',
+              : '',
           )
           setRound(next.round)
           offlineDataRef.current = next

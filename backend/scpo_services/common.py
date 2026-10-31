@@ -150,6 +150,7 @@ def _outbox_database_service(service: str | None = None) -> str | None:
         "xray": "xray",
         "maintenance": "maintenance",
         "hygiene": "maintenance",
+        "laundry": "maintenance",
     }
     return module_services.get(current or "")
 
