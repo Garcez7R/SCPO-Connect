@@ -14,11 +14,13 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Annotated
 from urllib.parse import unquote, urlparse
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from cryptography.exceptions import InvalidTag
@@ -33,6 +35,9 @@ from .rgs_format import DATABASES, MAGIC, decrypt_and_extract
 AUTHENTICATED = Depends(authenticated_principal)
 RESTORE_CONFIRMATION = "SUBSTITUIR TODOS OS DADOS"
 RESTORE_LOCK = threading.Lock()
+RESTORE_OPERATIONS_LOCK = threading.Lock()
+RESTORE_OPERATIONS: dict[str, dict[str, object]] = {}
+RESTORE_OPERATION_RETENTION = timedelta(hours=2)
 AUTO_BACKUP_LOCK = threading.Lock()
 AUTO_BACKUP_RETENTION_DAYS = 30
 AUTO_BACKUP_HOUR = 2
@@ -419,6 +424,62 @@ def _require_admin(principal: DemoPrincipal) -> None:
         raise HTTPException(status_code=403, detail="Acesso não autorizado para esta operação")
 
 
+def _update_restore_operation(
+    operation_id: str | None,
+    *,
+    status: str,
+    stage: str,
+    message: str,
+    progress: int | None,
+) -> None:
+    if operation_id is None:
+        return
+    now = datetime.now(UTC)
+    with RESTORE_OPERATIONS_LOCK:
+        cutoff = now - RESTORE_OPERATION_RETENTION
+        expired = [
+            existing_id
+            for existing_id, operation in RESTORE_OPERATIONS.items()
+            if operation.get("status") != "running"
+            and isinstance(operation.get("updated_at"), str)
+            and datetime.fromisoformat(str(operation["updated_at"])) < cutoff
+        ]
+        for existing_id in expired:
+            RESTORE_OPERATIONS.pop(existing_id, None)
+        RESTORE_OPERATIONS[operation_id] = {
+            "status": status,
+            "stage": stage,
+            "message": message,
+            "progress": progress,
+            "updated_at": now.isoformat(),
+        }
+
+
+def _read_restore_operation(operation_id: str) -> dict[str, object] | None:
+    with RESTORE_OPERATIONS_LOCK:
+        operation = RESTORE_OPERATIONS.get(operation_id)
+        if (
+            operation is not None
+            and operation.get("status") != "running"
+            and isinstance(operation.get("updated_at"), str)
+            and datetime.fromisoformat(str(operation["updated_at"]))
+            < datetime.now(UTC) - RESTORE_OPERATION_RETENTION
+        ):
+            RESTORE_OPERATIONS.pop(operation_id, None)
+            return None
+        return dict(operation) if operation is not None else None
+
+
+def _parse_restore_operation_id(request: Request) -> str | None:
+    value = request.headers.get("x-operation-id")
+    if value is None:
+        return None
+    try:
+        return str(UUID(value))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Identificador da operação inválido") from exc
+
+
 def _connection_args(service: str) -> tuple[list[str], dict[str, str]]:
     parsed = urlparse(os.getenv(f"SCPO_{service.upper()}_DATABASE_URL", ""))
     if parsed.scheme not in {"postgres", "postgresql", "postgresql+psycopg"} or not parsed.hostname:
@@ -504,12 +565,16 @@ def _validate_database_dump(dump_path: Path) -> None:
     )
 
 
-def _restore_all_databases(dumps_dir: Path) -> None:
+def _restore_all_databases(
+    dumps_dir: Path,
+    on_progress: Callable[[str, int, int], None] | None = None,
+) -> None:
     restored: list[str] = []
     with tempfile.TemporaryDirectory(prefix="scpo-restore-safety-") as safety_dir:
         safety_path = Path(safety_dir)
         try:
-            for service in DATABASES:
+            total = len(DATABASES)
+            for index, service in enumerate(DATABASES, start=1):
                 args, env = _connection_args(service)
                 snapshot = safety_path / f"{service}.dump"
                 with snapshot.open("wb") as output:
@@ -527,9 +592,15 @@ def _restore_all_databases(dumps_dir: Path) -> None:
                         check=True,
                         timeout=1800,
                     )
-            for service in DATABASES:
+                if on_progress is not None:
+                    on_progress("snapshot", index, total)
+            for index, service in enumerate(DATABASES, start=1):
+                if on_progress is not None:
+                    on_progress("restore_started", index, total)
                 _restore_database(service, dumps_dir / f"{service}.dump")
                 restored.append(service)
+                if on_progress is not None:
+                    on_progress("restore_completed", index, total)
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             rollback_failures: list[str] = []
             for service in reversed(restored):
@@ -801,6 +872,18 @@ def export_backup(payload: ExportRequest, principal: Annotated[DemoPrincipal, AU
     )
 
 
+@app.get("/api/v1/backup/operations/{operation_id}")
+def restore_operation_status(
+    operation_id: UUID,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+) -> dict[str, object]:
+    _require_admin(principal)
+    operation = _read_restore_operation(str(operation_id))
+    if operation is None:
+        raise HTTPException(status_code=404, detail="A operação não existe ou o estado já expirou")
+    return operation
+
+
 @app.put("/api/v1/backup/restore")
 async def restore_backup(
     request: Request,
@@ -816,9 +899,24 @@ async def restore_backup(
         raise HTTPException(status_code=415, detail="Envie um arquivo de backup .rgs")
 
     password = _restore_password(request)
+    operation_id = _parse_restore_operation_id(request)
     if not RESTORE_LOCK.acquire(blocking=False):
+        _update_restore_operation(
+            operation_id,
+            status="failed",
+            stage="rejected",
+            message="Já existe uma restauração em andamento.",
+            progress=None,
+        )
         raise HTTPException(status_code=409, detail="Já existe uma restauração em andamento")
 
+    _update_restore_operation(
+        operation_id,
+        status="running",
+        stage="receiving",
+        message="Recebendo o arquivo .rgs; mantenha esta tela aberta.",
+        progress=0,
+    )
     try:
         with tempfile.TemporaryDirectory(prefix="scpo-rgs-restore-") as temp:
             root = Path(temp)
@@ -837,17 +935,89 @@ async def restore_backup(
                         "separadamente; se este era um backup manual, confira o arquivo."
                     ),
                 )
+            _update_restore_operation(
+                operation_id,
+                status="running",
+                stage="decrypting",
+                message="Descriptografando o pacote e conferindo o manifesto.",
+                progress=5,
+            )
             try:
-                decrypt_and_extract(source, dumps, password=password)
-                for service in DATABASES:
-                    _validate_database_dump(dumps / f"{service}.dump")
+                await asyncio.to_thread(
+                    decrypt_and_extract,
+                    source,
+                    dumps,
+                    password=password,
+                )
+                total = len(DATABASES)
+                _update_restore_operation(
+                    operation_id,
+                    status="running",
+                    stage="validating",
+                    message="Validando os sete bancos antes de alterar os dados atuais.",
+                    progress=10,
+                )
+                for index, service in enumerate(DATABASES, start=1):
+                    await asyncio.to_thread(
+                        _validate_database_dump,
+                        dumps / f"{service}.dump",
+                    )
+                    progress = 10 + round(index / total * 20)
+                    _update_restore_operation(
+                        operation_id,
+                        status="running",
+                        stage="validating",
+                        message=f"Banco {service} validado ({index}/{total}).",
+                        progress=progress,
+                    )
             except (InvalidTag, OSError, ValueError, tarfile.TarError, subprocess.SubprocessError) as exc:
                 raise HTTPException(
                     status_code=422,
                     detail="Arquivo .rgs inválido, senha incorreta, dump PostgreSQL incompatível ou backup danificado; nenhum banco foi alterado",
                 ) from exc
+
+            _update_restore_operation(
+                operation_id,
+                status="running",
+                stage="snapshotting",
+                message="Criando cópias temporárias dos dados atuais para recuperação.",
+                progress=30,
+            )
+
+            def report_restore_progress(stage: str, completed: int, total: int) -> None:
+                if stage == "snapshot":
+                    progress = 30 + round(completed / total * 25)
+                    message = f"Cópia temporária criada ({completed}/{total})."
+                    operation_stage = "snapshotting"
+                elif stage == "restore_started":
+                    progress = 55 + round((completed - 1) / total * 44)
+                    message = f"Restaurando banco {DATABASES[completed - 1]} ({completed}/{total})."
+                    operation_stage = "restoring"
+                else:
+                    progress = 55 + round(completed / total * 44)
+                    message = f"Banco {DATABASES[completed - 1]} restaurado ({completed}/{total})."
+                    operation_stage = "restoring"
+                _update_restore_operation(
+                    operation_id,
+                    status="running",
+                    stage=operation_stage,
+                    message=message,
+                    progress=progress,
+                )
+
+            _update_restore_operation(
+                operation_id,
+                status="running",
+                stage="restoring",
+                message="As cópias temporárias estão prontas. Restaurando os sete bancos.",
+                progress=55,
+            )
             try:
-                _restore_all_databases(dumps)
+                await asyncio.to_thread(
+                    _restore_all_databases,
+                    dumps,
+                    report_restore_progress,
+                )
             except RuntimeError as exc:
                 logger.exception("Backup restore and rollback failed")
                 raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -865,6 +1035,34 @@ async def restore_backup(
             "all_databases",
             service="access",
         )
+        _update_restore_operation(
+            operation_id,
+            status="completed",
+            stage="completed",
+            message="Os sete bancos foram restaurados com sucesso.",
+            progress=100,
+        )
         return {"status": "restored", "message": "Os sete bancos foram restaurados com sucesso."}
+    except HTTPException as exc:
+        _update_restore_operation(
+            operation_id,
+            status="failed",
+            stage="failed",
+            message=str(exc.detail),
+            progress=None,
+        )
+        raise
     finally:
+        operation = _read_restore_operation(operation_id) if operation_id else None
+        if operation is not None and operation.get("status") == "running":
+            _update_restore_operation(
+                operation_id,
+                status="failed",
+                stage="failed",
+                message=(
+                    "A restauração foi interrompida antes da conclusão. Confira o estado "
+                    "dos serviços antes de iniciar outra operação."
+                ),
+                progress=None,
+            )
         RESTORE_LOCK.release()

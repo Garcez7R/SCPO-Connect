@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ErrorInfo, FormEvent, ReactNode } from 'react'
-import { readApiResponse, readableApiError } from './api'
+import { ApiResponseError, readApiResponse, readableApiError } from './api'
 import AllergyFields from './components/AllergyFields'
 import { PatientCareTrackBadge } from './components/PatientCareTrackBadge'
 import { patientCareTrackClass } from './patientCareTrack'
@@ -4709,6 +4709,13 @@ type BackupOperationProgress = {
   progress: number | null
 }
 
+type RestoreOperationStatus = {
+  status: 'running' | 'completed' | 'failed'
+  stage: string
+  message: string
+  progress: number | null
+}
+
 type AutomaticBackupStatus = {
   enabled: boolean
   configured: boolean
@@ -4908,6 +4915,40 @@ function BackupExportPanel() {
     if (!restoreFile || restoreConfirmation !== 'SUBSTITUIR TODOS OS DADOS') return
     setRestoring(true); setRestoreError(''); setRestoreMessage('')
     setOperation({ kind: 'restore', title: 'Enviando arquivo de backup', message: 'Enviando o arquivo .rgs com segurança…', progress: 0 })
+    const operationId = crypto.randomUUID()
+    let progressPolling = false
+    let progressTimer: number | undefined
+    const pollRestoreProgress = async () => {
+      if (!progressPolling) return
+      try {
+        const status = await readApiResponse<RestoreOperationStatus>(
+          await fetch(`/api/v1/backup/operations/${operationId}`, { cache: 'no-store' }),
+        )
+        setOperation({
+          kind: 'restore',
+          title: status.status === 'completed'
+            ? 'Restauração concluída'
+            : status.status === 'failed'
+              ? 'Restauração interrompida'
+              : 'Validando e restaurando',
+          message: status.message,
+          progress: status.progress,
+        })
+        progressPolling = status.status === 'running'
+      } catch (progressError) {
+        if (progressError instanceof ApiResponseError
+          && (progressError.status === 401 || progressError.status === 403)) {
+          progressPolling = false
+        }
+        setOperation({
+          kind: 'restore',
+          title: 'Restauração em andamento',
+          message: `Não foi possível atualizar o progresso: ${readableApiError(progressError)} A operação pode continuar no servidor; aguarde a resposta antes de repetir.`,
+          progress: null,
+        })
+      }
+      if (progressPolling) progressTimer = window.setTimeout(() => void pollRestoreProgress(), 1000)
+    }
     try {
       const encodedPassword = btoa(String.fromCharCode(...new TextEncoder().encode(restorePassword)))
       const response = await new Promise<Response>((resolve, reject) => {
@@ -4916,6 +4957,7 @@ function BackupExportPanel() {
         request.setRequestHeader('Content-Type', 'application/vnd.scpo.rgs')
         request.setRequestHeader('X-RGS-Password', encodedPassword)
         request.setRequestHeader('X-Restore-Confirmation', restoreConfirmation)
+        request.setRequestHeader('X-Operation-Id', operationId)
         request.upload.addEventListener('progress', (event) => {
           if (!event.lengthComputable) return
           const progress = Math.min(85, Math.round(event.loaded / event.total * 85))
@@ -4923,6 +4965,8 @@ function BackupExportPanel() {
         })
         request.upload.addEventListener('load', () => {
           setOperation({ kind: 'restore', title: 'Validando e restaurando', message: 'Arquivo recebido. Validando a senha e os bancos; depois serão criadas cópias de segurança antes da substituição…', progress: null })
+          progressPolling = true
+          progressTimer = window.setTimeout(() => void pollRestoreProgress(), 250)
         })
         request.addEventListener('load', () => {
           const contentType = request.getResponseHeader('Content-Type') ?? 'application/json'
@@ -4942,6 +4986,8 @@ function BackupExportPanel() {
     } catch (restoreFailure) {
       setRestoreError(restoreFailure instanceof Error ? restoreFailure.message : 'Falha ao restaurar o backup.')
     } finally {
+      progressPolling = false
+      if (progressTimer !== undefined) window.clearTimeout(progressTimer)
       setRestoring(false)
       setOperation(null)
     }

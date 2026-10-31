@@ -22,6 +22,7 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - A restauração isolada entende pacotes automáticos GPG e extrai anexos sem alterar bancos ativos. Restaurar esses pacotes em produção continua exigindo chave privada custodiada e procedimento isolado.
 - Farmácia: metas mínimas/médias foram movidas do lote para o produto; estoque disponível agrega apenas lotes não vencidos, filtros/alertas contam produtos e a configuração está no Estoque geral. Migração `0057` consolida metas legadas por produto sem somar metas entre lotes.
 - A tela de backup/restauração usa popup modal acessível; exportação agora mostra o progresso real do download. Foi criado teste de ida e volta entre o exportador manual e a restauração. Arquivos GPG automáticos são identificados com orientação para o fluxo isolado, sem enviar a chave privada ao app.
+- A restauração `.rgs` não apresentou erro ao usuário e parecia travar. A validação, descriptografia, snapshots e restaurações PostgreSQL agora rodam fora do ciclo HTTP; um endpoint autenticado publica etapas e percentuais para o popup. Teste sintético confirma que o progresso pode ser consultado enquanto uma restauração está bloqueada. Ainda falta o usuário retestar na instalação de `192.168.1.205`; nenhum banco real foi restaurado nesta tarefa e não houve deploy no `.216`.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ## Próximas fases solicitadas
@@ -31,12 +32,23 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Criar o módulo Lavanderia/Rouparia com PWA próprio.
 - Aumentar e colocar em negrito a saudação do usuário na barra superior.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
-- Retomar também os itens anteriores registrados na task: fluxo e prontuário Médico/Enfermagem, cadastro contingencial e histórico da Recepção, controles de função do Superadministrador, botões da Enfermagem, sessão/tela branca e limpeza Zentyal.
+- Revisar a senha provisória `0000` para contas comuns/administradores com troca obrigatória no primeiro login e o botão de revelar senha no bootstrap do superadministrador.
+- Confirmar os botões da Enfermagem em linha antes da busca de paciente; revisar alinhamento do botão de novo paciente e ampliar os cartões do painel de chamada.
+- Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
+- Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
+- Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
+- Em Cópias de segurança, padronizar o botão de escolha de arquivo com os botões do app.
+- Em Usuários e permissões, remover o subtítulo redundante “Administração · Usuários e permissões” abaixo das abas.
+- Em Sobre e conformidade, corrigir o logo alongado em todas as abas para proporção quadrada e reduzir os cards de “Como o sistema funciona” à altura visual dos itens de “Dúvidas e solução de problemas”.
+- Em Central de exames, renomear a terceira aba “Exames de sangue” com um nome claro sobre sua função e avaliar melhorias operacionais, cobertura de estados reais e referências existentes.
+- Auditar os módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Usar somente dados reais do módulo, sem sobrecarregar a tela e sem links/referências inexistentes.
+- Substituir o rótulo “Abrir PWA móvel” por texto compreensível ao usuário; posicionar o acesso da Cozinha no topo direito também nas guias Avaliações e Visão da cozinha, revisando o nome “Mapa da cozinha”.
+- Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
 
 ## Validações conhecidas
 
-- Backend: suíte completa `uv run --group dev pytest` passou (166 testes); migração de metas por produto verifica consolidação das metas legadas.
-- Backup/RGS: `uv run --group dev pytest backend/tests/test_backup_restore.py backend/tests/test_rgs_format.py` passou após incluir a ida e volta real de exportação/restauração usando dumps sintéticos.
+- Backend: suíte completa `uv run --group dev pytest` passou (166 testes) antes da instrumentação de progresso; os testes direcionados de backup/RGS passaram depois das mudanças. Migração de metas verifica consolidação das metas legadas.
+- Backup/RGS: `uv run --group dev pytest backend/tests/test_backup_restore.py backend/tests/test_rgs_format.py` passou com ida e volta do exportador manual e consulta concorrente do progresso durante a restauração, sempre usando dumps sintéticos.
 - Frontend: `npm run typecheck`, `npm run lint` e `npm run build` passaram. O build ainda apresenta o aviso do Vite sobre o chunk principal maior que 500 kB.
 - Ruff passou nos demais arquivos backend alterados. `nursing.py` ainda tem um aviso preexistente (`UP012`) em linha não modificada; o lint global também aponta um import não usado em `demo_reception.py`, fora do escopo.
 - Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis neste ambiente; `docker compose config --quiet` passou. Não foram construídas nem iniciadas imagens/containers: o usuário atual não tem acesso ao socket Docker e o `sudo` exige autenticação interativa.

@@ -3,9 +3,13 @@ import io
 import json
 import subprocess
 import tarfile
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 from scpo_services import backup
 from scpo_services.common import DemoPrincipal, authenticated_principal
 from scpo_services.rgs_format import DATABASES, MAGIC
@@ -143,6 +147,7 @@ def test_exported_rgs_can_be_restored_by_the_interface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     password = "strong-backup-password"
+    operation_id = str(uuid4())
     commands: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -170,6 +175,7 @@ def test_exported_rgs_can_be_restored_by_the_interface(
             "content-type": "application/vnd.scpo.rgs",
             "x-rgs-password": base64.b64encode(password.encode()).decode(),
             "x-restore-confirmation": backup.RESTORE_CONFIRMATION,
+            "x-operation-id": operation_id,
         },
     )
 
@@ -177,6 +183,62 @@ def test_exported_rgs_can_be_restored_by_the_interface(
     assert restored.json()["status"] == "restored"
     assert sum(command[0] == "pg_restore" and "--list" in command for command in commands) == len(DATABASES)
     assert sum(command[0] == "pg_restore" and "--list" not in command for command in commands) == len(DATABASES)
+    operation = restore_client.get(f"/api/v1/backup/operations/{operation_id}")
+    assert operation.status_code == 200
+    assert operation.json()["status"] == "completed"
+    assert operation.json()["progress"] == 100
+
+
+def test_restore_progress_can_be_polled_while_database_is_restoring(
+    restore_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    password = "strong-backup-password"
+    operation_id = str(uuid4())
+    restore_started = Event()
+    allow_restore_to_finish = Event()
+
+    def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+        if command[0] == "pg_dump":
+            kwargs["stdout"].write(b"synthetic-database-snapshot")
+        elif command[0] == "pg_restore" and "--list" not in command:
+            restore_started.set()
+            if not allow_restore_to_finish.wait(timeout=10):
+                raise TimeoutError("test did not release the simulated restore")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(backup, "_connection_args", lambda service: (["-d", service], {}))
+    monkeypatch.setattr(backup.subprocess, "run", fake_run)
+    monkeypatch.setattr(backup, "emit_audit_event", lambda *args, **kwargs: None)
+    content = _encrypted_bundle(password)
+    headers = {
+        "content-type": "application/vnd.scpo.rgs",
+        "x-rgs-password": base64.b64encode(password.encode()).decode(),
+        "x-restore-confirmation": backup.RESTORE_CONFIRMATION,
+        "x-operation-id": operation_id,
+    }
+
+    def restore() -> Response:
+        with TestClient(backup.app) as client:
+            return client.put("/api/v1/backup/restore", content=content, headers=headers)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        restore_future = executor.submit(restore)
+        try:
+            assert restore_started.wait(timeout=10)
+            operation = restore_client.get(f"/api/v1/backup/operations/{operation_id}")
+            assert operation.status_code == 200
+            assert operation.json()["status"] == "running"
+            assert operation.json()["stage"] == "restoring"
+            assert operation.json()["progress"] == 55
+        finally:
+            allow_restore_to_finish.set()
+
+        response = restore_future.result(timeout=30)
+
+    assert response.status_code == 200
+    completed = restore_client.get(f"/api/v1/backup/operations/{operation_id}")
+    assert completed.json()["status"] == "completed"
 
 
 def test_restore_explains_automatic_gpg_bundle_requires_isolated_flow(
@@ -209,6 +271,7 @@ def test_restore_rejects_invalid_postgres_dump_before_backing_up_or_changing_dat
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     password = "strong-backup-password"
+    operation_id = str(uuid4())
     commands: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -227,6 +290,7 @@ def test_restore_rejects_invalid_postgres_dump_before_backing_up_or_changing_dat
             "content-type": "application/vnd.scpo.rgs",
             "x-rgs-password": base64.b64encode(password.encode()).decode(),
             "x-restore-confirmation": backup.RESTORE_CONFIRMATION,
+            "x-operation-id": operation_id,
         },
     )
 
@@ -234,6 +298,9 @@ def test_restore_rejects_invalid_postgres_dump_before_backing_up_or_changing_dat
     assert "nenhum banco foi alterado" in response.json()["detail"]
     assert commands and commands[0][0] == "pg_restore"
     assert all(command[0] == "pg_restore" for command in commands)
+    operation = restore_client.get(f"/api/v1/backup/operations/{operation_id}")
+    assert operation.status_code == 200
+    assert operation.json()["status"] == "failed"
 
 
 def test_restore_rolls_back_already_restored_databases_on_failure(
