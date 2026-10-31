@@ -2,9 +2,36 @@
 
 O formato de transporte `.rgs` reúne os sete bancos da aplicação, incluindo contas locais, permissões e dados dos módulos, em um único arquivo cifrado. Os pacotes criados pelo script usam GPG; a exportação pela interface do superadministrador usa AES-GCM com senha. A restauração isolada aceita ambos os formatos. O conteúdo inclui dados pessoais e clínicos: guarde o arquivo e a chave/senha em locais institucionais controlados.
 
+## Backup automático diário
+
+O serviço de backup pode gerar diariamente, às 02:00 no fuso `America/Sao_Paulo`, um `.rgs` cifrado com a chave pública GPG aprovada. O pacote inclui os sete bancos, o `.env`, o volume de dados do Caddy e os arquivos da Oficina Terapêutica. A chave privada nunca é enviada ao aplicativo; mantenha-a em custódia técnica separada para restauração.
+
+A instalação cria um volume-base de estágio em `./data/backup-staging`, mas isso **não é um destino institucional nem imutável**. Antes de ativar a rotina, a TI deve montar o destino autorizado no host, configurar `SCPO_BACKUP_HOST_DIR` no `.env` com o caminho absoluto desse mount e garantir gravação ao UID/GID `10001` do container. Compartilhamentos de rede precisam estar montados no host Linux antes do Compose iniciar:
+
+```dotenv
+SCPO_BACKUP_HOST_DIR=/mnt/backup-institucional/scpo-connect
+SCPO_BACKUP_TIMEZONE=America/Sao_Paulo
+```
+
+Após reiniciar o serviço `backup`, no Superadministrador → **Cópias de segurança**, importe somente a chave pública GPG ASCII-armored e informe uma subpasta relativa ao volume-base. Não informe caminhos do host na interface. Salvar essa configuração ativa a rotina; o painel mostra o último resultado, espaço livre e alertas. O serviço remove automaticamente apenas arquivos `.rgs` com mais de 30 dias. Abaixo de 10% de espaço livre, o painel alerta, mas não apaga backups mais novos para liberar espaço.
+
+Até a TI montar o servidor físico e testar gravação, leitura e restauração, a interface identifica a imutabilidade como **não validada**. Um volume configurado e a retenção de 30 dias, por si sós, não comprovam imutabilidade/WORM.
+
+Para validar um backup automático GPG sem substituir bancos ativos, use a restauração isolada. Além do prefixo novo para os bancos, informe uma pasta absoluta, nova e fora do repositório para preservar os anexos:
+
+```sh
+export SCPO_RGS_FILE=/mnt/backup-institucional/scpo-connect/backups/scpo-connect-AAAAMMDDTHHMMSSZ.rgs
+export SCPO_RGS_WORK_DIR=/mnt/backup-seguro/restauracao-temporaria
+export SCPO_RGS_RESTORE_PREFIX=scpo_restore_validacao
+export SCPO_RGS_ATTACHMENTS_DIR=/mnt/backup-seguro/anexos-validacao
+bash scripts/restore-rgs-isolated.sh
+```
+
+O script cria bancos novos `scpo_restore_*` e extrai `.env`, Caddy e biblioteca terapêutica para a pasta isolada, sem aplicá-los à instalação ativa. A chave privada GPG precisa estar disponível no ambiente de restauração. Não use a restauração da interface para arquivos GPG: ela recebe os pacotes AES-GCM gerados pela própria interface.
+
 ## Pacote completo `.rgs`
 
-Instale/configure GPG e importe a chave pública autorizada no host para gerar um pacote pelo script. O destino deve ser um volume seguro fora do repositório:
+O script manual abaixo permanece disponível para gerar um pacote GPG contendo somente os sete bancos. O destino deve ser um volume seguro fora do repositório:
 
 ```sh
 cd "/home/rgarcez/SCPO Connect"
@@ -19,7 +46,7 @@ Na restauração pela interface, o navegador mostra o progresso do envio do arqu
 
 ## Biblioteca de imagens da Oficina Terapêutica
 
-Os metadados da biblioteca são armazenados no banco Nursing; os arquivos ficam no diretório indicado por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão: `./data/therapy-materials`). Para usar um HD externo, a equipe de infraestrutura deve primeiro montá-lo no host em um caminho persistente e definir esse caminho no `.env`, por exemplo:
+Os metadados da biblioteca são armazenados no banco Nursing; os arquivos ficam no diretório indicado por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão: `./data/therapy-materials`). A rotina automática inclui os arquivos da biblioteca; pacotes manuais de banco e a exportação AES-GCM da interface não incluem. Para usar um HD externo, a equipe de infraestrutura deve primeiro montá-lo no host em um caminho persistente e definir esse caminho no `.env`, por exemplo:
 
 ```sh
 SCPO_THERAPY_MATERIALS_HOST_DIR=/mnt/scpo-therapy-assets
@@ -29,7 +56,9 @@ O aplicativo aceita imagens JPG, PNG e WebP de até 12 MB por arquivo. O acervo 
 
 Antes de iniciar ou reiniciar os containers, confirme que o dispositivo está realmente montado no caminho configurado (`findmnt --target /mnt/scpo-therapy-assets`) e que o diretório permite leitura e gravação ao UID/GID `10001` usado pelo container. Se o disco não estiver montado, o bind mount pode gravar no disco do sistema em vez do HD externo. A preparação do mount, permissões e persistência após reinicialização deve ser validada pela TI no host; o aplicativo não detecta nem monta hardware.
 
-O pacote `.rgs` não inclui esse diretório. Faça backup separado das imagens para um destino institucional protegido, com retenção e teste de restauração definidos; preservar somente o banco não recupera os arquivos da biblioteca, e preservar somente as imagens não recupera seus metadados.
+O banco Nursing sem o diretório de imagens não recupera os arquivos da biblioteca, e preservar somente as imagens não recupera seus metadados. Faça exercícios de restauração que validem ambos.
+
+A retenção automática de 30 dias remove somente arquivos de backup cifrados do destino configurado. A retenção de 365 dias da Auditoria remove somente eventos centrais antigos, mantendo um checkpoint verificável. Nenhum desses processos apaga os cadastros ou registros clínicos ativos dos pacientes.
 
 Para validar a integração do volume, use somente uma imagem sintética e sem dados pessoais: abra Oficina Terapêutica → Materiais → Biblioteca de imagens, envie a imagem, confira se ela aparece na lista e abra-a pela própria interface. Confirme no host que o arquivo correspondente foi criado dentro do ponto de montagem configurado e, por fim, remova a imagem pela interface e confira que o arquivo e o registro foram removidos. A suíte direcionada automatizada também exercita upload, leitura e exclusão em diretório temporário; isso não comprova montagem, permissão, persistência após reinicialização nem restauração do disco externo real.
 

@@ -5,6 +5,9 @@ x-backend-environment: &backend-environment
   SCPO_AUDIT_API_URL: http://audit:8000
   SCPO_NURSING_API_URL: http://nursing:8000
   SCPO_PHARMACY_API_URL: http://pharmacy:8000
+  SCPO_SOCIAL_API_URL: http://social:8000
+  SCPO_XRAY_API_URL: http://xray:8000
+  SCPO_MAINTENANCE_API_URL: http://maintenance:8000
 
 x-backend-service: &backend-service
   build:
@@ -128,6 +131,16 @@ services:
       <<: *backend-environment
       SCPO_SERVICE: maintenance
       SCPO_MAINTENANCE_DATABASE_URL: postgresql+psycopg://${SCPO_MAINTENANCE_DB_USER}:${SCPO_MAINTENANCE_DB_PASSWORD}@db:5432/scpo_maintenance
+      SCPO_BACKUP_DATA_DIR: /var/lib/scpo-backup
+      SCPO_BACKUP_ENV_FILE: /run/secrets/scpo-env
+      SCPO_BACKUP_CADDY_DIR: /mnt/caddy-data
+      SCPO_BACKUP_THERAPY_DIR: /mnt/therapy-materials
+      SCPO_BACKUP_TIMEZONE: ${SCPO_BACKUP_TIMEZONE:-America/Sao_Paulo}
+    volumes:
+      - ${SCPO_BACKUP_HOST_DIR:-./data/backup-staging}:/var/lib/scpo-backup
+      - ./.env:/run/secrets/scpo-env:ro
+      - caddy_data:/mnt/caddy-data:ro
+      - ${SCPO_THERAPY_MATERIALS_HOST_DIR:-./data/therapy-materials}:/mnt/therapy-materials:ro
     networks: [backend]
 
   therapy:

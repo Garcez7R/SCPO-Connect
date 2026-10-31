@@ -24,6 +24,7 @@ from .common import (
     audit_outbox_lifespan,
     database_session,
     emit_audit_event,
+    register_audit_outbox_status_route,
     require_demo_role,
     verify_database_migrated,
     verify_patient_reference,
@@ -101,6 +102,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="SCPO Connect · Serviço Social", version="1.0.0", lifespan=lifespan)
+register_audit_outbox_status_route(app, "social")
 SOCIAL_ROLE = require_demo_role("social")
 PSYCHOLOGY_ROLE = require_demo_role("psychology")
 SOCIAL_REPORT_ACCESS = require_demo_role("social", "management", "admin", "oversight")

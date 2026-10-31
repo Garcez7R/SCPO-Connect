@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from email.utils import parsedate_to_datetime
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -23,7 +24,6 @@ from sqlalchemy import (
     String,
     delete,
     func,
-    func,
     insert,
     select,
     update,
@@ -36,6 +36,7 @@ from .common import (
     audit_outbox_lifespan,
     database_session,
     emit_audit_event,
+    register_audit_outbox_status_route,
     require_demo_role,
     require_service_token,
     verify_database_migrated,
@@ -54,6 +55,8 @@ class PharmacyProduct(Base):
     active_ingredient: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     presentation: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    minimum_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
+    average_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     metadata_source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
     source_reference: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -185,6 +188,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="SCPO Connect · Serviço de Farmácia", version="1.0.0", lifespan=lifespan
 )
+register_audit_outbox_status_route(app, "pharmacy")
 PHARMACY_ROLE = require_demo_role("pharmacy")
 INVENTORY_READ_ROLE = require_demo_role("pharmacy", "management")
 STOCK_REPORT_ACCESS = require_demo_role("pharmacy", "management", "admin", "oversight")
@@ -521,20 +525,55 @@ def list_stock_alerts(
     principal: Annotated[DemoPrincipal, Depends(STOCK_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    today = date.today()
+    today = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     alerts: list[dict[str, object]] = []
-    for item in db.scalars(
+    items = db.scalars(
         select(InventoryLot)
         .options(joinedload(InventoryLot.product), joinedload(InventoryLot.location))
         .order_by(InventoryLot.expiry_date, InventoryLot.id)
-    ).all():
-        balance = parse_stock_quantity(item.balance)
-        minimum = parse_stock_quantity(item.minimum_balance)
-        average = parse_stock_quantity(item.average_balance)
+    ).all()
+    lots_by_product: dict[int, list[InventoryLot]] = {}
+    available_balance_by_product: dict[int, Decimal] = {}
+    for item in items:
+        lots_by_product.setdefault(item.product_id, []).append(item)
+        if item.expiry_date >= today:
+            available_balance_by_product[item.product_id] = (
+                available_balance_by_product.get(item.product_id, Decimal(0))
+                + parse_stock_quantity(item.balance)
+            )
+
+    stock_alert_lot_by_product: dict[int, tuple[int, Decimal, Decimal]] = {}
+    for product_id, product_lots in lots_by_product.items():
+        product = product_lots[0].product
+        available_balance = available_balance_by_product.get(product_id, Decimal(0))
+        minimum = parse_stock_quantity(product.minimum_balance)
+        if available_balance <= minimum:
+            stock_alert_lot_by_product[product_id] = (
+                next(
+                    (lot.id for lot in product_lots if lot.expiry_date >= today),
+                    product_lots[0].id,
+                ),
+                available_balance,
+                parse_stock_quantity(product.average_balance),
+            )
+
+    for item in items:
         days_to_expiry = (item.expiry_date - today).days
         kinds: list[str] = []
-        if balance <= minimum:
-            kinds.append("critical_stock" if balance <= 0 else "below_minimum")
+        product_stock_alert = stock_alert_lot_by_product.get(item.product_id)
+        if product_stock_alert and item.id == product_stock_alert[0]:
+            available_balance, average = product_stock_alert[1:]
+            minimum = parse_stock_quantity(item.product.minimum_balance)
+            kinds.append(
+                "critical_stock"
+                if available_balance <= 0
+                else "below_minimum"
+            )
+        else:
+            available_balance = available_balance_by_product.get(
+                item.product_id, Decimal(0)
+            )
+            average = parse_stock_quantity(item.product.average_balance)
         if days_to_expiry < 0:
             kinds.append("expired")
         elif days_to_expiry <= 30:
@@ -547,9 +586,12 @@ def list_stock_alerts(
                 "item_name": item.product.name,
                 "category": item.product.category,
                 "balance": item.balance,
+                "available_balance": format_stock_quantity(available_balance),
                 "unit": item.product.unit,
-                "minimum_balance": item.minimum_balance,
-                "suggested_replenishment": format_stock_quantity(max(average - balance, Decimal(0))),
+                "minimum_balance": item.product.minimum_balance,
+                "suggested_replenishment": format_stock_quantity(
+                    max(average - available_balance, Decimal(0))
+                ),
                 "lot": item.lot,
                 "expiry_date": item.expiry_date.isoformat(),
                 "days_to_expiry": days_to_expiry,
@@ -767,6 +809,8 @@ def create_item(
             active_ingredient=payload.active_ingredient.strip(),
             presentation=payload.presentation.strip(),
             unit=payload.unit.strip(),
+            minimum_balance=payload.minimum_balance,
+            average_balance=payload.average_balance,
             metadata_source="manual",
             source_reference="",
             created_at=now,
@@ -1295,16 +1339,44 @@ def update_stock_thresholds(
 ) -> dict[str, object]:
     item = db.get(InventoryLot, item_id)
     if item is None:
-        from fastapi import HTTPException
-
         raise HTTPException(status_code=404, detail="Item de estoque não encontrado")
-    item.minimum_balance = payload.minimum_balance
-    item.average_balance = payload.average_balance
+    return update_product_stock_thresholds(
+        item.product_id,
+        payload,
+        principal,
+        db,
+    )
+
+
+@app.patch("/api/v1/pharmacy/products/{product_id}/stock-thresholds")
+def update_product_stock_thresholds(
+    product_id: int,
+    payload: StockThresholdPayload,
+    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    product = db.get(PharmacyProduct, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Produto de estoque não encontrado")
+    product.minimum_balance = payload.minimum_balance
+    product.average_balance = payload.average_balance
     emit_audit_event(
-        principal, "pharmacy", "inventory_thresholds_updated", str(item.id), db=db
+        principal,
+        "pharmacy",
+        "inventory_product_thresholds_updated",
+        str(product.id),
+        db=db,
     )
     db.commit()
-    db.refresh(item)
+    db.refresh(product)
+    item = db.scalar(
+        select(InventoryLot)
+        .where(InventoryLot.product_id == product.id)
+        .order_by(InventoryLot.expiry_date, InventoryLot.id)
+        .limit(1)
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="Produto sem lotes cadastrados")
     return serialize_item(item)
 
 
@@ -1329,8 +1401,8 @@ def serialize_item(item: InventoryLot) -> dict[str, object]:
         "source_reference": item.product.source_reference,
         "supplier": item.supplier,
         "storage_location": item.location.name if item.location else "",
-        "minimum_balance": item.minimum_balance,
-        "average_balance": item.average_balance,
+        "minimum_balance": item.product.minimum_balance,
+        "average_balance": item.product.average_balance,
     }
 
 

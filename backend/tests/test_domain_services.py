@@ -269,7 +269,9 @@ def test_account_owner_can_customize_display_name_and_change_own_password(
 
 def test_common_admin_audit_hides_system_admin_events(
     domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("SCPO_SERVICE_TOKEN", "test-service-token")
     db = domain_database["audit"]
     db.add_all([
         audit.AuditEvent(
@@ -304,11 +306,11 @@ def test_common_admin_audit_hides_system_admin_events(
         is_superuser=True,
     )
 
-    assert [event["source_event_id"] for event in audit.list_events(common_admin, db)["events"]] == [
+    assert [event["source_event_id"] for event in audit.list_events(common_admin, db, search="user_created")["events"]] == [
         "common-admin-event"
     ]
-    assert {event["source_event_id"] for event in audit.list_events(system_admin, db)["events"]} == {
-        "common-admin-event",
+    assert [event["source_event_id"] for event in audit.list_events(common_admin, db, search="system_backup_exported")["events"]] == []
+    assert {event["source_event_id"] for event in audit.list_events(system_admin, db, search="system_backup_exported")["events"]} == {
         "system-admin-event",
     }
 

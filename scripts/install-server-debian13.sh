@@ -183,6 +183,7 @@ fi
 if [[ ! -e "${project_dir}/data/therapy-materials" ]]; then
   install -d -o 10001 -g 10001 -m 0750 "${project_dir}/data/therapy-materials"
 fi
+install -d -o 10001 -g 10001 -m 0750 "${project_dir}/data/backup-staging"
 
 chown "${deployment_user}:${deployment_group}" "${temporary_env}"
 chmod 0600 "${temporary_env}"

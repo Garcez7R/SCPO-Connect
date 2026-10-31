@@ -7,7 +7,17 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, case, func, select
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    case,
+    func,
+    select,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
@@ -18,6 +28,7 @@ from .common import (
     authenticated_principal,
     database_session,
     emit_audit_event,
+    register_audit_outbox_status_route,
     require_demo_role,
     update_hospital_bed_cleaning_state,
     verify_database_migrated,
@@ -140,6 +151,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="SCPO Connect · Ordens de Serviço", version="1.0.0", lifespan=lifespan)
+register_audit_outbox_status_route(app, "maintenance")
 AUTHENTICATED = Depends(authenticated_principal)
 HYGIENE_ROLE = require_demo_role("hygiene")
 HYGIENE_REPORT_ACCESS = require_demo_role("hygiene", "management", "admin", "oversight")

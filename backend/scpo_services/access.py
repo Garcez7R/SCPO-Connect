@@ -22,6 +22,7 @@ from .common import (
     database_session,
     emit_audit_event,
     get_engine,
+    register_audit_outbox_status_route,
     require_service_token,
     verify_database_migrated,
 )
@@ -113,6 +114,7 @@ app = FastAPI(
     description="Contas locais individuais, MFA e permissões por módulo.",
     lifespan=lifespan,
 )
+register_audit_outbox_status_route(app, "access")
 _logger = logging.getLogger("scpo.access")
 
 
@@ -337,32 +339,28 @@ def _require_account_admin(request: Request, db: Session) -> tuple[AppUser, Demo
     is_app_admin = "admin" in user.modules and "administrar" in user.permissions.get("admin", [])
     if not user.is_superuser and not is_app_admin:
         raise HTTPException(status_code=403, detail="Acesso restrito à Administração do aplicativo")
-    principal = DemoPrincipal(
-        user.id,
-        user.username,
-        user.display_name or user.name,
-        "system_admin" if user.is_superuser else "admin",
-        user.modules,
-        user.permissions,
-        is_superuser=user.is_superuser,
-    )
-    return user, principal
+    return user, _audit_principal(user)
 
 
 def _require_system_admin(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
     user, _ = _current_user(request, db)
     if not user.is_superuser:
         raise HTTPException(status_code=403, detail="Acesso não autorizado para esta operação")
-    principal = DemoPrincipal(
+    return user, _audit_principal(user)
+
+
+def _audit_principal(user: AppUser) -> DemoPrincipal:
+    return DemoPrincipal(
         user.id,
         user.username,
         user.display_name or user.name,
-        "system_admin",
+        "system_admin" if user.is_superuser else (
+            "admin" if "admin" in user.modules else (user.modules[0] if user.modules else "")
+        ),
         user.modules,
         user.permissions,
-        is_superuser=True,
+        is_superuser=user.is_superuser,
     )
-    return user, principal
 
 
 def _prevent_superuser_changes(target: AppUser) -> None:
@@ -612,6 +610,13 @@ def mfa_setup(
         user.mfa_secret_encrypted = encrypt_mfa_secret(new_totp_secret())
         db.commit()
     secret = _read_mfa_secret(user.mfa_secret_encrypted)
+    emit_audit_event(
+        _audit_principal(user),
+        "management",
+        "mfa_setup_secret_read",
+        user.id,
+        service="access",
+    )
     return {"secret": secret, "otpauth_uri": totp_uri(secret, user.username)}
 
 
@@ -676,6 +681,13 @@ def current_session(
     user, claims = _current_user(request, db)
     if user.must_change_password or not user.mfa_enabled:
         raise HTTPException(status_code=403, detail="Conclua a configuração de segurança da conta")
+    emit_audit_event(
+        _audit_principal(user),
+        "management",
+        "authenticated_session_read",
+        user.id,
+        service="access",
+    )
     return {"user": _user_response(user), "session_expires_at": claims["exp"]}
 
 
@@ -702,7 +714,10 @@ def list_users(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    _require_account_admin(request, db)
+    _, principal = _require_account_admin(request, db)
+    emit_audit_event(
+        principal, "management", "user_accounts_read", "all", service="access"
+    )
     users = db.scalars(
         select(AppUser)
         .where(AppUser.is_superuser.is_(False))
@@ -717,7 +732,10 @@ def list_system_admin_users(
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    _require_system_admin(request, db)
+    _, principal = _require_system_admin(request, db)
+    emit_audit_event(
+        principal, "management", "system_admin_user_accounts_read", "all", service="access"
+    )
     users = db.scalars(
         select(AppUser).where(AppUser.is_superuser.is_(False)).order_by(AppUser.name)
     ).all()

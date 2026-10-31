@@ -72,6 +72,7 @@ def test_restore_reader_accepts_legacy_gpg_bundle_layout(tmp_path) -> None:
         )
         for service in DATABASES:
             _add_file(archive, f"dumps/scpo_{service}.dump", service.encode())
+        _add_file(archive, "attachments/env/.env", b"synthetic=only")
     archive_path = tmp_path / "legacy.tar.gz"
     archive_path.write_bytes(bundle.getvalue())
     destination = tmp_path / "restored"
@@ -79,3 +80,4 @@ def test_restore_reader_accepts_legacy_gpg_bundle_layout(tmp_path) -> None:
     _extract_validated_archive(archive_path, destination, modern=False)
 
     assert (destination / "nursing.dump").read_bytes() == b"nursing"
+    assert (destination / "attachments/env/.env").read_bytes() == b"synthetic=only"

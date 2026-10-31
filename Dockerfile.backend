@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/opt/venv/bin:$PATH
 WORKDIR /app
 RUN pip install --no-cache-dir uv==0.13.0
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client gnupg && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml uv.lock alembic.ini ./
 COPY backend ./backend
 RUN uv sync --frozen --no-dev

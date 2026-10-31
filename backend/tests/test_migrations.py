@@ -227,8 +227,9 @@ def test_each_service_migration_creates_only_its_owned_table(
         }
         assert {"result", "result_recorded_by", "result_recorded_at", "exam_type", "observations"} <= exam_columns
     elif service == "audit":
-        assert len(tables) == 3
+        assert len(tables) == 4
         assert "audit_chain_heads" in tables
+        assert "audit_chain_checkpoints" in tables
         assert {"source_event_id", "previous_hash", "event_hash"} <= {
             column["name"] for column in inspect(get_engine(service)).get_columns("audit_events")
         }
@@ -381,6 +382,7 @@ def test_audit_migration_backfills_a_verifiable_hash_chain(
 ) -> None:
     service = "audit"
     monkeypatch.setenv("SCPO_SERVICE", service)
+    monkeypatch.setenv("SCPO_SERVICE_TOKEN", "test-service-token")
     monkeypatch.setenv("SCPO_AUDIT_DATABASE_URL", f"sqlite:///{tmp_path / 'audit.sqlite3'}")
     clear_engine_cache()
     config = Config("alembic.ini")
@@ -410,7 +412,7 @@ def test_audit_migration_backfills_a_verifiable_hash_chain(
             session,
         )
     assert result["valid"] is True
-    assert result["events_checked"] == 1
+    assert result["events_checked"] == 2
     verify_database_migrated(service)
     clear_engine_cache()
 
@@ -623,24 +625,44 @@ def test_pharmacy_migration_records_existing_stock_as_legacy_baseline(
                 "'Fornecedor', 'Farmácia · prateleira A', '0', '0', '2026-01-01 10:00:00')"
             )
         )
+        connection.execute(
+            text(
+                "INSERT INTO inventory_items "
+                "(item_name, balance, unit, lot, expiry_date, barcode, category, "
+                "active_ingredient, presentation, supplier, storage_location, "
+                "minimum_balance, average_balance, created_at) "
+                "VALUES ('Soro', '5', 'frasco', 'L-02', '2028-02-01', "
+                "'7891106000956', 'Medicamento', 'dexametasona', 'creme 1%', "
+                "'Fornecedor', 'Farmácia · prateleira B', '8', '6', '2026-01-01 10:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE inventory_items SET minimum_balance='4', average_balance='10' "
+                "WHERE lot='L-01'"
+            )
+        )
 
     command.upgrade(config, "head")
     with get_engine("pharmacy").connect() as connection:
-        row = connection.execute(
+        rows = connection.execute(
             text(
                 "SELECT movement_type, quantity, balance_after, actor_name "
-                "FROM pharmacy_stock_movements"
+                "FROM pharmacy_stock_movements ORDER BY item_id"
             )
-        ).one()
-    assert row == ("opening_balance", "12,5", "12,5", "Saldo legado (migração)")
+        ).all()
+    assert rows == [
+        ("opening_balance", "12,5", "12,5", "Saldo legado (migração)"),
+        ("opening_balance", "5", "5", "Saldo legado (migração)"),
+    ]
     verify_database_migrated("pharmacy")
     with get_engine("pharmacy").connect() as connection:
         product = connection.execute(
             text(
                 "SELECT p.gtin, p.name, p.active_ingredient, p.presentation, p.unit, "
-                "l.name FROM inventory_items i "
+                "l.name, p.minimum_balance, p.average_balance FROM inventory_items i "
                 "JOIN pharmacy_products p ON p.id=i.product_id "
-                "JOIN pharmacy_locations l ON l.id=i.location_id WHERE i.id=1"
+                "JOIN pharmacy_locations l ON l.id=i.location_id WHERE i.lot='L-01'"
             )
         ).one()
         foreign_keys = inspect(get_engine("pharmacy")).get_foreign_keys("inventory_items")
@@ -652,6 +674,8 @@ def test_pharmacy_migration_records_existing_stock_as_legacy_baseline(
         "creme 1%",
         "frasco",
         "Farmácia · prateleira A",
+        "8",
+        "10",
     )
     assert {"product_id", "location_id"} <= columns
     assert {"item_name", "barcode", "unit", "storage_location"}.isdisjoint(columns)

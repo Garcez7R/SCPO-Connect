@@ -41,6 +41,7 @@ from .common import (
     audit_outbox_lifespan,
     database_session,
     emit_audit_event,
+    register_audit_outbox_status_route,
     require_demo_role,
     require_demo_role_or_superuser,
     require_service_token,
@@ -1340,6 +1341,7 @@ app = FastAPI(
     description="API para cadastro de pacientes e registros de sinais vitais.",
     lifespan=lifespan,
 )
+register_audit_outbox_status_route(app, "nursing")
 
 
 @app.get("/api/v1/nursing/beds")
@@ -2319,6 +2321,7 @@ def get_current_nursing_hourly_round(
     principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object | None]:
+    emit_audit_event(principal, "nursing", "hourly_round_current_read", "current")
     round_record = db.scalar(
         select(NursingHourlyRound).where(NursingHourlyRound.status == "open")
     )
@@ -4009,6 +4012,12 @@ def get_physician_profile(
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     profile = db.get(PhysicianProfile, principal.user_id)
+    emit_audit_event(
+        principal,
+        "physician",
+        "physician_profile_read",
+        principal.user_id,
+    )
     return {"profile": serialize_physician_profile(profile) if profile else None}
 
 

@@ -3600,12 +3600,12 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
 
   return <section className="admin-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div><p className="eyebrow">ADMINISTRAÇÃO</p><h1>{adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div>{canManageApp && <span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span>}</div>
-    <ModuleTabNavigation
+    {view === 'full' && <ModuleTabNavigation
       ariaLabel="Seções de Administração"
       value={activeTab}
       onChange={setTab}
       options={availableTabs.map((value) => ({ value, label: adminTabLabels[value] }))}
-    />
+    />}
     {activeTab === 'users' && canManageApp && <>
     <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Acesso restrito à gestão de contas autorizada.</strong><span>Uma senha aleatória de uso único é gerada para cada conta. Entregue-a ao titular por um canal seguro.</span></div></div>
     {status === 'unavailable' && <ToastMessage variant="error">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</ToastMessage>}
@@ -3873,6 +3873,19 @@ function NutritionPage() {
 }
 
 type AuditEvent = { id: number; actor_name: string; actor_role: string; action: string; module: string; target_id: string; happened_at: string }
+type AuditOutboxStatus = {
+  attention_required: boolean
+  threshold_minutes: number
+  checked_at: string
+  services: {
+    service: string
+    status: 'ok' | 'unavailable'
+    pending_count?: number
+    failed_count?: number
+    oldest_pending_minutes?: number
+    error?: string
+  }[]
+}
 function ExecutiveDashboard() {
   type Summary = {
     active_patients: number
@@ -4696,6 +4709,26 @@ type BackupOperationProgress = {
   progress: number | null
 }
 
+type AutomaticBackupStatus = {
+  enabled: boolean
+  configured: boolean
+  base_volume_available: boolean
+  destination_available: boolean
+  destination_directory: string | null
+  recipient_configured: boolean
+  recipient_fingerprint: string | null
+  schedule: string
+  retention_days: number
+  next_run_at: string
+  last_attempt_at: string | null
+  last_success_at: string | null
+  last_backup_name: string | null
+  last_error: string | null
+  free_space_bytes: number | null
+  low_space_warning: boolean
+  immutability_validated: boolean
+}
+
 function BackupOperationDialog({ operation }: { operation: BackupOperationProgress }) {
   return <div className="backup-operation-overlay" role="dialog" aria-modal="true" aria-labelledby="backup-operation-title">
     <div className="backup-operation-backdrop" />
@@ -4721,6 +4754,14 @@ function BackupOperationDialog({ operation }: { operation: BackupOperationProgre
 }
 
 function BackupExportPanel() {
+  const [automaticStatus, setAutomaticStatus] = useState<AutomaticBackupStatus | null>(null)
+  const [automaticDirectory, setAutomaticDirectory] = useState('')
+  const [automaticPublicKey, setAutomaticPublicKey] = useState<File | null>(null)
+  const [automaticFingerprintConfirmation, setAutomaticFingerprintConfirmation] = useState('')
+  const [automaticLoading, setAutomaticLoading] = useState(true)
+  const [automaticSaving, setAutomaticSaving] = useState(false)
+  const [automaticMessage, setAutomaticMessage] = useState('')
+  const [automaticError, setAutomaticError] = useState('')
   const [password, setPassword] = useState('')
   const [showBackupPassword, setShowBackupPassword] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -4734,6 +4775,85 @@ function BackupExportPanel() {
   const [restoreMessage, setRestoreMessage] = useState('')
   const [restoreError, setRestoreError] = useState('')
   const [operation, setOperation] = useState<BackupOperationProgress | null>(null)
+  const loadAutomaticStatus = useCallback(async () => {
+    setAutomaticLoading(true)
+    try {
+      const status = await readApiResponse<AutomaticBackupStatus>(
+        await fetch('/api/v1/backup/automatic/status', { cache: 'no-store' }),
+      )
+      setAutomaticStatus(status)
+      setAutomaticDirectory(status.destination_directory ?? '')
+      setAutomaticError('')
+    } catch (statusError) {
+      setAutomaticError(statusError instanceof Error
+        ? statusError.message
+        : 'Não foi possível consultar o backup automático.')
+    } finally {
+      setAutomaticLoading(false)
+    }
+  }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadAutomaticStatus(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadAutomaticStatus])
+  async function importAutomaticBackupKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAutomaticSaving(true)
+    setAutomaticMessage('')
+    setAutomaticError('')
+    try {
+      if (!automaticPublicKey) throw new Error('Selecione uma chave pública GPG.')
+      if (automaticPublicKey.size > 64 * 1024) {
+        throw new Error('A chave pública deve ter no máximo 64 KB.')
+      }
+      const imported = await readApiResponse<{ fingerprint: string }>(
+        await fetch('/api/v1/backup/automatic/public-key', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/pgp-keys' },
+          body: automaticPublicKey,
+        }),
+      )
+      setAutomaticPublicKey(null)
+      setAutomaticFingerprintConfirmation('')
+      setAutomaticMessage(`Chave importada. Confirme com a TI esta impressão digital antes de ativar: ${imported.fingerprint}`)
+      const input = document.getElementById('automatic-backup-public-key')
+      if (input instanceof HTMLInputElement) input.value = ''
+      await loadAutomaticStatus()
+    } catch (saveError) {
+      setAutomaticError(saveError instanceof Error
+        ? saveError.message
+        : 'Não foi possível importar a chave pública GPG.')
+    } finally {
+      setAutomaticSaving(false)
+    }
+  }
+  async function configureAutomaticBackup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAutomaticSaving(true)
+    setAutomaticMessage('')
+    setAutomaticError('')
+    try {
+      await readApiResponse<AutomaticBackupStatus>(
+        await fetch('/api/v1/backup/automatic/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            directory: automaticDirectory.trim(),
+            fingerprint_confirmation: automaticFingerprintConfirmation.trim(),
+          }),
+        }),
+      )
+      setAutomaticMessage('Backup diário ativado. A próxima execução ocorrerá no horário exibido acima.')
+      setAutomaticFingerprintConfirmation('')
+      await loadAutomaticStatus()
+    } catch (saveError) {
+      setAutomaticError(saveError instanceof Error
+        ? saveError.message
+        : 'Não foi possível configurar o backup automático.')
+    } finally {
+      setAutomaticSaving(false)
+    }
+  }
   async function exportBackup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('')
     setOperation({ kind: 'backup', title: 'Criando backup cifrado', message: 'Consultando os bancos e preparando os arquivos protegidos…', progress: null })
@@ -4803,6 +4923,57 @@ function BackupExportPanel() {
       <div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos protegidos por senha.</p></div>
       <span className="module-icon module-icon-admin"><ShieldCheck size={20} /></span>
     </div>
+    <section className="backup-automatic-section">
+      <div className="section-heading">
+        <div><p className="eyebrow">ROTINA INSTITUCIONAL</p><h3>Backup automático diário</h3><p className="welcome-copy">Cifra os sete bancos, o arquivo de ambiente, a autoridade do Caddy e os arquivos da Oficina com a chave pública GPG.</p></div>
+        <button className="button button-secondary" type="button" onClick={() => void loadAutomaticStatus()} disabled={automaticLoading}>{automaticLoading ? 'Consultando…' : 'Atualizar estado'}</button>
+      </div>
+      {automaticError && <ToastMessage variant="error">{automaticError}</ToastMessage>}
+      {automaticMessage && <ToastMessage variant="success">{automaticMessage}</ToastMessage>}
+      {automaticStatus && <div className="backup-automatic-status" aria-live="polite">
+        <p className={automaticStatus.enabled ? 'audit-integrity-valid' : 'audit-integrity-invalid'}>
+          <strong>{automaticStatus.enabled ? 'Rotina configurada' : 'Rotina ainda não configurada'}</strong>
+          <span>{automaticStatus.schedule} · retenção de {automaticStatus.retention_days} dias · próxima execução {dateTime(automaticStatus.next_run_at)}{automaticStatus.destination_directory ? ` · subpasta ${automaticStatus.destination_directory}` : ''}</span>
+        </p>
+        {!automaticStatus.base_volume_available && <ToastMessage variant="error">O volume-base não está acessível ou não permite gravação ao serviço de backup.</ToastMessage>}
+        {automaticStatus.configured && !automaticStatus.destination_available && <ToastMessage variant="error">A subpasta configurada não está acessível para gravação.</ToastMessage>}
+        {automaticStatus.recipient_fingerprint && <p className="field-hint">Impressão digital GPG: <code>{automaticStatus.recipient_fingerprint}</code></p>}
+        {automaticStatus.last_success_at && <p>Último backup concluído: {dateTime(automaticStatus.last_success_at)}{automaticStatus.last_backup_name ? ` · ${automaticStatus.last_backup_name}` : ''}</p>}
+        {automaticStatus.last_error && <ToastMessage variant="error">{automaticStatus.last_error}</ToastMessage>}
+        {automaticStatus.low_space_warning && <ToastMessage variant="error">O volume-base está com menos de 10% de espaço livre. Backups com mais de 30 dias são removidos; os mais recentes não são apagados para liberar espaço.</ToastMessage>}
+        <p className="field-hint">
+          {automaticStatus.free_space_bytes !== null
+            ? `Espaço livre no volume: ${(automaticStatus.free_space_bytes / 1024 ** 3).toFixed(1)} GB. `
+            : ''}
+          A imutabilidade do destino não foi validada. A chave privada GPG deve permanecer fora do aplicativo.
+        </p>
+      </div>}
+      <form className="backup-export-form" onSubmit={(event) => void importAutomaticBackupKey(event)}>
+        <label className="field">
+          <span className="field-label">Chave pública GPG autorizada</span>
+          <input id="automatic-backup-public-key" required type="file" accept=".asc,.pgp,.gpg,application/pgp-keys" onChange={(event) => setAutomaticPublicKey(event.target.files?.[0] ?? null)} />
+          <span className="field-hint">Somente chave pública ASCII-armored, até 64 KB. A chave privada não deve ser enviada.</span>
+        </label>
+        <button className="button button-secondary" type="submit" disabled={automaticSaving || automaticLoading || !automaticPublicKey}>
+          {automaticSaving ? 'Importando chave…' : 'Importar chave pública'}
+        </button>
+      </form>
+      <form className="backup-export-form" onSubmit={(event) => void configureAutomaticBackup(event)}>
+        <label className="field">
+          <span className="field-label">Subpasta do volume-base</span>
+          <input required maxLength={200} value={automaticDirectory} onChange={(event) => setAutomaticDirectory(event.target.value)} placeholder="backups/scpo-connect" autoComplete="off" />
+          <span className="field-hint">Informe somente uma subpasta relativa. A montagem do destino físico é responsabilidade da TI.</span>
+        </label>
+        <label className="field">
+          <span className="field-label">Confirme a impressão digital fornecida pela TI</span>
+          <input required minLength={32} maxLength={64} value={automaticFingerprintConfirmation} onChange={(event) => setAutomaticFingerprintConfirmation(event.target.value.toUpperCase())} placeholder="Impressão digital hexadecimal" autoComplete="off" />
+          <span className="field-hint">Compare a impressão digital exibida acima por um canal independente antes de ativar.</span>
+        </label>
+        <button className="button button-primary" type="submit" disabled={automaticSaving || automaticLoading || !automaticDirectory.trim() || !automaticStatus?.recipient_fingerprint || automaticFingerprintConfirmation.trim() !== automaticStatus.recipient_fingerprint}>
+          {automaticSaving ? 'Salvando configuração…' : automaticStatus?.enabled ? 'Atualizar rotina diária' : 'Salvar e ativar rotina diária'}
+        </button>
+      </form>
+    </section>
     <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
       <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
       <button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar backup'}</button>
@@ -4827,6 +4998,8 @@ function BackupExportPanel() {
 
 const auditActionLabels: Record<string, string> = {
   user_created: 'Conta criada',
+  user_accounts_read: 'Contas de usuário consultadas',
+  system_admin_user_accounts_read: 'Contas consultadas pelo Superadministrador',
   user_access_changed: 'Acessos da conta atualizados',
   user_display_name_changed: 'Nome de exibição alterado',
   user_password_changed: 'Senha alterada pelo titular',
@@ -4834,6 +5007,16 @@ const auditActionLabels: Record<string, string> = {
   user_credentials_reset: 'Credenciais redefinidas',
   user_deleted: 'Conta excluída',
   all_user_credentials_reset: 'Credenciais de todas as contas redefinidas',
+  authenticated_session_read: 'Sessão autenticada consultada',
+  mfa_setup_secret_read: 'Configuração de MFA consultada',
+  hourly_round_current_read: 'Ronda de enfermagem atual consultada',
+  physician_profile_read: 'Perfil médico consultado',
+  audit_events_read: 'Eventos de auditoria consultados',
+  audit_integrity_read: 'Integridade da cadeia consultada',
+  audit_outbox_status_read: 'Filas de auditoria consultadas',
+  automatic_backup_status_read: 'Estado do backup automático consultado',
+  automatic_backup_public_key_imported: 'Chave pública de backup importada',
+  automatic_backup_configured: 'Rotina de backup automático configurada',
   physician_profile_admin_updated: 'Perfil médico atualizado pela Administração',
   physician_prescription_created: 'Prescrição médica criada',
   queue_call_settings_read: 'Regra de alternância da fila consultada',
@@ -4891,6 +5074,9 @@ function AuditLogPanel() {
   } | null>(null)
   const [integrityLoading, setIntegrityLoading] = useState(false)
   const [integrityError, setIntegrityError] = useState('')
+  const [outboxStatus, setOutboxStatus] = useState<AuditOutboxStatus | null>(null)
+  const [outboxLoading, setOutboxLoading] = useState(false)
+  const [outboxError, setOutboxError] = useState('')
   const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
   const loadEvents = useCallback(async () => {
     if (invalidPeriod) {
@@ -4938,10 +5124,30 @@ function AuditLogPanel() {
       setLoading(false)
     }
   }, [fromDate, invalidPeriod, module, offset, search, toDate])
+  const loadOutboxStatus = useCallback(async () => {
+    setOutboxLoading(true)
+    try {
+      const result = await readApiResponse<AuditOutboxStatus>(
+        await fetch('/api/v1/audit/outbox-status', { cache: 'no-store' }),
+      )
+      setOutboxStatus(result)
+      setOutboxError('')
+    } catch (statusError) {
+      setOutboxError(statusError instanceof Error
+        ? statusError.message
+        : 'Não foi possível consultar a fila de auditoria.')
+    } finally {
+      setOutboxLoading(false)
+    }
+  }, [])
   useEffect(() => {
     const timer = window.setTimeout(() => void loadEvents(), search.trim() ? 250 : 0)
     return () => window.clearTimeout(timer)
   }, [loadEvents, search])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadOutboxStatus(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadOutboxStatus])
   async function verifyIntegrity() {
     setIntegrityLoading(true)
     setIntegrityError('')
@@ -4958,10 +5164,22 @@ function AuditLogPanel() {
   }
   const knownAuditTargets: Record<string, string> = {
     all: 'Todos os registros',
+    audit_events: 'Eventos de auditoria',
+    audit_chain: 'Cadeia de auditoria',
+    audit_outboxes: 'Filas de entrega',
+    backup_configuration: 'Configuração de backup',
     hospital_summary: 'Resumo hospitalar',
     patient_registry: 'Cadastro de pacientes',
     triage_history: 'Histórico de triagens',
     triage_queue: 'Fila de triagem',
+  }
+  const outboxServiceLabels: Record<string, string> = {
+    access: 'Acesso',
+    nursing: 'Enfermagem',
+    pharmacy: 'Farmácia',
+    social: 'Serviço Social',
+    xray: 'Central de Exames',
+    maintenance: 'Manutenção',
   }
   const auditTargetLabel = (event: AuditEvent) => {
     const key = `${event.module}:${event.action}:${event.target_id}`
@@ -4971,11 +5189,35 @@ function AuditLogPanel() {
   const currentPage = Math.min(Math.floor(offset / pageSize), pageCount - 1)
 
   return <section className="patient-list-panel audit-log-panel">
-    <div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Auditoria de ações</h2><p className="welcome-copy">Pesquise por usuário, ação ou identificador; filtre por módulo e período. Os eventos não exibem conteúdo clínico.</p></div><div className="audit-log-header-actions"><button className="button button-secondary" type="button" onClick={() => void loadEvents()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button><button className="button button-secondary" type="button" onClick={() => void verifyIntegrity()} disabled={integrityLoading}>{integrityLoading ? 'Verificando…' : 'Verificar integridade'}</button></div></div>
+    <div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h2>Auditoria de ações</h2><p className="welcome-copy">Pesquise por usuário, ação ou identificador; filtre por módulo e período. Os eventos não exibem conteúdo clínico.</p></div><div className="audit-log-header-actions"><button className="button button-secondary" type="button" onClick={() => { void loadEvents(); void loadOutboxStatus() }} disabled={loading || outboxLoading}>{loading || outboxLoading ? 'Atualizando…' : 'Atualizar'}</button><button className="button button-secondary" type="button" onClick={() => void verifyIntegrity()} disabled={integrityLoading}>{integrityLoading ? 'Verificando…' : 'Verificar integridade'}</button></div></div>
     <section className="audit-integrity-panel" aria-live="polite">
       {!integrity && !integrityError && <p>Verificação da cadeia ainda não executada.</p>}
       {integrity && <p className={integrity.valid ? 'audit-integrity-valid' : 'audit-integrity-invalid'}><strong>{integrity.valid ? 'Cadeia íntegra' : 'Falha de integridade detectada'}</strong><span>{integrity.events_checked} eventos verificados · {dateTime(integrity.verified_at)}{integrity.invalid_event_id !== null ? ` · primeiro evento inválido: ${integrity.invalid_event_id}` : ''}{!integrity.chain_head_matches ? ' · o último hash não corresponde ao ponto de controle' : ''}</span></p>}
       {integrityError && <ToastMessage variant="error">{integrityError}</ToastMessage>}
+    </section>
+    <section className="audit-integrity-panel" aria-live="polite">
+      {outboxLoading && !outboxStatus && <p>Consultando entrega dos eventos de auditoria…</p>}
+      {outboxError && <ToastMessage variant="error">{outboxError}</ToastMessage>}
+      {outboxStatus && <>
+        <p className={outboxStatus.attention_required ? 'audit-integrity-invalid' : 'audit-integrity-valid'}>
+          <strong>{outboxStatus.attention_required ? 'Atenção: fila de auditoria' : 'Fila de auditoria em dia'}</strong>
+          <span>Alerta quando um evento aguarda há {outboxStatus.threshold_minutes} minutos ou há falhas repetidas · verificado {dateTime(outboxStatus.checked_at)}</span>
+        </p>
+        {outboxStatus.services.some((service) => service.status !== 'ok' || service.pending_count || service.failed_count) && (
+          <ul className="audit-outbox-services">
+            {outboxStatus.services
+              .filter((service) => service.status !== 'ok' || service.pending_count || service.failed_count)
+              .map((service) => (
+                <li key={service.service}>
+                  <strong>{outboxServiceLabels[service.service] ?? service.service}</strong>
+                  {service.status !== 'ok'
+                    ? ` — indisponível: ${service.error ?? 'não foi possível consultar'}`
+                    : ` — ${service.pending_count ?? 0} pendente(s), ${service.failed_count ?? 0} com falhas repetidas; mais antigo há ${service.oldest_pending_minutes ?? 0} min`}
+                </li>
+              ))}
+          </ul>
+        )}
+      </>}
     </section>
     <div className="admin-report-controls audit-log-controls">
       <label className="field"><span className="field-label">Pesquisar usuário, ação ou registro</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={search} onChange={(event) => { setOffset(0); setSearch(event.target.value) }} placeholder="Nome, evento ou identificador" /></span></label>

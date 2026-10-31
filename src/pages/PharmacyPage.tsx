@@ -20,6 +20,29 @@ type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_b
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; prescription_fulfillment_pending?: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type InternalPrescription = { id: string; patient_reference: string; medication_name: string; active_ingredient: string; presentation: string; dose: string; route: string; frequency: string; administration_times: string[]; duration: string; quantity: string; unit: string; instructions: string; is_controlled: boolean; prescriber_name: string; crm: string; crm_state: string; status: 'pending' | 'fulfilled' | 'cancelled'; created_at: string }
 type PurchaseRequest = { id: string; product_id: number | null; item_name: string; category: string; active_ingredient: string; presentation: string; base_unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; received_quantity: string; supplier: string; quoted_unit_price: string; justification: string; status: 'requested' | 'quoted' | 'approved' | 'ordered' | 'received' | 'rejected'; requested_by: string; approved_by: string; received_by: string; created_at: string; updated_at: string }
+type StockLevel = 'critical' | 'attention' | 'healthy' | 'unconfigured'
+type PharmacyProductStock = {
+  product_id: number
+  item_name: string
+  active_ingredient: string
+  presentation: string
+  category: string
+  unit: string
+  available_balance: number
+  minimum_balance: string
+  average_balance: string
+  lots: PharmacyItem[]
+}
+
+function stockLevel(balance: number, minimumValue: string, averageValue: string): StockLevel {
+  const minimum = Number(minimumValue.replace(',', '.'))
+  const average = Number((averageValue || '0').replace(',', '.'))
+  if (Number.isFinite(minimum) && balance <= minimum) return 'critical'
+  if (!Number.isFinite(average) || average <= 0) return 'unconfigured'
+  if (balance <= average) return 'attention'
+  return 'healthy'
+}
+
 function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
   return patient.room.trim() && patient.bed.trim() ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem quarto/leito atribuído'
 }
@@ -78,7 +101,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const setMovementForm = (value: { movement_type: 'entry' | 'issue' | 'adjustment'; quantity: string; reason: string }) =>
     setMovementFormState({ ...value, quantity: formatDecimalInput(value.quantity) })
   const [movementSaving, setMovementSaving] = useState(false)
-  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [query, setQuery] = useState('')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
@@ -416,7 +439,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: null, purchase_quantity: form.purchase_quantity.replace(',', '.'), purchase_unit: form.purchase_unit.trim(), units_per_purchase_unit: form.units_per_purchase_unit.replace(',', '.'), unit: form.unit.trim(), lot: form.lot.trim() }) })
       const data = await readApiResponse<PharmacyItem>(response)
       setItems((current) => [...current, data].sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR')))
-      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', minimum_balance: '0', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
       lastBarcodeLookupRef.current = ''
       barcodeProductAutofillRef.current = false
       setShowForm(false)
@@ -478,11 +501,39 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const soon = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(soonDate)
   const expiredCount = items.filter((item) => item.expiry_date < today).length
   const expiringCount = items.filter((item) => item.expiry_date >= today && item.expiry_date <= soon).length
-  const stockLevels = items.map(stockLevel)
-  const criticalCount = stockLevels.filter((level) => level === 'critical').length
-  const attentionCount = stockLevels.filter((level) => level === 'attention').length
-  const healthyCount = stockLevels.filter((level) => level === 'healthy').length
-  const unconfiguredCount = stockLevels.filter((level) => level === 'unconfigured').length
+  const productStocks = Array.from(
+    items.reduce((grouped, item) => {
+      const group = grouped.get(item.product_id) ?? {
+        product_id: item.product_id,
+        item_name: item.item_name,
+        active_ingredient: item.active_ingredient,
+        presentation: item.presentation,
+        category: item.category,
+        unit: item.unit,
+        available_balance: 0,
+        minimum_balance: item.minimum_balance,
+        average_balance: item.average_balance,
+        lots: [] as PharmacyItem[],
+      }
+      if (item.expiry_date >= today) {
+        const balance = Number(item.balance.replace(',', '.'))
+        group.available_balance += Number.isFinite(balance) ? balance : 0
+      }
+      group.lots.push(item)
+      grouped.set(item.product_id, group)
+      return grouped
+    }, new Map<number, PharmacyProductStock>()).values(),
+  ).sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR'))
+  const productLevelById = new Map(productStocks.map((product) => [
+    product.product_id,
+    stockLevel(product.available_balance, product.minimum_balance, product.average_balance),
+  ]))
+  const criticalCount = productStocks.filter((product) =>
+    productLevelById.get(product.product_id) === 'critical',
+  ).length
+  const attentionCount = productStocks.filter((product) =>
+    productLevelById.get(product.product_id) === 'attention',
+  ).length
   const eligibleMedicationLots = items
     .filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento' && item.expiry_date >= today && Number(item.balance.replace(',', '.')) > 0)
     .sort((a, b) => a.product_id - b.product_id || a.expiry_date.localeCompare(b.expiry_date) || a.id - b.id)
@@ -495,7 +546,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   })
   const filteredItems = items.filter((item) => {
     const matchesSearch = `${item.item_name} ${item.lot} ${item.barcode} ${item.category} ${item.active_ingredient} ${item.presentation} ${item.storage_location}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'))
-    const level = stockLevel(item)
+    const level = productLevelById.get(item.product_id) ?? 'unconfigured'
     const matchesFilter = stockFilter === 'all'
       || (stockFilter === 'expired' && item.expiry_date < today)
       || (stockFilter === 'expiring' && item.expiry_date >= today && item.expiry_date <= soon)
@@ -503,20 +554,15 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       || (stockFilter === 'attention' && level === 'attention')
     return matchesSearch && matchesFilter
   }).sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.item_name.localeCompare(b.item_name, 'pt-BR'))
-  const alphabeticMedicationStock = Array.from(
-    items.filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento')
-      .reduce((grouped, item) => {
-        const group = grouped.get(item.product_id) ?? { product_id: item.product_id, item_name: item.item_name, active_ingredient: item.active_ingredient, presentation: item.presentation, unit: item.unit, balance: 0, lots: [] as PharmacyItem[] }
-        const itemBalance = Number(item.balance.replace(',', '.'))
-        group.balance += Number.isFinite(itemBalance) ? itemBalance : 0
-        group.lots.push(item)
-        grouped.set(item.product_id, group)
-        return grouped
-      }, new Map<number, { product_id: number; item_name: string; active_ingredient: string; presentation: string; unit: string; balance: number; lots: PharmacyItem[] }>())
-      .values(),
-  ).sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR'))
+  const alphabeticMedicationStock = productStocks.filter((item) =>
+    item.category.toLocaleLowerCase('pt-BR') === 'medicamento',
+  )
   const visibleAlphabeticMedicationStock = alphabeticMedicationStock.filter((item) =>
     `${item.item_name} ${item.active_ingredient} ${item.presentation} ${item.lots.map((lot) => `${lot.lot} ${lot.storage_location}`).join(' ')}`
+      .toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')),
+  )
+  const visibleProductStock = productStocks.filter((product) =>
+    `${product.item_name} ${product.active_ingredient} ${product.presentation} ${product.category} ${product.lots.map((lot) => `${lot.lot} ${lot.storage_location}`).join(' ')}`
       .toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')),
   )
   const pharmacyPrintRows: PrintRow[] = filteredItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Entrada original', `${item.purchase_quantity} ${item.purchase_unit} × ${item.units_per_purchase_unit} ${item.unit}`], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
@@ -555,12 +601,23 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         ['expiring', 'Vencem em 30 dias', expiringCount],
       ] as const).map(([value, label, count]) => <button className={`button ${stockFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" key={value} aria-pressed={stockFilter === value} onClick={() => setStockFilter(value)}>{label}<span>{count}</span></button>)}
     </div>
-    <PharmacyStockOverview items={items} onSaved={(updated) => setItems((current) => current.map((item) => item.id === updated.id ? updated : item))} counts={{ critical: criticalCount, attention: attentionCount, healthy: healthyCount, unconfigured: unconfiguredCount }} />
     </>}
     {pharmacyTab === 'inventory' && <section className="patient-list-panel pharmacy-alphabetic-inventory">
       <div className="section-heading"><div><p className="eyebrow">CATÁLOGO COM SALDO</p><h2>Medicamentos cadastrados por ordem alfabética</h2><p className="welcome-copy">Cada medicamento aparece uma vez; o saldo total e os lotes são consolidados por produto.</p></div><span className="module-total">{visibleAlphabeticMedicationStock.length} medicamento(s)</span></div>
       <label className="field"><span className="field-label">Buscar medicamento, princípio ativo, apresentação ou lote</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar no estoque" /></span></label>
-      {loading ? <div className="history-empty">Carregando estoque…</div> : visibleAlphabeticMedicationStock.length ? <div className="pharmacy-alphabetic-list">{visibleAlphabeticMedicationStock.map((item) => <article className="pharmacy-alphabetic-item" key={item.product_id}><div className="pharmacy-alphabetic-heading"><div><h3>{item.item_name}</h3><p>{item.active_ingredient || 'Princípio ativo não informado'}{item.presentation ? ` · ${item.presentation}` : ''}</p></div><strong>{item.balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {item.unit}</strong></div><div className="pharmacy-alphabetic-lots">{[...item.lots].sort((a, b) => a.expiry_date.localeCompare(b.expiry_date, 'pt-BR') || a.lot.localeCompare(b.lot, 'pt-BR')).map((lot) => <span key={lot.id}>Lote {lot.lot || '—'} · {lot.balance} {lot.unit} · validade {new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${lot.expiry_date}T12:00:00Z`))}{lot.storage_location ? ` · ${lot.storage_location}` : ''}</span>)}</div></article>)}</div> : <div className="history-empty"><Package size={20} /><span>{items.some((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento') ? 'Nenhum medicamento corresponde à busca.' : 'Nenhum medicamento foi cadastrado no estoque.'}</span></div>}
+      {loading ? <div className="history-empty">Carregando estoque…</div> : visibleAlphabeticMedicationStock.length ? <div className="pharmacy-alphabetic-list">{visibleAlphabeticMedicationStock.map((item) => <article className="pharmacy-alphabetic-item" key={item.product_id}><div className="pharmacy-alphabetic-heading"><div><h3>{item.item_name}</h3><p>{item.active_ingredient || 'Princípio ativo não informado'}{item.presentation ? ` · ${item.presentation}` : ''}</p></div><strong>{item.available_balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {item.unit}</strong></div><div className="pharmacy-alphabetic-lots">{[...item.lots].sort((a, b) => a.expiry_date.localeCompare(b.expiry_date, 'pt-BR') || a.lot.localeCompare(b.lot, 'pt-BR')).map((lot) => <span key={lot.id}>Lote {lot.lot || '—'} · {lot.balance} {lot.unit} · validade {new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${lot.expiry_date}T12:00:00Z`))}{lot.storage_location ? ` · ${lot.storage_location}` : ''}</span>)}</div></article>)}</div> : <div className="history-empty"><Package size={20} /><span>{items.some((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento') ? 'Nenhum medicamento corresponde à busca.' : 'Nenhum medicamento foi cadastrado no estoque.'}</span></div>}
+      <PharmacyProductThresholds
+        products={visibleProductStock}
+        onSaved={(productId, updated) => setItems((current) => current.map((item) =>
+          item.product_id === productId
+            ? {
+              ...item,
+              minimum_balance: updated.minimum_balance,
+              average_balance: updated.average_balance,
+            }
+            : item,
+        ))}
+      />
     </section>}
     {pharmacyTab === 'prescriptions' && <section className="patient-list-panel">
       <div className="section-heading"><div><p className="eyebrow">FILA DA FARMÁCIA</p><h2>Prescrições internas pendentes</h2><p className="welcome-copy">A prescrição só é marcada como atendida após registrar a dispensação e debitar o lote.</p></div><span className="module-total">{prescriptions.length} pendente(s)</span></div>
@@ -652,7 +709,6 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         <label className="field"><span className="field-label">Unidades de estoque em cada embalagem</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.units_per_purchase_unit} onChange={(event) => setForm({ ...form, units_per_purchase_unit: formatDecimalInput(event.target.value) })} placeholder="Ex.: 20 comprimidos por caixa" /></label>
         <label className="field"><span className="field-label">Unidade mínima movimentada e dispensada</span><input required maxLength={24} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: comprimido, frasco, mL" /><span className="field-hint">O fator converte a embalagem para esta unidade base. Exemplo: 10 caixas × 20 comprimidos = 200 comprimidos no saldo, permitindo dispensar 1 comprimido.</span></label>
         <div className="pharmacy-opening-balance" aria-live="polite"><span>Saldo inicial calculado</span><strong>{Number.isFinite(convertedBalance) ? convertedBalance : '—'} {form.unit || 'unidade base'}</strong><small>Embalagens recebidas × unidades por embalagem. O servidor valida e registra esse saldo.</small></div>
-        <label className="field"><span className="field-label">Estoque mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.minimum_balance} onChange={(event) => setForm({ ...form, minimum_balance: formatDecimalInput(event.target.value) })} /><span className="field-hint">O painel alerta quando o saldo atingir este limite.</span></label>
         <label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label>
         <label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label>
         <label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label>
@@ -661,7 +717,22 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       <div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div>
     </form>}
     <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
-      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => { const expired = item.expiry_date < today; const expiring = !expired && item.expiry_date <= soon; const low = Number(item.minimum_balance.replace(',', '.')) > 0 && Number(item.balance.replace(',', '.')) <= Number(item.minimum_balance.replace(',', '.')); return <article className="pharmacy-item-card" key={item.id}><div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired ? <AlertTriangle size={14} /> : expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Abaixo do mínimo' : 'Dentro da validade'}</span></div><h3>{item.item_name}</h3><p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p><div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low ? ` · mínimo ${item.minimum_balance}` : ''}</span></div><div className="pharmacy-item-meta"><span><small>Entrada</small><strong>{item.purchase_quantity} {item.purchase_unit} × {item.units_per_purchase_unit} {item.unit}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div><button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>{movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada</option><option value="issue">Saída / dispensação</option><option value="adjustment">Ajuste de inventário</option></select></label><label className="field"><span className="field-label">Quantidade ({item.unit}) {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /><span className="field-hint">Use a mesma unidade do saldo deste lote: {item.unit}.</span></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: dispensação, recebimento da nota fiscal" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : 'Registrar movimentação'}</button></form>}</article> })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
+      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => {
+        const expired = item.expiry_date < today
+        const expiring = !expired && item.expiry_date <= soon
+        const level = productLevelById.get(item.product_id) ?? 'unconfigured'
+        const low = level === 'critical'
+        const product = productStocks.find((candidate) => candidate.product_id === item.product_id)
+        return <article className="pharmacy-item-card" key={item.id}>
+          <div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired || expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Estoque crítico' : 'Dentro da validade'}</span></div>
+          <h3>{item.item_name}</h3>
+          <p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p>
+          <div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low && product ? ` · disponível no produto: ${product.available_balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${item.unit} (mínimo ${product.minimum_balance})` : ''}</span></div>
+          <div className="pharmacy-item-meta"><span><small>Entrada</small><strong>{item.purchase_quantity} {item.purchase_unit} × {item.units_per_purchase_unit} {item.unit}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div>
+          <button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>
+          {movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada</option><option value="issue">Saída / dispensação</option><option value="adjustment">Ajuste de inventário</option></select></label><label className="field"><span className="field-label">Quantidade ({item.unit}) {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /><span className="field-hint">Use a mesma unidade do saldo deste lote: {item.unit}.</span></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: dispensação, recebimento da nota fiscal" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : 'Registrar movimentação'}</button></form>}
+        </article>
+      })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
       <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade na unidade do lote, saldo após a operação, responsável e motivo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item?.unit ?? ''}</span><small>Saldo: {movement.balance_after} {item?.unit ?? ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 25)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>
     </section>
     <PrintSelectionPanel title="Relatório de estoque por lote" rows={pharmacyPrintRows} />
@@ -819,19 +890,13 @@ const purchaseStatusLabels: Record<PurchaseRequest['status'], string> = {
   rejected: 'Rejeitada',
 }
 
-type StockLevel = 'critical' | 'attention' | 'healthy' | 'unconfigured'
-
-function stockLevel(item: PharmacyItem): StockLevel {
-  const balance = Number(item.balance.replace(',', '.'))
-  const minimum = Number(item.minimum_balance.replace(',', '.'))
-  const average = Number((item.average_balance || '0').replace(',', '.'))
-  if (Number.isFinite(minimum) && balance <= minimum) return 'critical'
-  if (!Number.isFinite(average) || average <= 0) return 'unconfigured'
-  if (balance <= average) return 'attention'
-  return 'healthy'
-}
-
-function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem[]; counts: Record<StockLevel, number>; onSaved: (item: PharmacyItem) => void }) {
+function PharmacyProductThresholds({
+  products,
+  onSaved,
+}: {
+  products: PharmacyProductStock[]
+  onSaved: (productId: number, item: PharmacyItem) => void
+}) {
   const [editing, setEditing] = useState<number | null>(null)
   const [minimum, setMinimumState] = useState('0')
   const [average, setAverageState] = useState('')
@@ -841,27 +906,34 @@ function PharmacyStockOverview({ items, counts, onSaved }: { items: PharmacyItem
   const [message, setMessage] = useState('')
   const [messageVariant, setMessageVariant] = useState<'success' | 'error'>('success')
   const label: Record<StockLevel, string> = { critical: 'Crítico', attention: 'Atenção', healthy: 'Adequado', unconfigured: 'Defina a meta' }
-  const rows = [...items].sort((a, b) => {
+  const rows = [...products].sort((a, b) => {
     const order: Record<StockLevel, number> = { critical: 0, attention: 1, unconfigured: 2, healthy: 3 }
-    return order[stockLevel(a)] - order[stockLevel(b)] || a.item_name.localeCompare(b.item_name, 'pt-BR')
+    return order[stockLevel(a.available_balance, a.minimum_balance, a.average_balance)] - order[stockLevel(b.available_balance, b.minimum_balance, b.average_balance)] || a.item_name.localeCompare(b.item_name, 'pt-BR')
   })
-  async function save(item: PharmacyItem) {
+  async function save(product: PharmacyProductStock) {
     setSaving(true); setMessage('')
     try {
-      const response = await fetch(`/api/v1/pharmacy/items/${item.id}/stock-thresholds`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minimum_balance: minimum.replace(',', '.'), average_balance: average.replace(',', '.') }) })
+      const response = await fetch(`/api/v1/pharmacy/products/${product.product_id}/stock-thresholds`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minimum_balance: minimum.replace(',', '.'), average_balance: average.replace(',', '.') }) })
       const data = await readApiResponse<PharmacyItem>(response)
-      onSaved(data); setEditing(null); setMessageVariant('success'); setMessage(`Metas atualizadas para ${item.item_name}.`)
+      onSaved(product.product_id, data); setEditing(null); setMessageVariant('success'); setMessage(`Metas atualizadas para ${product.item_name}.`)
     } catch (error) { setMessageVariant('error'); setMessage(error instanceof Error ? error.message : 'Falha ao salvar metas.') }
     finally { setSaving(false) }
   }
-  return <section className="pharmacy-stock-overview" aria-label="Níveis do estoque">
-    <div className="pharmacy-stock-levels" aria-label="Resumo dos níveis de estoque">
-      {(['critical', 'attention', 'healthy', 'unconfigured'] as StockLevel[]).map((level) => <div className={`pharmacy-level-count level-${level}`} key={level}><span className="pharmacy-level-dot" /><strong>{counts[level]}</strong><span>lotes</span><small>{label[level]}</small></div>)}
-    </div>
-    <details className="pharmacy-stock-details"><summary>Ver níveis e configurar metas por lote</summary>
-      <p>Crítico: saldo no mínimo ou abaixo. Atenção: saldo entre o mínimo e a meta média. Adequado: acima da meta média. Defina a meta média para ativar o acompanhamento do lote.</p>
+  return <section className="pharmacy-stock-overview" aria-label="Metas de estoque por produto">
+    <div className="section-heading"><div><p className="eyebrow">NÍVEIS DE ESTOQUE</p><h3>Metas por medicamento</h3><p className="welcome-copy">O saldo considera a soma dos lotes dentro da validade. Configure as metas uma vez por medicamento.</p></div></div>
+    <details className="pharmacy-stock-details">
+      <summary>Ver níveis e configurar metas por medicamento</summary>
+      <p>Crítico: saldo disponível no mínimo ou abaixo. Atenção: saldo entre o mínimo e a meta média. Adequado: acima da meta média. Lotes vencidos não entram no saldo acompanhado.</p>
       {message && <ToastMessage variant={messageVariant}>{message}</ToastMessage>}
-      <div className="pharmacy-stock-level-list">{rows.map((item) => { const level = stockLevel(item); const isEditing = editing === item.id; return <article className="pharmacy-stock-level-row" key={item.id}><div className="pharmacy-stock-level-name"><span className={`pharmacy-level-dot level-${level}`} /><div><strong>{item.item_name}</strong><small>Lote {item.lot} · Saldo {item.balance} {item.unit}</small></div></div><span className={`pharmacy-stock-badge level-${level}`}>{label[level]}</span>{isEditing ? <div className="pharmacy-threshold-editor"><label className="field"><span className="field-label">Mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label className="field"><span className="field-label">Meta média</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={average} onChange={(event) => setAverage(event.target.value)} /></label><button className="button button-primary" type="button" disabled={saving || !average} onClick={() => void save(item)}>{saving ? 'Salvando…' : 'Salvar metas'}</button><button className="button button-secondary" type="button" disabled={saving} onClick={() => setEditing(null)}>Cancelar</button></div> : <button className="button button-secondary pharmacy-threshold-button" type="button" onClick={() => { setEditing(item.id); setMinimum(item.minimum_balance || '0'); setAverage(item.average_balance && Number(item.average_balance) > 0 ? item.average_balance : '') }}>Configurar</button>}</article> })}</div>
+      {rows.length ? <div className="pharmacy-stock-level-list">{rows.map((product) => {
+        const level = stockLevel(product.available_balance, product.minimum_balance, product.average_balance)
+        const isEditing = editing === product.product_id
+        return <article className="pharmacy-stock-level-row" key={product.product_id}>
+          <div className="pharmacy-stock-level-name"><span className={`pharmacy-level-dot level-${level}`} /><div><strong>{product.item_name}</strong><small>Saldo válido {product.available_balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {product.unit} · mínimo {product.minimum_balance} · meta média {product.average_balance}</small></div></div>
+          <span className={`pharmacy-stock-badge level-${level}`}>{label[level]}</span>
+          {isEditing ? <div className="pharmacy-threshold-editor"><label className="field"><span className="field-label">Mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label className="field"><span className="field-label">Meta média</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={average} onChange={(event) => setAverage(event.target.value)} /></label><button className="button button-primary" type="button" disabled={saving || !average} onClick={() => void save(product)}>{saving ? 'Salvando…' : 'Salvar metas'}</button><button className="button button-secondary" type="button" disabled={saving} onClick={() => setEditing(null)}>Cancelar</button></div> : <button className="button button-secondary pharmacy-threshold-button" type="button" onClick={() => { setEditing(product.product_id); setMinimum(product.minimum_balance || '0'); setAverage(product.average_balance && Number(product.average_balance) > 0 ? product.average_balance : '') }}>Configurar metas</button>}
+        </article>
+      })}</div> : <div className="history-empty">Nenhum produto encontrado.</div>}
     </details>
   </section>
 }

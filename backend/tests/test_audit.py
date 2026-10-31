@@ -1,12 +1,12 @@
 from collections.abc import Generator
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from scpo_services import audit
 from scpo_services.common import clear_engine_cache, get_engine
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -90,9 +90,9 @@ def test_audit_event_search_date_filters_and_offset_pagination(audit_db: Session
         )
 
     page = audit.list_events(principal, audit_db, limit=1, offset=1)
-    assert page["total"] == 3
+    assert page["total"] == 4
     assert page["offset"] == 1
-    assert [event["source_event_id"] for event in page["events"]] == ["audit-page-2"]
+    assert [event["source_event_id"] for event in page["events"]] == ["audit-page-3"]
 
     filtered = audit.list_events(
         principal,
@@ -104,6 +104,75 @@ def test_audit_event_search_date_filters_and_offset_pagination(audit_db: Session
     )
     assert filtered["total"] == 1
     assert [event["actor_name"] for event in filtered["events"]] == ["Bruno"]
+
+
+def test_audit_retention_prunes_only_a_verified_expired_prefix(
+    audit_db: Session,
+) -> None:
+    for event_id, occurred_at in (
+        ("retention-old-prefix", "2024-01-01T12:00:00+00:00"),
+        ("retention-recent", "2025-12-01T12:00:00+00:00"),
+        ("retention-old-after-recent", "2024-02-01T12:00:00+00:00"),
+    ):
+        audit.create_event(
+            audit.AuditEventPayload(
+                source_event_id=event_id,
+                actor_name="Operator",
+                actor_role="nursing",
+                action="patient_record_read",
+                module="patients",
+                target_id="synthetic-patient",
+                happened_at=occurred_at,
+            ),
+            audit_db,
+            "test-service-token",
+        )
+
+    deleted = audit.prune_expired_events(
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+        retention_days=365,
+    )
+
+    assert deleted == 1
+    remaining = audit_db.scalars(select(audit.AuditEvent).order_by(audit.AuditEvent.id)).all()
+    assert [event.source_event_id for event in remaining] == [
+        "retention-recent",
+        "retention-old-after-recent",
+    ]
+    integrity = audit.verify_chain(audit_db)
+    assert integrity["valid"] is True
+    assert integrity["events_checked"] == 2
+    assert integrity["checkpoint_event_id"] == 1
+
+
+def test_audit_retention_stops_when_chain_is_invalid(audit_db: Session) -> None:
+    audit.create_event(
+        audit.AuditEventPayload(
+            source_event_id="retention-invalid-chain",
+            actor_name="Operator",
+            actor_role="nursing",
+            action="patient_record_read",
+            module="patients",
+            target_id="synthetic-patient",
+            happened_at="2024-01-01T12:00:00+00:00",
+        ),
+        audit_db,
+        "test-service-token",
+    )
+    event = audit_db.scalar(select(audit.AuditEvent))
+    assert event is not None
+    audit_db.execute(text("DROP TRIGGER audit_events_no_update"))
+    audit_db.execute(
+        text("UPDATE audit_events SET action='tampered' WHERE id=:event_id"),
+        {"event_id": event.id},
+    )
+    audit_db.commit()
+
+    with pytest.raises(RuntimeError, match="Cadeia de auditoria inválida"):
+        audit.prune_expired_events(
+            now=datetime(2026, 1, 1, tzinfo=UTC),
+            retention_days=365,
+        )
 
 
 def test_audit_event_date_filter_rejects_reversed_period(audit_db: Session) -> None:

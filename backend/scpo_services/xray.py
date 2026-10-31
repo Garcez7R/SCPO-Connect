@@ -1,7 +1,7 @@
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Literal
-import uuid
 
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -14,6 +14,7 @@ from .common import (
     audit_outbox_lifespan,
     database_session,
     emit_audit_event,
+    register_audit_outbox_status_route,
     require_demo_role,
     verify_database_migrated,
     verify_patient_reference,
@@ -52,6 +53,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="SCPO Connect · Central de Exames", version="1.0.0", lifespan=lifespan
 )
+register_audit_outbox_status_route(app, "xray")
 XRAY_ROLE = require_demo_role("xray", "physician")
 XRAY_REPORT_ACCESS = require_demo_role("xray", "physician", "management", "admin", "oversight")
 LABORATORY_EXAMS = frozenset(

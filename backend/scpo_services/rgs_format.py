@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 MAGIC = b"SCPO-RGS\x01"
 DATABASES = ("access", "audit", "nursing", "pharmacy", "social", "xray", "maintenance")
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 20 * 1024**3
+MAX_ARCHIVE_MEMBERS = 100_000
 
 
 def decrypt_and_extract(
@@ -79,7 +80,7 @@ def _decrypt_password_bundle(source: Path, destination: Path, password: str) -> 
 def _extract_validated_archive(archive_path: Path, destination: Path, *, modern: bool) -> None:
     with tarfile.open(name=str(archive_path), mode="r:gz") as archive:
         members = archive.getmembers()
-        if len(members) > len(DATABASES) + 2:
+        if len(members) > MAX_ARCHIVE_MEMBERS:
             raise ValueError("O pacote contém itens demais")
         names: set[str] = set()
         files: dict[str, tarfile.TarInfo] = {}
@@ -90,12 +91,26 @@ def _extract_validated_archive(archive_path: Path, destination: Path, *, modern:
                 raise ValueError("O pacote contém caminhos inválidos ou duplicados")
             names.add(member.name)
             if member.isdir():
-                if member.name != "dumps" or modern:
+                allowed_directory = member.name == "dumps" or (
+                    not modern
+                    and (
+                        member.name == "attachments"
+                        or member.name.startswith("attachments/")
+                    )
+                )
+                if not allowed_directory:
                     raise ValueError("O pacote contém diretório inesperado")
             elif member.isfile():
                 total_size += member.size
                 if total_size > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
                     raise ValueError("O conteúdo do pacote excede o limite permitido")
+                if (
+                    not modern
+                    and member.name not in {"MANIFEST.txt"}
+                    and not member.name.startswith("dumps/scpo_")
+                    and not member.name.startswith("attachments/")
+                ):
+                    raise ValueError("O pacote contém arquivo fora dos diretórios permitidos")
                 files[member.name] = member
             else:
                 raise ValueError("O pacote contém um tipo de arquivo não permitido")
@@ -106,8 +121,11 @@ def _extract_validated_archive(archive_path: Path, destination: Path, *, modern:
             if modern
             else {manifest_name, *(f"dumps/scpo_{service}.dump" for service in DATABASES)}
         )
-        if set(files) != expected_names:
-            raise ValueError("O pacote não contém exatamente o manifesto e os sete bancos esperados")
+        allowed_files = expected_names | {
+            name for name in files if not modern and name.startswith("attachments/")
+        }
+        if set(files) != allowed_files or not expected_names.issubset(files):
+            raise ValueError("O pacote não contém manifesto e os sete bancos esperados")
 
         manifest_file = archive.extractfile(files[manifest_name])
         if manifest_file is None:
@@ -140,6 +158,20 @@ def _extract_validated_archive(archive_path: Path, destination: Path, *, modern:
                 raise ValueError(f"Dump ausente: {service}")
             with (destination / f"{service}.dump").open("xb") as output:
                 shutil.copyfileobj(dump, output, length=1024 * 1024)
+        if not modern:
+            for member_name in sorted(files):
+                if not member_name.startswith("attachments/"):
+                    continue
+                member_path = PurePosixPath(member_name)
+                output_path = destination.joinpath(*member_path.parts)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                if not output_path.parent.resolve().is_relative_to(destination.resolve()):
+                    raise ValueError("O pacote contém caminho fora do destino")
+                attachment = archive.extractfile(files[member_name])
+                if attachment is None:
+                    raise ValueError("Anexo do backup inválido")
+                with output_path.open("xb") as output:
+                    shutil.copyfileobj(attachment, output, length=1024 * 1024)
 
 
 def main() -> None:

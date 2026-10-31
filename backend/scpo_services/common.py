@@ -13,7 +13,7 @@ from urllib.parse import quote
 import httpx
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlalchemy import (
     DateTime,
     Engine,
@@ -22,6 +22,7 @@ from sqlalchemy import (
     String,
     create_engine,
     event,
+    func,
     inspect,
     select,
 )
@@ -228,6 +229,45 @@ def dispatch_pending_audit_events(service: str, limit: int = 25) -> int:
                 )
         db.commit()
     return delivered
+
+
+def audit_outbox_status(service: str) -> dict[str, object]:
+    if service not in {"access", "nursing", "pharmacy", "social", "xray", "maintenance"}:
+        raise ValueError(f"Serviço de outbox inválido: {service}")
+    with Session(get_engine(service)) as db:
+        pending = AuditOutbox.delivered_at.is_(None)
+        pending_count = db.scalar(
+            select(func.count()).select_from(AuditOutbox).where(pending)
+        ) or 0
+        oldest_pending = db.scalar(
+            select(func.min(AuditOutbox.created_at)).where(pending)
+        )
+        failed_count = db.scalar(
+            select(func.count())
+            .select_from(AuditOutbox)
+            .where(pending, AuditOutbox.attempts >= 5)
+        ) or 0
+    return {
+        "service": service,
+        "pending_count": pending_count,
+        "oldest_pending_at": oldest_pending.isoformat() if oldest_pending else None,
+        "failed_count": failed_count,
+    }
+
+
+def register_audit_outbox_status_route(app: FastAPI, service: str) -> None:
+    def endpoint(
+        _: None = Depends(require_service_token),
+    ) -> dict[str, object]:
+        return audit_outbox_status(service)
+
+    app.add_api_route(
+        "/internal/v1/audit/outbox-status",
+        endpoint,
+        methods=["GET"],
+        include_in_schema=False,
+        name=f"audit_outbox_status_{service}",
+    )
 
 
 async def _run_audit_outbox_dispatcher(service: str) -> None:

@@ -274,6 +274,10 @@ html[data-theme="dark"] .module-icon-patients { background: #30354a; color: #c2d
 html[data-theme="dark"] .module-icon-work-orders { background: #493131; color: #efb9bf; }
 html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: #203743; color: #a8ddf3; }
 .backup-restore-section { margin-top: 26px; padding-top: 8px; border-top: 1px solid var(--line); }
+.backup-automatic-section { margin: 18px 0 26px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--page); }
+.backup-automatic-status { display: grid; gap: 8px; margin-bottom: 14px; }
+.backup-automatic-status > p { margin: 0; font-size: 12px; }
+.backup-automatic-status > p > code { overflow-wrap: anywhere; }
 .backup-restore-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: end; }
 .backup-restore-form .field:first-child { grid-column: 1 / -1; }
 .backup-restore-form .button { justify-self: start; min-height: 42px; }
@@ -1473,6 +1477,7 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .audit-integrity-panel { margin: 12px 0; padding: 10px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .audit-integrity-panel > p { display: grid; gap: 3px; margin: 0; font-size: 11px; }
 .audit-integrity-panel > p > span { color: var(--muted); font-size: 10px; }
+.audit-outbox-services { display: grid; gap: 5px; margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 11px; }
 .audit-integrity-valid strong { color: var(--status-success-ink); }
 .audit-integrity-invalid strong { color: var(--status-critical-ink); }
 .therapy-image-file-picker { display: flex; min-width: 0; align-items: center; gap: 9px; }
