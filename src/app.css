@@ -917,9 +917,13 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .cep-lookup-message { margin: -4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .nutrition-form { display: grid; gap: 15px; margin-bottom: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .nutrition-form .section-heading { margin: 0; }
+.nutrition-page-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.nutrition-page-actions .button { white-space: nowrap; }
+.nutrition-assessment-panel { display: grid; gap: 16px; }
 .nutrition-tabs { margin: 4px 0; }
 .nutrition-kitchen-panel { display: grid; gap: 15px; }
 .nutrition-kitchen-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.nutrition-kitchen-assess { justify-self: start; }
 .nutrition-kitchen-search { max-width: 560px; }
 .nutrition-kitchen-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
 .nutrition-kitchen-summary article { display: grid; min-height: 72px; align-content: center; gap: 5px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
@@ -970,6 +974,14 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .kitchen-mobile-connection.is-online svg { color: var(--status-success-ink); }
 .kitchen-mobile-connection.is-offline svg { color: var(--status-critical-ink); }
 .kitchen-mobile-connection time { margin-left: auto; color: var(--subtle); }
+.kitchen-mobile-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.kitchen-mobile-summary article { display: grid; min-height: 62px; align-content: center; gap: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.kitchen-mobile-summary strong { color: var(--ink); font-size: 20px; line-height: 1; }
+.kitchen-mobile-summary span { color: var(--muted); font-size: 10px; line-height: 1.35; }
+.kitchen-mobile-summary .is-alert { border-color: var(--status-critical-border); background: var(--status-critical-background); }
+.kitchen-mobile-summary .is-alert strong { color: var(--status-critical-ink); }
+.kitchen-mobile-summary .is-warning { border-color: var(--status-warning-border); background: var(--status-warning-background); }
+.kitchen-mobile-summary .is-warning strong { color: var(--status-warning-ink); }
 .kitchen-mobile-error { padding: 11px 12px; border: 1px solid var(--status-critical-border); border-radius: 8px; background: var(--status-critical-background); color: var(--status-critical-ink); font-size: 12px; line-height: 1.45; }
 .kitchen-mobile-search { display: flex; min-height: 46px; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); }
 .kitchen-mobile-search input { width: 100%; min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 16px; }
@@ -1008,11 +1020,14 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 @media (max-width: 760px) {
   .nutrition-kitchen-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nutrition-kitchen-actions { justify-content: flex-start; }
+  .nutrition-page-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .nutrition-page-actions .button { min-height: 40px; padding-inline: 9px; font-size: 11px; }
 }
 @media (max-width: 390px) {
   .kitchen-mobile-title-row { align-items: stretch; flex-direction: column; }
   .kitchen-mobile-refresh { justify-content: center; }
   .kitchen-mobile-connection time { width: 100%; margin-left: 22px; }
+  .kitchen-mobile-summary article { min-height: 56px; padding: 8px; }
 }
 .nutrition-patient-select { max-width: 600px; }
 .nutrition-context-card { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 11px; line-height: 1.5; }

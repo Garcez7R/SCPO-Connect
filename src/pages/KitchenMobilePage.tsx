@@ -65,7 +65,7 @@ export default function KitchenMobilePage({ user, onLogout }: {
       setUpdatedAt(roster.updated_at)
       setError('')
     }).catch((loadError: unknown) => {
-      if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar o mapa da cozinha.')
+      if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a lista de dietas e alertas.')
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -80,7 +80,7 @@ export default function KitchenMobilePage({ user, onLogout }: {
       setPatients(roster.patients)
       setUpdatedAt(roster.updated_at)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Não foi possível atualizar o mapa da cozinha.')
+      setError(loadError instanceof Error ? loadError.message : 'Não foi possível atualizar a lista de dietas e alertas.')
     } finally {
       setRefreshing(false)
     }
@@ -106,12 +106,19 @@ export default function KitchenMobilePage({ user, onLogout }: {
         .includes(normalizedQuery),
     )
   }, [patients, query])
+  const rosterSummary = useMemo(() => ({
+    inpatients: patients.length,
+    knownAllergies: patients.filter((patient) => patient.allergies_status === 'known').length,
+    allergyReview: patients.filter((patient) => patient.allergies_status === 'unknown').length,
+    missingDiet: patients.filter((patient) => !patient.diet_type.trim()).length,
+    fasting: patients.filter((patient) => Boolean(patient.fasting_at)).length,
+  }), [patients])
 
   if (!canAccess) {
     return <main className="kitchen-mobile-shell kitchen-mobile-denied">
       <img src="/scpo-connect-icon.png" alt="" />
       <h1>Acesso não autorizado</h1>
-      <p>Seu perfil não tem permissão para consultar o mapa da cozinha. Solicite a liberação ao administrador.</p>
+      <p>Seu perfil não tem permissão para consultar as dietas e os alertas alimentares. Solicite a liberação ao administrador.</p>
       <a className="button button-secondary" href="/">Abrir sistema completo</a>
     </main>
   }
@@ -120,15 +127,15 @@ export default function KitchenMobilePage({ user, onLogout }: {
     <header className="kitchen-mobile-header">
       <div className="kitchen-mobile-brand">
         <img src="/scpo-connect-icon.png" alt="" />
-        <div><p className="eyebrow">SCPO CONNECT</p><h1><UtensilsCrossed size={19} /> Cozinha</h1></div>
+        <div><p className="eyebrow">SCPO CONNECT</p><h1><UtensilsCrossed size={19} /> Painel da cozinha</h1></div>
       </div>
       <button className="button button-secondary kitchen-mobile-logout" type="button" onClick={onLogout}><LogOut size={16} /><span>Sair</span></button>
     </header>
 
     <section className="kitchen-mobile-content" aria-labelledby="kitchen-mobile-title">
       <div className="kitchen-mobile-title-row">
-        <div><h2 id="kitchen-mobile-title">Refeições dos internados</h2><p>Confira a identificação, a dieta e os alertas antes de montar cada refeição.</p></div>
-        <button className="button button-secondary kitchen-mobile-refresh" type="button" onClick={() => void refreshRoster()} disabled={refreshing || !online} aria-label="Atualizar mapa">
+        <div><h2 id="kitchen-mobile-title">Dietas e alertas dos internados</h2><p>Confira identificação, dieta, alergias e restrições antes de montar ou entregar cada refeição.</p></div>
+        <button className="button button-secondary kitchen-mobile-refresh" type="button" onClick={() => void refreshRoster()} disabled={refreshing || !online} aria-label="Atualizar dietas e alertas">
           <RefreshCw size={17} className={refreshing ? 'kitchen-mobile-spinning' : undefined} />
           <span>{refreshing ? 'Atualizando' : 'Atualizar'}</span>
         </button>
@@ -141,14 +148,21 @@ export default function KitchenMobilePage({ user, onLogout }: {
       </div>
 
       {error && <div className="kitchen-mobile-error" role="alert">{error}</div>}
+      {!loading && <div className="kitchen-mobile-summary" aria-label="Resumo dos pacientes internados">
+        <article><strong>{rosterSummary.inpatients}</strong><span>Internados</span></article>
+        <article className="is-alert"><strong>{rosterSummary.knownAllergies}</strong><span>Alergia conhecida</span></article>
+        <article className="is-warning"><strong>{rosterSummary.allergyReview}</strong><span>Confirmar alergias</span></article>
+        <article className="is-warning"><strong>{rosterSummary.missingDiet}</strong><span>Dieta não informada</span></article>
+        <article className="is-warning"><strong>{rosterSummary.fasting}</strong><span>Jejum programado</span></article>
+      </div>}
 
       <label className="kitchen-mobile-search">
         <Search size={18} />
-        <span className="sr-only">Buscar paciente, leito, dieta ou restrição</span>
+        <span className="sr-only">Buscar paciente, leito, dieta, alergia ou restrição</span>
         <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar nome, leito ou dieta" />
       </label>
 
-      {loading ? <p className="kitchen-mobile-state" role="status">Carregando mapa…</p>
+      {loading ? <p className="kitchen-mobile-state" role="status">Carregando dietas e alertas…</p>
         : visiblePatients.length ? <>
           <p className="kitchen-mobile-count" role="status">{visiblePatients.length} {visiblePatients.length === 1 ? 'paciente' : 'pacientes'}</p>
           <div className="kitchen-mobile-list">{visiblePatients.map((patient) => <article className="kitchen-mobile-card" key={patient.patient_reference}>
@@ -167,7 +181,7 @@ export default function KitchenMobilePage({ user, onLogout }: {
           </article>)}</div>
         </> : <p className="kitchen-mobile-state" role="status">{patients.length ? 'Nenhum paciente corresponde à busca.' : 'Nenhum paciente internado disponível.'}</p>}
 
-      <p className="kitchen-mobile-footnote">Consulta online. Confirme a identificação e a prescrição vigente antes de servir. Este mapa não substitui a conferência da equipe.</p>
+      <p className="kitchen-mobile-footnote">Consulta online. Confirme a identificação e a prescrição vigente antes de servir. Esta lista não substitui a conferência da equipe.</p>
     </section>
   </main>
 }

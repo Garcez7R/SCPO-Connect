@@ -30,6 +30,7 @@ import {
   Clock3,
   ContactRound,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   Handshake,
@@ -770,7 +771,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
           {activeModule === 'management' && <ManagementPage user={user} onNavigate={navigate} allowedModules={profile.modules} />}
           {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage user={user} />}
           {activeModule === 'about' && <AboutPage />}
-          {activeModule === 'nutrition' && <NutritionPage />}
+          {activeModule === 'nutrition' && <NutritionPage user={user} />}
           {activeModule === 'xray' && <Suspense fallback={<div className="history-empty" role="status">Carregando Central de Exames…</div>}><XrayModulePage user={user} /></Suspense>}
           {activeModule === 'social' && <Suspense fallback={<div className="history-empty" role="status">Carregando Serviço Social…</div>}><PatientOperationsPage moduleId="social" user={user} /></Suspense>}
           </ModuleErrorBoundary>
@@ -3707,9 +3708,11 @@ function AccountRow({ user, onUpdate, onResetPassword, onDelete, currentUserId, 
   </article>
 }
 
-function NutritionPage() {
+function NutritionPage({ user }: { user: AuthUser }) {
   const { prompt } = useAppDialogs()
   const [nutritionTab, setNutritionTab] = useState<'assessment' | 'kitchen'>('assessment')
+  const canCreateNutrition = user.modules.includes('nutrition')
+    && user.permissions.nutrition?.includes('criar') === true
   const [patients, setPatients] = useState<Patient[]>([])
   const [records, setRecords] = useState<NutritionRecordData[]>([])
   const [kitchenPatients, setKitchenPatients] = useState<NutritionKitchenPatient[]>([])
@@ -3759,6 +3762,35 @@ function NutritionPage() {
       setKitchenLoading(false)
     }
   }, [])
+  function startAssessmentForPatient(patientReference: string) {
+    const patient = patients.find((item) => item.reference === patientReference)
+    if (!patient) {
+      setError('Não foi possível localizar o paciente. Atualize a lista antes de iniciar uma avaliação.')
+      return
+    }
+    setSelectedPatient(patientReference)
+    setSelectedPatientRecord(null)
+    setForm((current) => ({
+      ...current,
+      assessment_date: new Date().toLocaleDateString('en-CA'),
+      weight_kg: '',
+      height_cm: '',
+      diet_type: '',
+      allergies: patient.allergies ?? '',
+      allergies_status: patient.allergies_status ?? 'unknown',
+      restrictions: '',
+      appetite: '',
+      hydration: '',
+      notes: '',
+      fasting_at: '',
+      fasting_reason: '',
+    }))
+    setHeightDigits('')
+    setHeightFocused(false)
+    setNutritionTab('assessment')
+    setMessage('Paciente selecionado para nova avaliação nutricional.')
+    setError('')
+  }
   useEffect(() => {
     void (async () => {
       try {
@@ -3813,21 +3845,22 @@ function NutritionPage() {
     title: `${patient.patient_name} · Quarto ${patient.room}, leito ${patient.bed}`,
     fields: [
       ['Dieta', patient.diet_type || 'Não informada · confirmar com Nutrição'],
+      ['Avaliação', patient.assessment_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.assessment_date}T00:00:00Z`)) : 'Sem avaliação registrada'],
       ['Alergias', patient.allergies_status === 'known' ? patient.allergies : patient.allergies_status === 'none_known' ? 'Sem alergia conhecida' : 'Não confirmado'],
       ['Restrições', patient.restrictions],
       ['Jejum', patient.fasting_at ? `${dateTime(patient.fasting_at)} · ${patient.fasting_reason || ''}` : ''],
     ],
   }))
   return <section className="nutrition-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliação, dieta prescrita, alergias, restrições e aceitação alimentar.</p></div><span className="module-icon module-icon-nutrition"><UtensilsCrossed size={24} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliações e acompanhe dietas, alergias, restrições e jejuns dos pacientes internados.</p></div><div className="nutrition-page-actions"><a className="button button-secondary" href="/kitchen.html" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Abrir painel da cozinha</a><span className="module-icon module-icon-nutrition"><UtensilsCrossed size={24} /></span></div></div>
     {message && <ToastMessage variant="success">{message}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     <div className="admin-tabs module-tabs nutrition-tabs" role="tablist" aria-label="Áreas de Nutrição">
-      <button className={`button ${nutritionTab === 'assessment' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nutritionTab === 'assessment'} onClick={() => setNutritionTab('assessment')}>Avaliações</button>
-      <button className={`button ${nutritionTab === 'kitchen' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={nutritionTab === 'kitchen'} onClick={() => { setNutritionTab('kitchen'); void loadKitchenRoster() }}>Mapa da cozinha</button>
+      <button id="nutrition-tab-assessment" className={`button ${nutritionTab === 'assessment' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-controls="nutrition-panel-assessment" aria-selected={nutritionTab === 'assessment'} onClick={() => setNutritionTab('assessment')}>Avaliações</button>
+      <button id="nutrition-tab-kitchen" className={`button ${nutritionTab === 'kitchen' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-controls="nutrition-panel-kitchen" aria-selected={nutritionTab === 'kitchen'} onClick={() => { setNutritionTab('kitchen'); void loadKitchenRoster() }}>Dietas e alertas</button>
     </div>
-    {nutritionTab === 'kitchen' ? <section className="patient-list-panel nutrition-kitchen-panel" role="tabpanel">
-      <div className="section-heading"><div><p className="eyebrow">PRODUÇÃO ALIMENTAR · INTERNADOS</p><h2>Mapa de dietas e restrições</h2><p className="welcome-copy">Consulte dieta, alergias alimentares e jejum informado para apoiar a montagem das refeições. Não substitui a conferência da prescrição e da identificação à beira-leito.</p></div><div className="nutrition-kitchen-actions"><a className="button button-secondary" href="/kitchen.html" target="_blank" rel="noreferrer">Abrir PWA no celular</a><button className="button button-secondary" type="button" onClick={() => void loadKitchenRoster()} disabled={kitchenLoading}>{kitchenLoading ? 'Atualizando…' : 'Atualizar mapa'}</button></div></div>
-      <PrintSelectionPanel title="Mapa da cozinha" rows={kitchenPrintRows} />
+    {nutritionTab === 'kitchen' ? <section id="nutrition-panel-kitchen" className="patient-list-panel nutrition-kitchen-panel" role="tabpanel" aria-labelledby="nutrition-tab-kitchen">
+      <div className="section-heading"><div><p className="eyebrow">PRODUÇÃO ALIMENTAR · INTERNADOS</p><h2>Dietas, alergias e restrições</h2><p className="welcome-copy">Consulte a avaliação nutricional mais recente e os alertas alimentares para apoiar a montagem e a entrega das refeições. Confirme a prescrição e a identificação à beira-leito.</p></div><div className="nutrition-kitchen-actions"><button className="button button-secondary" type="button" onClick={() => void loadKitchenRoster()} disabled={kitchenLoading}>{kitchenLoading ? 'Atualizando…' : 'Atualizar lista'}</button></div></div>
+      <PrintSelectionPanel title="Dietas e alertas dos internados" rows={kitchenPrintRows} />
       <div className="nutrition-kitchen-summary" aria-label="Resumo do mapa da cozinha">
         <article><strong>{kitchenSummary.patients}</strong><span>Internados</span></article>
         <article className="is-alert"><strong>{kitchenSummary.knownAllergies}</strong><span>Alergia conhecida</span></article>
@@ -3837,11 +3870,12 @@ function NutritionPage() {
       </div>
       <label className="field nutrition-kitchen-search"><span className="field-label">Buscar paciente, localização, dieta ou restrição</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={kitchenQuery} onChange={(event) => setKitchenQuery(event.target.value)} placeholder="Nome, quarto, leito ou dieta" /></span></label>
       {kitchenUpdatedAt && <p className="field-hint">Atualizado em {dateTime(kitchenUpdatedAt)}. Confirme alergias e restrições antes de preparar ou entregar refeições.</p>}
-      {kitchenLoading ? <div className="history-empty">Carregando mapa da cozinha…</div> : visibleKitchenPatients.length ? <div className="nutrition-kitchen-list">{visibleKitchenPatients.map((patient) => <article className="nutrition-kitchen-card" key={patient.patient_reference}>
+      {kitchenLoading ? <div className="history-empty">Carregando dietas e alertas…</div> : visibleKitchenPatients.length ? <div className="nutrition-kitchen-list">{visibleKitchenPatients.map((patient) => <article className="nutrition-kitchen-card" key={patient.patient_reference}>
         <div className="nutrition-kitchen-heading"><strong>{patient.patient_name}</strong><span>Quarto {patient.room} · Leito {patient.bed}</span></div>
         <div className="nutrition-kitchen-details"><span className={!patient.diet_type ? 'nutrition-kitchen-missing' : ''}><small>Dieta</small><strong>{patient.diet_type || 'Não informada · confirmar com Nutrição'}</strong>{patient.assessment_date && <small className="nutrition-kitchen-assessment">Avaliada em {patient.assessment_date.split('-').reverse().join('/')}</small>}</span><span className={patient.allergies_status === 'known' ? 'nutrition-kitchen-allergy' : patient.allergies_status === 'unknown' ? 'nutrition-kitchen-unconfirmed' : ''}><small>Alergias</small><strong>{patient.allergies_status === 'known' ? patient.allergies : patient.allergies_status === 'none_known' ? 'Sem alergia conhecida' : 'Não confirmado'}</strong></span>{patient.restrictions && <span><small>Restrições</small><strong>{patient.restrictions}</strong></span>}{patient.fasting_at && <span className="nutrition-kitchen-fasting"><small>Jejum programado</small><strong>{dateTime(patient.fasting_at)}{patient.fasting_reason ? ` · ${patient.fasting_reason}` : ''}</strong></span>}</div>
-      </article>)}</div> : <div className="history-empty">{kitchenPatients.length ? 'Nenhum paciente corresponde à busca.' : 'Nenhum paciente internado disponível para o mapa de dietas.'}</div>}
-    </section> : <>
+        {canCreateNutrition && <button className="button button-secondary nutrition-kitchen-assess" type="button" onClick={() => startAssessmentForPatient(patient.patient_reference)}><ClipboardPlus size={16} /> Nova avaliação</button>}
+      </article>)}</div> : <div className="history-empty">{kitchenPatients.length ? 'Nenhum paciente corresponde à busca.' : 'Nenhum paciente internado disponível para a lista de dietas.'}</div>}
+    </section> : <section id="nutrition-panel-assessment" className="nutrition-assessment-panel" role="tabpanel" aria-labelledby="nutrition-tab-assessment">
     <PrintSelectionPanel title="Avaliações nutricionais" rows={nutritionPrintRows} />
     <form className="nutrition-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVA AVALIAÇÃO</p><h2>Dados nutricionais</h2></div></div>
@@ -3868,7 +3902,7 @@ function NutritionPage() {
         <div className="pharmacy-ledger-pagination"><span>{recordsOffset + 1}–{Math.min(recordsOffset + records.length, recordsTotal)} de {recordsTotal}</span><div><button className="button button-secondary" type="button" disabled={recordsLoading || recordsOffset === 0} onClick={() => void loadRecords(recordPatientFilter, recordQuery, Math.max(0, recordsOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={recordsLoading || recordsOffset + records.length >= recordsTotal} onClick={() => void loadRecords(recordPatientFilter, recordQuery, recordsOffset + 25)}>Próxima</button></div></div>
       </> : <div className="history-empty">Nenhuma avaliação corresponde aos filtros atuais.</div>}
     </section>
-    </>}
+    </section>}
   </section>
 }
 

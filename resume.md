@@ -21,13 +21,13 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Backups automáticos GPG diários usam chave pública confirmada por impressão digital, diretório dentro do volume-base e retenção de 30 dias apenas para arquivos próprios `.rgs`. Incluem bancos, `.env`, dados do Caddy e imagens da Oficina; a configuração física do destino/WORM continua dependendo da TI.
 - A restauração isolada entende pacotes automáticos GPG e extrai anexos sem alterar bancos ativos. Restaurar esses pacotes em produção continua exigindo chave privada custodiada e procedimento isolado.
 - Farmácia: metas mínimas/médias foram movidas do lote para o produto; estoque disponível agrega apenas lotes não vencidos, filtros/alertas contam produtos e a configuração está no Estoque geral. Migração `0057` consolida metas legadas por produto sem somar metas entre lotes.
+- Nutrição/Cozinha: guia “Mapa da cozinha” foi renomeada para “Dietas e alertas”; agora o cabeçalho sempre oferece “Abrir painel da cozinha”, inclusive na primeira guia. A lista operacional inicia uma nova avaliação já com o paciente selecionado, com ação exibida somente para quem tem permissão de criação. O PWA mostra resumo real de internados, alergias, dietas ausentes e jejuns, e a impressão inclui a data da avaliação; não armazena dados offline nem registra preparo/entrega.
 - A tela de backup/restauração usa popup modal acessível; exportação agora mostra o progresso real do download. Foi criado teste de ida e volta entre o exportador manual e a restauração. Arquivos GPG automáticos são identificados com orientação para o fluxo isolado, sem enviar a chave privada ao app.
 - A restauração `.rgs` não apresentou erro ao usuário e parecia travar. A validação, descriptografia, snapshots e restaurações PostgreSQL agora rodam fora do ciclo HTTP; um endpoint autenticado publica etapas e percentuais para o popup. Teste sintético confirma que o progresso pode ser consultado enquanto uma restauração está bloqueada. Ainda falta o usuário retestar na instalação de `192.168.1.205`; nenhum banco real foi restaurado nesta tarefa e não houve deploy no `.216`.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ## Próximas fases solicitadas
 
-- Nutrição: revisar as duas guias para compartilhar dados/fluxo e facilitar operação sem perder completude; otimizar o PWA para desktop/mobile e mover seu acesso para a primeira guia, na posição padrão dos demais PWAs.
 - Conferir o posicionamento do ícone nos módulos Manutenção e Higienização.
 - Criar o módulo Lavanderia/Rouparia com PWA próprio.
 - Aumentar e colocar em negrito a saudação do usuário na barra superior.
@@ -47,7 +47,7 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ## Validações conhecidas
 
-- Backend: suíte completa `uv run --group dev pytest` passou (166 testes) antes da instrumentação de progresso; os testes direcionados de backup/RGS passaram depois das mudanças. Migração de metas verifica consolidação das metas legadas.
+- Backend: suíte completa `uv run --group dev pytest` passou (169 testes) depois da instrumentação de progresso; os testes direcionados de backup/RGS passaram com ida e volta e polling. Migração de metas verifica consolidação das metas legadas.
 - Backup/RGS: `uv run --group dev pytest backend/tests/test_backup_restore.py backend/tests/test_rgs_format.py` passou com ida e volta do exportador manual e consulta concorrente do progresso durante a restauração, sempre usando dumps sintéticos.
 - Frontend: `npm run typecheck`, `npm run lint` e `npm run build` passaram. O build ainda apresenta o aviso do Vite sobre o chunk principal maior que 500 kB.
 - Ruff passou nos demais arquivos backend alterados. `nursing.py` ainda tem um aviso preexistente (`UP012`) em linha não modificada; o lint global também aponta um import não usado em `demo_reception.py`, fora do escopo.
