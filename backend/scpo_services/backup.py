@@ -830,7 +830,12 @@ async def restore_backup(
             if not is_password_bundle:
                 raise HTTPException(
                     status_code=422,
-                    detail="A restauração pela interface aceita backups .rgs protegidos por senha",
+                    detail=(
+                        "Este arquivo não é um backup AES-GCM com senha exportado pela "
+                        "interface. Backups automáticos GPG devem ser verificados e "
+                        "restaurados em ambiente isolado com a chave privada custodiada "
+                        "separadamente; se este era um backup manual, confira o arquivo."
+                    ),
                 )
             try:
                 decrypt_and_extract(source, dumps, password=password)

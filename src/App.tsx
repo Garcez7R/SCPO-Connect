@@ -4740,11 +4740,13 @@ function BackupOperationDialog({ operation }: { operation: BackupOperationProgre
       <div
         className={`backup-operation-progress ${operation.progress === null ? 'is-indeterminate' : ''}`}
         role="progressbar"
-        aria-label={operation.kind === 'backup' ? 'Progresso da criação do backup' : 'Progresso do envio do backup'}
+        aria-label={operation.kind === 'backup' ? 'Progresso da operação de backup' : 'Progresso do envio e restauração do backup'}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={operation.progress ?? undefined}
-        aria-valuetext={operation.progress === null ? operation.message : `${operation.progress}% enviado`}
+        aria-valuetext={operation.progress === null
+          ? operation.message
+          : `${operation.progress}% ${operation.kind === 'backup' ? 'do arquivo recebido' : 'do arquivo enviado'}`}
       >
         <span style={operation.progress === null ? undefined : { width: `${operation.progress}%` }} />
       </div>
@@ -4856,12 +4858,42 @@ function BackupExportPanel() {
   }
   async function exportBackup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('')
-    setOperation({ kind: 'backup', title: 'Criando backup cifrado', message: 'Consultando os bancos e preparando os arquivos protegidos…', progress: null })
+    setOperation({ kind: 'backup', title: 'Criando backup cifrado', message: 'Gerando os sete bancos, empacotando e cifrando o arquivo…', progress: null })
     try {
-      const response = await fetch('/api/v1/backup/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
-      if (!response.ok) { const data = await response.json() as { detail?: string }; throw new Error(data.detail ?? 'Não foi possível gerar o backup.') }
-      setOperation({ kind: 'backup', title: 'Preparando o download', message: 'Os bancos foram empacotados e cifrados. Preparando o arquivo .rgs…', progress: 90 })
+      const response = await new Promise<Response>((resolve, reject) => {
+        const request = new XMLHttpRequest()
+        request.open('POST', '/api/v1/backup/export')
+        request.setRequestHeader('Content-Type', 'application/json')
+        request.responseType = 'blob'
+        request.addEventListener('progress', (event) => {
+          if (!event.lengthComputable || event.total <= 0) return
+          const progress = Math.round(event.loaded / event.total * 100)
+          setOperation({
+            kind: 'backup',
+            title: 'Baixando backup cifrado',
+            message: `Recebendo o arquivo .rgs… ${progress}%`,
+            progress,
+          })
+        })
+        request.addEventListener('load', () => {
+          const headers = new Headers()
+          const contentType = request.getResponseHeader('Content-Type')
+          if (contentType) headers.set('Content-Type', contentType)
+          resolve(new Response(request.response, { status: request.status, headers }))
+        })
+        request.addEventListener('error', () => reject(new Error('Falha de conexão ao gerar ou baixar o backup.')))
+        request.addEventListener('abort', () => reject(new Error('A geração ou o download do backup foi interrompido.')))
+        request.send(JSON.stringify({ password }))
+      })
+      if (!response.ok) {
+        await readApiResponse<unknown>(response)
+        throw new Error('Não foi possível gerar o backup.')
+      }
+      if (response.headers.get('Content-Type')?.split(';', 1)[0].trim() !== 'application/vnd.scpo.rgs') {
+        throw new Error('O servidor não retornou um arquivo .rgs válido; nenhum backup foi baixado.')
+      }
       const blob = await response.blob()
+      setOperation({ kind: 'backup', title: 'Preparando o download', message: 'Arquivo .rgs recebido; preparando o download no dispositivo…', progress: 100 })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a'); link.href = url; link.download = `scpo-connect-${new Date().toISOString().replace(/[:.]/g, '-')}.rgs`; link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -4984,7 +5016,7 @@ function BackupExportPanel() {
       <div className="section-heading"><div><p className="eyebrow">RESTAURAÇÃO DE BACKUP</p><h3>Substituir dados atuais</h3><p className="welcome-copy">Restaura os sete bancos do sistema a partir de um arquivo protegido por senha.</p></div></div>
       <div className="admin-warning backup-restore-guidance" role="alert"><ShieldCheck size={18} /><div><strong>Operação destrutiva e com indisponibilidade</strong><span>Esta ação substituirá todos os dados atuais. Agende uma janela de manutenção, avise os usuários e confirme que escolheu o arquivo correto. Antes da substituição, o sistema valida o arquivo e cria cópias temporárias dos bancos atuais para recuperação automática se a operação falhar. A substituição dos sete bancos não é atômica: mantenha o serviço sem uso durante todo o processo.</span></div></div>
       <form className="backup-restore-form" onSubmit={(event) => void restoreBackup(event)}>
-        <div className="field"><span className="field-label">Arquivo de backup</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id="backup-restore-file" required type="file" accept=".rgs,application/vnd.scpo.rgs" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor="backup-restore-file">Escolher arquivo</label><span title={restoreFile?.name}>{restoreFile?.name ?? 'Nenhum arquivo selecionado'}</span></div><span className="field-hint">Somente pacotes .rgs exportados com senha pela Administração do Sistema.</span></div>
+        <div className="field"><span className="field-label">Arquivo de backup</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id="backup-restore-file" required type="file" accept=".rgs,application/vnd.scpo.rgs" onChange={(event) => setRestoreFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor="backup-restore-file">Escolher arquivo</label><span title={restoreFile?.name}>{restoreFile?.name ?? 'Nenhum arquivo selecionado'}</span></div><span className="field-hint">A interface restaura pacotes AES-GCM com senha, gerados em Administração do Sistema. Backups automáticos GPG exigem validação/restauração isolada e a chave privada custodiada separadamente.</span></div>
         <label className="field"><span className="field-label">Senha do backup</span><span className="auth-password-control"><input required minLength={12} maxLength={128} type={showRestorePassword ? 'text' : 'password'} autoComplete="current-password" value={restorePassword} onChange={(event) => setRestorePassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={showRestorePassword ? 'Ocultar senha do backup' : 'Mostrar senha do backup'} aria-pressed={showRestorePassword} onClick={() => setShowRestorePassword((visible) => !visible)}>{showRestorePassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label>
         <label className="field"><span className="field-label">Confirmação obrigatória</span><input required value={restoreConfirmation} onChange={(event) => setRestoreConfirmation(event.target.value)} placeholder="SUBSTITUIR TODOS OS DADOS" autoComplete="off" /><span className="field-hint">Digite exatamente SUBSTITUIR TODOS OS DADOS para habilitar a restauração.</span></label>
         <button className="button button-danger" type="submit" disabled={!restoreReady || restoring || busy}>{restoring ? 'Validando e restaurando…' : 'Restaurar backup e substituir dados'}</button>

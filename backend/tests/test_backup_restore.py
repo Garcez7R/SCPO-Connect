@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from scpo_services import backup
 from scpo_services.common import DemoPrincipal, authenticated_principal
-from scpo_services.rgs_format import DATABASES
+from scpo_services.rgs_format import DATABASES, MAGIC
 
 
 def _add_file(archive: tarfile.TarFile, name: str, contents: bytes) -> None:
@@ -136,6 +136,72 @@ def test_restore_validates_bundle_then_replaces_all_databases(
     assert all(commands.index(command) < first_snapshot for command in validated)
     assert all(command[0] == "pg_dump" for command in commands[first_snapshot:first_restore])
     assert len(commands[first_snapshot:first_restore]) == len(DATABASES)
+
+
+def test_exported_rgs_can_be_restored_by_the_interface(
+    restore_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    password = "strong-backup-password"
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+        commands.append(command)
+        if command[0] == "pg_dump":
+            kwargs["stdout"].write(f"synthetic-{command[-1]}".encode())
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(backup, "_connection_args", lambda service: (["-d", service], {}))
+    monkeypatch.setattr(backup.subprocess, "run", fake_run)
+    monkeypatch.setattr(backup, "emit_audit_event", lambda *args, **kwargs: None)
+
+    exported = restore_client.post(
+        "/api/v1/backup/export",
+        json={"password": password},
+    )
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/vnd.scpo.rgs")
+    assert exported.content.startswith(MAGIC)
+
+    restored = restore_client.put(
+        "/api/v1/backup/restore",
+        content=exported.content,
+        headers={
+            "content-type": "application/vnd.scpo.rgs",
+            "x-rgs-password": base64.b64encode(password.encode()).decode(),
+            "x-restore-confirmation": backup.RESTORE_CONFIRMATION,
+        },
+    )
+
+    assert restored.status_code == 200
+    assert restored.json()["status"] == "restored"
+    assert sum(command[0] == "pg_restore" and "--list" in command for command in commands) == len(DATABASES)
+    assert sum(command[0] == "pg_restore" and "--list" not in command for command in commands) == len(DATABASES)
+
+
+def test_restore_explains_automatic_gpg_bundle_requires_isolated_flow(
+    restore_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        backup.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("GPG bundle must be rejected before database commands"),
+    )
+
+    response = restore_client.put(
+        "/api/v1/backup/restore",
+        content=b"not-an-aes-gcm-rgs",
+        headers={
+            "content-type": "application/vnd.scpo.rgs",
+            "x-rgs-password": base64.b64encode(b"strong-backup-password").decode(),
+            "x-restore-confirmation": backup.RESTORE_CONFIRMATION,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Backups automáticos GPG" in response.json()["detail"]
+    assert "nenhum banco" not in response.json()["detail"].lower()
 
 
 def test_restore_rejects_invalid_postgres_dump_before_backing_up_or_changing_databases(
