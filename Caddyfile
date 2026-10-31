@@ -19,6 +19,16 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 {$SCPO_INTERNAL_HOST:localhost} {
 	tls internal
 
+	@root_ca path /scpo-root-ca.crt
+	handle @root_ca {
+		rewrite * /root.crt
+		root * /data/caddy/pki/authorities/local
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition `attachment; filename="scpo-connect-root-ca.crt"`
+		header Cache-Control no-store
+		file_server
+	}
+
 	@auth path /api/v1/auth/*
 	handle @auth {
 		reverse_proxy access:8000

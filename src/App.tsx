@@ -29,6 +29,7 @@ import {
   ClipboardPlus,
   Clock3,
   ContactRound,
+  Download,
   Eye,
   EyeOff,
   Handshake,
@@ -378,12 +379,41 @@ class ModuleErrorBoundary extends Component<
   }
 }
 
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Falha inesperada na interface do SCPO Connect.', error, info.componentStack)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <main className="app-error-boundary" role="alert">
+        <AlertTriangle size={28} />
+        <h1>O aplicativo encontrou um erro inesperado</h1>
+        <p>Recarregue a página. Se o problema continuar, informe à equipe o horário e a etapa em que ocorreu.</p>
+        <button className="button button-primary" type="button" onClick={() => window.location.reload()}>Recarregar aplicativo</button>
+      </main>
+    }
+    return this.props.children
+  }
+}
+
 function App() {
-  return <AppDialogProvider>
-    {window.location.pathname === '/painel-sala-espera' || window.location.pathname === '/painel'
-      ? <Suspense fallback={<StartupScreen />}><WaitingRoomKioskPage /></Suspense>
-      : <AuthenticatedAppEntry />}
-  </AppDialogProvider>
+  return <AppErrorBoundary>
+    <AppDialogProvider>
+      {window.location.pathname === '/painel-sala-espera' || window.location.pathname === '/painel'
+        ? <Suspense fallback={<StartupScreen />}><WaitingRoomKioskPage /></Suspense>
+        : <AuthenticatedAppEntry />}
+    </AppDialogProvider>
+  </AppErrorBoundary>
 }
 
 function AuthenticatedAppEntry() {
@@ -392,6 +422,32 @@ function AuthenticatedAppEntry() {
   const [sessionExpired, setSessionExpired] = useState(false)
   const [authReady, setAuthReady] = useState(false)
   const [bootstrapRequired, setBootstrapRequired] = useState(false)
+
+  const handleAuthenticated = useCallback((authenticatedUser: AuthUser, sessionExpiration?: number) => {
+    const expiresAt = sessionExpiration ? sessionExpiration * 1000 : Date.now() + sessionDurationMs
+    window.localStorage.setItem('scpo-auth-session-expires-at', String(expiresAt))
+    setSessionExpiresAt(expiresAt)
+    setSessionExpired(false)
+    setUser(authenticatedUser)
+  }, [])
+  const handleUserUpdated = useCallback((updatedUser: AuthUser, sessionExpiration?: number) => {
+    setUser(updatedUser)
+    if (sessionExpiration) {
+      const expiresAt = sessionExpiration * 1000
+      window.localStorage.setItem('scpo-auth-session-expires-at', String(expiresAt))
+      setSessionExpiresAt(expiresAt)
+    }
+  }, [])
+  const handleSessionExpired = useCallback(() => {
+    setUser(null)
+    setSessionExpired(true)
+  }, [])
+  const handleLogout = useCallback(() => {
+    window.localStorage.removeItem('scpo-auth-session-expires-at')
+    setSessionExpiresAt(null)
+    setSessionExpired(false)
+    setUser(null)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -430,29 +486,14 @@ function AuthenticatedAppEntry() {
   }, [])
 
   if (!authReady) return <StartupScreen />
-  if (!user) return <AuthFlow bootstrapRequired={bootstrapRequired} sessionExpired={sessionExpired} onAuthenticated={(authenticatedUser, sessionExpiration) => {
-    const expiresAt = sessionExpiration ? sessionExpiration * 1000 : Date.now() + sessionDurationMs
-    window.localStorage.setItem('scpo-auth-session-expires-at', String(expiresAt))
-    setSessionExpiresAt(expiresAt)
-    setSessionExpired(false)
-    setUser(authenticatedUser)
-  }} />
-  return <AuthenticatedApp user={user} sessionExpiresAt={sessionExpiresAt} onUserUpdated={(updatedUser, sessionExpiration) => {
-    setUser(updatedUser)
-    if (sessionExpiration) {
-      const expiresAt = sessionExpiration * 1000
-      window.localStorage.setItem('scpo-auth-session-expires-at', String(expiresAt))
-      setSessionExpiresAt(expiresAt)
-    }
-  }} onSessionExpired={() => {
-    setUser(null)
-    setSessionExpired(true)
-  }} onLogout={() => {
-    window.localStorage.removeItem('scpo-auth-session-expires-at')
-    setSessionExpiresAt(null)
-    setSessionExpired(false)
-    setUser(null)
-  }} />
+  if (!user) return <AuthFlow bootstrapRequired={bootstrapRequired} sessionExpired={sessionExpired} onAuthenticated={handleAuthenticated} />
+  return <AuthenticatedApp
+    user={user}
+    sessionExpiresAt={sessionExpiresAt}
+    onUserUpdated={handleUserUpdated}
+    onSessionExpired={handleSessionExpired}
+    onLogout={handleLogout}
+  />
 }
 
 function StartupScreen() {
@@ -500,6 +541,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   const [historyReturnModule, setHistoryReturnModule] = useState<ModuleId>('patients')
   const [showBetaPopup, setShowBetaPopup] = useState(false)
   const [betaIconError, setBetaIconError] = useState(false)
+  const [sessionRefreshError, setSessionRefreshError] = useState('')
   const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem('scpo-theme') === 'dark')
   const [fontZoom, setFontZoom] = useState(() => Number(window.localStorage.getItem('scpo-font-zoom') || '1'))
   const [mobileFeedback, setMobileFeedback] = useState(() => window.localStorage.getItem(MOBILE_FEEDBACK_STORAGE_KEY) === 'enabled')
@@ -531,6 +573,57 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     const timer = window.setTimeout(expireSession, Math.max(0, sessionExpiresAt - Date.now()))
     return () => window.clearTimeout(timer)
   }, [onSessionExpired, sessionExpiresAt])
+  useEffect(() => {
+    if (!sessionExpiresAt) return
+    let active = true
+    let timer = 0
+    let nextRefreshAt = 0
+    const scheduleRefresh = (delay: number) => {
+      window.clearTimeout(timer)
+      nextRefreshAt = Date.now() + delay
+      timer = window.setTimeout(() => void refreshSession(), delay)
+    }
+    const refreshSession = async () => {
+      if (!active) return
+      if (document.visibilityState !== 'visible') {
+        scheduleRefresh(5 * 60 * 1000)
+        return
+      }
+      try {
+        const response = await fetch('/api/v1/auth/refresh', { method: 'POST' })
+        if (response.status === 401 || response.status === 403) {
+          onSessionExpired()
+          return
+        }
+        const refreshed = await readApiResponse<{ user: AuthUser; session_expires_at: number }>(response)
+        if (!active) return
+        setSessionRefreshError('')
+        onUserUpdated(refreshed.user, refreshed.session_expires_at)
+      } catch (refreshError) {
+        if (!active) return
+        setSessionRefreshError(refreshError instanceof Error
+          ? `A sessão ainda não pôde ser renovada: ${refreshError.message}`
+          : 'A sessão ainda não pôde ser renovada. Verifique a conexão.')
+        scheduleRefresh(Math.min(60_000, Math.max(1_000, sessionExpiresAt - Date.now())))
+      }
+    }
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() >= nextRefreshAt) {
+        void refreshSession()
+      }
+    }
+    const refreshDelay = Math.max(
+      1_000,
+      Math.min(6 * 60 * 60 * 1000, sessionExpiresAt - Date.now() - 30 * 60 * 1000),
+    )
+    scheduleRefresh(refreshDelay)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [onSessionExpired, onUserUpdated, sessionExpiresAt])
   const role = user.role
   const profile: Profile = {
     id: role,
@@ -658,6 +751,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
         </header>
 
         <div className="page-content">
+          {sessionRefreshError && <ToastMessage variant="error">{`${sessionRefreshError}. O aplicativo tentará novamente enquanto a sessão ainda estiver válida.`}</ToastMessage>}
           <ModuleErrorBoundary key={activeModule} moduleLabel={activeLabel} onReturnHome={() => navigate('home')}>
           {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
           {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'nursing')} />}
@@ -2753,12 +2847,7 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
 
   return (
     <section className="nursing-page page-enter">
-      <div className="page-title-row"><span className="module-icon module-icon-nursing"><HeartPulse size={23} /></span><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><div className="nursing-vitals-action"><span className="module-icon"><Activity size={23} /></span><button className="button button-primary" type="button" onClick={() => setNursingTab('vitals')}><Activity size={16} /> Sinais vitais</button></div><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><a className="button button-secondary" href="/nursing.html"><HeartPulse size={16} /> PWA móvel</a><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
-      {nursingTab !== 'triage' && <>
-        <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><PatientCareTrackBadge track={patients.find((patient) => patient.reference === patientRef)?.treatment_track} />{patientRef && patients.find((patient) => patient.reference === patientRef)?.room && patients.find((patient) => patient.reference === patientRef)?.bed && !patientBehavioralStatusLoading && !patientBehavioralStatusError && <BehavioralStatusBadge status={patientBehavioralStatuses[patientRef]?.status ?? null} />}<button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
-        {patientBehavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${patientBehavioralStatusError}`}</ToastMessage>}
-        <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
-      </>}
+      <div className="page-title-row"><span className="module-icon module-icon-nursing"><HeartPulse size={23} /></span><div><p className="eyebrow">MÓDULO · ENFERMAGEM</p><h1>Enfermagem</h1><p className="welcome-copy">Visão do paciente, coleta integrada de sinais vitais e acompanhamento das filas de cuidado.</p></div><div className="nursing-title-actions"><button className="button button-secondary" type="button" onClick={onShowHistory}><ClipboardList size={16} /> Coletas registradas</button><a className="button button-secondary" href="/nursing.html"><HeartPulse size={16} /> PWA móvel</a><span className={`entry-status entry-status-${entryState}`}>{statusIcon}{stateLabels[entryState]}</span></div></div>
       <ModuleTabNavigation
         className="nursing-tabs"
         ariaLabel="Seções de Enfermagem"
@@ -2767,6 +2856,11 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
         options={nursingTabValues.map((value) => ({ value, label: nursingTabLabels[value] }))}
         alwaysShowButtons
       />
+      {nursingTab !== 'triage' && <>
+        <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><PatientCareTrackBadge track={patients.find((patient) => patient.reference === patientRef)?.treatment_track} />{patientRef && patients.find((patient) => patient.reference === patientRef)?.room && patients.find((patient) => patient.reference === patientRef)?.bed && !patientBehavioralStatusLoading && !patientBehavioralStatusError && <BehavioralStatusBadge status={patientBehavioralStatuses[patientRef]?.status ?? null} />}<button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+        {patientBehavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${patientBehavioralStatusError}`}</ToastMessage>}
+        <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
+      </>}
       {nursingTab === 'triage' && <Suspense fallback={<div className="history-empty" role="status">Carregando fila de triagem…</div>}><NursingTriagePanel canUpdate={user.permissions.nursing?.includes('criar') ?? false} /></Suspense>}
       {nursingTab === 'medications' && <>
       {medicationError && <ToastMessage variant="error">{medicationError}</ToastMessage>}
@@ -4595,6 +4689,37 @@ function ManagementBehavioralStatusBoard() {
   </section>
 }
 
+type BackupOperationProgress = {
+  kind: 'backup' | 'restore'
+  title: string
+  message: string
+  progress: number | null
+}
+
+function BackupOperationDialog({ operation }: { operation: BackupOperationProgress }) {
+  return <div className="backup-operation-overlay" role="dialog" aria-modal="true" aria-labelledby="backup-operation-title">
+    <div className="backup-operation-backdrop" />
+    <section className="backup-operation-dialog">
+      <span className="backup-operation-icon"><ShieldCheck size={28} /></span>
+      <p className="eyebrow">{operation.kind === 'backup' ? 'PROTEÇÃO DE DADOS' : 'RESTAURAÇÃO DE BACKUP'}</p>
+      <h2 id="backup-operation-title">{operation.title}</h2>
+      <p className="backup-operation-message" role="status" aria-live="polite">{operation.message}</p>
+      <div
+        className={`backup-operation-progress ${operation.progress === null ? 'is-indeterminate' : ''}`}
+        role="progressbar"
+        aria-label={operation.kind === 'backup' ? 'Progresso da criação do backup' : 'Progresso do envio do backup'}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={operation.progress ?? undefined}
+        aria-valuetext={operation.progress === null ? operation.message : `${operation.progress}% enviado`}
+      >
+        <span style={operation.progress === null ? undefined : { width: `${operation.progress}%` }} />
+      </div>
+      {operation.kind === 'restore' && <small>Não feche esta página. A restauração só termina após validar e substituir os bancos.</small>}
+    </section>
+  </div>
+}
+
 function BackupExportPanel() {
   const [password, setPassword] = useState('')
   const [showBackupPassword, setShowBackupPassword] = useState(false)
@@ -4608,32 +4733,52 @@ function BackupExportPanel() {
   const [restoring, setRestoring] = useState(false)
   const [restoreMessage, setRestoreMessage] = useState('')
   const [restoreError, setRestoreError] = useState('')
+  const [operation, setOperation] = useState<BackupOperationProgress | null>(null)
   async function exportBackup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError(''); setMessage('')
+    setOperation({ kind: 'backup', title: 'Criando backup cifrado', message: 'Consultando os bancos e preparando os arquivos protegidos…', progress: null })
     try {
       const response = await fetch('/api/v1/backup/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
       if (!response.ok) { const data = await response.json() as { detail?: string }; throw new Error(data.detail ?? 'Não foi possível gerar o backup.') }
+      setOperation({ kind: 'backup', title: 'Preparando o download', message: 'Os bancos foram empacotados e cifrados. Preparando o arquivo .rgs…', progress: 90 })
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
-      const link = document.createElement('a'); link.href = url; link.download = `scpo-connect-${new Date().toISOString().replace(/[:.]/g, '-')}.rgs`; link.click(); URL.revokeObjectURL(url)
+      const link = document.createElement('a'); link.href = url; link.download = `scpo-connect-${new Date().toISOString().replace(/[:.]/g, '-')}.rgs`; link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
       setMessage('Backup cifrado gerado e baixado. Guarde a senha em local seguro; ela não pode ser recuperada pelo sistema.')
+      setPassword('')
+      setShowBackupPassword(false)
     } catch (exportError) { setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar backup.') }
-    finally { setBusy(false) }
+    finally { setBusy(false); setOperation(null) }
   }
   async function restoreBackup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!restoreFile || restoreConfirmation !== 'SUBSTITUIR TODOS OS DADOS') return
     setRestoring(true); setRestoreError(''); setRestoreMessage('')
+    setOperation({ kind: 'restore', title: 'Enviando arquivo de backup', message: 'Enviando o arquivo .rgs com segurança…', progress: 0 })
     try {
       const encodedPassword = btoa(String.fromCharCode(...new TextEncoder().encode(restorePassword)))
-      const response = await fetch('/api/v1/backup/restore', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/vnd.scpo.rgs',
-          'X-RGS-Password': encodedPassword,
-          'X-Restore-Confirmation': restoreConfirmation,
-        },
-        body: restoreFile,
+      const response = await new Promise<Response>((resolve, reject) => {
+        const request = new XMLHttpRequest()
+        request.open('PUT', '/api/v1/backup/restore')
+        request.setRequestHeader('Content-Type', 'application/vnd.scpo.rgs')
+        request.setRequestHeader('X-RGS-Password', encodedPassword)
+        request.setRequestHeader('X-Restore-Confirmation', restoreConfirmation)
+        request.upload.addEventListener('progress', (event) => {
+          if (!event.lengthComputable) return
+          const progress = Math.min(85, Math.round(event.loaded / event.total * 85))
+          setOperation({ kind: 'restore', title: 'Enviando arquivo de backup', message: `Enviando o arquivo .rgs… ${progress}%`, progress })
+        })
+        request.upload.addEventListener('load', () => {
+          setOperation({ kind: 'restore', title: 'Validando e restaurando', message: 'Arquivo recebido. Validando a senha e os bancos; depois serão criadas cópias de segurança antes da substituição…', progress: null })
+        })
+        request.addEventListener('load', () => {
+          const contentType = request.getResponseHeader('Content-Type') ?? 'application/json'
+          resolve(new Response(request.responseText, { status: request.status, headers: { 'Content-Type': contentType } }))
+        })
+        request.addEventListener('error', () => reject(new Error('Falha de conexão durante o envio ou a restauração. Confira o estado dos serviços antes de repetir a operação.')))
+        request.addEventListener('abort', () => reject(new Error('O envio ou a restauração foi interrompido.')))
+        request.send(restoreFile)
       })
       const data = await readApiResponse<{ message?: string }>(response)
       setRestoreMessage(data.message ?? 'Os bancos foram restaurados.')
@@ -4646,6 +4791,7 @@ function BackupExportPanel() {
       setRestoreError(restoreFailure instanceof Error ? restoreFailure.message : 'Falha ao restaurar o backup.')
     } finally {
       setRestoring(false)
+      setOperation(null)
     }
   }
   const restoreReady = Boolean(restoreFile)
@@ -4675,6 +4821,7 @@ function BackupExportPanel() {
       {restoreMessage && <ToastMessage variant="success">{restoreMessage}</ToastMessage>}
       {restoreError && <ToastMessage variant="error">{restoreError}</ToastMessage>}
     </section>
+    {operation && <BackupOperationDialog operation={operation} />}
   </section>
 }
 
@@ -4935,7 +5082,8 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     }
   }
   return <section className="system-admin-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><span className="module-icon"><ShieldCheck size={20} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Administração do Sistema</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><a className="button button-secondary" href="/scpo-root-ca.crt" download="scpo-connect-root-ca.crt"><Download size={16} /> Baixar certificado do app</a><span className="module-icon"><ShieldCheck size={20} /></span></div>
+    <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}
     {tab === 'backup' && <BackupExportPanel />}

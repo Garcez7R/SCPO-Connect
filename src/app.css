@@ -611,10 +611,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .nursing-page .form-actions .button { min-height: 44px; font-size: 13px; }
 .nursing-page .vital-history { margin-top: 22px; border-radius: 10px; }
 .nursing-title-actions { display: flex; align-items: center; gap: 10px; }
-.nursing-vitals-action { display: flex; align-items: center; gap: 10px; }
 .nursing-title-actions .button { min-height: 42px; white-space: nowrap; }
-.nursing-vitals-action .module-icon { width: 42px; height: 42px; transform: none; }
-.nursing-vitals-action .button { min-height: 42px; }
 .nursing-history-page, .pharmacy-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .nursing-history-page .page-title-row, .pharmacy-page .page-title-row { align-items: center; }
 .pharmacy-page .page-title-row .module-icon { transform: none; }
@@ -682,8 +679,9 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .module-navigation.module-navigation-buttons-only > .module-tab-buttons { display: flex; }
 .reception-primary-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
 .reception-primary-tabs .button { flex: 1 0 auto; justify-content: center; white-space: nowrap; }
-.nursing-tabs { margin-bottom: 0; }
-.nursing-tabs .button { flex: 1 1 150px; }
+.nursing-tabs { margin-bottom: 0; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.nursing-tabs > .module-tab-buttons { display: flex; width: max-content; min-width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+.nursing-tabs .button { flex: 0 0 auto; white-space: nowrap; }
 .nursing-overview { gap: 18px; }
 .nursing-overview-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .nursing-overview-summary article { display: grid; gap: 7px; min-height: 98px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
@@ -1550,6 +1548,24 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 @keyframes beta-icon-rise { from { clip-path: inset(100% 0 0); opacity: .35; transform: translateY(12px); } to { clip-path: inset(0); opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .beta-confetti-piece { animation-duration: .01ms !important; animation-delay: 0s !important; } .beta-dialog, .beta-celebration-backdrop { animation-duration: .01ms !important; } }
 @media (prefers-reduced-motion: reduce) { .beta-dialog-icon img, .module-card .module-icon > svg { animation: none !important; transition: none !important; } }
+.backup-operation-overlay { position: fixed; z-index: 1900; inset: 0; display: grid; place-items: center; overflow: auto; padding: 20px; }
+.backup-operation-backdrop { position: absolute; inset: 0; background: rgb(18 37 49 / 58%); }
+.backup-operation-dialog { position: relative; display: grid; width: min(100%, 440px); justify-items: center; gap: 12px; padding: 30px 28px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgb(14 34 48 / 25%); text-align: center; animation: beta-dialog-in .32s cubic-bezier(.16, 1, .3, 1) both; }
+.backup-operation-icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 15px; background: #eaf3f7; color: var(--blue-dark); }
+.backup-operation-dialog .eyebrow { margin: 0; }
+.backup-operation-dialog h2 { margin: 0; color: var(--ink); font-size: 20px; }
+.backup-operation-message { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.backup-operation-dialog > small { color: var(--subtle); font-size: 11px; line-height: 1.5; }
+.backup-operation-progress { width: 100%; height: 8px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.backup-operation-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--blue); transition: width 180ms ease-out; }
+.backup-operation-progress.is-indeterminate > span { width: 40%; animation: backup-progress-indeterminate 1.4s ease-in-out infinite alternate; }
+@keyframes backup-progress-indeterminate { from { transform: translateX(0); } to { transform: translateX(150%); } }
+@media (prefers-reduced-motion: reduce) { .backup-operation-dialog { animation-duration: .01ms; } .backup-operation-progress.is-indeterminate > span { animation-duration: 2.8s; } }
+html[data-theme="dark"] .backup-operation-icon { background: #20343e; color: #b6dce8; }
+.app-error-boundary { display: grid; min-height: 100vh; align-content: center; justify-items: center; gap: 14px; padding: 24px; color: var(--ink); background: var(--page); text-align: center; }
+.app-error-boundary > svg { color: var(--status-critical-ink); }
+.app-error-boundary h1 { margin: 0; font-size: 22px; }
+.app-error-boundary p { max-width: 520px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
 @media (prefers-reduced-motion: reduce) { .brand-image { transition: none; } .brand-trigger:hover .brand-image { transform: none; } }
 
 .about-page { position: relative; isolation: isolate; max-width: 1440px; margin-inline: auto; }
@@ -1643,11 +1659,8 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 @media (max-width: 700px) { .about-legal-grid { grid-template-columns: 1fr; } .about-legal-card { min-height: 195px; padding: 17px; } }
 @media (max-width: 700px) { .work-order-form, .work-order-list-panel { gap: 13px; padding: 15px; } .work-order-actions { grid-template-columns: 1fr; } .work-order-actions .button { width: 100%; min-height: 44px; } .work-order-card { padding: 13px; } .work-order-meta { gap: 10px 14px; } }
 @media (max-width: 760px) {
-  .nursing-title-actions { align-items: stretch; flex-direction: column-reverse; }
+  .nursing-title-actions { align-items: center; flex-direction: row; flex-wrap: wrap; }
   .nursing-title-actions .button { justify-content: center; }
-  .nursing-vitals-action { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; }
-  .nursing-vitals-action .module-icon { justify-self: center; }
-  .nursing-vitals-action .button { width: 100%; }
   .history-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .history-filter-patient { grid-column: 1 / -1; }
   .pharmacy-item-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

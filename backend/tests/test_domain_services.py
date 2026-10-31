@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from collections.abc import Generator
 from contextlib import nullcontext
 from datetime import UTC, date, datetime
@@ -29,6 +30,7 @@ from scpo_services.security import (
     SESSION_COOKIE,
     SESSION_TTL_SECONDS,
     issue_session,
+    totp_code,
     verify_password,
 )
 from sqlalchemy import select
@@ -110,6 +112,90 @@ def test_bootstrap_requires_a_strong_user_chosen_password() -> None:
             name="Administrador inicial",
             password="short",
         )
+
+
+def test_superadmin_login_accepts_correct_password_and_totp(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    monkeypatch.setenv(
+        "SCPO_MFA_ENCRYPTION_KEY",
+        base64.urlsafe_b64encode(b"mfa-encryption-key-for-test-32b!")
+        .rstrip(b"=")
+        .decode(),
+    )
+    secret = access.new_totp_secret()
+    user = access._new_user(
+        "rgarcez",
+        "Superadministrador",
+        sorted(access.MODULES),
+        access._all_permissions(),
+        password="SuperAdminPassword2026",
+    )
+    user.is_superuser = True
+    user.must_change_password = False
+    user.mfa_enabled = True
+    user.mfa_secret_encrypted = access.encrypt_mfa_secret(secret)
+    db.add(user)
+    db.commit()
+    response = Response()
+
+    result = access.login(
+        access.LoginPayload(
+            username="rgarcez",
+            password="SuperAdminPassword2026",
+            totp_code=totp_code(secret),
+        ),
+        response,
+        db,
+    )
+
+    assert result["user"]["is_superuser"] is True
+    assert result["must_change_password"] is False
+    assert "set-cookie" in response.headers
+
+
+def test_login_explains_mfa_key_mismatch_without_counting_a_bad_attempt(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    previous_key = base64.urlsafe_b64encode(b"a" * 32).rstrip(b"=").decode()
+    current_key = base64.urlsafe_b64encode(b"b" * 32).rstrip(b"=").decode()
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    monkeypatch.setenv("SCPO_MFA_ENCRYPTION_KEY", previous_key)
+    secret = access.new_totp_secret()
+    user = access._new_user(
+        "rgarcez",
+        "Superadministrador",
+        sorted(access.MODULES),
+        access._all_permissions(),
+        "correct-test-password",
+    )
+    user.is_superuser = True
+    user.must_change_password = False
+    user.mfa_enabled = True
+    user.mfa_secret_encrypted = access.encrypt_mfa_secret(secret)
+    db.add(user)
+    db.commit()
+    monkeypatch.setenv("SCPO_MFA_ENCRYPTION_KEY", current_key)
+
+    with pytest.raises(HTTPException) as error:
+        access.login(
+            access.LoginPayload(
+                username="rgarcez",
+                password="correct-test-password",
+                totp_code=totp_code(secret),
+            ),
+            Response(),
+            db,
+        )
+
+    assert error.value.status_code == 503
+    assert "SCPO_MFA_ENCRYPTION_KEY" in error.value.detail
+    assert user.failed_attempts == 0
 
 
 @pytest.mark.parametrize(
@@ -389,6 +475,11 @@ def test_app_admin_can_create_management_account(
     )
     assert created["role"] == "management"
     assert set(created["modules"]) == access.MODULES
+    assert created["initial_password"] == "0000"
+    new_manager = db.scalar(select(access.AppUser).where(access.AppUser.username == "newmanager"))
+    assert new_manager is not None
+    assert new_manager.must_change_password is True
+    assert verify_password("0000", new_manager.password_hash)
     updated = asyncio.run(
         access.update_user(
             manager.id,
@@ -742,10 +833,12 @@ def test_system_superuser_can_delete_non_superuser_account_but_not_themselves(
     assert cannot_delete_self.value.status_code == 403
 
 
-def test_session_refresh_keeps_the_original_expiration(
+def test_session_refresh_renews_expiration_without_requiring_mfa(
     domain_database: dict[str, Session],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import time
+
     db = domain_database["access"]
     monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
     user = access._new_user("nurse", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
@@ -756,6 +849,7 @@ def test_session_refresh_keeps_the_original_expiration(
     token = issue_session(user.id, "active", user.session_version)
     claims = access.read_session(token)
     assert claims["exp"] - claims["iat"] == SESSION_TTL_SECONDS == 12 * 60 * 60
+    time.sleep(1.05)
     request = Request({
         "type": "http",
         "method": "POST",
@@ -767,8 +861,13 @@ def test_session_refresh_keeps_the_original_expiration(
 
     result = access.refresh_session(request, response, db)
 
-    assert result["session_expires_at"] == claims["exp"]
-    assert "set-cookie" not in response.headers
+    assert result["session_expires_at"] > claims["exp"]
+    refreshed_token = response.headers["set-cookie"].split(";", 1)[0].split("=", 1)[1]
+    refreshed_claims = access.read_session(refreshed_token)
+    assert refreshed_claims is not None
+    assert refreshed_claims["stage"] == "active"
+    assert refreshed_claims["exp"] == result["session_expires_at"]
+    assert "set-cookie" in response.headers
 
 
 def test_audit_accepts_minimum_clinical_access_event_without_payload() -> None:

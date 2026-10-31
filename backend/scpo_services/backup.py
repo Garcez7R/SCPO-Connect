@@ -118,6 +118,12 @@ def _validate_database_dump(dump_path: Path) -> None:
         raise ValueError(f"Dump ausente: {dump_path.name}")
     if dump_path.stat().st_size <= 0:
         raise ValueError(f"Dump vazio: {dump_path.name}")
+    subprocess.run(
+        ["pg_restore", "--list", str(dump_path)],
+        check=True,
+        capture_output=True,
+        timeout=120,
+    )
 
 
 def _restore_all_databases(dumps_dir: Path) -> None:
@@ -275,7 +281,7 @@ async def restore_backup(
             except (InvalidTag, OSError, ValueError, tarfile.TarError, subprocess.SubprocessError) as exc:
                 raise HTTPException(
                     status_code=422,
-                    detail="Backup inválido, senha incorreta ou arquivo danificado; nenhum banco foi alterado",
+                    detail="Arquivo .rgs inválido, senha incorreta, dump PostgreSQL incompatível ou backup danificado; nenhum banco foi alterado",
                 ) from exc
             try:
                 _restore_all_databases(dumps)

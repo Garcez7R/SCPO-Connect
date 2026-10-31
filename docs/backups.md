@@ -15,6 +15,8 @@ bash scripts/backup-rgs.sh
 
 O botão **Gerar backup** em Administração do Sistema exporta os mesmos sete bancos usando AES-GCM e a senha informada pelo superadministrador. A interface não importa nem aplica backups aos bancos ativos. Para validar um arquivo exportado pela interface, use a restauração isolada abaixo; o script solicitará a senha sem expô-la na linha de comando.
 
+Na restauração pela interface, o navegador mostra o progresso do envio do arquivo e informa quando o servidor passa à validação e substituição dos bancos. Antes de tocar nos dados atuais, o servidor valida a senha, o manifesto e cada dump com `pg_restore --list`; um arquivo incompatível é rejeitado antes da criação das cópias de segurança ou de qualquer alteração.
+
 ## Biblioteca de imagens da Oficina Terapêutica
 
 Os metadados da biblioteca são armazenados no banco Nursing; os arquivos ficam no diretório indicado por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão: `./data/therapy-materials`). Para usar um HD externo, a equipe de infraestrutura deve primeiro montá-lo no host em um caminho persistente e definir esse caminho no `.env`, por exemplo:

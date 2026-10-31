@@ -2,7 +2,6 @@ import asyncio
 import hmac
 import logging
 import os
-import secrets
 import uuid
 from collections.abc import Collection
 from contextlib import asynccontextmanager
@@ -10,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import httpx
+from cryptography.exceptions import InvalidTag
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, select
@@ -393,6 +393,20 @@ def _reset_password(user: AppUser) -> str:
     return temporary_password
 
 
+def _read_mfa_secret(encrypted_secret: str) -> str:
+    try:
+        return decrypt_mfa_secret(encrypted_secret)
+    except InvalidTag as exc:
+        _logger.exception("Stored MFA secret could not be decrypted")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "O segredo MFA salvo não pôde ser descriptografado pela chave configurada. "
+                "Restaure SCPO_MFA_ENCRYPTION_KEY do backup original da instalação."
+            ),
+        ) from exc
+
+
 def _set_cookie(response: Response, user: AppUser, stage: str) -> int:
     token = issue_session(user.id, stage, user.session_version)
     claims = read_session(token)
@@ -507,7 +521,7 @@ def login(
     valid_password = verify_password(payload.password, user.password_hash)
     valid_mfa = False
     if valid_password and user.mfa_enabled and user.mfa_secret_encrypted and payload.totp_code:
-        valid_mfa = verify_totp(decrypt_mfa_secret(user.mfa_secret_encrypted), payload.totp_code)
+        valid_mfa = verify_totp(_read_mfa_secret(user.mfa_secret_encrypted), payload.totp_code)
     elif valid_password and not user.mfa_enabled:
         valid_mfa = True
     if not user.active or not valid_password or not valid_mfa:
@@ -597,7 +611,7 @@ def mfa_setup(
     if not user.mfa_secret_encrypted:
         user.mfa_secret_encrypted = encrypt_mfa_secret(new_totp_secret())
         db.commit()
-    secret = decrypt_mfa_secret(user.mfa_secret_encrypted)
+    secret = _read_mfa_secret(user.mfa_secret_encrypted)
     return {"secret": secret, "otpauth_uri": totp_uri(secret, user.username)}
 
 
@@ -609,7 +623,7 @@ def mfa_confirm(
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
     user, _ = _current_user(request, db, {"mfa_setup"})
-    if not user.mfa_secret_encrypted or not verify_totp(decrypt_mfa_secret(user.mfa_secret_encrypted), payload.code):
+    if not user.mfa_secret_encrypted or not verify_totp(_read_mfa_secret(user.mfa_secret_encrypted), payload.code):
         user.failed_attempts += 1
         if user.failed_attempts >= 5:
             user.locked_until = datetime.now(UTC) + timedelta(minutes=LOCKOUT_MINUTES)
@@ -633,7 +647,8 @@ def refresh_session(
     db: Annotated[Session, Depends(get_access_db)],
 ) -> dict[str, object]:
     user, claims = _current_user(request, db)
-    return {"user": _user_response(user), "session_expires_at": claims["exp"]}
+    session_expires_at = _set_cookie(response, user, str(claims["stage"]))
+    return {"user": _user_response(user), "session_expires_at": session_expires_at}
 
 
 @app.post("/api/v1/auth/logout", status_code=204)
@@ -809,7 +824,7 @@ async def create_user(
         else payload.modules
     )
     permissions = _validate_permissions(modules, payload.permissions)
-    temporary_password = secrets.token_urlsafe(18)
+    temporary_password = INITIAL_PASSWORD
     user = _new_user(username, payload.name, modules, permissions, temporary_password)
     await record_audit_event(principal, user.id, "user_created", db)
     db.add(user)

@@ -119,7 +119,6 @@ def test_restore_validates_bundle_then_replaces_all_databases(
     assert response.status_code == 200
     assert response.json()["status"] == "restored"
     first_restore = next(index for index, command in enumerate(commands) if command[0] == "pg_restore" and "--list" not in command)
-    assert all(command[0] == "pg_dump" for command in commands[:first_restore])
     imported = [
         command
         for command in commands
@@ -127,6 +126,48 @@ def test_restore_validates_bundle_then_replaces_all_databases(
     ]
     assert len(imported) == len(DATABASES)
     assert all("--single-transaction" in command for command in imported)
+    validated = [
+        command
+        for command in commands
+        if command[0] == "pg_restore" and "--list" in command
+    ]
+    assert len(validated) == len(DATABASES)
+    first_snapshot = next(index for index, command in enumerate(commands) if command[0] == "pg_dump")
+    assert all(commands.index(command) < first_snapshot for command in validated)
+    assert all(command[0] == "pg_dump" for command in commands[first_snapshot:first_restore])
+    assert len(commands[first_snapshot:first_restore]) == len(DATABASES)
+
+
+def test_restore_rejects_invalid_postgres_dump_before_backing_up_or_changing_databases(
+    restore_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    password = "strong-backup-password"
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+        commands.append(command)
+        if command[0] == "pg_restore" and "--list" in command:
+            raise subprocess.CalledProcessError(1, command, stderr=b"not a PostgreSQL dump")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(backup, "_connection_args", lambda service: (["-d", service], {}))
+    monkeypatch.setattr(backup.subprocess, "run", fake_run)
+
+    response = restore_client.put(
+        "/api/v1/backup/restore",
+        content=_encrypted_bundle(password),
+        headers={
+            "content-type": "application/vnd.scpo.rgs",
+            "x-rgs-password": base64.b64encode(password.encode()).decode(),
+            "x-restore-confirmation": backup.RESTORE_CONFIRMATION,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "nenhum banco foi alterado" in response.json()["detail"]
+    assert commands and commands[0][0] == "pg_restore"
+    assert all(command[0] == "pg_restore" for command in commands)
 
 
 def test_restore_rolls_back_already_restored_databases_on_failure(
