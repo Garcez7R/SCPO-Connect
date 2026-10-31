@@ -15,7 +15,7 @@ Atualizado em 30/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O painel de Gestão Hospitalar exibe a fonte dos indicadores e diferencia pacientes com localização cadastrada da ocupação real do mapa físico de leitos; ocupação percentual usa atribuições físicas e leitos operacionais.
 - As seis seções da Enfermagem permanecem em botões/tablist também em telas estreitas, em vez de virar um seletor de lista.
 - O formulário de alteração da própria senha tem controles independentes para mostrar/ocultar cada senha e volta ao estado oculto após a troca.
-- O instalador Debian 13 cria/preenche automaticamente os segredos obrigatórios do Compose, também repara variáveis vazias em `.env` preexistente sem trocar valores preenchidos e preserva o token de bootstrap se já existir. README e guia de deploy deixam claro para não iniciar com o `.env.example` vazio, explicam `docker: command not found` e documentam o comando Compose correto (`docker compose up -d --build`).
+- O instalador Debian 13 cria/preenche automaticamente os segredos obrigatórios do Compose, repara variáveis vazias em `.env` preexistente sem trocar valores preenchidos e preserva token de bootstrap existente. Após inicializar serviços, consulta se bootstrap ainda está pendente e exibe o token no terminal somente nesse caso. README e guia de deploy explicam como guardar o token, evitam uso do `.env.example` vazio, diagnosticam `docker: command not found` e documentam o comando Compose correto (`docker compose up -d --build`).
 - O README documenta comandos de build, teste e investigação de falhas. Somente um `resume.md` era rastreável no repositório; ele foi substituído por este ponto de retomada.
 
 ## Validações conhecidas

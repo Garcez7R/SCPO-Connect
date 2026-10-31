@@ -100,11 +100,17 @@ docker --version
 docker compose version
 ```
 
-O instalador também corrige um `.env` criado anteriormente a partir do modelo, completando segredos ausentes/vazios sem substituir os valores existentes. Se ainda não houver endereço definido, ele solicita o IP/DNS que será usado no acesso HTTPS. O token de bootstrap é gravado em arquivo restrito em `data/local/bootstrap-admin.token`.
+O instalador também corrige um `.env` criado anteriormente a partir do modelo, completando segredos ausentes/vazios sem substituir os valores existentes. Se ainda não houver endereço definido, ele solicita o IP/DNS que será usado no acesso HTTPS. Quando a instalação termina e ainda não há nenhuma conta, o instalador exibe o token de bootstrap no terminal; ele também é gravado em arquivo restrito em `data/local/bootstrap-admin.token`. Use-o uma única vez e não o cole em chats, logs compartilhados ou repositórios.
+
+Se uma tentativa anterior parou antes de exibi-lo, recupere o token diretamente no servidor:
+
+```bash
+sudo cat data/local/bootstrap-admin.token
+```
 
 Em atualizações, mantenha esses itens. **Nunca use `docker compose down -v`, não remova volumes e não substitua o `.env`** como parte de uma atualização. As migrações aplicáveis são executadas pelos serviços durante a inicialização.
 
-O processo não recria os usuários em uma instalação existente. Se a instalação for realmente nova, o instalador gera um novo token de bootstrap em `data/local/bootstrap-admin.token`; leia-o diretamente no servidor e use-o uma única vez para criar o administrador inicial. Não reutilize o token da VM de desenvolvimento.
+O processo não recria os usuários em uma instalação existente. Se a instalação for realmente nova, o instalador gera um novo token de bootstrap, exibe-o após inicializar os serviços e o salva em `data/local/bootstrap-admin.token`; use-o uma única vez para criar o administrador inicial. Não reutilize o token da VM de desenvolvimento.
 
 Faça o backup aprovado pelo responsável antes de alterações importantes de banco ou migrações. Este procedimento não copia os bancos `data/demo` ou `data/local` da VM de desenvolvimento para o servidor.
 

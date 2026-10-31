@@ -238,13 +238,29 @@ curl --silent --show-error --fail --insecure \
   "https://${internal_host}:${https_port}/" >/dev/null \
   || fail "Os serviços estão saudáveis, mas a página HTTPS não respondeu."
 
+if ! bootstrap_required="$(
+  curl --silent --show-error --fail --insecure \
+    --resolve "${internal_host}:${https_port}:127.0.0.1" \
+    "https://${internal_host}:${https_port}/api/v1/auth/status" \
+    | python3 -c 'import json, sys; value = json.load(sys.stdin).get("bootstrap_required"); sys.exit("Resposta inválida do status de autenticação") if not isinstance(value, bool) else print(str(value).lower())'
+)"; then
+  fail "Não foi possível consultar se o bootstrap inicial ainda é necessário."
+fi
+
 printf '\nInstalação concluída.\n'
 printf 'Endereço: https://%s:%s\n' "${internal_host}" "${https_port}"
 printf 'Certificado raiz público: %s/data/local/scpo-local-root.crt\n' "${project_dir}"
 printf 'Impressão digital do certificado:\n'
 openssl x509 -in "${project_dir}/data/local/scpo-local-root.crt" -noout -fingerprint -sha256
-if [[ "${bootstrap_token_generated}" == "true" ]]; then
-  printf 'Token de bootstrap: %s/data/local/bootstrap-admin.token (protegido; leia localmente no servidor).\n' "${project_dir}"
+if [[ "${bootstrap_required}" == "true" ]]; then
+  bootstrap_admin_token="$(sed -n 's/^SCPO_BOOTSTRAP_ADMIN_TOKEN=//p' "${project_dir}/.env" | head -n 1)"
+  [[ -n "${bootstrap_admin_token}" ]] \
+    || fail "Bootstrap necessário, mas SCPO_BOOTSTRAP_ADMIN_TOKEN está vazio em .env."
+  printf '\nBootstrap inicial pendente. Token (use uma única vez):\n%s\n' \
+    "${bootstrap_admin_token}"
+  printf 'Guarde-o em local seguro e não o compartilhe.\n'
+else
+  printf '\nO bootstrap já foi concluído; o token não foi exibido.\n'
 fi
 printf '\nO certificado precisa ser distribuído e validado por canal institucional nos dispositivos clientes.\n'
 printf 'Esta instalação não importa bancos nem autoriza uso com dados reais.\n'
