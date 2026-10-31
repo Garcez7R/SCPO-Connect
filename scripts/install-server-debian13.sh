@@ -73,7 +73,8 @@ docker info >/dev/null 2>&1 || fail "O daemon Docker não respondeu após a inic
 created_env=false
 bootstrap_token_generated=false
 temporary_env="${project_dir}/.env.install.$$"
-trap 'rm -f "${temporary_env:-}"' EXIT
+temporary_unit="/etc/systemd/system/.scpo-connect.service.install.$$"
+trap 'rm -f "${temporary_env:-}" "${temporary_unit:-}"' EXIT
 
 if [[ ! -e "${project_dir}/.env" ]]; then
   cp "${project_dir}/.env.example" "${temporary_env}"
@@ -219,6 +220,48 @@ if [[ "${all_healthy}" != "true" ]]; then
   fail "Nem todas as APIs ficaram saudáveis em cinco minutos. Consulte os logs antes de tentar novamente."
 fi
 
+systemd_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value// /\\s}"
+  value="${value//%/%%}"
+  printf '%s' "${value}"
+}
+
+cat > "${temporary_unit}" <<EOF
+[Unit]
+Description=SCPO Connect Docker Compose application
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=$(systemd_escape "${project_dir}")
+ExecStartPre=/usr/bin/env docker compose config --quiet
+ExecStart=/usr/bin/env docker compose up -d --wait --wait-timeout 300
+ExecStop=/usr/bin/env docker compose stop --timeout 30
+TimeoutStartSec=330
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+install -o root -g root -m 0644 "${temporary_unit}" \
+  /etc/systemd/system/scpo-connect.service
+rm -f "${temporary_unit}"
+systemctl daemon-reload
+if ! systemctl enable --now scpo-connect.service; then
+  docker compose ps >&2 || true
+  docker compose logs --tail=120 >&2 || true
+  fail "Não foi possível habilitar e iniciar scpo-connect.service."
+fi
+
 install -d -o "${deployment_user}" -g "${deployment_group}" -m 0700 \
   "${project_dir}/data/local"
 if [[ ! -f "${project_dir}/data/local/scpo-local-root.crt" ]]; then
@@ -250,6 +293,7 @@ fi
 
 printf '\nInstalação concluída.\n'
 printf 'Endereço: https://%s:%s\n' "${internal_host}" "${https_port}"
+printf 'Inicialização automática: scpo-connect.service (systemd)\n'
 printf 'Certificado raiz público: %s/data/local/scpo-local-root.crt\n' "${project_dir}"
 printf 'Impressão digital do certificado:\n'
 openssl x509 -in "${project_dir}/data/local/scpo-local-root.crt" -noout -fingerprint -sha256

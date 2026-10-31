@@ -141,7 +141,7 @@ cd SCPO-Connect
 sudo bash scripts/install-server-debian13.sh
 ```
 
-O instalador configura o repositório oficial do Docker, instala Docker Engine e Compose, cria o `.env` e gera valores aleatórios para as variáveis secretas obrigatórias. Se já houver um `.env`, preserva os valores preenchidos e completa somente os campos secretos ausentes/vazios. Solicita o IP/DNS estável quando necessário, constrói e inicia os containers e aguarda as APIs ficarem saudáveis. Suporta Debian 13 com systemd. O `sudo` solicitará a senha diretamente no terminal; não a informe como argumento nem a grave em arquivos.
+O instalador configura o repositório oficial do Docker, instala Docker Engine e Compose, cria o `.env` e gera valores aleatórios para as variáveis secretas obrigatórias. Se já houver um `.env`, preserva os valores preenchidos e completa somente os campos secretos ausentes/vazios. Solicita o IP/DNS estável quando necessário, constrói e inicia os containers e aguarda as APIs ficarem saudáveis. Também cria e habilita `scpo-connect.service`, que inicia o Compose no boot e usa `docker compose stop` ao encerrar, sem remover volumes. Suporta Debian 13 com systemd. O `sudo` solicitará a senha diretamente no terminal; não a informe como argumento nem a grave em arquivos.
 
 É seguro repetir o comando: o script não troca segredos preenchidos, não remove volumes e não importa dados. Em uma instalação nova, depois que os serviços iniciarem, o instalador consulta se o bootstrap ainda está pendente e exibe o token no terminal somente nesse caso. O token também fica guardado com permissões restritas em `data/local/bootstrap-admin.token`; use-o uma única vez e mantenha-o em sigilo. Se uma tentativa anterior falhou antes de exibi-lo, recupere-o no próprio servidor com `sudo cat data/local/bootstrap-admin.token`. O certificado raiz público do Caddy é exportado para `data/local/scpo-local-root.crt`; confira sua impressão digital por canal independente e instale-o nos dispositivos autorizados. Firewall, DNS/IP reservado, encaminhamento de portas e distribuição confiável do certificado continuam sendo tarefas da infraestrutura.
 
@@ -172,6 +172,15 @@ docker compose version
 ```
 
 O instalador pedirá a senha do `sudo` diretamente no terminal. Em outra distribuição, siga a documentação oficial de instalação do Docker Engine e do plugin Docker Compose correspondente antes de executar `docker compose`.
+
+Para conferir ou controlar a inicialização automática no servidor:
+
+```bash
+sudo systemctl status scpo-connect.service
+sudo systemctl restart scpo-connect.service
+```
+
+O serviço é habilitado para iniciar com o sistema. Use `sudo systemctl stop scpo-connect.service` e `sudo systemctl start scpo-connect.service` para parar e iniciar a aplicação sem apagar bancos ou volumes.
 
 O Caddy publica HTTP na porta `8080` para redirecionamento e HTTPS na porta `7777`. Exporte a raiz pública da CA com `bash scripts/export-caddy-ca.sh`, confira sua impressão digital e distribua-a por um canal controlado pela instituição. Preserve os volumes `postgres_data` e `caddy_data`; eles contêm, respectivamente, os bancos do sistema e a autoridade certificadora usada pelos dispositivos.
 

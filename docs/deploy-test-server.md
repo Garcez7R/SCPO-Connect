@@ -78,7 +78,7 @@ O script:
 2. cria um arquivo temporário somente com os arquivos versionados do commit;
 3. envia o arquivo por SSH e extrai o código no diretório do app;
 4. executa `sudo bash scripts/install-server-debian13.sh` no servidor;
-5. constrói e inicia os containers e aguarda as APIs ficarem saudáveis.
+5. constrói e inicia os containers, aguarda as APIs ficarem saudáveis e habilita `scpo-connect.service` para inicialização automática no boot.
 
 O SSH usa autenticação em modo não interativo, portanto a chave pública deste computador precisa estar autorizada para o usuário `connect`. O `sudo` remoto pode solicitar autenticação no terminal.
 
@@ -91,6 +91,7 @@ O instalador usa `docker compose up -d --build`; ele não apaga os dados da inst
 - segredos e endereço do servidor: `/home/connect/apps/SCPO-Connect/.env`;
 - token inicial, se criado: `data/local/bootstrap-admin.token`;
 - arquivos da biblioteca da Oficina Terapêutica: diretório host definido por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão `data/therapy-materials`).
+- unidade systemd `scpo-connect.service`, que inicia o Compose no boot e para os containers sem remover volumes ao encerrar.
 
 Se aparecer `docker: command not found`, o Docker CLI/Engine está ausente ou fora do `PATH`. O comando válido de inicialização é `docker compose up -d --build`; não acrescente `--compose`. Não use `cp .env.example .env` para iniciar a stack: o modelo tem segredos vazios. Em Debian 13 suportado, execute o instalador da raiz do app para instalar Docker/Compose e gerar qualquer variável obrigatória ausente, preservando segredos preenchidos, `.env` e volumes:
 
@@ -121,11 +122,12 @@ No servidor:
 ```bash
 ssh -t connect@192.168.1.216
 cd /home/connect/apps/SCPO-Connect
+sudo systemctl status scpo-connect.service
 sudo docker compose ps
 sudo docker compose logs --tail=100
 ```
 
-As APIs devem estar `healthy` e o proxy deve estar em execução. Verifique a página HTTPS localmente no servidor:
+O serviço deve estar `active (exited)` (unidade `oneshot` com o Compose ativo); as APIs devem estar `healthy` e o proxy em execução. Para reiniciar a aplicação sem remover dados, use `sudo systemctl restart scpo-connect.service`. Verifique a página HTTPS localmente no servidor:
 
 ```bash
 curl --silent --show-error --fail --insecure \
