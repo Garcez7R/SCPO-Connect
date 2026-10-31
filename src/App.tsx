@@ -817,6 +817,8 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
   const [mfaQrDataUrl, setMfaQrDataUrl] = useState('')
   const [mfaCopyMessage, setMfaCopyMessage] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
+  const [newPasswordVisible, setNewPasswordVisible] = useState(false)
+  const [confirmNewPasswordVisible, setConfirmNewPasswordVisible] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -847,7 +849,7 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (stage === 'password' && newPassword !== confirmNewPassword) {
+    if ((stage === 'bootstrap' || stage === 'password') && newPassword !== confirmNewPassword) {
       setMessage('As senhas não coincidem.')
       return
     }
@@ -859,7 +861,7 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
         response = await fetch('/api/v1/auth/bootstrap', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Bootstrap-Token': bootstrapToken.trim() },
-          body: JSON.stringify({ username: username.trim(), name: name.trim() }),
+          body: JSON.stringify({ username: username.trim(), name: name.trim(), password: newPassword }),
         })
       } else if (stage === 'login') {
         response = await fetch('/api/v1/auth/login', {
@@ -880,8 +882,11 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
       const data = await response.json().catch(() => ({})) as { detail?: unknown; user?: AuthUser; must_change_password?: boolean; mfa_setup_required?: boolean; session_expires_at?: number }
       if (!response.ok) throw new Error(readableApiError(data.detail))
       if (stage === 'bootstrap') {
-        setPassword('0000')
-        setStage('password')
+        setNewPassword('')
+        setConfirmNewPassword('')
+        setNewPasswordVisible(false)
+        setConfirmNewPasswordVisible(false)
+        setStage('mfa')
       } else if (stage === 'login') {
         setPassword('')
         setTotpCode('')
@@ -892,6 +897,8 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
       } else if (stage === 'password') {
         setNewPassword('')
         setConfirmNewPassword('')
+        setNewPasswordVisible(false)
+        setConfirmNewPasswordVisible(false)
         setStage('mfa')
       } else if (data.user) {
         onAuthenticated(data.user, data.session_expires_at)
@@ -908,12 +915,12 @@ function AuthFlow({ bootstrapRequired, sessionExpired, onAuthenticated }: { boot
     {sessionExpired && <div className="admin-warning session-expired-notice" role="status"><Clock3 size={18} /><div><strong>Sessão encerrada</strong><span>O limite de 12 horas foi atingido. Entre novamente para continuar.</span></div></div>}
     {stage === 'mfa' && <div className="auth-mfa-instructions"><strong>Configure um aplicativo autenticador</strong><p>1. Abra um autenticador no celular, como Google Authenticator ou Microsoft Authenticator. 2. Leia este QR code ou copie a chave. 3. Digite abaixo o código de seis dígitos que o aplicativo gerar.</p>{mfaQrDataUrl ? <img className="auth-mfa-qr" src={mfaQrDataUrl} alt="QR code para configurar a autenticação em duas etapas" /> : <span className="auth-mfa-qr-loading">Gerando QR code seguro…</span>}<code>{mfaSecret || 'Carregando chave segura…'}</code><button className="button button-secondary auth-mfa-copy" type="button" onClick={() => void copyMfaSecret()} disabled={!mfaSecret}>Copiar chave</button>{mfaCopyMessage && <span className="auth-mfa-copy-message" role="status">{mfaCopyMessage}</span>}</div>}
     <form className="auth-form" onSubmit={submit}>
-      {stage === 'bootstrap' && <><label className="field"><span className="field-label">Nome do administrador</span><input required minLength={2} maxLength={120} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" title="Use pelo menos 3 caracteres: letras sem acento, números, ponto, hífen, sublinhado ou @." autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Token de bootstrap</span><input required type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label><p className="auth-help">O usuário deve ter ao menos 3 caracteres e usar letras sem acento, números, ponto, hífen, sublinhado ou @.</p><p className="auth-help">O token fica no arquivo <code>bootstrap-admin.token</code> no diretório de dados definido pelo servidor. Guarde-o como segredo.</p></>}
+      {stage === 'bootstrap' && <><label className="field"><span className="field-label">Nome do administrador</span><input required minLength={2} maxLength={120} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label><label className="field"><span className="field-label">Usuário</span><input required minLength={3} maxLength={80} pattern="[A-Za-z0-9._@-]+" title="Use pelo menos 3 caracteres: letras sem acento, números, ponto, hífen, sublinhado ou @." autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Senha de acesso (mínimo 12 caracteres)</span><span className="auth-password-control"><input required minLength={12} maxLength={256} type={newPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={newPasswordVisible ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={newPasswordVisible} onClick={() => setNewPasswordVisible((visible) => !visible)}>{newPasswordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label><label className="field"><span className="field-label">Confirme a senha</span><span className="auth-password-control"><input required minLength={12} maxLength={256} type={confirmNewPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={confirmNewPasswordVisible ? 'Ocultar confirmação da senha' : 'Mostrar confirmação da senha'} aria-pressed={confirmNewPasswordVisible} onClick={() => setConfirmNewPasswordVisible((visible) => !visible)}>{confirmNewPasswordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label>{confirmNewPassword && newPassword !== confirmNewPassword && <p className="auth-validation-message" role="alert">As senhas não coincidem.</p>}<label className="field"><span className="field-label">Token de bootstrap</span><input required type="password" autoComplete="off" value={bootstrapToken} onChange={(event) => setBootstrapToken(event.target.value)} /></label><p className="auth-help">O usuário deve ter ao menos 3 caracteres: letras sem acento, números, ponto, hífen, sublinhado ou @. Após criar a conta, será necessário configurar a confirmação em duas etapas.</p><p className="auth-help">O token fica no arquivo <code>bootstrap-admin.token</code> no diretório de dados definido pelo servidor. Guarde-o como segredo.</p></>}
       {stage === 'login' && <><label className="field"><span className="field-label">Usuário</span><input required autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="field"><span className="field-label">Senha</span><span className="auth-password-control"><input required type={passwordVisible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={passwordVisible ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible((visible) => !visible)}>{passwordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label><label className="field"><span className="field-label">Código do autenticador (se já configurado)</span><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label><p className="auth-help">Primeiro acesso de uma conta recém-criada? Use seu usuário e a senha temporária recebida e deixe o código vazio. Se sua senha foi redefinida em uma conta já configurada, informe também seu código MFA.</p></>}
-      {stage === 'password' && <><p className="auth-help">Use a senha temporária recebida apenas para entrar. Agora escolha uma senha pessoal com pelo menos 12 caracteres e confirme-a abaixo. Depois, configure o aplicativo autenticador seguindo os passos na tela.</p><label className="field"><span className="field-label">Nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label><label className="field"><span className="field-label">Confirme a nova senha</span><input required minLength={12} type="password" autoComplete="new-password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} /></label>{confirmNewPassword && newPassword !== confirmNewPassword && <p className="auth-validation-message" role="alert">As senhas não coincidem.</p>}</>}
+      {stage === 'password' && <><p className="auth-help">Use a senha temporária recebida apenas para entrar. Agora escolha uma senha pessoal com pelo menos 12 caracteres e confirme-a abaixo. Depois, configure o aplicativo autenticador seguindo os passos na tela.</p><label className="field"><span className="field-label">Nova senha</span><span className="auth-password-control"><input required minLength={12} type={newPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={newPasswordVisible ? 'Ocultar nova senha' : 'Mostrar nova senha'} aria-pressed={newPasswordVisible} onClick={() => setNewPasswordVisible((visible) => !visible)}>{newPasswordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label><label className="field"><span className="field-label">Confirme a nova senha</span><span className="auth-password-control"><input required minLength={12} type={confirmNewPasswordVisible ? 'text' : 'password'} autoComplete="new-password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={confirmNewPasswordVisible ? 'Ocultar confirmação da senha' : 'Mostrar confirmação da senha'} aria-pressed={confirmNewPasswordVisible} onClick={() => setConfirmNewPasswordVisible((visible) => !visible)}>{confirmNewPasswordVisible ? <EyeOff size={19} /> : <Eye size={19} />}</button></span></label>{confirmNewPassword && newPassword !== confirmNewPassword && <p className="auth-validation-message" role="alert">As senhas não coincidem.</p>}</>}
       {stage === 'mfa' && <label className="field"><span className="field-label">Código do aplicativo</span><input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ''))} /></label>}
       {message && <ToastMessage variant="error">{message}</ToastMessage>}
-      <button className="button button-primary auth-submit" type="submit" disabled={busy || (stage === 'mfa' && !mfaSecret) || (stage === 'password' && (!newPassword || newPassword !== confirmNewPassword))}>{busy ? 'Aguarde…' : stage === 'login' ? 'Entrar' : stage === 'bootstrap' ? 'Criar administrador' : stage === 'password' ? 'Salvar nova senha' : 'Ativar MFA'}</button>
+      <button className="button button-primary auth-submit" type="submit" disabled={busy || (stage === 'mfa' && !mfaSecret) || ((stage === 'bootstrap' || stage === 'password') && (newPassword.length < 12 || newPassword !== confirmNewPassword))}>{busy ? 'Aguarde…' : stage === 'login' ? 'Entrar' : stage === 'bootstrap' ? 'Criar administrador' : stage === 'password' ? 'Salvar nova senha' : 'Ativar MFA'}</button>
     </form>
     <InstallAppButton showDescription />
   </section></main>

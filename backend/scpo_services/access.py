@@ -188,6 +188,7 @@ class BootstrapPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=3, max_length=80, pattern=r"^[A-Za-z0-9._@-]+$")
     name: str = Field(min_length=2, max_length=120)
+    password: str = Field(min_length=12, max_length=256)
 
 
 class LoginPayload(BaseModel):
@@ -464,13 +465,25 @@ def bootstrap_admin(
         raise HTTPException(status_code=403, detail="Bootstrap não autorizado")
     if db.scalar(select(AppUser.id).limit(1)) is not None:
         raise HTTPException(status_code=409, detail="Bootstrap já concluído")
-    user = _new_user(payload.username, payload.name, sorted(MODULES), _all_permissions())
+    user = _new_user(
+        payload.username,
+        payload.name,
+        sorted(MODULES),
+        _all_permissions(),
+        payload.password,
+    )
     user.is_superuser = user.username == SYSTEM_SUPERADMIN_USERNAME
+    user.must_change_password = False
     db.add(user)
     db.commit()
     db.refresh(user)
-    session_expires_at = _set_cookie(response, user, "password_change")
-    return {"user": _user_response(user), "must_change_password": True, "session_expires_at": session_expires_at}
+    session_expires_at = _set_cookie(response, user, "mfa_setup")
+    return {
+        "user": _user_response(user),
+        "must_change_password": False,
+        "mfa_setup_required": True,
+        "session_expires_at": session_expires_at,
+    }
 
 
 @app.post("/api/v1/auth/login")

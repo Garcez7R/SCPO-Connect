@@ -71,6 +71,47 @@ def test_superadmin_is_explicit_and_reserved() -> None:
     assert "super" not in str(error.value.detail).lower()
 
 
+def test_bootstrap_uses_user_chosen_password_and_requires_mfa_setup(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_BOOTSTRAP_ADMIN_TOKEN", "bootstrap-token-for-test")
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    response = Response()
+
+    result = access.bootstrap_admin(
+        access.BootstrapPayload(
+            username="rgarcez",
+            name="Administrador inicial",
+            password="FirstAdminPassphrase12",
+        ),
+        response,
+        db,
+        "bootstrap-token-for-test",
+    )
+
+    user = db.scalar(select(access.AppUser).where(access.AppUser.username == "rgarcez"))
+    assert user is not None
+    assert verify_password("FirstAdminPassphrase12", user.password_hash)
+    assert user.must_change_password is False
+    assert result["must_change_password"] is False
+    assert result["mfa_setup_required"] is True
+    cookie = response.headers["set-cookie"].split(";", 1)[0].split("=", 1)[1]
+    claims = access.read_session(cookie)
+    assert claims is not None
+    assert claims["stage"] == "mfa_setup"
+
+
+def test_bootstrap_requires_a_strong_user_chosen_password() -> None:
+    with pytest.raises(ValidationError):
+        access.BootstrapPayload(
+            username="rgarcez",
+            name="Administrador inicial",
+            password="short",
+        )
+
+
 @pytest.mark.parametrize(
     ("username", "name", "modules", "permissions", "is_superuser"),
     [
