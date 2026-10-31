@@ -92,13 +92,15 @@ O instalador usa `docker compose up -d --build`; ele não apaga os dados da inst
 - token inicial, se criado: `data/local/bootstrap-admin.token`;
 - arquivos da biblioteca da Oficina Terapêutica: diretório host definido por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão `data/therapy-materials`).
 
-Se aparecer `docker: command not found`, o Docker CLI/Engine está ausente ou fora do `PATH`. O comando válido de inicialização é `docker compose up -d --build`; não acrescente `--compose`. Em uma instalação Debian 13 suportada, execute o instalador de novo a partir da raiz do app para instalar Docker Engine e Compose, preservar `.env` e volumes e reconstruir os serviços:
+Se aparecer `docker: command not found`, o Docker CLI/Engine está ausente ou fora do `PATH`. O comando válido de inicialização é `docker compose up -d --build`; não acrescente `--compose`. Não use `cp .env.example .env` para iniciar a stack: o modelo tem segredos vazios. Em Debian 13 suportado, execute o instalador da raiz do app para instalar Docker/Compose e gerar qualquer variável obrigatória ausente, preservando segredos preenchidos, `.env` e volumes:
 
 ```bash
 sudo bash scripts/install-server-debian13.sh
 docker --version
 docker compose version
 ```
+
+O instalador também corrige um `.env` criado anteriormente a partir do modelo, completando segredos ausentes/vazios sem substituir os valores existentes. Se ainda não houver endereço definido, ele solicita o IP/DNS que será usado no acesso HTTPS. O token de bootstrap é gravado em arquivo restrito em `data/local/bootstrap-admin.token`.
 
 Em atualizações, mantenha esses itens. **Nunca use `docker compose down -v`, não remova volumes e não substitua o `.env`** como parte de uma atualização. As migrações aplicáveis são executadas pelos serviços durante a inicialização.
 

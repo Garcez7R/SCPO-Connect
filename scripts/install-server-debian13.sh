@@ -71,56 +71,122 @@ systemctl enable --now docker
 docker info >/dev/null 2>&1 || fail "O daemon Docker não respondeu após a inicialização."
 
 created_env=false
-if [[ ! -e "${project_dir}/.env" ]]; then
-  temporary_env="${project_dir}/.env.install.$$"
-  trap 'rm -f "${temporary_env:-}"' EXIT
-  cp "${project_dir}/.env.example" "${temporary_env}"
+bootstrap_token_generated=false
+temporary_env="${project_dir}/.env.install.$$"
+trap 'rm -f "${temporary_env:-}"' EXIT
 
+if [[ ! -e "${project_dir}/.env" ]]; then
+  cp "${project_dir}/.env.example" "${temporary_env}"
+  created_env=true
+else
+  cp "${project_dir}/.env" "${temporary_env}"
+fi
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" "${temporary_env}"; then
+    sed -i "s|^${key}=.*$|${key}=${value}|" "${temporary_env}"
+  else
+    printf '%s=%s\n' "${key}" "${value}" >> "${temporary_env}"
+  fi
+}
+
+ensure_env_value() {
+  local key="$1"
+  local value="$2"
+  if ! grep -Eq "^${key}=.+$" "${temporary_env}"; then
+    set_env_value "${key}" "${value}"
+  fi
+}
+
+ensure_random_env_value() {
+  local key="$1"
+  if ! grep -Eq "^${key}=.+$" "${temporary_env}"; then
+    set_env_value "${key}" "$(openssl rand -hex 32)"
+  fi
+}
+
+ensure_urlsafe_env_value() {
+  local key="$1"
+  if ! grep -Eq "^${key}=.+$" "${temporary_env}"; then
+    set_env_value "${key}" \
+      "$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
+  fi
+}
+
+missing_required_secret=false
+for key in \
+  POSTGRES_PASSWORD SCPO_SERVICE_TOKEN SCPO_SESSION_SIGNING_KEY \
+  SCPO_MFA_ENCRYPTION_KEY SCPO_BOOTSTRAP_ADMIN_TOKEN \
+  SCPO_ACCESS_DB_PASSWORD SCPO_AUDIT_DB_PASSWORD SCPO_NURSING_DB_PASSWORD \
+  SCPO_PHARMACY_DB_PASSWORD SCPO_SOCIAL_DB_PASSWORD SCPO_XRAY_DB_PASSWORD \
+  SCPO_MAINTENANCE_DB_PASSWORD; do
+  if ! grep -Eq "^${key}=.+$" "${temporary_env}"; then
+    missing_required_secret=true
+    break
+  fi
+done
+
+if [[ "${created_env}" == "true" ]] \
+  || ! grep -Eq '^SCPO_INTERNAL_HOST=.+$' "${temporary_env}" \
+  || { [[ "${missing_required_secret}" == "true" ]] \
+    && grep -qx 'SCPO_INTERNAL_HOST=localhost' "${temporary_env}"; }; then
   read -r -p "IP ou DNS estável que será usado para acessar este servidor: " internal_host \
     || fail "Não foi possível ler o endereço do servidor."
   if [[ ! "${internal_host}" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ || "${internal_host}" == *..* ]]; then
     fail "Informe um endereço IPv4 ou nome DNS simples, sem protocolo, porta ou caminho."
   fi
-
-  set_env_value() {
-    local key="$1"
-    local value="$2"
-    sed -i "s|^${key}=.*$|${key}=${value}|" "${temporary_env}"
-  }
-
-  set_env_value POSTGRES_USER scpo_admin
-  set_env_value SCPO_SESSION_SIGNING_KEY \
-    "$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
-  set_env_value SCPO_MFA_ENCRYPTION_KEY \
-    "$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')"
-
-  for key in \
-    POSTGRES_PASSWORD SCPO_SERVICE_TOKEN SCPO_BOOTSTRAP_ADMIN_TOKEN \
-    SCPO_ACCESS_DB_PASSWORD SCPO_AUDIT_DB_PASSWORD SCPO_NURSING_DB_PASSWORD \
-    SCPO_PHARMACY_DB_PASSWORD SCPO_SOCIAL_DB_PASSWORD SCPO_XRAY_DB_PASSWORD \
-    SCPO_MAINTENANCE_DB_PASSWORD; do
-    set_env_value "${key}" "$(openssl rand -hex 32)"
-  done
   set_env_value SCPO_INTERNAL_HOST "${internal_host}"
+fi
 
-  install -d -o "${deployment_user}" -g "${deployment_group}" -m 0700 \
-    "${project_dir}/data/local"
+ensure_env_value POSTGRES_USER scpo_admin
+ensure_env_value SCPO_ACCESS_DB_USER scpo_access_user
+ensure_env_value SCPO_AUDIT_DB_USER scpo_audit_user
+ensure_env_value SCPO_NURSING_DB_USER scpo_nursing_user
+ensure_env_value SCPO_PHARMACY_DB_USER scpo_pharmacy_user
+ensure_env_value SCPO_SOCIAL_DB_USER scpo_social_user
+ensure_env_value SCPO_XRAY_DB_USER scpo_xray_user
+ensure_env_value SCPO_MAINTENANCE_DB_USER scpo_maintenance_user
+ensure_urlsafe_env_value SCPO_SESSION_SIGNING_KEY
+ensure_urlsafe_env_value SCPO_MFA_ENCRYPTION_KEY
+
+for key in \
+  POSTGRES_PASSWORD SCPO_SERVICE_TOKEN \
+  SCPO_ACCESS_DB_PASSWORD SCPO_AUDIT_DB_PASSWORD SCPO_NURSING_DB_PASSWORD \
+  SCPO_PHARMACY_DB_PASSWORD SCPO_SOCIAL_DB_PASSWORD SCPO_XRAY_DB_PASSWORD \
+  SCPO_MAINTENANCE_DB_PASSWORD; do
+  ensure_random_env_value "${key}"
+done
+
+if ! grep -Eq '^SCPO_BOOTSTRAP_ADMIN_TOKEN=.+$' "${temporary_env}"; then
+  bootstrap_token_file="${project_dir}/data/local/bootstrap-admin.token"
+  if [[ -s "${bootstrap_token_file}" ]]; then
+    bootstrap_admin_token="$(<"${bootstrap_token_file}")"
+  else
+    bootstrap_admin_token="$(openssl rand -hex 32)"
+    bootstrap_token_generated=true
+  fi
+  ensure_env_value SCPO_BOOTSTRAP_ADMIN_TOKEN "${bootstrap_admin_token}"
+fi
+
+install -d -o "${deployment_user}" -g "${deployment_group}" -m 0700 \
+  "${project_dir}/data/local"
+if [[ "${bootstrap_token_generated}" == "true" ]]; then
   sed -n 's/^SCPO_BOOTSTRAP_ADMIN_TOKEN=//p' "${temporary_env}" \
     > "${project_dir}/data/local/bootstrap-admin.token"
   chown "${deployment_user}:${deployment_group}" \
     "${project_dir}/data/local/bootstrap-admin.token"
   chmod 0600 "${project_dir}/data/local/bootstrap-admin.token"
-
-  if [[ ! -e "${project_dir}/data/therapy-materials" ]]; then
-    install -d -o 10001 -g 10001 -m 0750 "${project_dir}/data/therapy-materials"
-  fi
-
-  created_env=true
-  chown "${deployment_user}:${deployment_group}" "${temporary_env}"
-  chmod 0600 "${temporary_env}"
-  mv "${temporary_env}" "${project_dir}/.env"
 fi
 
+if [[ ! -e "${project_dir}/data/therapy-materials" ]]; then
+  install -d -o 10001 -g 10001 -m 0750 "${project_dir}/data/therapy-materials"
+fi
+
+chown "${deployment_user}:${deployment_group}" "${temporary_env}"
+chmod 0600 "${temporary_env}"
+mv "${temporary_env}" "${project_dir}/.env"
 chown "${deployment_user}:${deployment_group}" "${project_dir}/.env"
 chmod 0600 "${project_dir}/.env"
 
@@ -177,7 +243,7 @@ printf 'Endereço: https://%s:%s\n' "${internal_host}" "${https_port}"
 printf 'Certificado raiz público: %s/data/local/scpo-local-root.crt\n' "${project_dir}"
 printf 'Impressão digital do certificado:\n'
 openssl x509 -in "${project_dir}/data/local/scpo-local-root.crt" -noout -fingerprint -sha256
-if [[ "${created_env}" == "true" ]]; then
+if [[ "${bootstrap_token_generated}" == "true" ]]; then
   printf 'Token de bootstrap: %s/data/local/bootstrap-admin.token (protegido; leia localmente no servidor).\n' "${project_dir}"
 fi
 printf '\nO certificado precisa ser distribuído e validado por canal institucional nos dispositivos clientes.\n'

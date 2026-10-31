@@ -15,7 +15,7 @@ Atualizado em 30/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O painel de Gestão Hospitalar exibe a fonte dos indicadores e diferencia pacientes com localização cadastrada da ocupação real do mapa físico de leitos; ocupação percentual usa atribuições físicas e leitos operacionais.
 - As seis seções da Enfermagem permanecem em botões/tablist também em telas estreitas, em vez de virar um seletor de lista.
 - O formulário de alteração da própria senha tem controles independentes para mostrar/ocultar cada senha e volta ao estado oculto após a troca.
-- README e guia de deploy explicam que `docker: command not found` indica Docker Engine/CLI ausente ou fora do `PATH`, e documentam o comando Compose correto (`docker compose up -d --build`) e o instalador Debian 13.
+- O instalador Debian 13 cria/preenche automaticamente os segredos obrigatórios do Compose, também repara variáveis vazias em `.env` preexistente sem trocar valores preenchidos e preserva o token de bootstrap se já existir. README e guia de deploy deixam claro para não iniciar com o `.env.example` vazio, explicam `docker: command not found` e documentam o comando Compose correto (`docker compose up -d --build`).
 - O README documenta comandos de build, teste e investigação de falhas. Somente um `resume.md` era rastreável no repositório; ele foi substituído por este ponto de retomada.
 
 ## Validações conhecidas
@@ -24,7 +24,7 @@ Atualizado em 30/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Adicionar/rodar os testes direcionados de Gestão Hospitalar em `backend/tests/test_nursing.py`, que verificam ocupação real do mapa físico e localização legada sem atribuição.
 - Frontend: `npm run typecheck`, `npm run lint` e `npm run build` passaram. O build ainda apresenta o aviso do Vite sobre o chunk principal maior que 500 kB.
 - Pylance não reportou diagnósticos nos arquivos Python alterados.
-- Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis neste ambiente. A configuração Compose não foi validada porque as variáveis secretas obrigatórias não estão configuradas neste clone; não foram construídas nem iniciadas imagens/containers.
+- Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis neste ambiente; `docker compose config --quiet` passou usando um `.env` temporário com segredos descartáveis. Não foram construídas nem iniciadas imagens/containers: o usuário atual não tem acesso ao socket Docker e o `sudo` exige autenticação interativa.
 - A suíte E2E permanece pausada conforme orientação do usuário.
 - O workflow GitHub disponível até o último commit publicado concluiu com sucesso; alterações locais precisam de novo push para que o CI as valide.
 

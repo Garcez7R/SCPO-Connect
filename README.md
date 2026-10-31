@@ -140,9 +140,9 @@ cd SCPO-Connect
 sudo bash scripts/install-server-debian13.sh
 ```
 
-O instalador configura o repositório oficial do Docker, instala Docker Engine e Compose, cria um `.env` com segredos aleatórios apenas se ainda não existir, solicita o IP/DNS estável, constrói e inicia os containers e aguarda as APIs ficarem saudáveis. Suporta Debian 13 com systemd. O `sudo` solicitará a senha diretamente no terminal; não a informe como argumento nem a grave em arquivos.
+O instalador configura o repositório oficial do Docker, instala Docker Engine e Compose, cria o `.env` e gera valores aleatórios para as variáveis secretas obrigatórias. Se já houver um `.env`, preserva os valores preenchidos e completa somente os campos secretos ausentes/vazios. Solicita o IP/DNS estável quando necessário, constrói e inicia os containers e aguarda as APIs ficarem saudáveis. Suporta Debian 13 com systemd. O `sudo` solicitará a senha diretamente no terminal; não a informe como argumento nem a grave em arquivos.
 
-É seguro repetir o comando: o script não substitui `.env`, não remove volumes e não importa dados. Em instalações novas, o token de bootstrap é guardado com permissões restritas em `data/local/bootstrap-admin.token`. O certificado raiz público do Caddy é exportado para `data/local/scpo-local-root.crt`; confira sua impressão digital por canal independente e instale-o nos dispositivos autorizados. Firewall, DNS/IP reservado, encaminhamento de portas e distribuição confiável do certificado continuam sendo tarefas da infraestrutura.
+É seguro repetir o comando: o script não troca segredos preenchidos, não remove volumes e não importa dados. Em instalações novas, o token de bootstrap é guardado com permissões restritas em `data/local/bootstrap-admin.token`. O certificado raiz público do Caddy é exportado para `data/local/scpo-local-root.crt`; confira sua impressão digital por canal independente e instale-o nos dispositivos autorizados. Firewall, DNS/IP reservado, encaminhamento de portas e distribuição confiável do certificado continuam sendo tarefas da infraestrutura.
 
 Este fluxo automatiza uma **instalação de validação**; não transfere o banco do PC atual e não representa autorização para dados reais. Para importar dados, use um backup cifrado e execute primeiro a restauração isolada descrita em [Backup e restauração](docs/backups.md). Nunca use `docker compose down -v` para atualizar ou reinstalar.
 
@@ -156,19 +156,7 @@ bash scripts/deploy-test-server.sh
 
 O script recusa alterações locais não commitadas e publica o `HEAD` por SSH. Ele não envia `.env`, bancos nem volumes, preservando a configuração, os usuários e os dados persistentes existentes no servidor. Use-o apenas para a instalação de validação.
 
-Copie o modelo de configuração e preencha os segredos antes de iniciar:
-
-```bash
-cp .env.example .env
-```
-
-Gere segredos distintos para os campos de serviço, sessão, criptografia do MFA e bootstrap. Por exemplo:
-
-```bash
-python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
-```
-
-Configure também `SCPO_INTERNAL_HOST` com o endereço estável da VM e inicie os serviços:
+Não inicie o Compose diretamente com um `.env.example` copiado: ele contém campos secretos vazios. Em Debian 13 com systemd, use o instalador acima, que gera/configura os segredos ausentes e inicializa os serviços. Em sistemas diferentes, o instalador automatizado ainda não é suportado; configure todas as variáveis `:?` listadas em `docker-compose.yml` com segredos fortes e exclusivos antes de executar:
 
 ```bash
 docker compose up -d --build
@@ -203,7 +191,7 @@ uv run pytest backend/tests/test_therapy_reports.py backend/tests/test_audit.py 
 uv run ruff check backend
 ```
 
-`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Neste ambiente, Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis, mas `docker compose config --services` não pôde ser validado porque as variáveis secretas obrigatórias não estão configuradas neste clone; não foi feito build nem iniciado container. Os testes E2E permanecem pausados.
+`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Neste ambiente, Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis; a configuração Compose foi validada com um arquivo temporário de segredos descartáveis. Não foi feito build de imagens nem iniciado container porque o usuário atual não tem acesso ao socket Docker e o `sudo` requer autenticação interativa. Os testes E2E permanecem pausados.
 
 ## Segurança e dados
 
