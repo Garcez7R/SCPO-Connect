@@ -191,7 +191,7 @@ uv run pytest backend/tests/test_therapy_reports.py backend/tests/test_audit.py 
 uv run ruff check backend
 ```
 
-`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Neste ambiente, Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis; a configuração Compose foi validada com um arquivo temporário de segredos descartáveis. Não foi feito build de imagens nem iniciado container porque o usuário atual não tem acesso ao socket Docker e o `sudo` requer autenticação interativa. Os testes E2E permanecem pausados.
+`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Em 2026-10-31, no host de desenvolvimento `.205`, Docker CLI e Compose estavam acessíveis: as imagens `web`, `access` e `backup` foram construídas e os serviços locais foram reiniciados e verificados. Isso não valida a implantação em outro servidor nem substitui testes de ponta a ponta. Os testes E2E permanecem pausados.
 
 ## Segurança e dados
 
