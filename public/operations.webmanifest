@@ -5,14 +5,14 @@
   "lang": "pt-BR",
   "start_url": "/operations.html",
   "id": "/operations.html",
-  "scope": "/",
+  "scope": "/operations.html",
   "display": "standalone",
   "background_color": "#f4f7fa",
   "theme_color": "#246b8e",
   "display_override": ["standalone", "minimal-ui"],
   "prefer_related_applications": false,
   "icons": [
-    { "src": "/scpo-connect-install-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/scpo-connect-install.png", "sizes": "580x580", "type": "image/png", "purpose": "any" }
+    { "src": "/scpo-connect-operations-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/scpo-connect-operations-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
   ]
 }

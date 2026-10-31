@@ -34,6 +34,16 @@ const PRECACHE = ${JSON.stringify([
   '/scpo-connect-icon.png',
   '/scpo-connect-install-192.png',
   '/scpo-connect-install.png',
+  '/scpo-connect-nursing-192.png',
+  '/scpo-connect-nursing-512.png',
+  '/scpo-connect-operations-192.png',
+  '/scpo-connect-operations-512.png',
+  '/scpo-connect-pharmacy-192.png',
+  '/scpo-connect-pharmacy-512.png',
+  '/scpo-connect-physician-192.png',
+  '/scpo-connect-physician-512.png',
+  '/scpo-connect-kitchen-192.png',
+  '/scpo-connect-kitchen-512.png',
   '/sidebar-health-watermark.svg',
 ])};
 self.addEventListener('install', () => self.skipWaiting());
