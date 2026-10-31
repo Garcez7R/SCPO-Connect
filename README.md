@@ -30,6 +30,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Contas individuais, senha pessoal escolhida no bootstrap inicial, troca obrigatória de senhas temporárias de contas posteriores e autenticação multifator TOTP por QR code ou chave manual.
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
+- Os módulos Manutenção e Higienização exibem o ícone específico junto ao título, antes do nome, para facilitar a identificação da equipe em cada tela.
 - Central de Exames: abas de Raio X e exames laboratoriais, requisições vinculadas ao paciente, fila por situação e formulário de solicitação para impressão.
 - Médico: consulta de alergias e sinais vitais com gráficos, perfil CRM/UF, prescrição interna integrada à Farmácia e Enfermagem e receita simples para impressão (sem assinatura digital e sem medicamentos controlados). O PWA `/physician.html` oferece atalhos para a fila e para localizar pacientes, mantendo conexão, autenticação e permissões do módulo.
 - PWAs instaláveis em paralelo ao aplicativo completo: Enfermagem (`/nursing.html`), Manutenção e Higienização (`/operations.html`), Farmácia (`/pharmacy.html`), Médico (`/physician.html`) e Cozinha (`/kitchen.html`). Cada atalho usa identidade e ícone próprios; consulte [como instalar os PWAs](docs/pwa-installation.md). A disponibilidade e o fluxo de instalação variam conforme o navegador e o dispositivo.
@@ -202,7 +203,7 @@ uv run pytest backend/tests/test_therapy_reports.py backend/tests/test_audit.py 
 uv run ruff check backend
 ```
 
-`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Em 2026-10-31, no host de desenvolvimento `.205`, Docker CLI e Compose estavam acessíveis: as imagens `web`, `access` e `backup` foram construídas e os serviços locais foram reiniciados e verificados. Isso não valida a implantação em outro servidor nem substitui testes de ponta a ponta. Os testes E2E permanecem pausados.
+`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. O Dockerfile frontend deve copiar todos os arquivos HTML de entrada do Vite, incluindo `laundry.html`; a imagem foi validada com esse ponto de entrada em 31/10/2026. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Em 2026-10-31, no host de desenvolvimento `.205`, Docker CLI e Compose estavam acessíveis: as imagens `web`, `access` e `backup` foram construídas e os serviços locais foram reiniciados e verificados. Isso não valida a implantação em outro servidor nem substitui testes de ponta a ponta. Os testes E2E permanecem pausados.
 
 ## Segurança e dados
 

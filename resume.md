@@ -28,11 +28,11 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O instalador Debian 13 agora escreve `/etc/systemd/system/scpo-connect.service`, valida a configuração Compose, habilita o serviço e o inicia após a instalação. A unidade inicia o Compose no boot, reinicia em falha e usa `docker compose stop` ao encerrar sem apagar volumes. README e guia do servidor documentam verificação e controle com `systemctl`. A unidade foi validada estaticamente; a instalação permanece para execução autorizada em um servidor Debian 13.
 - Lavanderia/Rouparia: módulo desktop e PWA instalável em `/laundry.html`, com identidade e ícone próprios. Inclui catálogo de itens, abertura de solicitações, etapas de coleta/lavagem/devolução, atribuição de responsável, saldos rastreados por movimentações e auditoria no serviço de Manutenção existente. Migração e testes de domínio passaram; typecheck, lint e build também passaram. A instalação precisa ser conferida em dispositivos de teste; não houve deploy.
 - A Enfermagem (desktop e PWA) agora mantém o seletor em “Selecione um paciente” até a escolha explícita; ao atualizar, preserva a escolha ainda válida e limpa a referência se ela não estiver mais disponível. O menu lateral põe Visão geral primeiro, os demais itens em ordem alfabética, Administração ao final e Superusuário por último somente para a conta superadministradora. Os cartões da Visão geral seguem a mesma ordem, com Administração por último e borda esquerda azul no padrão dos cartões operacionais.
+- O build Docker frontend agora copia também `laundry.html` para o estágio Vite; o build local e `docker build -f Dockerfile.frontend ...` foram concluídos com sucesso, incluindo `dist/laundry.html`.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ## Próximas fases solicitadas
 
-- Conferir o posicionamento do ícone nos módulos Manutenção e Higienização.
 - Revisar a Lavanderia/Rouparia em dispositivo de teste após publicar.
 - Aumentar e colocar em negrito a saudação do usuário na barra superior.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
@@ -51,11 +51,11 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ## Validações conhecidas
 
-- Backend: suíte completa `uv run --group dev pytest` passou (169 testes) depois da instrumentação de progresso; os testes direcionados de backup/RGS passaram com ida e volta e polling. Migração de metas verifica consolidação das metas legadas.
+- Backend: suíte completa `uv run --group dev pytest` passou (171 testes) após a entrega da Lavanderia/Rouparia; os testes direcionados de backup/RGS passaram com ida e volta e polling. Migração de metas verifica consolidação das metas legadas.
 - Backup/RGS: `uv run --group dev pytest backend/tests/test_backup_restore.py backend/tests/test_rgs_format.py` passou com ida e volta do exportador manual e consulta concorrente do progresso durante a restauração, sempre usando dumps sintéticos.
 - Frontend: `npm run typecheck`, `npm run lint` e `npm run build` passaram. O build ainda apresenta o aviso do Vite sobre o chunk principal maior que 500 kB.
 - Ruff passou nos demais arquivos backend alterados. `nursing.py` ainda tem um aviso preexistente (`UP012`) em linha não modificada; o lint global também aponta um import não usado em `demo_reception.py`, fora do escopo.
-- Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis neste ambiente; `docker compose config --quiet` passou. Não foram construídas nem iniciadas imagens/containers: o usuário atual não tem acesso ao socket Docker e o `sudo` exige autenticação interativa.
+- Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis neste ambiente; `docker compose config --quiet` passou. O build da imagem frontend foi validado em 31/10/2026 após incluir `laundry.html`; não houve deploy/execução de containers do sistema.
 - A suíte E2E permanece pausada conforme orientação do usuário.
 - O workflow GitHub disponível até o último commit publicado concluiu com sucesso; alterações locais precisam de novo push para que o CI as valide.
 
