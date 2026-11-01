@@ -5206,16 +5206,20 @@ function BackupExportPanel() {
     && restorePassword.length >= 12
     && restorePassword.length <= 128
     && restoreConfirmation === 'SUBSTITUIR TODOS OS DADOS'
+  function focusManualBackup() {
+    document.getElementById('backup-manual-export')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    document.getElementById('backup-manual-password')?.focus({ preventScroll: true })
+  }
   return <section className="patient-list-panel backup-panel">
     <div className="section-heading">
       <div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos protegidos por senha.</p></div>
-      <a className="button button-primary" href="#backup-manual-export"><Download size={16} /> Backup manual</a>
+      <button className="button button-primary" type="button" onClick={focusManualBackup}><Download size={16} /> Ir para backup manual</button>
       <span className="module-icon module-icon-admin"><ShieldCheck size={20} /></span>
     </div>
     <section className="backup-manual-section" id="backup-manual-export">
       <div className="section-heading"><div><p className="eyebrow">EXPORTAÇÃO IMEDIATA</p><h3>Backup manual</h3><p className="welcome-copy">Informe a senha de criptografia para gerar e baixar o arquivo `.rgs`. Não é necessário configurar a rotina automática.</p></div></div>
       <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
-        <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
+        <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input id="backup-manual-password" required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
         <button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar e baixar .rgs'}</button>
       </form>
       {message && <ToastMessage variant="success">{message}</ToastMessage>}

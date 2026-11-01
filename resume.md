@@ -52,6 +52,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Auditoria dos resumos operacionais: revisadas as filas de Serviço Social, Psicologia/Psiquiatria e Médico, e conferidos os resumos já existentes em Enfermagem, Farmácia, Recepção, Central de Exames, Oficina Terapêutica, Manutenção/Higienização, Lavanderia/Rouparia e Cozinha. Cada indicador novo usa dados da fila correspondente; telas sem fila ou fonte adicional útil não receberam cartões redundantes.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Superadministrador: agora gera um par GPG RSA 3072 para o backup automático. A chave privada é protegida pela senha escolhida e armazenada no volume do servidor; a senha não é salva. A interface baixa uma cópia privada ASCII-armored ainda cifrada, exige confirmação da impressão digital antes de substituir uma chave pública existente e audita geração/exportação sem registrar a senha. Testes sintéticos validam geração, proteção, autorização, exportação e rejeição de senha incorreta. O volume de chave protegida no mesmo servidor não substitui custódia independente.
+- Backup: o botão do cabeçalho agora leva diretamente à senha de exportação manual, com rolagem e foco explícitos; os campos da agenda automática alinham pelo topo para que opções condicionais não desloquem os demais controles.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ### Em andamento
@@ -61,6 +62,8 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 ### Pendente — ordem sugerida
 
 - Superadministrador/armazenamento: avaliar criação e seleção de diretórios de destino para backup e biblioteca de imagens, aceitando caminhos locais e compartilhamentos de rede já montados. A interface deve pedir e validar o caminho, explicar permissões e deixar claro que montar/compartilhar volumes no host depende da TI; o app não deve tentar montar sistemas de arquivos por conta própria.
+- Conectividade dos módulos: adicionar indicação consistente de conexão/indisponibilidade do serviço em cada módulo, usando verificação real da API pertinente e sem indicar sucesso apenas porque o navegador está online. O padrão visual pode seguir o indicador existente em Administração.
+- Acesso sem permissão: quando o usuário tentar abrir diretamente ou seguir um link para um módulo não concedido, mostrar uma tela explicativa com o nome do módulo e como solicitar acesso, sem renderizar os dados nem deixar a tentativa sem resposta.
 - Indicadores e cartões: continuar revisão visual das abas que ainda não seguem o padrão da Gestão Hospitalar e corrigir cores arbitrárias restantes usando somente dados reais. A auditoria dos resumos operacionais por fila foi concluída; ver o registro acima.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
@@ -70,7 +73,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
-- Substituir o rótulo genérico “Abrir PWA móvel” por um texto que identifique o módulo aberto; o acesso da Cozinha já fica no cabeçalho nas guias Avaliações e Dietas e alertas.
 - Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
 
 ### Marco posterior — servidor de testes Debian 13
