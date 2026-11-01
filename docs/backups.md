@@ -4,7 +4,9 @@ O formato de transporte `.rgs` reúne os sete bancos da aplicação, incluindo c
 
 ## Backup automático
 
-O serviço de backup pode gerar um `.rgs` cifrado com a chave pública GPG aprovada. O pacote inclui os sete bancos, o `.env`, o volume de dados do Caddy e os arquivos da Oficina Terapêutica. A chave privada nunca é enviada ao aplicativo; mantenha-a em custódia técnica separada para restauração.
+O serviço de backup pode gerar um `.rgs` cifrado com a chave pública GPG aprovada. O pacote inclui os sete bancos, o `.env`, o volume de dados do Caddy e os arquivos da Oficina Terapêutica. No Superadministrador, é possível gerar um par GPG: a chave privada fica no volume de backup do servidor, dentro de um diretório restrito, protegida pela senha escolhida; essa senha não é armazenada pelo aplicativo. A interface também permite baixar uma cópia ASCII-armored que continua cifrada pela mesma senha. Guarde o arquivo e a senha em locais institucionais separados para recuperação isolada. Sem a senha, a chave e os backups correspondentes não podem ser recuperados. A proteção por senha reduz o risco de acesso imediato, mas não equivale a custódia física separada: quem obtiver o arquivo cifrado poderá tentar adivinhar a senha offline.
+
+Também é possível importar uma chave pública criada fora do sistema; nesse fluxo, a chave privada externa não é enviada ao aplicativo. A geração local configura automaticamente a chave pública correspondente para novos backups e mostra a impressão digital para conferência.
 
 A instalação cria um volume-base de estágio em `./data/backup-staging`, mas isso **não é um destino institucional nem imutável**. Antes de ativar a rotina, a TI deve montar o destino autorizado no host, configurar `SCPO_BACKUP_HOST_DIR` no `.env` com o caminho absoluto desse mount e garantir gravação ao UID/GID `10001` do container. Compartilhamentos de rede precisam estar montados no host Linux antes do Compose iniciar:
 

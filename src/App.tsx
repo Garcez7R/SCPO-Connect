@@ -4807,6 +4807,8 @@ type AutomaticBackupStatus = {
   destination_directory: string | null
   recipient_configured: boolean
   recipient_fingerprint: string | null
+  private_key_configured: boolean
+  private_key_fingerprint: string | null
   schedule: string
   schedule_type: 'daily' | 'interval' | 'weekly' | 'monthly'
   interval_value: number
@@ -4857,6 +4859,11 @@ function BackupExportPanel() {
   const [automaticDirectory, setAutomaticDirectory] = useState('')
   const [automaticPublicKey, setAutomaticPublicKey] = useState<File | null>(null)
   const [automaticFingerprintConfirmation, setAutomaticFingerprintConfirmation] = useState('')
+  const [generatedKeyIdentity, setGeneratedKeyIdentity] = useState('SCPO Connect Backup')
+  const [generatedKeyPassphrase, setGeneratedKeyPassphrase] = useState('')
+  const [generatedKeyPassphraseConfirmation, setGeneratedKeyPassphraseConfirmation] = useState('')
+  const [keyReplacementFingerprint, setKeyReplacementFingerprint] = useState('')
+  const [privateKeyExportPassphrase, setPrivateKeyExportPassphrase] = useState('')
   const [automaticSchedule, setAutomaticSchedule] = useState({
     schedule_type: 'daily' as AutomaticBackupStatus['schedule_type'],
     interval_value: '1',
@@ -4940,6 +4947,76 @@ function BackupExportPanel() {
       setAutomaticError(saveError instanceof Error
         ? saveError.message
         : 'Não foi possível importar a chave pública GPG.')
+    } finally {
+      setAutomaticSaving(false)
+    }
+  }
+  async function generateAutomaticBackupKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAutomaticSaving(true)
+    setAutomaticMessage('')
+    setAutomaticError('')
+    try {
+      if (generatedKeyPassphrase !== generatedKeyPassphraseConfirmation) {
+        throw new Error('As senhas da chave GPG não correspondem.')
+      }
+      if (generatedKeyPassphrase.length < 16 || generatedKeyPassphrase.length > 128) {
+        throw new Error('Use uma senha de 16 a 128 caracteres para proteger a chave privada.')
+      }
+      const generated = await readApiResponse<{ fingerprint: string }>(
+        await fetch('/api/v1/backup/automatic/key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identity: generatedKeyIdentity.trim(),
+            passphrase: generatedKeyPassphrase,
+            fingerprint_confirmation: keyReplacementFingerprint.trim() || null,
+          }),
+        }),
+      )
+      setGeneratedKeyPassphrase('')
+      setGeneratedKeyPassphraseConfirmation('')
+      setKeyReplacementFingerprint('')
+      setAutomaticFingerprintConfirmation(generated.fingerprint)
+      setAutomaticMessage(`Par GPG gerado. A chave privada está protegida no servidor; guarde a senha e baixe uma cópia cifrada para custódia independente. Impressão digital: ${generated.fingerprint}`)
+      await loadAutomaticStatus()
+    } catch (generationError) {
+      setAutomaticError(generationError instanceof Error
+        ? generationError.message
+        : 'Não foi possível gerar a chave GPG protegida.')
+    } finally {
+      setAutomaticSaving(false)
+    }
+  }
+  async function exportAutomaticBackupPrivateKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAutomaticSaving(true)
+    setAutomaticMessage('')
+    setAutomaticError('')
+    try {
+      const response = await fetch('/api/v1/backup/automatic/private-key/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passphrase: privateKeyExportPassphrase }),
+      })
+      if (!response.ok) {
+        await readApiResponse<{ detail?: string }>(response)
+        throw new Error('Não foi possível exportar a chave privada.')
+      }
+      const downloadUrl = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = `scpo-connect-backup-${automaticStatus?.private_key_fingerprint ?? 'private-key'}.asc`
+      document.body.append(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000)
+      setPrivateKeyExportPassphrase('')
+      setAutomaticMessage('Cópia cifrada da chave privada baixada. Guarde o arquivo e a senha em locais institucionais separados.')
+    } catch (exportError) {
+      setAutomaticError(exportError instanceof Error
+        ? exportError.message
+        : 'Não foi possível exportar a chave privada protegida.')
     } finally {
       setAutomaticSaving(false)
     }
@@ -5166,9 +5243,28 @@ function BackupExportPanel() {
           {automaticStatus.free_space_bytes !== null
             ? `Espaço livre no volume: ${(automaticStatus.free_space_bytes / 1024 ** 3).toFixed(1)} GB. `
             : ''}
-          A imutabilidade do destino não foi validada. A chave privada GPG deve permanecer fora do aplicativo.
+          A imutabilidade do destino não foi validada. A chave privada gerada fica cifrada pela senha escolhida no volume do servidor; exporte uma cópia cifrada para custódia independente.
         </p>
       </div>}
+      {automaticStatus?.private_key_configured ? <section className="backup-generated-key-panel">
+        <div className="section-heading"><div><p className="eyebrow">CHAVE PRIVADA GPG</p><h4>Chave gerada no servidor</h4><p className="welcome-copy">A chave permanece protegida por senha no volume do backup. Não redefina a senha: sem ela, os backups cifrados não poderão ser restaurados.</p></div></div>
+        <p className="field-hint">Impressão digital da chave privada: <code>{automaticStatus.private_key_fingerprint}</code></p>
+        <form className="backup-export-form" onSubmit={(event) => void exportAutomaticBackupPrivateKey(event)}>
+          <label className="field"><span className="field-label">Senha da chave privada</span><input required minLength={16} maxLength={128} type="password" autoComplete="current-password" value={privateKeyExportPassphrase} onChange={(event) => setPrivateKeyExportPassphrase(event.target.value)} /><span className="field-hint">A senha não é armazenada. O arquivo baixado permanece cifrado com essa senha.</span></label>
+          <button className="button button-secondary" type="submit" disabled={automaticSaving || automaticLoading || privateKeyExportPassphrase.length < 16}>{automaticSaving ? 'Preparando cópia…' : 'Baixar cópia cifrada da chave privada'}</button>
+        </form>
+      </section> : <section className="backup-generated-key-panel">
+        <div className="section-heading"><div><p className="eyebrow">CHAVE GPG PARA BACKUP AUTOMÁTICO</p><h4>Gerar par de chaves</h4><p className="welcome-copy">O servidor guarda a chave privada protegida pela senha escolhida e configura a chave pública para cifrar novos backups.</p></div></div>
+        <form className="backup-export-form backup-generated-key-form" onSubmit={(event) => void generateAutomaticBackupKey(event)}>
+          <label className="field"><span className="field-label">Identificação institucional da chave</span><input required minLength={3} maxLength={100} value={generatedKeyIdentity} onChange={(event) => setGeneratedKeyIdentity(event.target.value)} autoComplete="organization" /></label>
+          {automaticStatus?.recipient_fingerprint && <label className="field"><span className="field-label">Confirme a impressão digital atual para substituir a chave pública</span><input required minLength={40} maxLength={64} value={keyReplacementFingerprint} onChange={(event) => setKeyReplacementFingerprint(event.target.value.toUpperCase())} placeholder={automaticStatus.recipient_fingerprint} autoComplete="off" /><span className="field-hint">Backups anteriores continuarão exigindo a chave privada correspondente à impressão digital anterior.</span></label>}
+          <label className="field"><span className="field-label">Senha da chave privada</span><input required minLength={16} maxLength={128} type="password" autoComplete="new-password" value={generatedKeyPassphrase} onChange={(event) => setGeneratedKeyPassphrase(event.target.value)} /><span className="field-hint">Use pelo menos 16 caracteres. A senha não é armazenada; sem ela, a chave protegida não poderá ser usada.</span></label>
+          <label className="field"><span className="field-label">Confirme a senha da chave</span><input required minLength={16} maxLength={128} type="password" autoComplete="new-password" value={generatedKeyPassphraseConfirmation} onChange={(event) => setGeneratedKeyPassphraseConfirmation(event.target.value)} /><span className="field-hint">{generatedKeyPassphraseConfirmation && generatedKeyPassphrase !== generatedKeyPassphraseConfirmation ? 'As senhas ainda não correspondem.' : 'Guarde a senha: ela não pode ser recuperada pelo aplicativo.'}</span></label>
+          <button className="button button-secondary" type="submit" disabled={automaticSaving || automaticLoading || generatedKeyPassphrase.length < 16 || generatedKeyPassphrase !== generatedKeyPassphraseConfirmation || Boolean(automaticStatus?.recipient_fingerprint && keyReplacementFingerprint.toUpperCase() !== automaticStatus.recipient_fingerprint)}>
+            {automaticSaving ? 'Gerando par de chaves…' : 'Gerar chave GPG protegida'}
+          </button>
+        </form>
+      </section>}
       <form className="backup-export-form" onSubmit={(event) => void importAutomaticBackupKey(event)}>
         <label className="field">
           <span className="field-label">Chave pública GPG autorizada</span>
@@ -5276,6 +5372,8 @@ const auditActionLabels: Record<string, string> = {
   audit_outbox_status_read: 'Filas de auditoria consultadas',
   automatic_backup_status_read: 'Estado do backup automático consultado',
   automatic_backup_public_key_imported: 'Chave pública de backup importada',
+  automatic_backup_key_generated: 'Par de chaves GPG gerado para backup',
+  automatic_backup_private_key_exported: 'Cópia cifrada da chave privada GPG exportada',
   automatic_backup_configured: 'Rotina de backup automático configurada',
   physician_profile_admin_updated: 'Perfil médico atualizado pela Administração',
   physician_prescription_created: 'Prescrição médica criada',

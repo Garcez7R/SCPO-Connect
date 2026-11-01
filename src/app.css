@@ -279,6 +279,12 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .backup-automatic-status { display: grid; gap: 8px; margin-bottom: 14px; }
 .backup-automatic-status > p { margin: 0; font-size: 12px; }
 .backup-automatic-status > p > code { overflow-wrap: anywhere; }
+.backup-generated-key-panel { display: grid; gap: 10px; margin-block: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.backup-generated-key-panel .section-heading { margin: 0; }
+.backup-generated-key-panel h4 { margin: 2px 0 0; color: var(--ink); font-size: 15px; }
+.backup-generated-key-panel .welcome-copy { margin: 6px 0 0; }
+.backup-generated-key-panel .backup-generated-key-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.backup-generated-key-panel .backup-generated-key-form > .button { justify-self: start; }
 .backup-automatic-config-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
 .backup-automatic-config-form > .button { justify-self: start; }
 .backup-weekday-field { min-width: 0; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; }
@@ -1697,7 +1703,7 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
 .backup-export-form { display: flex; align-items: end; gap: 14px; }
 .backup-export-form .field { flex: 1; }
 .backup-panel { margin-bottom: 18px; }
-@media (max-width: 700px) { .maintenance-filters { grid-template-columns: 1fr 1fr; } .maintenance-query { grid-column: span 2; } .maintenance-filter-actions { grid-column: span 2; } .maintenance-filter-actions .button { flex: 1; min-height: 44px; } .maintenance-actions { width: 100%; } .backup-export-form { align-items: stretch; flex-direction: column; } .backup-automatic-config-form { grid-template-columns: 1fr; } .backup-panel > .section-heading > .button { margin-left: auto; } }
+@media (max-width: 700px) { .maintenance-filters { grid-template-columns: 1fr 1fr; } .maintenance-query { grid-column: span 2; } .maintenance-filter-actions { grid-column: span 2; } .maintenance-filter-actions .button { flex: 1; min-height: 44px; } .maintenance-actions { width: 100%; } .backup-export-form { align-items: stretch; flex-direction: column; } .backup-generated-key-form, .backup-automatic-config-form { grid-template-columns: 1fr; } .backup-panel > .section-heading > .button { margin-left: auto; } }
 @media (max-width: 760px) {
   .laundry-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .laundry-catalog-form { grid-template-columns: 1fr 1fr; }

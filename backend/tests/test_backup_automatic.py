@@ -1,4 +1,5 @@
 import os
+import stat
 import subprocess
 import tarfile
 from datetime import UTC, datetime, timedelta
@@ -255,6 +256,115 @@ def test_backup_rejects_private_or_unarmored_gpg_keys(
         )
     with pytest.raises(HTTPException, match="ASCII-armored"):
         backup._import_public_key(b"binary-key-data")
+
+
+def test_generated_gpg_key_is_password_protected_and_exported_without_persisting_password(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_BACKUP_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(backup, "emit_audit_event", lambda *args, **kwargs: None)
+    principal = backup.DemoPrincipal(
+        "root",
+        "root",
+        "Root",
+        "system_admin",
+        ["admin"],
+        {"admin": ["administrar"]},
+        is_superuser=True,
+    )
+    passphrase = "synthetic-only-gpg-passphrase"
+    payload = backup.AutomaticBackupKeyRequest(
+        identity="SCPO Synthetic Backup",
+        passphrase=passphrase,
+    )
+
+    generated = backup.generate_automatic_backup_key(payload, principal)
+
+    home = backup._generated_gpg_home()
+    state = backup._load_automatic_backup_state()
+    assert generated["fingerprint"] == state["recipient"]
+    assert generated["fingerprint"] == backup._generated_private_key_fingerprint()
+    assert stat.S_IMODE(home.stat().st_mode) == 0o700
+    assert passphrase.encode() not in backup._automatic_backup_state_path().read_bytes()
+    assert backup._automatic_backup_status()["private_key_configured"] is True
+
+    exported = backup.export_automatic_backup_private_key(
+        backup.AutomaticBackupKeyExportRequest(passphrase=passphrase),
+        principal,
+    )
+    assert exported.body.startswith(b"-----BEGIN PGP PRIVATE KEY BLOCK-----")
+    assert exported.headers["cache-control"] == "no-store"
+    private_key_file = tmp_path / "synthetic-private-key.asc"
+    private_key_file.write_bytes(exported.body)
+    packets = subprocess.run(
+        ["gpg", "--list-packets", str(private_key_file)],
+        capture_output=True,
+        check=True,
+    )
+    assert b"S2K" in packets.stdout
+
+    with pytest.raises(HTTPException) as error:
+        backup.export_automatic_backup_private_key(
+            backup.AutomaticBackupKeyExportRequest(
+                passphrase="incorrect-synthetic-passphrase"
+            ),
+            principal,
+        )
+    assert error.value.status_code == 422
+
+    with pytest.raises(HTTPException) as error:
+        backup.generate_automatic_backup_key(payload, principal)
+    assert error.value.status_code == 409
+
+
+def test_generated_gpg_key_requires_superadministrator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_BACKUP_DATA_DIR", str(tmp_path))
+    payload = backup.AutomaticBackupKeyRequest(
+        identity="SCPO Synthetic Backup",
+        passphrase="synthetic-only-gpg-passphrase",
+    )
+    principal = backup.DemoPrincipal(
+        "operator",
+        "operator",
+        "Operator",
+        "management",
+        ["management"],
+        {"management": ["administrar"]},
+        is_superuser=False,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        backup.generate_automatic_backup_key(payload, principal)
+
+    assert error.value.status_code == 403
+
+
+def test_generated_gpg_key_replacement_requires_current_fingerprint_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_BACKUP_DATA_DIR", str(tmp_path))
+    backup._save_automatic_backup_state({"recipient": "A" * 40})
+    payload = backup.AutomaticBackupKeyRequest(
+        identity="SCPO Synthetic Backup",
+        passphrase="synthetic-only-gpg-passphrase",
+    )
+    principal = backup.DemoPrincipal(
+        "root",
+        "root",
+        "Root",
+        "system_admin",
+        ["admin"],
+        {"admin": ["administrar"]},
+        is_superuser=True,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        backup.generate_automatic_backup_key(payload, principal)
+
+    assert error.value.status_code == 422
+    assert not backup._generated_gpg_home().exists()
 
 
 def test_automatic_backup_packages_all_database_and_file_sources(

@@ -31,6 +31,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     ValidationError,
     field_validator,
     model_validator,
@@ -100,6 +101,33 @@ class AutomaticBackupConfig(AutomaticBackupSchedule):
         max_length=64,
         pattern=r"^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$",
     )
+
+
+class AutomaticBackupKeyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    identity: str = Field(min_length=3, max_length=100)
+    passphrase: SecretStr = Field(min_length=16, max_length=128)
+    fingerprint_confirmation: str | None = Field(
+        default=None,
+        pattern=r"^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})?$",
+    )
+
+    @field_validator("identity")
+    @classmethod
+    def validate_identity(cls, identity: str) -> str:
+        identity = identity.strip()
+        if (
+            len(identity) < 3
+            or identity.startswith("-")
+            or any(ord(character) < 32 for character in identity)
+        ):
+            raise ValueError("Informe uma identificação válida para a chave")
+        return identity
+
+
+class AutomaticBackupKeyExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    passphrase: SecretStr = Field(min_length=16, max_length=128)
 
 
 def _automatic_schedule(state: dict[str, object]) -> AutomaticBackupSchedule:
@@ -287,8 +315,72 @@ def _gpg_home() -> Path:
     return _backup_data_dir() / ".gnupg"
 
 
+def _generated_gpg_home() -> Path:
+    return _backup_data_dir() / ".generated-gpg"
+
+
+def _generated_private_key_fingerprint() -> str | None:
+    home = _generated_gpg_home()
+    if home.is_symlink():
+        raise RuntimeError("O diretório da chave GPG gerada não é seguro")
+    if not home.is_dir():
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "gpg",
+                "--batch",
+                "--homedir",
+                str(home),
+                "--with-colons",
+                "--list-secret-keys",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        logger.error("Could not inspect the generated automatic-backup key")
+        raise RuntimeError("Não foi possível verificar a chave GPG protegida") from exc
+    records = result.stdout.decode("utf-8", errors="replace").splitlines()
+    secret_records = [
+        index for index, record in enumerate(records) if record.startswith("sec:")
+    ]
+    if not secret_records:
+        return None
+    if len(secret_records) != 1:
+        raise RuntimeError("O armazenamento deve conter somente uma chave GPG gerada")
+    fingerprint = next(
+        (
+            record.split(":")[9]
+            for record in records[secret_records[0] + 1 :]
+            if record.startswith("fpr:")
+        ),
+        "",
+    )
+    if not fingerprint or any(
+        character not in "0123456789ABCDEFabcdef" for character in fingerprint
+    ):
+        raise RuntimeError("Não foi possível identificar a chave GPG gerada")
+    return fingerprint.upper()
+
+
+def _stop_generated_gpg_agent(home: Path) -> None:
+    try:
+        subprocess.run(
+            ["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"],
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        logger.error("Could not stop the generated automatic-backup GPG agent")
+        raise RuntimeError("Não foi possível encerrar o agente temporário da chave GPG") from exc
+
+
 def _automatic_backup_status() -> dict[str, object]:
     state = _load_automatic_backup_state()
+    private_key_fingerprint = _generated_private_key_fingerprint()
     schedule = _automatic_schedule(state)
     directory = state.get("directory")
     recipient = state.get("recipient")
@@ -335,6 +427,8 @@ def _automatic_backup_status() -> dict[str, object]:
         "destination_directory": directory if configured else None,
         "recipient_configured": bool(recipient),
         "recipient_fingerprint": recipient,
+        "private_key_configured": private_key_fingerprint is not None,
+        "private_key_fingerprint": private_key_fingerprint,
         "schedule": _schedule_description(schedule, timezone_name),
         "schedule_type": schedule.schedule_type,
         "interval_value": schedule.interval_value,
@@ -1001,6 +1095,160 @@ async def import_automatic_backup_public_key(
         service="access",
     )
     return {"fingerprint": fingerprint}
+
+
+@app.post("/api/v1/backup/automatic/key")
+def generate_automatic_backup_key(
+    payload: AutomaticBackupKeyRequest,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+) -> dict[str, str]:
+    _require_admin(principal)
+    try:
+        if _generated_private_key_fingerprint() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe uma chave privada GPG gerada no servidor; exporte-a antes de qualquer troca.",
+            )
+        state = _load_automatic_backup_state()
+        current_recipient = state.get("recipient")
+        confirmation = payload.fingerprint_confirmation
+        if isinstance(current_recipient, str) and current_recipient and (
+            not confirmation
+            or not hmac.compare_digest(
+                current_recipient.upper(), confirmation.upper()
+            )
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Confirme a impressão digital atual antes de substituir a chave pública.",
+            )
+        home = _generated_gpg_home()
+        if home.is_symlink():
+            raise RuntimeError("O diretório da chave GPG gerada não é seguro")
+        home.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(home, 0o700)
+        passphrase = payload.passphrase.get_secret_value()
+        try:
+            subprocess.run(
+                [
+                    "gpg",
+                    "--batch",
+                    "--homedir",
+                    str(home),
+                    "--pinentry-mode",
+                    "loopback",
+                    "--passphrase-fd",
+                    "0",
+                    "--quick-generate-key",
+                    payload.identity,
+                    "rsa3072",
+                    "encr",
+                    "0",
+                ],
+                input=f"{passphrase}\n".encode(),
+                capture_output=True,
+                check=True,
+                timeout=120,
+            )
+        finally:
+            _stop_generated_gpg_agent(home)
+        fingerprint = _generated_private_key_fingerprint()
+        if fingerprint is None:
+            raise RuntimeError("A geração não produziu uma chave privada GPG")
+        public_key = subprocess.run(
+            ["gpg", "--batch", "--homedir", str(home), "--armor", "--export", fingerprint],
+            capture_output=True,
+            check=True,
+            timeout=20,
+        ).stdout
+        imported_fingerprint = _import_public_key(public_key)
+        if not hmac.compare_digest(fingerprint, imported_fingerprint):
+            raise RuntimeError("A impressão digital da chave GPG exportada não corresponde")
+        state["recipient"] = fingerprint
+        state.pop("directory", None)
+        state["last_error"] = None
+        _save_automatic_backup_state(state)
+    except HTTPException:
+        raise
+    except (OSError, RuntimeError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        logger.exception("Could not generate the protected automatic-backup key")
+        raise HTTPException(
+            status_code=503,
+            detail="Não foi possível gerar e configurar a chave GPG protegida.",
+        ) from exc
+    emit_audit_event(
+        principal,
+        "management",
+        "automatic_backup_key_generated",
+        fingerprint,
+        service="access",
+    )
+    return {"fingerprint": fingerprint}
+
+
+@app.post("/api/v1/backup/automatic/private-key/export")
+def export_automatic_backup_private_key(
+    payload: AutomaticBackupKeyExportRequest,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+) -> Response:
+    _require_admin(principal)
+    try:
+        fingerprint = _generated_private_key_fingerprint()
+        if fingerprint is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Não há uma chave privada GPG gerada para exportar.",
+            )
+        home = _generated_gpg_home()
+        try:
+            exported = subprocess.run(
+                [
+                    "gpg",
+                    "--batch",
+                    "--homedir",
+                    str(home),
+                    "--pinentry-mode",
+                    "loopback",
+                    "--passphrase-fd",
+                    "0",
+                    "--armor",
+                    "--export-secret-keys",
+                    fingerprint,
+                ],
+                input=f"{payload.passphrase.get_secret_value()}\n".encode(),
+                capture_output=True,
+                check=True,
+                timeout=30,
+            ).stdout
+        finally:
+            _stop_generated_gpg_agent(home)
+        if not exported.startswith(b"-----BEGIN PGP PRIVATE KEY BLOCK-----"):
+            raise RuntimeError("A exportação não produziu uma chave privada protegida")
+    except HTTPException:
+        raise
+    except (OSError, RuntimeError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        logger.exception("Could not export the protected automatic-backup private key")
+        raise HTTPException(
+            status_code=422,
+            detail="Não foi possível exportar a chave privada. Confira a senha e tente novamente.",
+        ) from exc
+    emit_audit_event(
+        principal,
+        "management",
+        "automatic_backup_private_key_exported",
+        fingerprint,
+        service="access",
+    )
+    return Response(
+        content=exported,
+        media_type="application/pgp-keys",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": (
+                f'attachment; filename="scpo-connect-backup-{fingerprint}.asc"'
+            ),
+        },
+    )
 
 
 @app.put("/api/v1/backup/automatic/config")
