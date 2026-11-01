@@ -287,7 +287,7 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
   }
 
   return <section className={`page-enter physician-page${mobileMode ? ' physician-page-mobile' : ''}`}>
-    <div className="page-title-row"><div><p className="eyebrow">{mobileMode ? 'PWA · MÉDICO' : 'MÓDULO · ASSISTÊNCIA MÉDICA'}</p><h1>Médico</h1><p className="welcome-copy">{mobileMode ? 'Fila, prontuário e prescrições em uma interface compacta. Requer conexão com o servidor.' : 'Fila de atendimentos triados, ficha clínica, sinais vitais e prescrições internas.'}</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span>{!mobileMode && <a className="button button-secondary" href="/physician.html" target="_blank" rel="noreferrer">Abrir PWA móvel</a>}</div>
+    <div className="page-title-row"><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · MÉDICO' : 'MÓDULO · ASSISTÊNCIA MÉDICA'}</p><h1>Médico</h1><p className="welcome-copy">{mobileMode ? 'Fila, prontuário e prescrições em uma interface compacta. Requer conexão com o servidor.' : 'Fila de atendimentos triados, ficha clínica, sinais vitais e prescrições internas.'}</p></div><span className="module-icon module-icon-physician"><Stethoscope size={23} /></span>{!mobileMode && <a className="button button-secondary" href="/physician.html" target="_blank" rel="noreferrer">Abrir Médico no celular</a>}</div>
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {error && !loading && <button className="button button-secondary physician-retry" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><RefreshCw size={15} /> Tentar carregar novamente</button>}
