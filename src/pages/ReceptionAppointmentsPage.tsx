@@ -84,9 +84,12 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
   const [endsAt, setEndsAt] = useState(() => localDateTimeValue(new Date(nextAppointmentSlot().getTime() + 30 * 60_000)))
   const [updatingId, setUpdatingId] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [notice, setNotice] = useState('')
 
   async function loadAppointments(startDate = fromDate, endDate = toDate) {
+    setLoading(true)
+    setLoadError('')
     try {
       if (!startDate || !endDate || endDate < startDate) {
         throw new Error('Informe um período válido para consultar a agenda.')
@@ -98,9 +101,12 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
       const response = await fetch(`/api/v1/reception/appointments?${params}`)
       const data = await readApiResponse<{ appointments?: Appointment[] }>(response)
       setAppointments(data.appointments ?? [])
+      setLoadError('')
       setError('')
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a agenda.')
+      const message = loadError instanceof Error ? loadError.message : 'Não foi possível carregar a agenda.'
+      setLoadError(message)
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -117,11 +123,16 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
       .then((data) => {
         if (current) {
           setAppointments(data.appointments ?? [])
+          setLoadError('')
           setError('')
         }
       })
       .catch((loadError: unknown) => {
-        if (current) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a agenda.')
+        if (current) {
+          const message = loadError instanceof Error ? loadError.message : 'Não foi possível carregar a agenda.'
+          setLoadError(message)
+          setError(message)
+        }
       })
       .finally(() => { if (current) setLoading(false) })
     return () => { current = false }
@@ -191,12 +202,12 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
   return <div className="reception-appointments">
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
-    <div className="hygiene-summary" aria-label="Resumo da agenda">
-      <article><strong>{appointments.filter((item) => item.status === 'scheduled').length}</strong><span>Agendados</span></article>
-      <article><strong>{appointments.filter((item) => item.status === 'confirmed').length}</strong><span>Confirmados</span></article>
-      <article><strong>{appointments.filter((item) => item.status === 'arrived').length}</strong><span>Chegaram</span></article>
-      <article><strong>{appointments.filter((item) => item.status === 'called').length}</strong><span>Chamados</span></article>
-      <article><strong>{appointments.filter((item) => item.status === 'completed').length}</strong><span>Concluídos</span></article>
+    <div className="hygiene-summary reception-info-summary reception-appointments-summary" aria-label="Resumo da agenda" aria-busy={loading}>
+      <article className="status-tone-progress"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'scheduled').length}</strong><span>Agendados</span></article>
+      <article className="status-tone-success"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'confirmed').length}</strong><span>Confirmados</span></article>
+      <article className="status-tone-warning"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'arrived').length}</strong><span>Chegaram</span></article>
+      <article className="status-tone-progress"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'called').length}</strong><span>Chamados</span></article>
+      <article className="status-tone-success"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'completed').length}</strong><span>Concluídos</span></article>
     </div>
 
     <div className="reception-appointment-toolbar">

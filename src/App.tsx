@@ -1509,7 +1509,12 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       ]}
     />}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
-    {receptionMode && <div className="hygiene-summary reception-admission-summary" aria-label="Resumo de internações"><article><strong>{activeAssignedCount}</strong><span>Pacientes acomodados</span></article><article><strong>{activeUnassignedCount}</strong><span>Sem acomodação</span></article><article><strong>{inactivePatientCount}</strong><span>Cadastros inativos</span></article></div>}
+    {receptionMode && <div className="hygiene-summary reception-info-summary reception-admission-summary" aria-label="Resumo de admissões e leitos" aria-busy={loading || bedOptionsLoading}>
+      <article className="status-tone-progress"><strong>{loading ? '…' : activeAssignedCount}</strong><span>Pacientes acomodados</span></article>
+      <article className={activeUnassignedCount ? 'status-tone-warning' : 'status-tone-success'}><strong>{loading ? '…' : activeUnassignedCount}</strong><span>Sem acomodação</span></article>
+      <article className="status-tone-neutral"><strong>{loading ? '…' : inactivePatientCount}</strong><span>Cadastros inativos</span></article>
+      <article className={bedOptionsError ? 'status-tone-neutral' : availableHospitalBeds.length ? 'status-tone-success' : 'status-tone-warning'}><strong>{bedOptionsLoading ? '…' : bedOptionsError ? '—' : availableHospitalBeds.length}</strong><span>{bedOptionsError ? 'Leitos indisponíveis para consulta' : 'Leitos disponíveis'}</span></article>
+    </div>}
     {(receptionMode ? showForm : registryTab === 'registry') && <form className={`patient-registry-form${receptionMode ? ' hygiene-panel' : ''}`} onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">{editingReference ? 'ATUALIZAÇÃO CADASTRAL' : receptionMode ? 'ADMISSÃO' : 'NOVO CADASTRO'}</p><h2>{editingReference ? 'Dados do paciente' : newPatientPurpose === 'inpatient' ? 'Identificação e internação' : 'Identificação para consulta ambulatorial'}</h2><p className="welcome-copy">Os campos são compartilhados com os módulos conforme as permissões configuradas.</p></div></div>
       {!editingReference && <div className="patient-registration-purpose">

@@ -704,6 +704,7 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .reception-admission-heading { padding: 2px 0; }
 .reception-admission-heading .button { flex: 0 0 auto; min-height: 44px; }
 .reception-admission-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.reception-info-summary { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
 .reception-admissions-page { width: 100%; }
 .system-recovery-summary { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
 .system-recovery-summary > strong { color: var(--ink); font-size: 24px; }
@@ -2656,6 +2657,8 @@ html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf
 
 .reception-page, .nutrition-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .reception-page > .hygiene-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.reception-page > .reception-info-summary { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+.reception-appointments-summary { grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); }
 .reception-arrival-action { display: flex; justify-content: flex-end; }
 .reception-admissions-page .patient-registry-page { gap: 18px; }
 .reception-appointments { display: grid; gap: 16px; }

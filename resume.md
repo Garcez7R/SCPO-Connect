@@ -30,10 +30,14 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - A Enfermagem (desktop e PWA) agora mantém o seletor em “Selecione um paciente” até a escolha explícita; ao atualizar, preserva a escolha ainda válida e limpa a referência se ela não estiver mais disponível. O menu lateral põe Visão geral primeiro, os demais itens em ordem alfabética, Administração ao final e Superusuário por último somente para a conta superadministradora. Os cartões da Visão geral seguem a mesma ordem, com Administração por último e borda esquerda azul no padrão dos cartões operacionais.
 - O build Docker frontend agora copia também `laundry.html` para o estágio Vite; o build local e `docker build -f Dockerfile.frontend ...` foram concluídos com sucesso, incluindo `dist/laundry.html`.
 - A saudação da barra superior agora tem maior destaque visual (13 px, negrito e cor de texto principal); mantém o comportamento responsivo anterior, sem ocupar espaço da barra em telas estreitas.
+- Recepção: os resumos de Agendamentos e Admissões/Leitos agora seguem os cartões de status usados nos demais módulos, com borda lateral e layout responsivo. Incluem contagens reais do período consultado e do cadastro; o indicador de leitos livres vem do mapa e mostra indisponibilidade/estado de carregamento sem converter falha em zero.
+- Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais; fluxo de backup manual direto por senha com download do `.rgs` e teste de restauração.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ## Próximas fases solicitadas
 
+- Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
+- Backup manual: oferecer um caminho direto em Cópias de segurança para informar a senha, gerar um arquivo `.rgs` e baixá-lo, sem exigir configurações adicionais; validar o conteúdo pelo fluxo de restauração antes de disponibilizar.
 - Revisar a Lavanderia/Rouparia em dispositivo de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Revisar a senha provisória `0000` para contas comuns/administradores com troca obrigatória no primeiro login e o botão de revelar senha no bootstrap do superadministrador.
