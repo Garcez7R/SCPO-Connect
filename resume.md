@@ -46,6 +46,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Usuários e permissões: o título do cabeçalho agora identifica o módulo Administração, em vez de repetir o nome da guia ativa; a descrição continua contextualizada.
 - Sobre e conformidade: o quadro do logotipo agora tem dimensões quadradas explícitas e responsivas, e os cartões de “Como o sistema funciona” deixaram de herdar a altura mínima dos cartões legais, aproximando-se dos itens compactos de dúvidas.
 - Central de Exames: terceira guia renomeada para “Exames laboratoriais”; cabeçalho, fila vazia e guia de ajuda distinguem Raio X, Eletrocardiograma e laboratório. As consultas de pacientes e solicitações agora falham independentemente, com erro explícito e sem representar indisponibilidade da fila como ausência de exames.
+- Serviço Social: adicionados cartões de visão rápida com total de encaminhamentos, abertos, em acompanhamento e prioritários ativos; os valores vêm da fila carregada e mostram estado de carregamento/indisponibilidade, sem converter falha em zero.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Pedido adicionado ao backlog: gerar uma chave GPG pelo Superadministrador para uso nos backups automáticos.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
@@ -67,7 +68,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
-- Auditar os módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Usar somente dados reais do módulo, sem sobrecarregar a tela e sem links/referências inexistentes.
+- Continuar a auditoria dos módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Serviço Social já recebeu resumo da fila; revisar somente outras áreas em que os dados existentes forneçam indicadores úteis, sem sobrecarregar telas ou criar links/referências inexistentes.
 - Substituir o rótulo genérico “Abrir PWA móvel” por um texto que identifique o módulo aberto; o acesso da Cozinha já fica no cabeçalho nas guias Avaliações e Dietas e alertas.
 - Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
 
