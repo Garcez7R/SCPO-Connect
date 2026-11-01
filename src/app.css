@@ -228,7 +228,9 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 }
 .module-card-available { cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
 .module-card-available:hover { transform: translateY(-2px); border-color: #a9c6d3; box-shadow: var(--shadow); }
-.module-card:disabled { opacity: 1; }
+.module-card-locked { cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+.module-card-locked:hover, .module-card-locked:focus-visible { transform: translateY(-2px); border-color: var(--status-warning-border); box-shadow: var(--shadow); }
+.module-card[aria-disabled="true"] { opacity: 1; }
 .module-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 7px; background: #eaf3f7; color: #246b8e; }
 .module-card .module-icon { width: 44px; height: 44px; border-radius: 9px; }
 .module-card .module-icon > svg { transition: transform 220ms ease; }
@@ -256,6 +258,17 @@ h3 { color: var(--ink); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .status-ready { color: #377052; }
 .status-denied { color: #8a4b0d; font-weight: 650; }
 .module-arrow { position: absolute; right: 15px; bottom: 15px; color: #628094; }
+.module-connection-status { display: inline-flex; min-height: 30px; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--muted); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.module-connection-status.is-connected { border-color: var(--status-success-border); background: var(--status-success-background); color: var(--status-success-ink); }
+.module-connection-status.is-unavailable { border-color: var(--status-critical-border); background: var(--status-critical-background); color: var(--status-critical-ink); }
+.module-connection-status.is-checking svg { animation: module-status-spin 1.2s linear infinite; }
+.module-access-denied { display: grid; max-width: 640px; justify-items: start; gap: 12px; margin: 8vh auto; padding: 28px; border: 1px solid var(--status-warning-border); border-left: 4px solid var(--status-warning-ink); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); }
+.module-access-denied h1, .module-access-denied p { margin: 0; }
+.module-access-denied h1 { color: var(--ink); font-size: 24px; }
+.module-access-denied > p:not(.eyebrow) { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.module-access-denied > .button { margin-top: 6px; }
+@keyframes module-status-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .module-connection-status.is-checking svg { animation: none; } }
 html[data-theme="dark"] .module-icon-nursing { background: #1e3b4c; color: #a8ddf3; }
 html[data-theme="dark"] .module-icon-pharmacy { background: #20392e; color: #a2dfbb; }
 html[data-theme="dark"] .module-icon-xray { background: #352e4a; color: #c4b4ef; }
@@ -2087,6 +2100,8 @@ html[data-theme="dark"] .account-superuser-note { border-color: var(--line); bac
 .page-error-boundary p { margin: 0 0 5px; color: var(--muted); line-height: 1.55; }
 html[data-theme="dark"] :is(.nav-link, .welcome-copy, .module-card-description, .module-card-status, .field-hint, .patient-registry-identity p, .patient-registry-identity small, .work-order-meta, .pharmacy-item-description, .pharmacy-item-meta, .session-row, .app-footer, .breadcrumbs, .history-empty) { color: var(--muted); }
 html[data-theme="dark"] .module-card-status.status-denied { color: #f1ce86; }
+html[data-theme="dark"] .module-access-denied { border-color: var(--status-warning-border); background: var(--surface); }
+html[data-theme="dark"] .module-connection-status { border-color: var(--line); background: var(--surface); }
 html[data-theme="dark"] .brand-image { background: #fff; }
 html[data-theme="dark"] .unit-label { border-color: var(--line); background: #263944; color: var(--ink); }
 html[data-theme="dark"] .therapy-calendar-empty { border-color: var(--line); background: #17232b; }
@@ -2163,6 +2178,9 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 .pharmacy-mobile-header { justify-content: space-between; gap: 10px; }
 .physician-mobile-header, .physician-mobile-brand, .physician-mobile-brand h1 { display: flex; align-items: center; }
 .physician-mobile-header { justify-content: space-between; gap: 10px; }
+@media (max-width: 520px) {
+  .pharmacy-mobile-header, .physician-mobile-header { flex-wrap: wrap; }
+}
 .physician-mobile-brand { min-width: 0; gap: 9px; }
 .physician-mobile-brand > img { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 9px; background: #fff; object-fit: contain; }
 .physician-mobile-brand > div { display: grid; min-width: 0; gap: 2px; }

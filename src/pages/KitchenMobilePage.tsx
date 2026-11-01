@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Clock3, LogOut, RefreshCw, Search, UtensilsCrossed, Wifi, WifiOff } from 'lucide-react'
+import { AlertTriangle, Clock3, LogOut, RefreshCw, Search, UtensilsCrossed } from 'lucide-react'
 import { readApiResponse } from '../api'
+import ModuleConnectionStatus from '../components/ModuleConnectionStatus'
 
 type KitchenPatient = {
   patient_reference: string
@@ -141,9 +142,8 @@ export default function KitchenMobilePage({ user, onLogout }: {
         </button>
       </div>
 
-      <div className={`kitchen-mobile-connection ${online ? 'is-online' : 'is-offline'}`} role="status">
-        {online ? <Wifi size={16} /> : <WifiOff size={16} />}
-        <span>{online ? 'Conectado ao servidor' : 'Sem conexão · reconecte para atualizar'}</span>
+      <div className="kitchen-mobile-connection">
+        <ModuleConnectionStatus service="nursing" />
         {updatedAt && <time dateTime={updatedAt}>Atualizado {formatTime(updatedAt)}</time>}
       </div>
 

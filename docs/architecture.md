@@ -19,6 +19,8 @@ O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada dom
 
 A agenda da Recepção, as prescrições médicas e os endpoints de Gestão Hospitalar são persistidos no banco Nursing e usam o cadastro central de pacientes. O serviço Médico também expõe os gráficos de sinais vitais e dados cadastrais clínicos autorizados. Os proxies de produção e desenvolvimento encaminham `/api/v1/physicians` e `/api/v1/management` ao serviço Nursing. A Oficina Terapêutica é encaminhada ao seu próprio serviço (`/api/v1/therapy`); os três proxies (`Caddyfile`, `Caddyfile.local` e Vite) devem manter esses prefixos alinhados às rotas registradas.
 
+Os proxies Caddy de produção e desenvolvimento publicam `/api/v1/health/<serviço>` para verificar a disponibilidade de cada processo backend sem consultar dados clínicos nem gerar eventos de auditoria. As respostas expõem apenas o identificador do serviço e `status: ok`; não verificam conectividade do banco nem substituem healthchecks, monitoramento ou validação de dados.
+
 A agenda da Recepção usa o cadastro central de pacientes. O endpoint valida conflitos de horário por paciente, profissional e local; alterações de situação seguem transições controladas e são auditadas sem registrar a finalidade do agendamento.
 
 As consultas usadas pelo centro de relatórios aceitam acesso somente de leitura para Administração e Relatórios/Auditoria; permissões de escrita continuam restritas aos módulos responsáveis. Relatórios com paginação percorrem os totais informados pela API antes de aplicar filtros, exibir contagens ou imprimir.

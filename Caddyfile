@@ -29,6 +29,60 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 		file_server
 	}
 
+	@health_access path /api/v1/health/access
+	handle @health_access {
+		rewrite * /health
+		reverse_proxy access:8000
+	}
+
+	@health_audit path /api/v1/health/audit
+	handle @health_audit {
+		rewrite * /health
+		reverse_proxy audit:8000
+	}
+
+	@health_backup path /api/v1/health/backup
+	handle @health_backup {
+		rewrite * /health
+		reverse_proxy backup:8000
+	}
+
+	@health_maintenance path /api/v1/health/maintenance
+	handle @health_maintenance {
+		rewrite * /health
+		reverse_proxy maintenance:8000
+	}
+
+	@health_nursing path /api/v1/health/nursing
+	handle @health_nursing {
+		rewrite * /health
+		reverse_proxy nursing:8000
+	}
+
+	@health_pharmacy path /api/v1/health/pharmacy
+	handle @health_pharmacy {
+		rewrite * /health
+		reverse_proxy pharmacy:8000
+	}
+
+	@health_social path /api/v1/health/social
+	handle @health_social {
+		rewrite * /health
+		reverse_proxy social:8000
+	}
+
+	@health_therapy path /api/v1/health/therapy
+	handle @health_therapy {
+		rewrite * /health
+		reverse_proxy therapy:8000
+	}
+
+	@health_xray path /api/v1/health/xray
+	handle @health_xray {
+		rewrite * /health
+		reverse_proxy xray:8000
+	}
+
 	@auth path /api/v1/auth/*
 	handle @auth {
 		reverse_proxy access:8000

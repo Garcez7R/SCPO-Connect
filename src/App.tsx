@@ -65,6 +65,7 @@ import PrintSelectionPanel from './components/PrintSelectionPanel'
 import ToastMessage from './components/ToastMessage'
 import { PageNavigationContext, useBreadcrumb, usePersistentTab } from './components/PageNavigationContext'
 import ModuleTabNavigation from './components/ModuleTabNavigation'
+import ModuleConnectionStatus, { type ModuleService } from './components/ModuleConnectionStatus'
 import { printRows, type PrintRow } from './printReport'
 import { APP_VERSION } from './appVersion'
 import { MOBILE_FEEDBACK_STORAGE_KEY, triggerMobileFeedback } from './mobileFeedback'
@@ -283,6 +284,31 @@ const navigation: { id: ModuleId; label: string; icon: LucideIcon }[] = [
   { id: 'about', label: 'Sobre e conformidade', icon: Info },
   { id: 'system-admin', label: 'Superusuário', icon: ShieldCheck },
 ]
+
+const moduleServices: Record<ModuleId, ModuleService> = {
+  home: 'access',
+  'work-orders': 'maintenance',
+  patients: 'nursing',
+  'patient-history': 'nursing',
+  nursing: 'nursing',
+  'nursing-history': 'nursing',
+  pharmacy: 'pharmacy',
+  xray: 'xray',
+  physician: 'nursing',
+  social: 'social',
+  nutrition: 'nursing',
+  hygiene: 'maintenance',
+  reception: 'nursing',
+  therapy: 'therapy',
+  psychology: 'social',
+  maintenance: 'maintenance',
+  laundry: 'maintenance',
+  management: 'nursing',
+  admin: 'access',
+  oversight: 'audit',
+  'system-admin': 'backup',
+  about: 'access',
+}
 
 const emptyRecord = {
   saturation: '',
@@ -506,6 +532,7 @@ function StartupScreen() {
 }
 
 function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpired, onLogout }: { user: AuthUser; sessionExpiresAt: number | null; onUserUpdated: (user: AuthUser, sessionExpiresAt?: number) => void; onSessionExpired: () => void; onLogout: () => void }) {
+  const [deniedModule, setDeniedModule] = useState<ModuleId | null>(null)
   const [activeModule, setActiveModule] = useState<ModuleId>(() => {
     try {
       const saved = navigation.find((item) => item.id === window.sessionStorage.getItem(`scpo-active-module:${user.id}`))
@@ -650,12 +677,25 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     return orderDifference || left.label.localeCompare(right.label, 'pt-BR')
   })
 
+  function canAccessModule(id: ModuleId) {
+    if (id === 'system-admin') return user.is_superuser
+    if (id === 'admin') return hasAppAdmin || hasOversight
+    if (id === 'nursing-history') return profile.modules.includes('nursing')
+    if (id === 'patient-history') return user.is_superuser || ['patients', 'nursing', 'physician', 'psychology', 'management', 'admin'].some((module) => profile.modules.includes(module as ModuleId))
+    if (id === 'therapy') return profile.modules.includes('therapy') || canReviewTherapyReports
+    if (id === 'about' || id === 'work-orders') return true
+    return profile.modules.includes(id)
+  }
+
   function navigate(id: ModuleId) {
-    if (id === 'nursing-history' && !profile.modules.includes('nursing')) return
-    if (id === 'patient-history' && !user.is_superuser && !['patients', 'nursing', 'physician', 'psychology', 'management', 'admin'].some((module) => profile.modules.includes(module as ModuleId))) return
-    if (id === 'system-admin' && !user.is_superuser) return
-    if (id !== 'about' && id !== 'work-orders' && id !== 'system-admin' && id !== 'admin' && id !== 'nursing-history' && id !== 'patient-history' && !(id === 'therapy' && canReviewTherapyReports) && !profile.modules.includes(id)) return
-    if (id === 'admin' && !hasAppAdmin && !hasOversight) return
+    if (!canAccessModule(id)) {
+      setDeniedModule(id)
+      setActiveModule('home')
+      setMenuOpen(false)
+      window.scrollTo(0, 0)
+      return
+    }
+    setDeniedModule(null)
     setTabBreadcrumbs([])
     setActiveModule(id)
     window.scrollTo(0, 0)
@@ -680,12 +720,16 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     navigate('patient-history')
   }
 
-  const activeLabel = activeModule === 'home'
+  const activeLabel = deniedModule
+    ? 'Acesso não autorizado'
+    : activeModule === 'home'
     ? 'Visão geral'
     : activeModule === 'nursing-history' ? 'Enfermagem'
     : activeModule === 'patient-history' ? 'Histórico assistencial'
     : navigation.find((item) => item.id === activeModule)?.label ?? 'SCPO Connect'
   const breadcrumbItems = [...tabBreadcrumbs].sort((left, right) => left.depth - right.depth)
+  const serviceModule = deniedModule ?? activeModule
+  const activeService = serviceModule === 'admin' && !hasAppAdmin ? 'audit' : moduleServices[serviceModule]
 
   if (window.location.pathname === '/nursing.html') {
     return <Suspense fallback={<StartupScreen />}><NursingMobilePage user={user} onLogout={onLogout} /></Suspense>
@@ -754,6 +798,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
             <nav className="breadcrumbs" aria-label="Caminho da página"><span>SCPO Connect</span><span className="crumb-divider">/</span><strong>{activeLabel}</strong>{breadcrumbItems.map((item) => <span className="breadcrumb-entry" key={item.id}><span className="crumb-divider">/</span><strong>{item.label}</strong></span>)}</nav>
           </div>
           <div className="topbar-right">
+            <ModuleConnectionStatus service={activeService} />
             <span className="session-role">{getGreeting()}, {profile.name.split(/\s+/)[0]}</span>
             <div className="accessibility-controls" aria-label="Acessibilidade e aparência"><button className={`icon-button appearance-button ${mobileFeedback ? 'feedback-enabled' : ''}`} type="button" aria-label={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} aria-pressed={mobileFeedback} title={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} onClick={() => { const enabled = !mobileFeedback; setMobileFeedback(enabled); window.localStorage.setItem(MOBILE_FEEDBACK_STORAGE_KEY, enabled ? 'enabled' : 'disabled') }}><Vibrate size={17} /></button><button className="icon-button appearance-button" type="button" aria-label={`Aumentar texto (${Math.round(fontZoom * 100)}%)`} title="Aumentar texto" onClick={() => setFontZoom((current) => current >= 1.2 ? 1 : Math.round((current + 0.1) * 10) / 10)}><span>A+</span></button><button className="icon-button appearance-button" type="button" aria-label={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} title={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} onClick={() => setDarkMode((current) => !current)}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}</button></div>
             <InstallAppButton />
@@ -764,8 +809,10 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
 
         <div className="page-content">
           {sessionRefreshError && <ToastMessage variant="error">{`${sessionRefreshError}. O aplicativo tentará novamente enquanto a sessão ainda estiver válida.`}</ToastMessage>}
+          {deniedModule && <ModuleAccessDenied moduleId={deniedModule} onReturnHome={() => { setDeniedModule(null); navigate('home') }} />}
+          {!deniedModule && <>
           <ModuleErrorBoundary key={activeModule} moduleLabel={activeLabel} onReturnHome={() => navigate('home')}>
-          {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} />}
+          {activeModule === 'home' && <Dashboard profile={profile} onNavigate={navigate} canAccessModule={canAccessModule} />}
           {activeModule === 'nursing' && <NursingPage profile={profile} user={user} onShowHistory={() => navigate('nursing-history')} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'nursing')} />}
           {activeModule === 'nursing-history' && <NursingHistoryPage onBack={() => navigate('nursing')} />}
           {activeModule === 'pharmacy' && <Suspense fallback={<div className="history-empty" role="status">Carregando Farmácia…</div>}><PharmacyPage user={user} /></Suspense>}
@@ -787,6 +834,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
           {activeModule === 'xray' && <Suspense fallback={<div className="history-empty" role="status">Carregando Central de Exames…</div>}><XrayModulePage user={user} /></Suspense>}
           {activeModule === 'social' && <Suspense fallback={<div className="history-empty" role="status">Carregando Serviço Social…</div>}><PatientOperationsPage moduleId="social" user={user} /></Suspense>}
           </ModuleErrorBoundary>
+          </>}
         </div>
         <footer className="app-footer"><span>SCPO Connect <span className="footer-version">· {user.username}</span></span><span>Acesso seguro por perfil</span></footer>
       </main>
@@ -2348,13 +2396,28 @@ function AboutPage() {
   </section>
 }
 
-function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id: ModuleId) => void }) {
+function ModuleAccessDenied({ moduleId, onReturnHome }: { moduleId: ModuleId; onReturnHome: () => void }) {
+  const module = modules.find((item) => item.id === moduleId)
+  const label = module?.label ?? navigation.find((item) => item.id === moduleId)?.label ?? 'este módulo'
+  const Icon = module?.icon ?? LockKeyhole
+
+  return <section className="module-access-denied page-enter" role="alert">
+    <span className={`module-icon ${module ? `module-icon-${module.id}` : 'module-icon-admin'}`}><Icon size={28} /></span>
+    <p className="eyebrow">ACESSO POR PERFIL</p>
+    <h1>Acesso não autorizado</h1>
+    <p>Seu perfil não tem permissão para abrir <strong>{label}</strong>. Nenhum dado desse módulo foi carregado.</p>
+    <p>Solicite ao administrador do sistema a liberação do módulo para sua conta.</p>
+    <button className="button button-primary" type="button" onClick={onReturnHome}><ArrowLeft size={16} /> Voltar à visão geral</button>
+  </section>
+}
+
+function Dashboard({ profile, onNavigate, canAccessModule }: { profile: Profile; onNavigate: (id: ModuleId) => void; canAccessModule: (id: ModuleId) => boolean }) {
   const dashboardModules = [...modules].sort((left, right) => {
     if (left.id === 'admin') return 1
     if (right.id === 'admin') return -1
     return left.label.localeCompare(right.label, 'pt-BR')
   })
-  const allowedModules = dashboardModules.filter((item) => profile.modules.includes(item.id) || (item.id === 'therapy' && profile.modules.includes('management')))
+  const allowedModules = dashboardModules.filter((item) => canAccessModule(item.id))
   const firstName = profile.name.split(' ')[0]
 
   return (
@@ -2368,13 +2431,13 @@ function Dashboard({ profile, onNavigate }: { profile: Profile; onNavigate: (id:
       <div className="section-heading"><div><p className="eyebrow">ACESSO POR PERFIL</p><h2>Seus espaços de trabalho</h2></div><span className="module-total">{allowedModules.length} espaços disponíveis</span></div>
       <div className="module-grid">
         {dashboardModules.map(({ id, label, icon: Icon, description }) => {
-          const available = profile.modules.includes(id) || (id === 'therapy' && profile.modules.includes('management'))
+          const available = canAccessModule(id)
           return (
-            <button key={id} type="button" className={`module-card ${available ? 'module-card-available' : 'module-card-locked'}`} onClick={() => available && onNavigate(id)} disabled={!available} aria-label={available ? label : `${label}: acesso não concedido. Solicite liberação ao administrador.`}>
+            <button key={id} type="button" className={`module-card ${available ? 'module-card-available' : 'module-card-locked'}`} onClick={() => onNavigate(id)} aria-disabled={!available} aria-label={available ? label : `${label}: acesso não concedido. Abra para ver como solicitar liberação.`}>
               <span className={`module-icon module-icon-${id}`}><Icon size={29} strokeWidth={1.8} /></span>
               <span className="module-card-title">{label}</span>
               <span className="module-card-description">{description}</span>
-              <span className={`module-card-status ${available ? 'status-ready' : 'status-denied'}`}>{available ? <><span className="status-dot" /> Disponível no perfil</> : <><LockKeyhole size={13} /> Sem acesso · solicite ao administrador</>}</span>
+              <span className={`module-card-status ${available ? 'status-ready' : 'status-denied'}`}>{available ? <><span className="status-dot" /> Disponível no perfil</> : <><LockKeyhole size={13} /> Sem acesso · ver orientações</>}</span>
               {available && <ArrowRight className="module-arrow" size={17} aria-hidden="true" />}
             </button>
           )
@@ -3649,7 +3712,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
     : [{ key: 'all', label: '', accounts: visibleAccounts }]
 
   return <section className="admin-page page-enter">
-    <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div>{activeTab !== 'users' && <p className="eyebrow">ADMINISTRAÇÃO</p>}<h1>{activeTab === 'users' ? 'Administração' : adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div>{canManageApp && <span className={`entry-status ${status === 'ready' ? 'entry-status-saved' : 'entry-status-draft'}`}>{status === 'loading' ? <span className="spinner" /> : status === 'ready' ? <BadgeCheck size={15} /> : <LockKeyhole size={15} />}{status === 'loading' ? 'Carregando' : status === 'ready' ? 'Serviço conectado' : 'Serviço indisponível'}</span>}</div>
+    <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div>{activeTab !== 'users' && <p className="eyebrow">ADMINISTRAÇÃO</p>}<h1>{activeTab === 'users' ? 'Administração' : adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div></div>
     {view === 'full' && <ModuleTabNavigation
       ariaLabel="Seções de Administração"
       value={activeTab}

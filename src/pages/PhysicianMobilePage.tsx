@@ -1,5 +1,6 @@
 import { LogOut, Stethoscope } from 'lucide-react'
 import PhysicianPage from './PhysicianPage'
+import ModuleConnectionStatus from '../components/ModuleConnectionStatus'
 
 type PhysicianMobileUser = {
   id: string
@@ -36,6 +37,7 @@ export default function PhysicianMobilePage({ user, onLogout }: {
         <img src="/scpo-connect-icon.png" alt="" />
         <div><p className="eyebrow">SCPO CONNECT</p><h1><Stethoscope size={20} /> Médico</h1><span>{user.display_name || user.name}</span></div>
       </div>
+      <ModuleConnectionStatus service="nursing" />
       <button className="button button-secondary physician-mobile-logout" type="button" onClick={onLogout}><LogOut size={16} /> Sair</button>
     </header>
     <PhysicianPage userId={user.id} onOpenPatientHistory={() => undefined} mobileMode />
