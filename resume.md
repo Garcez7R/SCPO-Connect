@@ -55,6 +55,8 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Backup: o botão do cabeçalho agora leva diretamente à senha de exportação manual, com rolagem e foco explícitos; os campos da agenda automática alinham pelo topo para que opções condicionais não desloquem os demais controles.
 - Conexão dos módulos: o cabeçalho da aplicação indica verificação, serviço conectado ou indisponibilidade da API associada ao módulo ativo. Rotas de saúde separadas nos proxies Caddy consultam apenas a resposta mínima de cada backend, sem ler dados clínicos ou gerar eventos de auditoria. Enfermagem e Operações móveis já tinham verificação de serviço; Cozinha agora usa a mesma verificação e Farmácia, Médico e Lavanderia/Rouparia também a exibem.
 - Acesso por perfil: cartões de módulos sem permissão agora são acionáveis e abrem uma tela explicativa com o nome da área, orientação para solicitar acesso e confirmação de que nenhum dado do módulo foi carregado. A navegação e as autorizações de dados continuam bloqueadas.
+- Enfermagem: no celular, os atalhos do cabeçalho permanecem em uma única faixa rolável e aparecem antes do campo de busca do paciente, sem quebrar a navegação em várias linhas.
+- Recepção: linhas de chamada ficaram mais espaçosas, com nome, situação e ações ampliados para facilitar a leitura e o toque. O botão de cadastrar paciente na Ficha ambulatorial mantém alinhamento com o campo no desktop e ocupa a largura disponível no celular.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ### Em andamento
@@ -69,7 +71,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Revisar a senha provisória `0000` para contas comuns/administradores com troca obrigatória no primeiro login e o botão de revelar senha no bootstrap do superadministrador.
-- Confirmar os botões da Enfermagem em linha antes da busca de paciente; revisar alinhamento do botão de novo paciente e ampliar os cartões do painel de chamada.
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
