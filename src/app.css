@@ -892,12 +892,12 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .status-tone-warning { --status-tone-background: var(--status-warning-background); --status-tone-border: var(--status-warning-border); --status-tone-ink: var(--status-warning-ink); }
 .status-tone-success { --status-tone-background: var(--status-success-background); --status-tone-border: var(--status-success-border); --status-tone-ink: var(--status-success-ink); }
 .status-tone-critical { --status-tone-background: var(--status-critical-background); --status-tone-border: var(--status-critical-border); --status-tone-ink: var(--status-critical-ink); }
-:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article[class*="status-tone-"] {
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary) > article[class*="status-tone-"] {
   border-color: var(--status-tone-border);
   border-left: 3px solid var(--status-tone-ink);
   background: var(--status-tone-background);
 }
-:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article[class*="status-tone-"] > :is(strong, span, small) {
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary) > article[class*="status-tone-"] > :is(strong, span, small) {
   color: var(--status-tone-ink);
 }
 @media (hover: hover) {
@@ -1005,10 +1005,6 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .kitchen-mobile-summary article { display: grid; min-height: 62px; align-content: center; gap: 4px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .kitchen-mobile-summary strong { color: var(--ink); font-size: 20px; line-height: 1; }
 .kitchen-mobile-summary span { color: var(--muted); font-size: 10px; line-height: 1.35; }
-.kitchen-mobile-summary .is-alert { border-color: var(--status-critical-border); background: var(--status-critical-background); }
-.kitchen-mobile-summary .is-alert strong { color: var(--status-critical-ink); }
-.kitchen-mobile-summary .is-warning { border-color: var(--status-warning-border); background: var(--status-warning-background); }
-.kitchen-mobile-summary .is-warning strong { color: var(--status-warning-ink); }
 .kitchen-mobile-error { padding: 11px 12px; border: 1px solid var(--status-critical-border); border-radius: 8px; background: var(--status-critical-background); color: var(--status-critical-ink); font-size: 12px; line-height: 1.45; }
 .kitchen-mobile-search { display: flex; min-height: 46px; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); }
 .kitchen-mobile-search input { width: 100%; min-width: 0; min-height: 44px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 16px; }
@@ -1681,8 +1677,8 @@ html[data-theme="dark"] .backup-operation-icon { background: #20343e; color: #b6
 .laundry-header > .button { white-space: nowrap; }
 .laundry-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .laundry-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.laundry-summary > article { display: grid; align-content: center; gap: 5px; min-height: 88px; padding: 15px 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
-.laundry-summary strong { color: var(--blue-dark); font-size: 25px; line-height: 1; }
+.laundry-summary > article { display: grid; align-content: center; gap: 5px; min-height: 78px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.laundry-summary strong { color: var(--ink); font-size: 21px; line-height: 1.15; }
 .laundry-summary span { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .laundry-tabs { margin: 0; }
 .laundry-content { display: grid; gap: 18px; }
@@ -1713,7 +1709,7 @@ html[data-theme="dark"] .backup-operation-icon { background: #20343e; color: #b6
 .laundry-movement-list > article { grid-template-columns: minmax(0, 1fr) auto minmax(180px, auto); }
 .laundry-report-heading { margin-top: 12px !important; padding-top: 16px; border-top: 1px solid var(--line); }
 .laundry-access-note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-html[data-theme="dark"] :is(.laundry-summary > article, .laundry-request-card, .laundry-catalog-list > article, .laundry-stock-list > article, .laundry-movement-list > article) { border-color: var(--line); background: var(--surface); }
+html[data-theme="dark"] :is(.laundry-summary > article:not([class*="status-tone-"]), .laundry-request-card, .laundry-catalog-list > article, .laundry-stock-list > article, .laundry-movement-list > article) { border-color: var(--line); background: var(--surface); }
 html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); background: #17232b; }
 .backup-export-form { display: flex; align-items: end; gap: 14px; }
 .backup-export-form .field { flex: 1; }

@@ -271,10 +271,10 @@ export default function LaundryPage({
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {summary && <div className="laundry-summary" aria-label="Indicadores da Lavanderia/Rouparia">
-      <article><strong>{summary.active}</strong><span>Solicitações ativas</span></article>
-      <article><strong>{summary.processing}</strong><span>Em processamento</span></article>
-      <article><strong>{summary.dirtyItems}</strong><span>Tipos com peças sujas no ciclo</span></article>
-      <article><strong>{summary.cleanItems}</strong><span>Tipos com peças limpas disponíveis</span></article>
+      <article className={summary.active ? 'status-tone-progress' : 'status-tone-success'}><strong>{summary.active}</strong><span>Solicitações ativas</span></article>
+      <article className={summary.processing ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{summary.processing}</strong><span>Em processamento</span></article>
+      <article className="status-tone-neutral"><strong>{summary.dirtyItems}</strong><span>Tipos com peças sujas no ciclo</span></article>
+      <article className="status-tone-neutral"><strong>{summary.cleanItems}</strong><span>Tipos com peças limpas disponíveis</span></article>
     </div>}
     <nav className="laundry-tabs admin-tabs module-tabs" role="tablist" aria-label="Áreas da Lavanderia e Rouparia">
       {(Object.keys(tabLabels) as LaundryTab[]).map((value) => <button key={value} className={`button ${tab === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{tabLabels[value]}</button>)}

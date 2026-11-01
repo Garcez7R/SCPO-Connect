@@ -10,6 +10,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - A configuração `origin` usa SSH para `git@github.com:Garcez7R/SCPO-Connect.git`.
 - Nesta revisão, a biblioteca da Oficina recebeu pastas simples, busca, renomeação e movimentação; a exclusão de imagens é confirmada e pastas não vazias não podem ser apagadas.
 - O PWA da Enfermagem para sinais usa mg/dL, registra dor/algia como Sim/Não e oferece observações e os dados complementares do módulo de computador em uma seção recolhida até ser aberta. `painPresent` é validado no backend e aparece no histórico de Enfermagem; a fila offline cifrada preserva os novos valores.
+- Os resumos da Lavanderia/Rouparia e da Cozinha usam as cores semânticas compartilhadas: andamento para itens em processamento, alerta para pendências clínicas reais, neutro para contagens informativas e positivo quando a pendência é zero.
 - O PWA da Enfermagem agora inclui triagem online reutilizando a fila e o formulário existentes. Não salva fila ou rascunho clínico offline. Sinais vitais e verificações horárias mantêm o fluxo offline cifrado já existente.
 - O PWA Médico ganhou atalhos móveis para fila e atendimento, busca mais direta e rolagem até a ficha selecionada. Mantém autenticação, APIs e permissões existentes.
 - A Visão geral informa “Sem acesso · solicite ao administrador” em cor de alerta acessível para módulos não concedidos.
