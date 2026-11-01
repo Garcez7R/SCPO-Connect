@@ -2268,6 +2268,11 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 .nursing-mobile-section-title h2 svg { color: var(--blue); }
 .nursing-mobile-refresh:disabled, .nursing-mobile-logout:disabled { opacity: .5; cursor: not-allowed; }
 .nursing-mobile-panel form { display: grid; gap: 15px; }
+.nursing-mobile-additional-vitals { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--page); }
+.nursing-mobile-additional-vitals summary { color: var(--blue); font-size: 13px; font-weight: 650; cursor: pointer; }
+.nursing-mobile-additional-vitals[open] summary { margin-bottom: 14px; }
+.nursing-mobile-additional-vitals-fields { display: grid; gap: 14px; }
+.nursing-mobile-additional-vitals-fields textarea { width: 100%; padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; }
 .nursing-mobile-panel .field { gap: 7px; }
 .nursing-mobile-panel .field-label { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; font-size: 12px; }
 .nursing-mobile-panel .field-label small { color: var(--subtle); font-size: 10px; font-weight: 500; }

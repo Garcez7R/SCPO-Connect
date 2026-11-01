@@ -29,6 +29,26 @@ type VitalsDraft = {
   glucose: string
 }
 
+type AdditionalVitalKey =
+  | 'pain'
+  | 'notes'
+  | 'venousSite'
+  | 'venousCondition'
+  | 'venousNote'
+  | 'urine'
+  | 'bowelTube'
+  | 'oxygenStatus'
+  | 'oxygenStartedAt'
+  | 'oxygenEndedAt'
+  | 'wounds'
+  | 'dressingType'
+  | 'examName'
+  | 'examScheduledAt'
+  | 'examFollowUp'
+  | 'examResult'
+
+type AdditionalVitalsDraft = Record<AdditionalVitalKey, string>
+
 type RoundPatient = {
   patient_reference: string
   patient_name: string
@@ -104,6 +124,44 @@ const emptyVitals: VitalsDraft = {
   respiratoryRate: '',
   temperature: '',
   glucose: '',
+}
+
+const emptyAdditionalVitals: AdditionalVitalsDraft = {
+  pain: '',
+  notes: '',
+  venousSite: '',
+  venousCondition: '',
+  venousNote: '',
+  urine: '',
+  bowelTube: '',
+  oxygenStatus: '',
+  oxygenStartedAt: '',
+  oxygenEndedAt: '',
+  wounds: '',
+  dressingType: '',
+  examName: '',
+  examScheduledAt: '',
+  examFollowUp: '',
+  examResult: '',
+}
+
+const additionalVitalLabels: Record<AdditionalVitalKey, string> = {
+  pain: 'Valor da dor',
+  notes: 'Observações',
+  venousSite: 'Local do acesso venoso',
+  venousCondition: 'Tipo de acesso venoso',
+  venousNote: 'Observação do acesso',
+  urine: 'Eliminação urinária',
+  bowelTube: 'Eliminação intestinal',
+  oxygenStatus: 'Uso de oxigênio',
+  oxygenStartedAt: 'Oxigênio ligado em',
+  oxygenEndedAt: 'Oxigênio desligado em',
+  wounds: 'Curativos / lesões',
+  dressingType: 'Tipo de cobertura',
+  examName: 'Exame',
+  examScheduledAt: 'Exame agendado para',
+  examFollowUp: 'Acompanhamento do exame',
+  examResult: 'Resultado do exame',
 }
 
 const vitalFields: { key: VitalKey; label: string; unit: string; inputMode: 'decimal' | 'numeric' | 'text'; placeholder?: string }[] = [
@@ -184,8 +242,9 @@ export default function NursingMobilePage({
   const [patients, setPatients] = useState<MobilePatient[]>([])
   const [selectedPatient, setSelectedPatient] = useState('')
   const [vitals, setVitals] = useState<VitalsDraft>({ ...emptyVitals })
+  const [additionalVitals, setAdditionalVitals] = useState<AdditionalVitalsDraft>({ ...emptyAdditionalVitals })
+  const [painPresent, setPainPresent] = useState('')
   const [notApplicable, setNotApplicable] = useState<VitalKey[]>([])
-  const [glucoseUnit, setGlucoseUnit] = useState<'mg/dL' | 'mmol/L'>('mg/dL')
   const [round, setRound] = useState<HourlyRound | null>(null)
   const [exceptionPatient, setExceptionPatient] = useState('')
   const [exceptionType, setExceptionType] = useState('away')
@@ -519,6 +578,8 @@ export default function NursingMobilePage({
     setSaved(true)
     setNotice('Coleta cifrada e guardada neste aparelho. Será enviada ao servidor quando a conexão voltar; ainda não consta no histórico clínico.')
     setVitals({ ...emptyVitals })
+    setAdditionalVitals({ ...emptyAdditionalVitals })
+    setPainPresent('')
     setNotApplicable([])
   }
 
@@ -528,8 +589,13 @@ export default function NursingMobilePage({
       setError('Selecione um paciente antes de salvar a coleta.')
       return
     }
+    if (!painPresent) {
+      setError('Informe se o paciente apresenta dor/algia.')
+      return
+    }
     const values = Object.fromEntries(
-      Object.entries(vitals).filter(([, value]) => value.trim()),
+      Object.entries({ ...vitals, painPresent, ...additionalVitals })
+        .filter(([, value]) => value.trim()),
     )
     if (!Object.keys(values).length && !notApplicable.length) {
       setError('Preencha ao menos um sinal vital ou marque um campo como não aferido.')
@@ -539,7 +605,7 @@ export default function NursingMobilePage({
     const body: QueuedVital['body'] = {
       patient_reference: selectedPatient,
       values,
-      glucose_unit: glucoseUnit,
+      glucose_unit: 'mg/dL',
       not_applicable: notApplicable,
       ...(serverAvailable ? {} : { measured_at: new Date().toISOString() }),
       client_action_id: clientActionId,
@@ -571,6 +637,8 @@ export default function NursingMobilePage({
       }
       await readApiResponse(response)
       setVitals({ ...emptyVitals })
+      setAdditionalVitals({ ...emptyAdditionalVitals })
+      setPainPresent('')
       setNotApplicable([])
       setSaved(true)
       setNotice('Coleta salva no servidor com sua identificação e horário registrados.')
@@ -797,7 +865,7 @@ export default function NursingMobilePage({
         <label className="field nursing-mobile-patient-field"><span className="field-label">Paciente</span><select required value={selectedPatient} onChange={(event) => { setSelectedPatient(event.target.value); setSaved(false) }}><option value="">Selecione</option>{patients.map((patient) => <option key={patient.reference} value={patient.reference}>{patient.name} · {patientLocation(patient)}</option>)}</select></label>
         {patients.length === 0 && <p className="nursing-mobile-empty"><UsersRound size={18} /> Não há pacientes ativos disponíveis para coleta.</p>}
         <div className="nursing-mobile-vital-list">{vitalFields.map(({ key, label, unit, inputMode, placeholder }) => <div className="nursing-mobile-vital-field" key={key}>
-          <label className="field"><span className="field-label">{label} <small>{key === 'glucose' ? glucoseUnit : unit}</small></span><input
+          <label className="field">          <span className="field-label">{label} <small>{unit}</small></span><input
             type="text"
             inputMode={inputMode}
             autoComplete="off"
@@ -810,8 +878,29 @@ export default function NursingMobilePage({
             title={key === 'pressure' ? 'Informe sistólica/diastólica, por exemplo 120/80.' : undefined}
           /></label>
           <label className="nursing-mobile-not-applicable"><input type="checkbox" checked={notApplicable.includes(key)} disabled={!canCreateVitals || !selectedPatient} onChange={() => toggleNotApplicable(key)} /><span>Não aferido</span></label>
-          {key === 'glucose' && <label className="field nursing-mobile-glucose-unit"><span className="field-label">Unidade</span><select value={glucoseUnit} onChange={(event) => setGlucoseUnit(event.target.value as 'mg/dL' | 'mmol/L')}><option>mg/dL</option><option>mmol/L</option></select></label>}
         </div>)}</div>
+        <label className="field"><span className="field-label">Dor / algia</span><select required value={painPresent} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => { const value = event.target.value; setPainPresent(value); if (value !== 'Sim') setAdditionalVitals((current) => ({ ...current, pain: '' })); setSaved(false) }}><option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option></select></label>
+        <details className="nursing-mobile-additional-vitals">
+          <summary>Adicionar observações e outros dados (opcional)</summary>
+          <div className="nursing-mobile-additional-vitals-fields">
+            <label className="field"><span className="field-label">{additionalVitalLabels.notes}</span><textarea rows={3} maxLength={1000} value={additionalVitals.notes} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, notes: event.target.value }))} placeholder="Observações complementares" /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.pain}</span><input inputMode="decimal" maxLength={12} value={additionalVitals.pain} disabled={!canCreateVitals || !selectedPatient || painPresent !== 'Sim'} onChange={(event) => setAdditionalVitals((current) => ({ ...current, pain: maskVitalValue('glucose', event.target.value) }))} placeholder="Valor observado, se aplicável" /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.venousSite}</span><input maxLength={1000} value={additionalVitals.venousSite} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, venousSite: event.target.value }))} /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.venousCondition}</span><select value={additionalVitals.venousCondition} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, venousCondition: event.target.value }))}><option value="">Selecione</option><option value="venoso periférico">Venoso periférico</option><option value="jugular">Jugular</option><option value="central">Central</option></select></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.venousNote}</span><input maxLength={1000} value={additionalVitals.venousNote} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, venousNote: event.target.value }))} /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.urine}</span><select value={additionalVitals.urine} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, urine: event.target.value }))}><option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option></select></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.bowelTube}</span><select value={additionalVitals.bowelTube} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, bowelTube: event.target.value }))}><option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option></select></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.oxygenStatus}</span><select value={additionalVitals.oxygenStatus} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, oxygenStatus: event.target.value, oxygenStartedAt: event.target.value === 'Sim' ? current.oxygenStartedAt : '', oxygenEndedAt: event.target.value === 'Não' ? current.oxygenEndedAt : '' }))}><option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option></select></label>
+            {additionalVitals.oxygenStatus === 'Sim' && <label className="field"><span className="field-label">{additionalVitalLabels.oxygenStartedAt}</span><input type="time" value={additionalVitals.oxygenStartedAt} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, oxygenStartedAt: event.target.value }))} /></label>}
+            {additionalVitals.oxygenStatus === 'Não' && <label className="field"><span className="field-label">{additionalVitalLabels.oxygenEndedAt}</span><input type="time" value={additionalVitals.oxygenEndedAt} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, oxygenEndedAt: event.target.value }))} /></label>}
+            <label className="field"><span className="field-label">{additionalVitalLabels.wounds}</span><textarea rows={2} maxLength={1000} value={additionalVitals.wounds} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, wounds: event.target.value }))} /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.dressingType}</span><input maxLength={1000} value={additionalVitals.dressingType} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, dressingType: event.target.value }))} /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.examName}</span><input maxLength={1000} value={additionalVitals.examName} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, examName: event.target.value }))} /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.examScheduledAt}</span><input type="datetime-local" value={additionalVitals.examScheduledAt} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, examScheduledAt: event.target.value }))} /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.examFollowUp}</span><input maxLength={1000} value={additionalVitals.examFollowUp} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, examFollowUp: event.target.value }))} /></label>
+            <label className="field"><span className="field-label">{additionalVitalLabels.examResult}</span><textarea rows={2} maxLength={2000} value={additionalVitals.examResult} disabled={!canCreateVitals || !selectedPatient} onChange={(event) => setAdditionalVitals((current) => ({ ...current, examResult: event.target.value }))} /></label>
+          </div>
+        </details>
         {!canCreateVitals && <p className="nursing-mobile-empty"><ShieldCheck size={17} /> Seu perfil pode consultar, mas não registrar sinais vitais.</p>}
         <button className="button button-primary nursing-mobile-submit" type="submit" disabled={busy || syncing || loading || !dataReady || !canCreateVitals || !selectedPatient || saved || (!serverAvailable && !offlineSnapshotIsFresh(offlineData.last_server_contact_at))}>{busy ? serverAvailable ? 'Enviando ao servidor…' : 'Protegendo no aparelho…' : saved ? 'Registro preparado' : serverAvailable ? 'Salvar coleta' : 'Registrar sem conexão'}</button>
         <p className="nursing-mobile-footnote">Com conexão, o horário e a autoria são registrados pelo servidor. Sem conexão, o horário do aparelho é preservado e a autoria será confirmada ao sincronizar.</p>

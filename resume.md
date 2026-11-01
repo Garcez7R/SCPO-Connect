@@ -9,6 +9,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O commit anterior já publicado inclui o PWA da Cozinha, o mapa desktop, a porta 7777 e o guia de deploy.
 - A configuração `origin` usa SSH para `git@github.com:Garcez7R/SCPO-Connect.git`.
 - Nesta revisão, a biblioteca da Oficina recebeu pastas simples, busca, renomeação e movimentação; a exclusão de imagens é confirmada e pastas não vazias não podem ser apagadas.
+- O PWA da Enfermagem para sinais usa mg/dL, registra dor/algia como Sim/Não e oferece observações e os dados complementares do módulo de computador em uma seção recolhida até ser aberta. `painPresent` é validado no backend e aparece no histórico de Enfermagem; a fila offline cifrada preserva os novos valores.
 - O PWA da Enfermagem agora inclui triagem online reutilizando a fila e o formulário existentes. Não salva fila ou rascunho clínico offline. Sinais vitais e verificações horárias mantêm o fluxo offline cifrado já existente.
 - O PWA Médico ganhou atalhos móveis para fila e atendimento, busca mais direta e rolagem até a ficha selecionada. Mantém autenticação, APIs e permissões existentes.
 - A Visão geral informa “Sem acesso · solicite ao administrador” em cor de alerta acessível para módulos não concedidos.
@@ -70,7 +71,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Indicadores e cartões: continuar revisão visual das abas que ainda não seguem o padrão da Gestão Hospitalar e corrigir cores arbitrárias restantes usando somente dados reais. A auditoria dos resumos operacionais por fila foi concluída; ver o registro acima.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
-- PWA da Enfermagem — sinais: substituir o seletor/modal de unidade de glicose por valor padrão mg/dL; incluir pergunta de dor/algia (sim/não); permitir expandir condicionalmente campos adicionais, começando por observações e oferecendo os demais dados disponíveis na tela de sinais do módulo para PC somente quando necessários.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.

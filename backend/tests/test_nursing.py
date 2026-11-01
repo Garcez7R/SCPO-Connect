@@ -2015,9 +2015,16 @@ def test_vital_elimination_and_venous_access_choices_are_restricted() -> None:
             "bowel": "Não",
             "bowelTube": "Não",
             "venousCondition": "venoso periférico",
+            "painPresent": "Sim",
         },
     )
-    for values in ({"urine": "Talvez"}, {"bowelTube": "Não sei"}, {"venousCondition": "registrada"}, {"painScale": "1-10"}):
+    for values in (
+        {"urine": "Talvez"},
+        {"bowelTube": "Não sei"},
+        {"venousCondition": "registrada"},
+        {"painPresent": "Talvez"},
+        {"painScale": "1-10"},
+    ):
         with pytest.raises(ValidationError):
             nursing.VitalPayload(
                 patient_reference="123e4567-e89b-12d3-a456-426614174000",
@@ -2029,13 +2036,19 @@ def test_vital_filters_and_discharge_preserve_history(nursing_db: Session, nurse
     patient = create_patient(nursing_db, nurse)
     reference = str(patient["reference"])
     nursing.create_vital_record(
-        nursing.VitalPayload(patient_reference=reference, values={"heartRate": "72"}), nurse, nursing_db
+        nursing.VitalPayload(
+            patient_reference=reference,
+            values={"heartRate": "72", "painPresent": "Sim"},
+        ),
+        nurse,
+        nursing_db,
     )
     result = nursing.list_vital_records(
         nurse, nursing_db, limit=10, offset=0, patient_reference=reference,
         room="3", bed="B", from_date=None, to_date=None,
     )
     assert result["total"] == 1
+    assert result["records"][0]["values"]["painPresent"] == "Sim"
     nursing.update_patient_status(reference, {"active": False}, nurse, nursing_db)
     history = nursing.list_patient_history(reference, nurse, nursing_db, limit=50, offset=0)
     assert history["total"] == 1

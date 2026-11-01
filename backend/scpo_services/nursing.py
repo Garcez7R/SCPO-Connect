@@ -1602,6 +1602,7 @@ VALUE_FIELDS = {
     "bowel",
     "bowelTube",
     "pain",
+    "painPresent",
     "notes",
     "oxygenStatus",
     "oxygenStartedAt",
@@ -1634,6 +1635,7 @@ def validate_vital_values(values: dict[str, str], allowed_fields: set[str]) -> d
             "urine": {"Sim", "Não"},
             "bowel": {"Sim", "Não", "registrada", "não se aplica"},
             "bowelTube": {"Sim", "Não"},
+            "painPresent": {"Sim", "Não"},
         }.get(field)
         if value and allowed_choices is not None and value not in allowed_choices:
             raise ValueError("Opção inválida para o campo selecionado")
