@@ -3873,7 +3873,7 @@ function NutritionPage({ user }: { user: AuthUser }) {
     ],
   }))
   return <section className="nutrition-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliações e acompanhe dietas, alergias, restrições e jejuns dos pacientes internados.</p></div><div className="nutrition-page-actions"><a className="button button-secondary" href="/kitchen.html" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Abrir painel da cozinha</a><span className="module-icon module-icon-nutrition"><UtensilsCrossed size={24} /></span></div></div>
+    <div className="page-title-row"><span className="module-icon module-icon-nutrition"><UtensilsCrossed size={24} /></span><div><p className="eyebrow">MÓDULO · NUTRIÇÃO</p><h1>Acompanhamento nutricional</h1><p className="welcome-copy">Registre avaliações e acompanhe dietas, alergias, restrições e jejuns dos pacientes internados.</p></div><div className="nutrition-page-actions"><a className="button button-secondary" href="/kitchen.html" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Abrir painel da cozinha</a></div></div>
     {message && <ToastMessage variant="success">{message}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     <div className="admin-tabs module-tabs nutrition-tabs" role="tablist" aria-label="Áreas de Nutrição">
       <button id="nutrition-tab-assessment" className={`button ${nutritionTab === 'assessment' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-controls="nutrition-panel-assessment" aria-selected={nutritionTab === 'assessment'} onClick={() => setNutritionTab('assessment')}>Avaliações</button>
