@@ -373,6 +373,8 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .field { display: grid; min-width: 0; gap: 6px; color: var(--ink); }
 .patient-select-field { align-content: start; }
 .patient-select-field > label { display: grid; min-width: 0; gap: 6px; }
+.patient-select-control-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.patient-select-control-row > select { min-width: 0; }
 .patient-select-field .search-input-wrap input { min-height: 37px; padding-left: 38px; border-color: #cfdbe2; border-radius: 5px; font-size: 11px; }
 .patient-select-field .field-hint { text-align: left; }
 .field-label { color: #344e61; font-size: 10px; font-weight: 600; }
@@ -2857,9 +2859,9 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
 .outpatient-encounter-form .section-heading, .outpatient-history-panel .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0; }
 .outpatient-encounter-form .section-heading h2, .outpatient-history-panel .section-heading h2 { margin: 2px 0 0; font-size: 18px; }
 .outpatient-encounter-form .section-heading .welcome-copy { margin: 6px 0 0; }
-.outpatient-patient-choice { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.outpatient-patient-choice { display: grid; grid-template-columns: minmax(0, 1fr); align-items: end; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .outpatient-queue-type { max-width: 520px; }
-.outpatient-new-patient-toggle { min-height: 43px; align-self: end; justify-self: start; white-space: nowrap; }
+.outpatient-new-patient-toggle { min-height: 37px; white-space: nowrap; }
 .outpatient-new-patient-heading { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 12px; }
 .outpatient-new-patient-heading > div { display: grid; gap: 4px; }
 .outpatient-new-patient-heading strong { color: var(--ink); font-size: 13px; }
@@ -2886,7 +2888,7 @@ html[data-theme="dark"] :is(.outpatient-encounter-form, .outpatient-history-pane
   .outpatient-patient-choice { grid-template-columns: 1fr; }
   .waiting-room-cadence { align-items: stretch; flex-direction: column; }
   .waiting-room-cadence .field { width: 100%; }
-  .outpatient-new-patient-toggle { width: 100%; justify-self: stretch; }
+  .patient-select-control-row { grid-template-columns: minmax(0, 1fr) auto; }
   .dashboard-page .module-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .outpatient-encounter-card { grid-template-columns: 1fr auto; }
   .outpatient-encounter-card > span { grid-column: 1; }

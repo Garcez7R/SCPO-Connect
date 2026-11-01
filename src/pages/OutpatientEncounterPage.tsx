@@ -287,8 +287,16 @@ function OutpatientEncounterPage({ userId, canCreate, onArrivalQueued }: { userI
       <label className="field outpatient-queue-type"><span className="field-label">Atendimento prioritário?</span><select value={queueType} onChange={(event) => setQueueType(event.target.value as QueueType)}><option value="common">Não · atendimento comum</option><option value="priority">Sim · atendimento prioritário</option></select><span className="field-hint">Selecione conforme o critério institucional. A classificação define a cor do cartão na sala de espera; não substitui avaliação clínica nem classificação de risco.</span></label>
       <div className="outpatient-patient-choice">
         {!newPatientMode ? <>
-          <PatientSelect label="Paciente cadastrado" patients={patients} value={patientReference} onChange={setPatientReference} required placeholder="Digite nome, CPF, CNS ou número do cadastro" optionLabel={(patient) => `${patient.name}${patient.cpf ? ` · CPF ${patient.cpf}` : ''}`} />
-          <button className="button button-secondary outpatient-new-patient-toggle" type="button" onClick={() => { setNewPatientMode(true); setPatientReference('') }}>Cadastrar novo paciente</button>
+          <PatientSelect
+            label="Paciente cadastrado"
+            patients={patients}
+            value={patientReference}
+            onChange={setPatientReference}
+            required
+            placeholder="Digite nome, CPF, CNS ou número do cadastro"
+            optionLabel={(patient) => `${patient.name}${patient.cpf ? ` · CPF ${patient.cpf}` : ''}`}
+            action={<button className="button button-secondary outpatient-new-patient-toggle" type="button" onClick={() => { setNewPatientMode(true); setPatientReference('') }}>Cadastrar novo paciente</button>}
+          />
         </> : <>
           <div className="outpatient-new-patient-heading"><div><strong>Novo cadastro central</strong><span>O paciente será reutilizado em consultas e internações.</span></div><button className="button button-secondary" type="button" onClick={() => { setNewPatientMode(false); setNewPatient(emptyNewPatient()) }}>Escolher cadastrado</button></div>
           <div className="field-grid field-grid-two outpatient-new-patient-fields">

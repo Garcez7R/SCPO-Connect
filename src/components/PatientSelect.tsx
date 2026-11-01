@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { Search } from 'lucide-react'
 
 type PatientOption = {
@@ -28,6 +29,7 @@ export default function PatientSelect<TPatient extends PatientOption>({
   disabled = false,
   className,
   optionLabel,
+  action,
 }: {
   patients: readonly TPatient[]
   value: string
@@ -39,6 +41,7 @@ export default function PatientSelect<TPatient extends PatientOption>({
   disabled?: boolean
   className?: string
   optionLabel?: (patient: TPatient) => string
+  action?: ReactNode
 }) {
   const [search, setSearch] = useState('')
   const normalizedSearch = normalizeSearch(search.trim())
@@ -78,22 +81,25 @@ export default function PatientSelect<TPatient extends PatientOption>({
         />
       </span>
     </label>
-    <select
-      required={required}
-      value={value}
-      onChange={(event) => {
-        onChange(event.target.value)
-        setSearch('')
-      }}
-      disabled={disabled}
-      aria-label={`${label}: selecionar paciente`}
-    >
-      <option value="">{emptyLabel}</option>
-      {filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>
-        {optionLabel?.(patient) ?? patient.name}
-      </option>)}
-      {filteredPatients.length === 0 && <option value="" disabled>Nenhum paciente encontrado</option>}
-    </select>
+    <div className={action ? 'patient-select-control-row' : undefined}>
+      <select
+        required={required}
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value)
+          setSearch('')
+        }}
+        disabled={disabled}
+        aria-label={`${label}: selecionar paciente`}
+      >
+        <option value="">{emptyLabel}</option>
+        {filteredPatients.map((patient) => <option key={patient.reference} value={patient.reference}>
+          {optionLabel?.(patient) ?? patient.name}
+        </option>)}
+        {filteredPatients.length === 0 && <option value="" disabled>Nenhum paciente encontrado</option>}
+      </select>
+      {action}
+    </div>
     <span className="field-hint">Digite para filtrar a lista ou abra a lista para selecionar.</span>
   </div>
 }
