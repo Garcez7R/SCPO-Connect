@@ -174,6 +174,7 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician, onOpenPa
   const [behavioralStatuses, setBehavioralStatuses] = useState<Record<string, PatientBehavioralStatus>>({})
   const [behavioralStatusError, setBehavioralStatusError] = useState('')
   const [behavioralStatusLoading, setBehavioralStatusLoading] = useState(true)
+  const [referralsLoadFailed, setReferralsLoadFailed] = useState(false)
   const [encountersPatient, setEncountersPatient] = useState('')
   const [triageFilter, setTriageFilter] = useState('')
   const [triagePatient, setTriagePatient] = useState('')
@@ -209,11 +210,15 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician, onOpenPa
         if (current) {
           setPatients(data.patients)
           setReferrals(data.referrals)
+          setReferralsLoadFailed(false)
           setError('')
         }
       })
       .catch((loadError) => {
-        if (current) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila de atendimento.')
+        if (current) {
+          setReferralsLoadFailed(true)
+          setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar a fila de atendimento.')
+        }
       })
       .finally(() => { if (current) setLoading(false) })
     return () => { current = false }
@@ -275,6 +280,8 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician, onOpenPa
     const isPsychiatry = /psiquiatr/i.test(referral.referral_type)
     return matchesSearch && (serviceArea === 'psychiatry' ? isPsychiatry : !isPsychiatry)
   })
+  const activeVisibleReferrals = visibleReferrals.filter((referral) => !['completed', 'cancelled'].includes(referral.status))
+  const priorityVisibleReferrals = activeVisibleReferrals.filter((referral) => referral.priority === 'priority').length
   const visibleEncounters = encounters.filter((encounter) =>
     serviceArea === 'psychiatry'
       ? encounter.encounter_type === 'psychiatry'
@@ -383,11 +390,16 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician, onOpenPa
     </div>
     {serviceArea === 'psychiatry' && <div className="psychology-prescription-guidance" role="note"><Stethoscope size={17} /><span>Para prescrever, o psiquiatra deve receber também o acesso ao módulo Médico. As prescrições ficam no fluxo médico compartilhado com Farmácia e Enfermagem, sem duplicar formulários aqui.</span>{canPrescribe && <button className="button button-secondary" type="button" onClick={onOpenPhysician}>Abrir módulo Médico</button>}</div>}
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas do módulo de Psicologia e Psiquiatria">
-      <button type="button" role="tab" aria-selected={tab === 'triage'} className={`button ${tab === 'triage' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('triage')}>Fila e triagem <span>{visibleReferrals.filter((item) => !['completed', 'cancelled'].includes(item.status)).length}</span></button>
+      <button type="button" role="tab" aria-selected={tab === 'triage'} className={`button ${tab === 'triage' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('triage')}>Fila e triagem</button>
       <button type="button" role="tab" aria-selected={tab === 'encounters'} className={`button ${tab === 'encounters' ? 'button-primary' : 'button-secondary'}`} onClick={() => { setEncountersPatient(''); setEncounterLoadError(''); setTab('encounters') }}>Atendimentos e registros</button>
       <button type="button" role="tab" aria-selected={tab === 'sharing'} className={`button ${tab === 'sharing' ? 'button-primary' : 'button-secondary'}`} onClick={() => setTab('sharing')}>Compartilhamento seletivo</button>
     </div>
     {tab === 'triage' && <>
+      <div className="hygiene-summary" aria-label={`Resumo da fila de ${serviceArea === 'psychiatry' ? 'psiquiatria' : 'psicologia'}`} aria-busy={loading}>
+        <article className={loading || referralsLoadFailed ? 'status-tone-neutral' : visibleReferrals.some((referral) => referral.status === 'open') ? 'status-tone-warning' : 'status-tone-success'}><strong>{loading ? '…' : referralsLoadFailed ? '—' : visibleReferrals.filter((referral) => referral.status === 'open').length}</strong><span>Aguardando triagem</span></article>
+        <article className={loading || referralsLoadFailed ? 'status-tone-neutral' : visibleReferrals.some((referral) => referral.status === 'in_progress') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : referralsLoadFailed ? '—' : visibleReferrals.filter((referral) => referral.status === 'in_progress').length}</strong><span>Em atendimento</span></article>
+        <article className={loading || referralsLoadFailed ? 'status-tone-neutral' : priorityVisibleReferrals ? 'status-tone-warning' : 'status-tone-neutral'}><strong>{loading ? '…' : referralsLoadFailed ? '—' : priorityVisibleReferrals}</strong><span>Prioritários ativos</span></article>
+      </div>
       <form className="psychology-panel" onSubmit={(event) => void createReferral(event)}>
         <div className="section-heading"><div><p className="eyebrow">ENTRADA NA FILA</p><h2>Novo encaminhamento</h2></div></div>
         <div className="field-grid field-grid-two">
@@ -406,7 +418,7 @@ export function PsychologyPage({ userId, canPrescribe, onOpenPhysician, onOpenPa
           <label className="field"><span className="field-label">Buscar encaminhamento</span><input value={triageFilter} onChange={(event) => setTriageFilter(event.target.value)} placeholder="Paciente ou tipo de atendimento" /></label>
           <p className="psychology-help">Atualize a situação conforme o fluxo da equipe.</p>
         </div>
-        {loading ? <div className="history-empty">Carregando fila…</div> : visibleReferrals.length ? <div className="psychology-referral-list">{visibleReferrals.map((referral) => {
+        {loading ? <div className="history-empty">Carregando fila…</div> : referralsLoadFailed ? <div className="history-empty">Não foi possível carregar a fila. Consulte o erro informado acima.</div> : visibleReferrals.length ? <div className="psychology-referral-list">{visibleReferrals.map((referral) => {
           const patient = patients.find((item) => item.reference === referral.patient_reference)
           return <article className={`psychology-referral-card patient-care-track-card ${patientCareTrackClass(patient?.treatment_track)}`} key={referral.id}>
           <div className="psychology-referral-main"><div><h3>{patientName(referral.patient_reference)}</h3><PatientCareTrackBadge track={patient?.treatment_track} />{patient?.room && patient.bed && !behavioralStatusLoading && !behavioralStatusError && <BehavioralStatusBadge status={behavioralStatuses[patient.reference]?.status ?? null} />}<p>{referral.referral_type}</p><small>{dateTime(referral.created_at)}</small></div><span className={`psychology-priority ${referral.priority === 'priority' ? 'is-priority' : ''}`}>{referral.priority === 'priority' ? 'Prioritária' : 'Rotina'}</span></div>
