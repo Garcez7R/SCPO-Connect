@@ -697,16 +697,12 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .nursing-overview-summary article { display: grid; gap: 7px; min-height: 98px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
 .nursing-overview-summary article strong { color: var(--ink); font-size: 25px; line-height: 1; }
 .nursing-overview-summary article span { color: var(--muted); font-size: 12px; line-height: 1.45; }
-.nursing-overview-summary .nursing-overview-warning { border-color: #e6c98f; background: #fff8e9; }
-.nursing-overview-summary .nursing-overview-warning strong { color: #76500f; }
 .nursing-overview-patient { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
 .nursing-overview-patient > div { display: grid; gap: 5px; min-width: 0; }
 .nursing-overview-patient > div > strong { color: var(--ink); font-size: 14px; }
 .nursing-overview-patient > div > span { color: var(--muted); font-size: 12px; }
 .nursing-overview-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .pharmacy-tabs .button { min-height: 44px; }
-html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning { border-color: #705b31; background: #332d20; }
-html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning strong { color: #f1ce86; }
 .reception-admission-heading { padding: 2px 0; }
 .reception-admission-heading .button { flex: 0 0 auto; min-height: 44px; }
 .reception-admission-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -874,12 +870,14 @@ html[data-theme="dark"] .nursing-overview-summary .nursing-overview-warning stro
 .status-tone-warning { --status-tone-background: var(--status-warning-background); --status-tone-border: var(--status-warning-border); --status-tone-ink: var(--status-warning-ink); }
 .status-tone-success { --status-tone-background: var(--status-success-background); --status-tone-border: var(--status-success-border); --status-tone-ink: var(--status-success-ink); }
 .status-tone-critical { --status-tone-background: var(--status-critical-background); --status-tone-border: var(--status-critical-border); --status-tone-ink: var(--status-critical-ink); }
-.hygiene-summary article[class*="status-tone-"] { border-color: var(--status-tone-border); border-left: 3px solid var(--status-tone-ink); background: var(--status-tone-background); }
-.hygiene-summary article[class*="status-tone-"] > :is(strong, span) { color: var(--status-tone-ink); }
-.pharmacy-summary > article[class*="status-tone-"] { border-color: var(--status-tone-border); border-left: 3px solid var(--status-tone-ink); background: var(--status-tone-background); }
-.pharmacy-summary > article[class*="status-tone-"] > :is(strong, span, small) { color: var(--status-tone-ink); }
-.executive-summary-grid > article[class*="status-tone-"] { border-color: var(--status-tone-border); border-left: 3px solid var(--status-tone-ink); background: var(--status-tone-background); }
-.executive-summary-grid > article[class*="status-tone-"] > :is(strong, span) { color: var(--status-tone-ink); }
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article[class*="status-tone-"] {
+  border-color: var(--status-tone-border);
+  border-left: 3px solid var(--status-tone-ink);
+  background: var(--status-tone-background);
+}
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article[class*="status-tone-"] > :is(strong, span, small) {
+  color: var(--status-tone-ink);
+}
 @media (hover: hover) {
   .hygiene-summary article:hover { transform: translateY(-2px); border-color: #a9c6d3; box-shadow: var(--shadow); }
 }

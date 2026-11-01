@@ -31,6 +31,8 @@ Solicitações de Higienização podem vincular um leito físico entre os bancos
 
 O painel executivo consulta indicadores agregados no serviço Nursing e alertas de estoque no serviço Pharmacy, mantendo erros visíveis por origem. A agenda diária usa o fuso `America/Sao_Paulo`; incidentes abertos excluem os encerrados; contagens de validade documental incluem somente documentos aprovados, vencidos ou com vencimento nos próximos 30 dias. Higienização e manutenção contam leitos físicos ativos em cada situação.
 
+Os cartões de resumo dos módulos compartilham a paleta semântica de status: neutro para referência, progresso para trabalho em curso, atenção para pendências, sucesso para conclusão/ausência de pendências e crítico para risco que exige ação. A cor acompanha o estado real do indicador; contadores sem atividade não são marcados como sucesso por padrão.
+
 Em desenvolvimento, cada API usa SQLite no diretório ignorado `data/local/`. No Compose, cada processo usa um banco PostgreSQL e uma credencial próprios; as APIs não recebem o usuário administrativo nem as senhas dos demais serviços. O token de serviço permanece restrito aos contêineres backend e autentica chamadas internas entre domínios; não é exposto ao navegador. A API de acesso registra alterações no serviço de auditoria por HTTP interno autenticado e não escreve diretamente no banco de auditoria. Ordens de serviço mantêm seu próprio histórico de abertura e alterações de status com a autoria do funcionário.
 
 Cada app publica seu próprio OpenAPI em `/docs` e `/openapi.json`. Os scripts de inicialização aplicam a revisão Alembic do serviço escolhido antes de iniciar o processo. Faça e verifique backup antes de aplicar novas migrações em qualquer ambiente persistente.

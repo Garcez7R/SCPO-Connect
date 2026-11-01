@@ -304,7 +304,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
           : <><FlaskConical size={16} /> {xraySectionLabels[value]}</>,
       }))}
     />
-    <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`}><article className="status-tone-neutral"><strong>{sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-success'}><strong>{activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-warning' : 'status-tone-neutral'}><strong>{sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
+    <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`}><article className="status-tone-neutral"><strong>{sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="hygiene-panel" onSubmit={(event) => void (section === 'laboratory' ? submitLaboratory(event) : submit(event))}>

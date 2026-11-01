@@ -164,8 +164,8 @@ export default function NursingTriagePanel({ canUpdate, isOnline = true }: { can
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="hygiene-summary nursing-triage-summary" aria-label="Resumo da fila de triagem">
-      <article><strong>{arrivals.length}</strong><span>Aguardando triagem</span></article>
-      <article><strong>{priorityCount}</strong><span>Prioritários na fila</span></article>
+      <article className={arrivals.length ? 'status-tone-warning' : 'status-tone-success'}><strong>{arrivals.length}</strong><span>Aguardando triagem</span></article>
+      <article className={priorityCount ? 'status-tone-warning' : 'status-tone-neutral'}><strong>{priorityCount}</strong><span>Prioritários na fila</span></article>
     </div>
     {loading ? <p className="history-empty">Carregando chegadas da Recepção…</p> : !arrivals.length
       ? <p className="history-empty">Não há chegadas em andamento para triar.</p>

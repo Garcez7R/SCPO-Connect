@@ -203,9 +203,9 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="hygiene-summary reception-info-summary reception-appointments-summary" aria-label="Resumo da agenda" aria-busy={loading}>
-      <article className="status-tone-progress"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'scheduled').length}</strong><span>Agendados</span></article>
+      <article className="status-tone-neutral"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'scheduled').length}</strong><span>Agendados</span></article>
       <article className="status-tone-success"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'confirmed').length}</strong><span>Confirmados</span></article>
-      <article className="status-tone-warning"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'arrived').length}</strong><span>Chegaram</span></article>
+      <article className="status-tone-progress"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'arrived').length}</strong><span>Chegaram</span></article>
       <article className="status-tone-progress"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'called').length}</strong><span>Chamados</span></article>
       <article className="status-tone-success"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'completed').length}</strong><span>Concluídos</span></article>
     </div>

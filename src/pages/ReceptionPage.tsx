@@ -999,7 +999,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {!canUpdate && <div className="form-message form-message-warning" role="note">Seu perfil pode acompanhar as chamadas, mas não pode iniciar uma chamada.</div>}
-    <div className="waiting-room-counts"><article><strong>{waiting.length}</strong><span>Aguardando chamada</span></article><article><strong>{called.length}</strong><span>Chamados</span></article></div>
+    <div className="waiting-room-counts"><article className={waiting.length ? 'status-tone-warning' : 'status-tone-success'}><strong>{waiting.length}</strong><span>Aguardando chamada</span></article><article className={called.length ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{called.length}</strong><span>Chamados</span></article></div>
     {loading ? <div className="history-empty">Carregando fila de chamadas…</div> : !items.length ? <div className="history-empty">Não há pacientes aguardando ou chamados neste momento.</div> : <div className="waiting-room-lists" aria-live="polite">
       {(['priority', 'common'] as const).map((queueType) => {
         const queueItems = items.filter((item) => item.queue_type === queueType)
