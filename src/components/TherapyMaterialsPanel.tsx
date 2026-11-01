@@ -51,7 +51,7 @@ function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
 
-export default function TherapyMaterialsPanel({ canEdit }: { canEdit: boolean }) {
+export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: boolean; view: 'materials' | 'images' }) {
   const [materials, setMaterials] = useState<TherapyMaterial[]>([])
   const [images, setImages] = useState<MaterialImage[]>([])
   const [folders, setFolders] = useState<MaterialImageFolder[]>([])
@@ -352,7 +352,7 @@ export default function TherapyMaterialsPanel({ canEdit }: { canEdit: boolean })
   return <section className="therapy-materials-panel">
     {notice && <p className="therapy-material-message" role="status">{notice}</p>}
     {error && <p className="therapy-material-message therapy-material-error" role="alert">{error}</p>}
-    {canEdit && <form className="therapy-material-form" onSubmit={(event) => void createMaterial(event)}>
+    {view === 'materials' && canEdit && <form className="therapy-material-form" onSubmit={(event) => void createMaterial(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVO CADASTRO</p><h2>Adicionar material</h2><p className="welcome-copy">Cadastre materiais, ferramentas e tintas. A quantidade inicial também entra no histórico.</p></div></div>
       <div className="therapy-material-fields">
         <label className="field"><span className="field-label">Nome</span><input required minLength={2} maxLength={120} value={newMaterial.name} onChange={(event) => setNewMaterial({ ...newMaterial, name: event.target.value })} placeholder="Ex.: Tinta acrílica" /></label>
@@ -365,7 +365,7 @@ export default function TherapyMaterialsPanel({ canEdit }: { canEdit: boolean })
       <button className="button button-primary" type="submit" disabled={saving}><Plus size={16} /> Cadastrar material</button>
     </form>}
 
-    <section className="therapy-material-section">
+    {view === 'materials' && <section className="therapy-material-section">
       <div className="section-heading"><div><p className="eyebrow">CONTROLE DE ESTOQUE</p><h2><Package size={19} /> Materiais cadastrados</h2></div><span className="module-total">{materials.filter((material) => material.active).length} ativos</span></div>
       {loading ? <div className="history-empty">Carregando materiais…</div> : materials.length ? <div className="therapy-material-list">{materials.map((material) => <article className={`therapy-material-card ${material.active ? '' : 'therapy-material-card-archived'}`} key={material.id}>
         <div className="therapy-material-card-heading"><div><span className="therapy-material-category">{material.category}</span><h3>{material.name}</h3>{(material.color_name || material.color_code) && <p className="therapy-material-color">{material.color_name}{material.color_name && material.color_code ? ' · ' : ''}{material.color_code}</p>}</div><div className="therapy-material-stock"><strong>{material.quantity}</strong><span>{material.unit}</span></div></div>
@@ -388,9 +388,9 @@ export default function TherapyMaterialsPanel({ canEdit }: { canEdit: boolean })
         </form>}
         {historyMaterialId === material.id && <ol className="therapy-material-history">{movements.length ? movements.map((movement) => <li key={movement.id}><span className={`therapy-movement-direction therapy-movement-${movement.direction}`}>{movement.direction === 'entrada' ? 'Entrada' : 'Consumo'} · {movement.quantity} {material.unit}</span><span>{movement.reason}</span><small>Saldo após movimentação: {movement.balance_after} {material.unit} · {movement.actor_name} · {formatTimestamp(movement.created_at)}</small></li>) : <li className="history-empty">Ainda não há movimentações registradas.</li>}{movements.length < movementsTotal && <li><button className="therapy-material-history-toggle" type="button" disabled={loadingMovements} onClick={() => void loadMoreMovements(material.id)}>{loadingMovements ? 'Carregando…' : `Carregar movimentações anteriores (${movementsTotal - movements.length})`}</button></li>}</ol>}
       </article>)}</div> : <div className="history-empty">Nenhum material cadastrado.</div>}
-    </section>
+    </section>}
 
-    <section className="therapy-material-section">
+    {view === 'images' && <section className="therapy-material-section">
       <div className="therapy-image-manager">
         <aside className="therapy-image-sidebar" aria-label="Pastas da biblioteca">
           <div className="therapy-image-sidebar-heading"><strong>Pastas</strong><span>{folders.length}</span></div>
@@ -427,6 +427,6 @@ export default function TherapyMaterialsPanel({ canEdit }: { canEdit: boolean })
           </article>)}</div> : <div className="history-empty">{imageSearch ? 'Nenhuma imagem corresponde à busca.' : 'Nenhuma imagem disponível nesta pasta.'}</div>}
         </div>
       </div>
-    </section>
+    </section>}
   </section>
 }

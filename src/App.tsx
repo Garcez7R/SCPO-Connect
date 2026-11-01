@@ -21,8 +21,8 @@ import {
   BadgeCheck,
   Brain,
   Building2,
-  CalendarDays,
   Camera,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
@@ -84,8 +84,8 @@ const adminTabValues = ['users', 'reports', 'audit'] as const
 const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Usuários e permissões', reports: 'Relatórios', audit: 'Auditoria de ações' }
 const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior', 'governance', 'shortcuts'] as const
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
-const therapyTabValues = ['calendar', 'attendance', 'reports', 'materials'] as const
-const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', reports: 'Relatórios', materials: 'Materiais e imagens' }
+const therapyTabValues = ['calendar', 'attendance', 'images', 'materials', 'reports'] as const
+const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', materials: 'Materiais', reports: 'Relatórios' }
 const systemAdminTabValues = ['accounts', 'backup', 'recovery'] as const
 const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const resetAllConfirmationText = 'REDEFINIR CREDENCIAIS DE TODOS OS USUÁRIOS'
@@ -2202,8 +2202,9 @@ function TherapyPage({ profile }: { profile: Profile }) {
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas da Oficina Terapêutica">
       <button className={`button ${tab === 'calendar' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calendar'} onClick={() => setTab('calendar')}><CalendarDays size={16} /> Atividades e calendário</button>
       <button className={`button ${tab === 'attendance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'attendance'} onClick={() => setTab('attendance')}><UsersRound size={16} /> Lista de presença</button>
+      <button className={`button ${tab === 'images' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'images'} onClick={() => setTab('images')}><Camera size={16} /> Biblioteca de imagens</button>
+      <button className={`button ${tab === 'materials' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'materials'} onClick={() => setTab('materials')}><Package size={16} /> Materiais</button>
       <button className={`button ${tab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}><ClipboardList size={16} /> Relatórios</button>
-      <button className={`button ${tab === 'materials' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'materials'} onClick={() => setTab('materials')}><Package size={16} /> Materiais e imagens</button>
     </div>
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {tab === 'calendar' && <>
@@ -2284,7 +2285,8 @@ function TherapyPage({ profile }: { profile: Profile }) {
     </section>
     </>}
     {tab === 'attendance' && <TherapyAttendanceManager activities={activities} patients={patients} canEdit={profile.modules.includes('therapy')} selectedActivityId={selectedActivityId} onSelectActivity={setSelectedActivityId} onSaved={(updated) => setActivities((current) => current.map((activity) => activity.id === updated.id ? updated : activity))} />}
-    {tab === 'materials' && <Suspense fallback={<div className="history-empty" role="status">Carregando materiais…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} /></Suspense>}
+    {tab === 'materials' && <Suspense fallback={<div className="history-empty" role="status">Carregando materiais…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="materials" /></Suspense>}
+    {tab === 'images' && <Suspense fallback={<div className="history-empty" role="status">Carregando biblioteca de imagens…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="images" /></Suspense>}
   </section>
 }
 
