@@ -42,6 +42,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Nutrição/Cozinha: o ícone de Nutrição foi movido para o lado esquerdo do cabeçalho, antes da identificação e do nome do módulo, seguindo o padrão dos demais módulos; o atalho para o painel da cozinha permanece à direita.
 - Oficina Terapêutica: reorganizadas as guias para Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios. A biblioteca e o controle de estoque agora aparecem em guias distintas, sem misturar suas telas.
 - Oficina Terapêutica: atividades e participantes agora carregam independentemente e exibem o erro por origem sem descartar a consulta bem-sucedida. Materiais e imagens consultam somente o serviço da guia ativa; a biblioteca também mostra estado explícito de carregamento em vez de parecer vazia durante a requisição.
+- Cópias de segurança: o seletor de arquivo de restauração mantém o estilo de botão secundário do app, agora com ícone de envio e rótulo acessível para leitores de tela.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Pedido adicionado ao backlog: gerar uma chave GPG pelo Superadministrador para uso nos backups automáticos.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
@@ -63,7 +64,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
-- Em Cópias de segurança, padronizar o botão de escolha de arquivo com os botões do app.
 - Em Usuários e permissões, remover o subtítulo redundante “Administração · Usuários e permissões” abaixo das abas.
 - Em Sobre e conformidade, corrigir o logo alongado em todas as abas para proporção quadrada e reduzir os cards de “Como o sistema funciona” à altura visual dos itens de “Dúvidas e solução de problemas”.
 - Em Central de exames, renomear a terceira aba “Exames de sangue” com um nome claro sobre sua função e avaliar melhorias operacionais, cobertura de estados reais e referências existentes.
