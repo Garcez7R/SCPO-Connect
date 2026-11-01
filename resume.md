@@ -49,6 +49,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Serviço Social: adicionados cartões de visão rápida com total de encaminhamentos, abertos, em acompanhamento e prioritários ativos; os valores vêm da fila carregada e mostram estado de carregamento/indisponibilidade, sem converter falha em zero.
 - Psicologia/Psiquiatria: a fila de acolhimento exibe totais aguardando triagem, em atendimento e prioritários ativos, separados pela área selecionada. A contagem foi removida do rótulo da guia para evitar duplicação; falha ao carregar não aparece como fila vazia.
 - Médico: a fila de triagens exibe totais aguardando avaliação, chamados, em atendimento e prioritários. Os cartões usam estados reais da fila, adotam quatro colunas no desktop e duas em telas estreitas; uma falha de atualização não exibe zeros nem uma fila vazia enganosa.
+- Auditoria dos resumos operacionais: revisadas as filas de Serviço Social, Psicologia/Psiquiatria e Médico, e conferidos os resumos já existentes em Enfermagem, Farmácia, Recepção, Central de Exames, Oficina Terapêutica, Manutenção/Higienização, Lavanderia/Rouparia e Cozinha. Cada indicador novo usa dados da fila correspondente; telas sem fila ou fonte adicional útil não receberam cartões redundantes.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Pedido adicionado ao backlog: gerar uma chave GPG pelo Superadministrador para uso nos backups automáticos.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
@@ -61,7 +62,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 - Chave GPG para backup automático: oferecer no Superadministrador a geração de um par de chaves de forma segura, com proteção/custódia da chave privada e exibição/download restritos, e usar a chave pública na rotina automática. Definir o fluxo de custódia e recuperação antes da implementação.
 - Superadministrador/armazenamento: avaliar criação e seleção de diretórios de destino para backup e biblioteca de imagens, aceitando caminhos locais e compartilhamentos de rede já montados. A interface deve pedir e validar o caminho, explicar permissões e deixar claro que montar/compartilhar volumes no host depende da TI; o app não deve tentar montar sistemas de arquivos por conta própria.
-- Indicadores e cartões: continuar a revisão das abas ainda não cobertas para padronizar hierarquia e comportamento responsivo conforme Gestão Hospitalar; corrigir cores arbitrárias restantes usando somente dados reais. Os resumos operacionais de Enfermagem, triagem, Recepção, sala de espera, agendamentos, exames e Oficina Terapêutica já foram padronizados.
+- Indicadores e cartões: continuar revisão visual das abas que ainda não seguem o padrão da Gestão Hospitalar e corrigir cores arbitrárias restantes usando somente dados reais. A auditoria dos resumos operacionais por fila foi concluída; ver o registro acima.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
@@ -70,7 +71,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
-- Continuar a auditoria dos módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Serviço Social, Psicologia/Psiquiatria e Médico já receberam resumos; revisar somente outras áreas em que os dados existentes forneçam indicadores úteis, sem sobrecarregar telas ou criar links/referências inexistentes.
 - Substituir o rótulo genérico “Abrir PWA móvel” por um texto que identifique o módulo aberto; o acesso da Cozinha já fica no cabeçalho nas guias Avaliações e Dietas e alertas.
 - Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
 
