@@ -24,6 +24,7 @@ function formatDateTime(value: string) {
 export default function PhysicianTriageQueue({ onOpenPatient, compact = false }: { onOpenPatient: (reference: string) => void; compact?: boolean }) {
   const [arrivals, setArrivals] = useState<TriageArrival[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
@@ -33,13 +34,17 @@ export default function PhysicianTriageQueue({ onOpenPatient, compact = false }:
         await fetch('/api/v1/physicians/triage/arrivals', { cache: 'no-store' }),
       )
       setArrivals(data.arrivals)
+      setLoadFailed(false)
       setError('')
     } catch (loadError) {
+      setLoadFailed(true)
       setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os atendimentos triados.')
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const priorityCount = arrivals.filter((arrival) => arrival.queue_type === 'priority').length
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0)
@@ -49,7 +54,13 @@ export default function PhysicianTriageQueue({ onOpenPatient, compact = false }:
   return <section className={`physician-triage-queue patient-list-panel${compact ? ' physician-triage-queue-compact' : ''}`}>
     <div className="section-heading"><div><p className="eyebrow">ENFERMAGEM → MÉDICO</p><h2>{compact ? 'Aguardando avaliação' : 'Aguardando avaliação médica'}</h2><p className="welcome-copy">{compact ? 'Abra uma ficha para continuar o atendimento.' : 'Atendimentos da Recepção com triagem registrada, separados da consulta aos pacientes do cadastro.'}</p></div><button className="button button-secondary" type="button" onClick={() => void refresh()} disabled={loading}><RefreshCw size={15} /> Atualizar</button></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
-    {loading ? <p className="history-empty">Carregando atendimentos triados…</p> : arrivals.length ? <div className="physician-triage-list">{arrivals.map((arrival) => {
+    <div className="hygiene-summary physician-triage-summary" aria-label="Resumo da fila médica" aria-busy={loading}>
+      <article className={loading || loadFailed ? 'status-tone-neutral' : arrivals.some((arrival) => arrival.status === 'waiting') ? 'status-tone-warning' : 'status-tone-success'}><strong>{loading ? '…' : loadFailed ? '—' : arrivals.filter((arrival) => arrival.status === 'waiting').length}</strong><span>Aguardando avaliação</span></article>
+      <article className={loading || loadFailed ? 'status-tone-neutral' : arrivals.some((arrival) => arrival.status === 'called') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : loadFailed ? '—' : arrivals.filter((arrival) => arrival.status === 'called').length}</strong><span>Chamados</span></article>
+      <article className={loading || loadFailed ? 'status-tone-neutral' : arrivals.some((arrival) => arrival.status === 'in_service') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : loadFailed ? '—' : arrivals.filter((arrival) => arrival.status === 'in_service').length}</strong><span>Em atendimento</span></article>
+      <article className={loading || loadFailed ? 'status-tone-neutral' : priorityCount ? 'status-tone-critical' : 'status-tone-neutral'}><strong>{loading ? '…' : loadFailed ? '—' : priorityCount}</strong><span>Prioritários</span></article>
+    </div>
+    {loading ? <p className="history-empty">Carregando atendimentos triados…</p> : loadFailed ? null : arrivals.length ? <div className="physician-triage-list">{arrivals.map((arrival) => {
       const triage = arrival.triage
       if (!triage) return null
       const vitalEntries = Object.entries(triage.vital_values).filter(([, value]) => value)

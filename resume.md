@@ -48,6 +48,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Central de Exames: terceira guia renomeada para “Exames laboratoriais”; cabeçalho, fila vazia e guia de ajuda distinguem Raio X, Eletrocardiograma e laboratório. As consultas de pacientes e solicitações agora falham independentemente, com erro explícito e sem representar indisponibilidade da fila como ausência de exames.
 - Serviço Social: adicionados cartões de visão rápida com total de encaminhamentos, abertos, em acompanhamento e prioritários ativos; os valores vêm da fila carregada e mostram estado de carregamento/indisponibilidade, sem converter falha em zero.
 - Psicologia/Psiquiatria: a fila de acolhimento exibe totais aguardando triagem, em atendimento e prioritários ativos, separados pela área selecionada. A contagem foi removida do rótulo da guia para evitar duplicação; falha ao carregar não aparece como fila vazia.
+- Médico: a fila de triagens exibe totais aguardando avaliação, chamados, em atendimento e prioritários. Os cartões usam estados reais da fila, adotam quatro colunas no desktop e duas em telas estreitas; uma falha de atualização não exibe zeros nem uma fila vazia enganosa.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Pedido adicionado ao backlog: gerar uma chave GPG pelo Superadministrador para uso nos backups automáticos.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
@@ -69,7 +70,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
-- Continuar a auditoria dos módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Serviço Social e Psicologia/Psiquiatria já receberam resumos; revisar somente outras áreas em que os dados existentes forneçam indicadores úteis, sem sobrecarregar telas ou criar links/referências inexistentes.
+- Continuar a auditoria dos módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Serviço Social, Psicologia/Psiquiatria e Médico já receberam resumos; revisar somente outras áreas em que os dados existentes forneçam indicadores úteis, sem sobrecarregar telas ou criar links/referências inexistentes.
 - Substituir o rótulo genérico “Abrir PWA móvel” por um texto que identifique o módulo aberto; o acesso da Cozinha já fica no cabeçalho nas guias Avaliações e Dietas e alertas.
 - Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
 
