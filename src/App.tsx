@@ -5054,8 +5054,18 @@ function BackupExportPanel() {
   return <section className="patient-list-panel backup-panel">
     <div className="section-heading">
       <div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos protegidos por senha.</p></div>
+      <a className="button button-primary" href="#backup-manual-export"><Download size={16} /> Backup manual</a>
       <span className="module-icon module-icon-admin"><ShieldCheck size={20} /></span>
     </div>
+    <section className="backup-manual-section" id="backup-manual-export">
+      <div className="section-heading"><div><p className="eyebrow">EXPORTAÇÃO IMEDIATA</p><h3>Backup manual</h3><p className="welcome-copy">Informe a senha de criptografia para gerar e baixar o arquivo `.rgs`. Não é necessário configurar a rotina automática.</p></div></div>
+      <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
+        <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
+        <button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar e baixar .rgs'}</button>
+      </form>
+      {message && <ToastMessage variant="success">{message}</ToastMessage>}
+      {error && <ToastMessage variant="error">{error}</ToastMessage>}
+    </section>
     <section className="backup-automatic-section">
       <div className="section-heading">
         <div><p className="eyebrow">ROTINA INSTITUCIONAL</p><h3>Backup automático diário</h3><p className="welcome-copy">Cifra os sete bancos, o arquivo de ambiente, a autoridade do Caddy e os arquivos da Oficina com a chave pública GPG.</p></div>
@@ -5107,12 +5117,6 @@ function BackupExportPanel() {
         </button>
       </form>
     </section>
-    <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
-      <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
-      <button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar backup'}</button>
-    </form>
-    {message && <ToastMessage variant="success">{message}</ToastMessage>}
-    {error && <ToastMessage variant="error">{error}</ToastMessage>}
     <section className="backup-restore-section">
       <div className="section-heading"><div><p className="eyebrow">RESTAURAÇÃO DE BACKUP</p><h3>Substituir dados atuais</h3><p className="welcome-copy">Restaura os sete bancos do sistema a partir de um arquivo protegido por senha.</p></div></div>
       <div className="admin-warning backup-restore-guidance" role="alert"><ShieldCheck size={18} /><div><strong>Operação destrutiva e com indisponibilidade</strong><span>Esta ação substituirá todos os dados atuais. Agende uma janela de manutenção, avise os usuários e confirme que escolheu o arquivo correto. Antes da substituição, o sistema valida o arquivo e cria cópias temporárias dos bancos atuais para recuperação automática se a operação falhar. A substituição dos sete bancos não é atômica: mantenha o serviço sem uso durante todo o processo.</span></div></div>

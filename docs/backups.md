@@ -40,7 +40,7 @@ export SCPO_BACKUP_GPG_RECIPIENT=ID_DA_CHAVE_PUBLICA
 bash scripts/backup-rgs.sh
 ```
 
-O botão **Gerar backup** em Administração do Sistema exporta os mesmos sete bancos usando AES-GCM e a senha informada pelo superadministrador. A interface não importa nem aplica backups aos bancos ativos. Para validar um arquivo exportado pela interface, use a restauração isolada abaixo; o script solicitará a senha sem expô-la na linha de comando.
+Em Administração do Sistema → **Cópias de segurança**, use o atalho **Backup manual** ou a seção **Exportação imediata** para informar somente a senha e baixar o `.rgs`; não é necessário configurar a rotina automática. A exportação manual da interface inclui os sete bancos, usa AES-GCM e não inclui os arquivos da Oficina Terapêutica. A interface não importa nem aplica backups aos bancos ativos. Para validar um arquivo exportado pela interface, use a restauração isolada abaixo; o script solicitará a senha sem expô-la na linha de comando.
 
 Na criação manual, o popup de operação mostra a geração do pacote e o progresso real do download do `.rgs`. Na restauração pela interface, o mesmo popup mostra o envio e consulta as etapas no servidor: descriptografia, validação dos sete bancos, cópias temporárias e restauração de cada banco. As operações de CPU e PostgreSQL rodam fora do ciclo HTTP para que a tela continue atualizando. Antes de tocar nos dados atuais, o servidor valida a senha, o manifesto e cada dump com `pg_restore --list`; um arquivo incompatível é rejeitado antes da criação das cópias de segurança ou de qualquer alteração. A tela informa explicitamente que arquivos GPG da rotina automática usam a chave privada custodiada e não podem ser restaurados nesse fluxo da interface.
 

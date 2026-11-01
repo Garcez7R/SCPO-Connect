@@ -31,13 +31,14 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O build Docker frontend agora copia também `laundry.html` para o estágio Vite; o build local e `docker build -f Dockerfile.frontend ...` foram concluídos com sucesso, incluindo `dist/laundry.html`.
 - A saudação da barra superior agora tem maior destaque visual (13 px, negrito e cor de texto principal); mantém o comportamento responsivo anterior, sem ocupar espaço da barra em telas estreitas.
 - Recepção: os resumos de Agendamentos e Admissões/Leitos agora seguem os cartões de status usados nos demais módulos, com borda lateral e layout responsivo. Incluem contagens reais do período consultado e do cadastro; o indicador de leitos livres vem do mapa e mostra indisponibilidade/estado de carregamento sem converter falha em zero.
-- Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais; fluxo de backup manual direto por senha com download do `.rgs` e teste de restauração.
+- Backup manual: a exportação `.rgs` por senha já existia, mas estava abaixo da configuração automática. Agora há um atalho no cabeçalho e uma seção de exportação imediata que exige somente a senha e oferece o download. O guia, README e documentação de backup descrevem o caminho e os limites; o teste sintético de ida e volta no backend já valida exportação e restauração.
+- Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ## Próximas fases solicitadas
 
+- Backup automático: adicionar configuração no próprio app para quantidade de cópias mantidas e periodicidade flexível (a cada X horas/dias, dias da semana ou datas do mês), com horário/fuso explícitos, validação da agenda e indicação da próxima execução. Preservar a execução sem sobreposição, retenção segura e visibilidade de erros; definir limites institucionais antes de habilitar intervalos curtos.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
-- Backup manual: oferecer um caminho direto em Cópias de segurança para informar a senha, gerar um arquivo `.rgs` e baixá-lo, sem exigir configurações adicionais; validar o conteúdo pelo fluxo de restauração antes de disponibilizar.
 - Revisar a Lavanderia/Rouparia em dispositivo de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Revisar a senha provisória `0000` para contas comuns/administradores com troca obrigatória no primeiro login e o botão de revelar senha no bootstrap do superadministrador.
