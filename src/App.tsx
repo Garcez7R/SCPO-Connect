@@ -3617,7 +3617,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
           physicianProfileMessage = ` A conta foi criada, mas o perfil médico não foi salvo: ${error instanceof Error ? error.message : 'serviço indisponível'}. Complete o cadastro abaixo.`
         }
       }
-      setNotice(`Conta ${data.username} criada. Senha temporária de uso único: ${data.initial_password}. Entregue-a diretamente ao usuário por canal seguro. No primeiro acesso, ele informa o usuário e essa senha, deixa o campo de código vazio, cria e confirma uma senha pessoal com 12 ou mais caracteres e, por fim, configura o autenticador pelo QR code.${physicianProfileMessage}`)
+      setNotice(`Conta ${data.username} criada. Senha inicial: ${data.initial_password}. Entregue-a diretamente ao usuário por canal seguro. No primeiro acesso, ele informa o usuário e essa senha, deixa o campo de código vazio, cria e confirma uma senha pessoal com 12 ou mais caracteres e, por fim, configura o autenticador pelo QR code.${physicianProfileMessage}`)
       await loadUsers()
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : 'Falha ao criar a conta.')

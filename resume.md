@@ -57,6 +57,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Acesso por perfil: cartões de módulos sem permissão agora são acionáveis e abrem uma tela explicativa com o nome da área, orientação para solicitar acesso e confirmação de que nenhum dado do módulo foi carregado. A navegação e as autorizações de dados continuam bloqueadas.
 - Enfermagem: no celular, os atalhos do cabeçalho permanecem em uma única faixa rolável e aparecem antes do campo de busca do paciente, sem quebrar a navegação em várias linhas.
 - Recepção: linhas de chamada ficaram mais espaçosas, com nome, situação e ações ampliados para facilitar a leitura e o toque. O botão de cadastrar paciente na Ficha ambulatorial mantém alinhamento com o campo no desktop e ocupa a largura disponível no celular.
+- Credenciais temporárias: toda conta comum recém-criada recebe a senha padrão `0000`, conforme orientação institucional; os resets individual e global também usam `0000`. A troca de senha continua obrigatória no primeiro login, e o MFA previamente cadastrado é mantido. O bootstrap do superadministrador permite escolher a senha pessoal e já tem controles independentes para revelar/ocultar senha e confirmação; isso foi confirmado e documentado. Teste direcionado cobre senha inicial e troca obrigatória.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ### Em andamento
@@ -70,7 +71,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
-- Revisar a senha provisória `0000` para contas comuns/administradores com troca obrigatória no primeiro login e o botão de revelar senha no bootstrap do superadministrador.
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
@@ -84,6 +84,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ## Validações conhecidas
 
+- Credenciais: `backend/tests/test_domain_services.py` cobre criação e redefinição individual/global com a senha inicial `0000`, além da troca exigida no primeiro acesso.
 - Backend: suíte completa `uv run --group dev pytest` passou (171 testes) após a entrega da Lavanderia/Rouparia; os testes direcionados de backup/RGS passaram com ida e volta e polling. Migração de metas verifica consolidação das metas legadas.
 - Backup/RGS: `uv run --group dev pytest backend/tests/test_backup_restore.py backend/tests/test_rgs_format.py` passou com ida e volta do exportador manual e consulta concorrente do progresso durante a restauração, sempre usando dumps sintéticos.
 - Frontend: `npm run typecheck`, `npm run lint` e `npm run build` passaram. O build ainda apresenta o aviso do Vite sobre o chunk principal maior que 500 kB.

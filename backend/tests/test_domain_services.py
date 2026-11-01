@@ -482,7 +482,32 @@ def test_app_admin_can_create_management_account(
     new_manager = db.scalar(select(access.AppUser).where(access.AppUser.username == "newmanager"))
     assert new_manager is not None
     assert new_manager.must_change_password is True
-    assert verify_password("0000", new_manager.password_hash)
+    assert verify_password(str(created["initial_password"]), new_manager.password_hash)
+    login_result = access.login(
+        access.LoginPayload(username="newmanager", password=str(created["initial_password"])),
+        Response(),
+        db,
+    )
+    assert login_result["must_change_password"] is True
+    change_request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/password",
+        "headers": [
+            (b"cookie", f"{SESSION_COOKIE}={issue_session(new_manager.id, 'password_change', new_manager.session_version)}".encode())
+        ],
+        "query_string": b"",
+    })
+    change_result = asyncio.run(access.change_password(
+        access.PasswordChangePayload(new_password="new-manager-password"),
+        change_request,
+        Response(),
+        db,
+    ))
+    db.refresh(new_manager)
+    assert change_result["user"]["must_change_password"] is False
+    assert new_manager.must_change_password is False
+    assert verify_password("new-manager-password", new_manager.password_hash)
     updated = asyncio.run(
         access.update_user(
             manager.id,
@@ -652,6 +677,7 @@ def test_management_cannot_recover_credentials_or_change_superadmin(
         db,
     ))
     assert {account["username"] for account in result["accounts"]} == {"manager", "nurse"}
+    assert {account["temporary_password"] for account in result["accounts"]} == {"0000"}
     manager_result = next(account for account in result["accounts"] if account["username"] == "manager")
     db.refresh(manager)
     assert verify_password(manager_result["temporary_password"], manager.password_hash)
