@@ -43,6 +43,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Oficina Terapêutica: reorganizadas as guias para Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios. A biblioteca e o controle de estoque agora aparecem em guias distintas, sem misturar suas telas.
 - Oficina Terapêutica: atividades e participantes agora carregam independentemente e exibem o erro por origem sem descartar a consulta bem-sucedida. Materiais e imagens consultam somente o serviço da guia ativa; a biblioteca também mostra estado explícito de carregamento em vez de parecer vazia durante a requisição.
 - Cópias de segurança: o seletor de arquivo de restauração mantém o estilo de botão secundário do app, agora com ícone de envio e rótulo acessível para leitores de tela.
+- Usuários e permissões: o título do cabeçalho agora identifica o módulo Administração, em vez de repetir o nome da guia ativa; a descrição continua contextualizada.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Pedido adicionado ao backlog: gerar uma chave GPG pelo Superadministrador para uso nos backups automáticos.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
@@ -64,7 +65,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
-- Em Usuários e permissões, remover o subtítulo redundante “Administração · Usuários e permissões” abaixo das abas.
 - Em Sobre e conformidade, corrigir o logo alongado em todas as abas para proporção quadrada e reduzir os cards de “Como o sistema funciona” à altura visual dos itens de “Dúvidas e solução de problemas”.
 - Em Central de exames, renomear a terceira aba “Exames de sangue” com um nome claro sobre sua função e avaliar melhorias operacionais, cobertura de estados reais e referências existentes.
 - Auditar os módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Usar somente dados reais do módulo, sem sobrecarregar a tela e sem links/referências inexistentes.
