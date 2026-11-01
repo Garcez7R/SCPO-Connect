@@ -31,7 +31,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Permissões por módulo e ações, verificadas também pelas APIs.
 - Ordens de serviço com fluxos separados para Manutenção e Higienização; cada equipe acompanha sua própria fila e situação dos chamados.
 - Os módulos Manutenção e Higienização exibem o ícone específico junto ao título, antes do nome, para facilitar a identificação da equipe em cada tela.
-- Central de Exames: abas de Raio X e exames laboratoriais, requisições vinculadas ao paciente, fila por situação e formulário de solicitação para impressão.
+- Central de Exames: guias de Raio X, Eletrocardiograma e Exames laboratoriais; requisições vinculadas ao paciente, fila por situação e impressão da solicitação laboratorial.
 - Médico: consulta de alergias e sinais vitais com gráficos, perfil CRM/UF, prescrição interna integrada à Farmácia e Enfermagem e receita simples para impressão (sem assinatura digital e sem medicamentos controlados). O PWA `/physician.html` oferece atalhos para a fila e para localizar pacientes, mantendo conexão, autenticação e permissões do módulo.
 - PWAs instaláveis em paralelo ao aplicativo completo: Enfermagem (`/nursing.html`), Manutenção e Higienização (`/operations.html`), Farmácia (`/pharmacy.html`), Médico (`/physician.html`) e Cozinha (`/kitchen.html`). Cada atalho usa identidade e ícone próprios; consulte [como instalar os PWAs](docs/pwa-installation.md). A disponibilidade e o fluxo de instalação variam conforme o navegador e o dispositivo.
 - Serviço Social: encaminhamentos ligados ao paciente, com busca, filtros e atualização de situação até o encerramento.

@@ -59,7 +59,7 @@ const laboratoryExamOptions = [
   'Bilirrubina direta', 'Bilirrubina indireta', 'Bilirrubina total', 'Amilase', 'Lipase',
 ].sort((left, right) => left.localeCompare(right, 'pt-BR'))
 const xraySections = ['xray', 'ecg', 'laboratory'] as const
-const xraySectionLabels: Record<(typeof xraySections)[number], string> = { xray: 'Raio X', ecg: 'Eletrocardiograma', laboratory: 'Exames' }
+const xraySectionLabels: Record<(typeof xraySections)[number], string> = { xray: 'Raio X', ecg: 'Eletrocardiograma', laboratory: 'Exames laboratoriais' }
 
 function groupLaboratoryRequests(requests: XrayRequest[]) {
   const groups = new Map<string, XrayRequest>()
@@ -108,6 +108,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'active' | 'all' | XrayStatus>('active')
   const [loading, setLoading] = useState(true)
+  const [requestsLoadFailed, setRequestsLoadFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [updating, setUpdating] = useState<number | null>(null)
   const [resultDrafts, setResultDrafts] = useState<Record<number, string>>({})
@@ -118,47 +119,37 @@ export default function XrayPage({ user }: { user: AuthUser }) {
 
   async function loadData() {
     setLoading(true)
-    try {
-      const [patientResponse, requestResponse] = await Promise.all([
-        fetch('/api/v1/nursing/patients'),
-        fetch('/api/v1/xray/requests'),
-      ])
-      const [patientData, requestData] = await Promise.all([
-        readApiResponse<{ patients?: Patient[] }>(patientResponse),
-        readApiResponse<{ requests?: XrayRequest[] }>(requestResponse),
-      ])
-      setPatients(patientData.patients ?? [])
-      setRequests(requestData.requests ?? [])
-      setError('')
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os dados de Raio X.')
-    } finally {
-      setLoading(false)
-    }
+    const [patientResult, requestResult] = await Promise.allSettled([
+      fetch('/api/v1/nursing/patients').then((response) => readApiResponse<{ patients?: Patient[] }>(response)),
+      fetch('/api/v1/xray/requests').then((response) => readApiResponse<{ requests?: XrayRequest[] }>(response)),
+    ])
+    const errors: string[] = []
+    setRequestsLoadFailed(requestResult.status === 'rejected')
+    if (patientResult.status === 'fulfilled') setPatients(patientResult.value.patients ?? [])
+    else errors.push(`Pacientes: ${patientResult.reason instanceof Error ? patientResult.reason.message : 'não foi possível carregar.'}`)
+    if (requestResult.status === 'fulfilled') setRequests(requestResult.value.requests ?? [])
+    else errors.push(`Solicitações: ${requestResult.reason instanceof Error ? requestResult.reason.message : 'não foi possível carregar.'}`)
+    setError(errors.join(' · '))
+    setLoading(false)
   }
 
   useEffect(() => {
     let active = true
     const loadXrayData = async () => {
       setLoading(true)
-      try {
-        const [patientResponse, requestResponse] = await Promise.all([
-          fetch('/api/v1/nursing/patients'),
-          fetch('/api/v1/xray/requests'),
-        ])
-        const [patientData, requestData] = await Promise.all([
-          readApiResponse<{ patients?: Patient[] }>(patientResponse),
-          readApiResponse<{ requests?: XrayRequest[] }>(requestResponse),
-        ])
-        if (!active) return
-        setPatients(patientData.patients ?? [])
-        setRequests(requestData.requests ?? [])
-        setError('')
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar os dados de Raio X.')
-      } finally {
-        if (active) setLoading(false)
-      }
+      const [patientResult, requestResult] = await Promise.allSettled([
+        fetch('/api/v1/nursing/patients').then((response) => readApiResponse<{ patients?: Patient[] }>(response)),
+        fetch('/api/v1/xray/requests').then((response) => readApiResponse<{ requests?: XrayRequest[] }>(response)),
+      ])
+      if (!active) return
+      const errors: string[] = []
+      setRequestsLoadFailed(requestResult.status === 'rejected')
+      if (patientResult.status === 'fulfilled') setPatients(patientResult.value.patients ?? [])
+      else errors.push(`Pacientes: ${patientResult.reason instanceof Error ? patientResult.reason.message : 'não foi possível carregar.'}`)
+      if (requestResult.status === 'fulfilled') setRequests(requestResult.value.requests ?? [])
+      else errors.push(`Solicitações: ${requestResult.reason instanceof Error ? requestResult.reason.message : 'não foi possível carregar.'}`)
+      setError(errors.join(' · '))
+      setLoading(false)
     }
     void loadXrayData()
     return () => { active = false }
@@ -290,7 +281,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   }
 
   return <section className="xray-page page-enter">
-    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · CENTRAL DE EXAMES</p><h1>Central de Exames</h1><p className="welcome-copy">Solicite exames laboratoriais e acompanhe a fila de Raio X e exames.</p></div><span className="module-icon module-icon-xray"><Microscope size={23} /></span></div>
+    <div className="page-title-row"><div><p className="eyebrow">MÓDULO · CENTRAL DE EXAMES</p><h1>Central de Exames</h1><p className="welcome-copy">Solicite Raio X, eletrocardiogramas e exames laboratoriais e acompanhe cada fila.</p></div><span className="module-icon module-icon-xray"><Microscope size={23} /></span></div>
     <ModuleTabNavigation
       className="xray-tabs"
       ariaLabel="Seções da Central de Exames"
@@ -304,7 +295,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
           : <><FlaskConical size={16} /> {xraySectionLabels[value]}</>,
       }))}
     />
-    <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`}><article className="status-tone-neutral"><strong>{sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
+    <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`} aria-busy={loading}><article className="status-tone-neutral"><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <form className="hygiene-panel" onSubmit={(event) => void (section === 'laboratory' ? submitLaboratory(event) : submit(event))}>
@@ -323,7 +314,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
       <button className="button button-primary" type="submit" disabled={saving || !patients.length || (section === 'laboratory' && selectedLaboratoryExams.length === 0 && !otherExam.trim())}>{saving ? 'Registrando…' : section === 'laboratory' ? 'Registrar exames' : 'Solicitar exame'} <ArrowRight size={16} /></button>
     </form>
     <section className="patient-list-panel xray-queue-panel">
-      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>{section === 'xray' ? 'Fila de Raio X' : 'Fila de exames'} <span className="module-total">{visibleRequests.length}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadData()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
+      <div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Fila de {xraySectionLabels[section]} <span className="module-total">{loading || requestsLoadFailed ? '—' : visibleRequests.length}</span></h2></div><button className="button button-secondary" type="button" onClick={() => void loadData()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div>
       <div className="service-tabs module-tabs" role="tablist" aria-label="Filtrar exames por situação">
         {([
           ['active', 'Ativos'],
@@ -332,12 +323,12 @@ export default function XrayPage({ user }: { user: AuthUser }) {
         ] as [typeof filter, string][]).map(([value, label]) => <button className={`button ${filter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={filter === value} key={value} onClick={() => setFilter(value)}>{label}{value === 'active' && <span>{activeCount}</span>}</button>)}
       </div>
       <label className="field xray-search"><span className="field-label">Buscar por paciente, quarto, leito ou exame</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar um exame" /></span></label>
-      {loading ? <div className="history-empty">Carregando fila de exames…</div> : visibleRequests.length ? <div className="xray-request-list">{visibleRequests.map((request) => <article className="xray-request-card" key={request.id}>
+      {loading ? <div className="history-empty">Carregando fila de exames…</div> : requestsLoadFailed ? <div className="history-empty">Não foi possível carregar a fila. Use “Atualizar fila” para tentar novamente.</div> : visibleRequests.length ? <div className="xray-request-list">{visibleRequests.map((request) => <article className="xray-request-card" key={request.id}>
         <div className="xray-request-main"><div><h3>{patientName(request.patient_reference)}</h3><p>{request.exam_label}</p>{request.observations && <small>Observações: {request.observations}</small>}<time>{dateTime(request.created_at)}</time></div><span className={`work-order-status status-${request.status === 'requested' ? 'open' : request.status === 'scheduled' ? 'in_progress' : request.status === 'in_progress' ? 'in_progress' : request.status === 'completed' ? 'completed' : 'cancelled'}`}>{xrayStatuses[request.status]}</span></div>
         {request.result && <div className="xray-result"><strong>Resultado registrado</strong><p>{request.result}</p><small>{request.result_recorded_by}{request.result_recorded_at ? ` · ${dateTime(request.result_recorded_at)}` : ''}</small></div>}
         {canUpdate && <form className="xray-result-form" onSubmit={(event) => { event.preventDefault(); void saveResult(request) }}><label className="field"><span className="field-label">{request.result ? 'Atualizar resultado' : 'Resultado do exame'}</span><textarea required minLength={3} maxLength={4000} rows={3} value={resultDrafts[request.id] ?? ''} onChange={(event) => setResultDrafts((current) => ({ ...current, [request.id]: event.target.value }))} placeholder="Registre o resultado/laudo conjunto conforme fluxo institucional" /></label><button className="button button-secondary" type="submit" disabled={updating === request.id || (resultDrafts[request.id] ?? '').trim().length < 3}>{updating === request.id ? 'Salvando…' : request.result ? 'Atualizar resultado' : 'Salvar resultado'}</button></form>}
         {canUpdate && <label className="field xray-status-control"><span className="field-label">Atualizar situação</span><select value={request.status} disabled={updating === request.id || request.status === 'completed' || request.status === 'cancelled'} onChange={(event) => void updateStatus(request, event.target.value as XrayStatus)}><option value="requested">Solicitado</option><option value="scheduled">Agendado</option><option value="in_progress">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
-      </article>)}</div> : <div className="history-empty"><Activity size={20} /><span>{requests.length ? 'Nenhum exame corresponde a este filtro.' : 'Nenhuma solicitação de exame foi registrada.'}</span></div>}
+      </article>)}</div> : <div className="history-empty"><Activity size={20} /><span>{sectionRequests.length ? 'Nenhum exame nesta fila corresponde aos filtros.' : `Nenhuma solicitação de ${xraySectionLabels[section].toLocaleLowerCase('pt-BR')} foi registrada.`}</span></div>}
     </section>
   </section>
 }
