@@ -1,8 +1,10 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
-## Situação da retomada
+## Quadro de acompanhamento
+
+### Concluído e publicado
 
 - O commit anterior já publicado inclui o PWA da Cozinha, o mapa desktop, a porta 7777 e o guia de deploy.
 - A configuração `origin` usa SSH para `git@github.com:Garcez7R/SCPO-Connect.git`.
@@ -23,6 +25,7 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Farmácia: metas mínimas/médias foram movidas do lote para o produto; estoque disponível agrega apenas lotes não vencidos, filtros/alertas contam produtos e a configuração está no Estoque geral. Migração `0057` consolida metas legadas por produto sem somar metas entre lotes.
 - Nutrição/Cozinha: guia “Mapa da cozinha” foi renomeada para “Dietas e alertas”; agora o cabeçalho sempre oferece “Abrir painel da cozinha”, inclusive na primeira guia. A lista operacional inicia uma nova avaliação já com o paciente selecionado, com ação exibida somente para quem tem permissão de criação. O PWA mostra resumo real de internados, alergias, dietas ausentes e jejuns, e a impressão inclui a data da avaliação; não armazena dados offline nem registra preparo/entrega.
 - A tela de backup/restauração usa popup modal acessível; exportação agora mostra o progresso real do download. Foi criado teste de ida e volta entre o exportador manual e a restauração. Arquivos GPG automáticos são identificados com orientação para o fluxo isolado, sem enviar a chave privada ao app.
+- Backup manual e agenda do backup automático estão implementados e documentados: exportação `.rgs` por senha; agenda diária, por intervalo, semanal ou mensal; limite de cópias e próxima execução. Mantém o limite máximo de idade de 30 dias e só remove arquivos de backup próprios.
 - A restauração `.rgs` não apresentou erro ao usuário e parecia travar. A validação, descriptografia, snapshots e restaurações PostgreSQL agora rodam fora do ciclo HTTP; um endpoint autenticado publica etapas e percentuais para o popup. Teste sintético confirma que o progresso pode ser consultado enquanto uma restauração está bloqueada. Ainda falta o usuário retestar na instalação de `192.168.1.205`; nenhum banco real foi restaurado nesta tarefa e não houve deploy no `.216`.
 - PWAs instaláveis em paralelo ao app completo: Enfermagem, Operações, Farmácia, Médico e Cozinha têm `id`, URL de início e escopo próprios. Cada um recebe ícones PNG com a marca SCPO e um símbolo do módulo, inclusive o ícone de início do iOS; os dez tamanhos 192/512 são gerados por `node scripts/generate-pwa-icons.mjs` com `pngjs`. O service worker inclui as imagens no precache. README e ajuda interna explicam instalação e limitações entre navegadores; a instalação simultânea ainda precisa ser confirmada nos dispositivos móveis institucionais.
 - O instalador Debian 13 agora escreve `/etc/systemd/system/scpo-connect.service`, valida a configuração Compose, habilita o serviço e o inicia após a instalação. A unidade inicia o Compose no boot, reinicia em falha e usa `docker compose stop` ao encerrar sem apagar volumes. README e guia do servidor documentam verificação e controle com `systemctl`. A unidade foi validada estaticamente; a instalação permanece para execução autorizada em um servidor Debian 13.
@@ -32,18 +35,26 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - A saudação da barra superior agora tem maior destaque visual (13 px, negrito e cor de texto principal); mantém o comportamento responsivo anterior, sem ocupar espaço da barra em telas estreitas.
 - Recepção: os resumos de Agendamentos e Admissões/Leitos agora seguem os cartões de status usados nos demais módulos, com borda lateral e layout responsivo. Incluem contagens reais do período consultado e do cadastro; o indicador de leitos livres vem do mapa e mostra indisponibilidade/estado de carregamento sem converter falha em zero.
 - Backup manual: a exportação `.rgs` por senha já existia, mas estava abaixo da configuração automática. Agora há um atalho no cabeçalho e uma seção de exportação imediata que exige somente a senha e oferece o download. O guia, README e documentação de backup descrevem o caminho e os limites; o teste sintético de ida e volta no backend já valida exportação e restauração.
+- A configuração flexível do backup automático está publicada e tem testes para retenção, execução diária, intervalos, semanas, meses e atualização da agenda.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Pedidos adicionados ao backlog: gerar uma chave GPG pelo Superadministrador, para uso nos backups automáticos; reorganizar a Oficina Terapêutica em Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios, separando o acervo de imagens dos materiais; revisar suas consultas e tratamento de erros para eliminar falhas ao abrir o módulo.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
-## Próximas fases solicitadas
+### Em andamento
 
-- Backup automático: o Superadministrador agora configura agenda diária, intervalos de horas/dias, dias da semana ou datas do mês, horário local, quantidade máxima de cópias (1–365) e vê a próxima execução. Mantém o fuso institucional `America/Sao_Paulo`, evita execução antes do horário ancorado e preserva o limite de idade de 30 dias e a retenção de somente arquivos `.rgs` próprios. Interface, documentação, ajuda e testes cobrem as novas opções.
+- Nenhuma tarefa de implementação está em andamento. O próximo item sugerido é tornar o PWA da Lavanderia/Rouparia realmente adequado para uso mobile.
+
+### Pendente — ordem sugerida
+
 - Chave GPG para backup automático: oferecer no Superadministrador a geração de um par de chaves de forma segura, com proteção/custódia da chave privada e exibição/download restritos, e usar a chave pública na rotina automática. Definir o fluxo de custódia e recuperação antes da implementação.
+- Superadministrador/armazenamento: avaliar criação e seleção de diretórios de destino para backup e biblioteca de imagens, aceitando caminhos locais e compartilhamentos de rede já montados. A interface deve pedir e validar o caminho, explicar permissões e deixar claro que montar/compartilhar volumes no host depende da TI; o app não deve tentar montar sistemas de arquivos por conta própria.
+- Lavanderia/Rouparia: adaptar o PWA para uma experiência realmente mobile, distinta do layout desktop; revisar navegação, densidade, formulários e ações em telas estreitas.
+- Ações de abertura móvel: substituir em todo o app os rótulos genéricos “Abrir PWA”/“PWA móvel” por nomes diretos e específicos do módulo, compreensíveis para pessoas leigas.
+- Indicadores e cartões: revisar todas as abas para padronizar os cartões de informação conforme Gestão Hospitalar, com hierarquia e comportamento responsivo; definir cores por significado/situação e eliminar cores arbitrárias, usando apenas dados reais.
 - Oficina Terapêutica: ordenar as abas como Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios; manter imagens e materiais em áreas separadas.
 - Oficina Terapêutica: revisar todas as consultas e dependências do módulo, estados de carregamento/vazio/erro e permissões, reproduzindo as falhas ao abrir e corrigindo suas causas.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
-- Revisar a Lavanderia/Rouparia em dispositivo de teste após publicar.
+- Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Revisar a senha provisória `0000` para contas comuns/administradores com troca obrigatória no primeiro login e o botão de revelar senha no bootstrap do superadministrador.
 - Confirmar os botões da Enfermagem em linha antes da busca de paciente; revisar alinhamento do botão de novo paciente e ampliar os cartões do painel de chamada.
@@ -57,6 +68,12 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Auditar os módulos para adicionar, onde agregue valor, resumos rápidos no padrão da Visão geral da Gestão Hospitalar. Usar somente dados reais do módulo, sem sobrecarregar a tela e sem links/referências inexistentes.
 - Substituir o rótulo genérico “Abrir PWA móvel” por um texto que identifique o módulo aberto; o acesso da Cozinha já fica no cabeçalho nas guias Avaliações e Dietas e alertas.
 - Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
+
+### Marco posterior — servidor de testes Debian 13
+
+- Depois de concluir as pendências de software e obter as autorizações necessárias, instalar no servidor Debian 13 minimal preparado pelo usuário.
+- Antes da instalação, confirmar acesso aprovado ao host, endereço/credenciais por canal seguro, montagem dos volumes locais ou compartilhamentos de rede, DNS/HTTPS, backup e janela de manutenção. Não fazer deploy, migrações em dados reais ou testes E2E sem autorização explícita.
+- Após instalar, validar serviços/healthchecks, persistência após reboot, HTTPS, backup e restauração isolada e fluxos aprovados; registrar resultados no README e neste resume.
 
 ## Validações conhecidas
 
