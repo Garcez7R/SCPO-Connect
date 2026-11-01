@@ -2070,32 +2070,56 @@ function TherapyPage({ profile }: { profile: Profile }) {
   const [month, setMonth] = useState(() => { const current = new Date(); return new Date(current.getFullYear(), current.getMonth(), 1) })
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loadedMonthKey, setLoadedMonthKey] = useState('')
+  const [failedActivityMonthKey, setFailedActivityMonthKey] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [form, setForm] = useState({ title: '', activity_type: '', description: '', location: 'Oficina Terapêutica', starts_at: '', ends_at: '', patient_reference: '', participant_references: [] as string[] })
   const [newParticipantReference, setNewParticipantReference] = useState('')
+  const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`
+  const loading = loadedMonthKey !== monthKey
 
   useEffect(() => {
     let current = true
     const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString()
     const end = new Date(month.getFullYear(), month.getMonth() + 1, 1).toISOString()
-    Promise.all([
+    Promise.allSettled([
       fetch('/api/v1/therapy/participants').then((response) => readApiResponse<{ participants?: TherapyPatient[] }>(response)),
       loadTherapyActivities(`/api/v1/therapy/activities?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}`),
-    ]).then(([patientData, loadedActivities]) => {
-      if (current) {
-        setPatients((patientData.participants ?? []).map((patient) => ({ ...patient, suppressClinicalData: true })))
+    ]).then(([patientResult, activityResult]) => {
+      if (!current) return
+      const loadErrors: string[] = []
+      if (patientResult.status === 'fulfilled') {
+        setPatients((patientResult.value.participants ?? []).map((patient) => ({ ...patient, suppressClinicalData: true })))
+      } else {
+        loadErrors.push(`Participantes: ${readableApiError(patientResult.reason)}`)
+      }
+      if (activityResult.status === 'fulfilled') {
+        const loadedActivities = activityResult.value
         setActivities(loadedActivities)
         setReportDrafts(Object.fromEntries(loadedActivities.map((activity) => [activity.id, activity.activity_report ?? ''])))
         setReportStatuses(Object.fromEntries(loadedActivities.map((activity) => [activity.id, activity.status])))
-        setError('')
+        setFailedActivityMonthKey('')
+      } else {
+        setActivities([])
+        setReportDrafts({})
+        setReportStatuses({})
+        setFailedActivityMonthKey(monthKey)
+        loadErrors.push(`Atividades: ${readableApiError(activityResult.reason)}`)
       }
-    }).catch((loadError) => {
-      if (current) setError(readableApiError(loadError))
-    }).finally(() => { if (current) setLoading(false) })
+      setError(loadErrors.join(' · '))
+      setLoadedMonthKey(monthKey)
+    }).catch((loadError: unknown) => {
+      if (!current) return
+      setActivities([])
+      setReportDrafts({})
+      setReportStatuses({})
+      setFailedActivityMonthKey(monthKey)
+      setError(readableApiError(loadError))
+      setLoadedMonthKey(monthKey)
+    })
     return () => { current = false }
-  }, [month])
+  }, [month, monthKey])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -2196,6 +2220,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
     const patient = patients.find((item) => item.reference === activity.patient_reference)
     return { id: activity.id, date: activity.starts_at, title: activity.title, fields: [['Modalidade', activity.activity_type], ['Status', therapyActivityStatusLabels[reportStatuses[activity.id] ?? activity.status]], ['Horário', dateTime(activity.starts_at)], ['Local', activity.location], ['Participante', patient?.name ?? (activity.participants?.length ? `${activity.participants.length} participante(s)` : 'Grupo')], ['Objetivo', activity.description], ['Relatório', reportDrafts[activity.id] ?? activity.activity_report], ['Responsável pelo relatório', activity.report_updated_by || '']] }
   })
+  const activityLoadFailed = failedActivityMonthKey === monthKey
 
   return <section className="therapy-page page-enter">
     <div className="page-title-row"><span className="module-icon module-icon-therapy"><CalendarDays size={23} /></span><div><p className="eyebrow">MÓDULO · OFICINA TERAPÊUTICA</p><h1>Oficina Terapêutica</h1><p className="welcome-copy">Organize atividades, presenças e relatórios em áreas próprias.</p></div>{profile.modules.includes('therapy') && tab === 'calendar' && <button className="button button-primary" type="button" onClick={() => { setShowForm((value) => !value); setNotice(''); setError('') }}><CalendarDays size={16} /> {showForm ? 'Fechar agenda' : 'Agendar atividade'}</button>}</div>
@@ -2208,7 +2233,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
     </div>
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {tab === 'calendar' && <>
-    <div className="hygiene-summary therapy-summary" aria-label="Resumo da Oficina Terapêutica"><article className="status-tone-neutral"><strong>{activities.length}</strong><span>Atividades no mês</span></article><article className="status-tone-progress"><strong>{todayActivityCount}</strong><span>Agendadas para hoje</span></article><article className={inProgressCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{inProgressCount}</strong><span>Em andamento</span></article><article className="status-tone-success"><strong>{completedCount}</strong><span>Realizadas</span></article><article className="status-tone-neutral"><strong>{activities.reduce((sum, activity) => sum + (activity.participants ?? []).filter((participant) => participant.attendance === 'attended').length, 0)}</strong><span>Presenças registradas</span></article></div>
+    <div className="hygiene-summary therapy-summary" aria-label="Resumo da Oficina Terapêutica" aria-busy={loading}><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : activities.length}</strong><span>Atividades no mês</span></article><article className="status-tone-progress"><strong>{loading ? '…' : activityLoadFailed ? '—' : todayActivityCount}</strong><span>Agendadas para hoje</span></article><article className={inProgressCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : activityLoadFailed ? '—' : inProgressCount}</strong><span>Em andamento</span></article><article className="status-tone-success"><strong>{loading ? '…' : activityLoadFailed ? '—' : completedCount}</strong><span>Realizadas</span></article><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : activities.reduce((sum, activity) => sum + (activity.participants ?? []).filter((participant) => participant.attendance === 'attended').length, 0)}</strong><span>Presenças registradas</span></article></div>
     <div className="therapy-layout"><section className="therapy-calendar-panel"><div className="therapy-calendar-heading"><button className="icon-button" type="button" aria-label="Mês anterior" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={19} /></button><h2>{monthLabel}</h2><button className="icon-button" type="button" aria-label="Próximo mês" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={19} /></button></div><div className="therapy-calendar-grid therapy-calendar-weekdays">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => <span key={day}>{day}</span>)}</div><div className="therapy-calendar-grid">{calendarCells.map((cell, index) => cell ? <article className={`therapy-calendar-day ${cell.birthdays.length ? 'has-birthday' : ''} ${cell.activities.length ? 'has-activity' : ''}`} key={cell.dateKey}><strong>{cell.day}</strong>{cell.birthdays.slice(0, 2).map((patient) => <span className="therapy-calendar-tag birthday-tag" key={patient.reference} title={`Aniversário: ${patient.name}`}>🎂 {patient.name.split(' ')[0]}</span>)}{cell.activities.slice(0, 2).map((activity) => <span className="therapy-calendar-tag activity-tag" key={activity.id} title={activity.title}>• {activity.title}</span>)}{cell.birthdays.length + cell.activities.length > 4 && <small>+{cell.birthdays.length + cell.activities.length - 4}</small>}</article> : <span className="therapy-calendar-day therapy-calendar-empty" key={`empty-${index}`} />)}</div><div className="therapy-calendar-legend"><span><i className="legend-birthday" /> Aniversários</span><span><i className="legend-activity" /> Atividades</span></div></section>
       <aside className="therapy-birthday-panel"><div className="section-heading"><div><p className="eyebrow">DATAS ESPECIAIS</p><h2>Aniversários</h2></div><span className="module-total">{birthdaysThisMonth.length}</span></div>{birthdaysThisMonth.length ? <div className="therapy-birthday-list">{birthdaysThisMonth.map((patient) => <article key={patient.reference}><span className="birthday-date">{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'short' }).format(new Date(`${month.getFullYear()}-${patient.birth_date!.slice(5)}T00:00:00Z`))}</span><div><strong>{patient.name}</strong></div></article>)}</div> : <div className="history-empty">Nenhum aniversário cadastrado neste mês.</div>}<p className="field-hint">A agenda usa apenas nome e data de nascimento para organizar atividades e aniversários.</p></aside></div>
     {showForm && <form className="therapy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVA ATIVIDADE</p><h2>Dados da oficina</h2><p className="welcome-copy">Cadastre a proposta e os participantes; as presenças podem ser atualizadas depois.</p></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome da atividade</span><input required minLength={3} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: oficina de pintura" /></label><label className="field"><span className="field-label">Modalidade</span><select required value={form.activity_type} onChange={(event) => setForm({ ...form, activity_type: event.target.value })}><option value="">Selecione</option><option value="grupo">Grupo terapêutico</option><option value="arte">Arte e expressão</option><option value="música">Música</option><option value="movimento">Movimento corporal</option><option value="ocupacional">Atividade ocupacional</option><option value="recreação">Recreação</option><option value="outro">Outra</option></select></label><label className="field"><span className="field-label">Início</span><input required type="datetime-local" value={form.starts_at} onChange={(event) => setForm({ ...form, starts_at: event.target.value })} /></label><label className="field"><span className="field-label">Término (opcional)</span><input type="datetime-local" min={form.starts_at || undefined} value={form.ends_at} onChange={(event) => setForm({ ...form, ends_at: event.target.value })} /></label>
@@ -2227,7 +2252,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
         <label className="field"><span className="field-label">Buscar por atividade, local ou paciente</span><input value={activityQuery} onChange={(event) => setActivityQuery(event.target.value)} placeholder="Nome, local ou paciente" /></label>
         <label className="field"><span className="field-label">Situação</span><select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value as typeof activityFilter)}><option value="all">Todas</option>{Object.entries(therapyActivityStatusLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label>
       </div>
-      {loading ? <div className="history-empty">Carregando agenda…</div> : visibleActivities.length ? <div className="therapy-activity-grid">{visibleActivities.map((activity) => {
+      {loading ? <div className="history-empty">Carregando agenda…</div> : activityLoadFailed ? <div className="history-empty">Não foi possível carregar as atividades. Consulte o erro informado acima.</div> : visibleActivities.length ? <div className="therapy-activity-grid">{visibleActivities.map((activity) => {
         const patient = patients.find((item) => item.reference === activity.patient_reference)
         const activityStatus = reportStatuses[activity.id] ?? activity.status
         const participants = activity.participants ?? []
@@ -2251,7 +2276,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
       })}</div> : <div className="history-empty">{activities.length ? 'Nenhuma atividade corresponde aos filtros selecionados.' : 'Nenhuma atividade agendada para este mês.'}</div>}
     </section>
     </>}
-    {tab === 'reports' && <>
+    {tab === 'reports' && activityLoadFailed ? <div className="history-empty">Não foi possível carregar os relatórios. Consulte o erro informado acima.</div> : tab === 'reports' && <>
     <section className="therapy-report-panel">
       <div className="section-heading">
         <div>
@@ -2284,7 +2309,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
       })}</div> : <div className="history-empty">{activities.length ? 'Nenhuma atividade corresponde aos filtros selecionados.' : 'Agende uma atividade para iniciar o relatório do mês.'}</div>}
     </section>
     </>}
-    {tab === 'attendance' && <TherapyAttendanceManager activities={activities} patients={patients} canEdit={profile.modules.includes('therapy')} selectedActivityId={selectedActivityId} onSelectActivity={setSelectedActivityId} onSaved={(updated) => setActivities((current) => current.map((activity) => activity.id === updated.id ? updated : activity))} />}
+    {tab === 'attendance' && (activityLoadFailed ? <div className="history-empty">Não foi possível carregar as atividades. Consulte o erro informado acima.</div> : <TherapyAttendanceManager activities={activities} patients={patients} canEdit={profile.modules.includes('therapy')} selectedActivityId={selectedActivityId} onSelectActivity={setSelectedActivityId} onSaved={(updated) => setActivities((current) => current.map((activity) => activity.id === updated.id ? updated : activity))} />)}
     {tab === 'materials' && <Suspense fallback={<div className="history-empty" role="status">Carregando materiais…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="materials" /></Suspense>}
     {tab === 'images' && <Suspense fallback={<div className="history-empty" role="status">Carregando biblioteca de imagens…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="images" /></Suspense>}
   </section>

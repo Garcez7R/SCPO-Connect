@@ -77,6 +77,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [loadingMovements, setLoadingMovements] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const visibleImages = images.filter((image) =>
@@ -86,40 +87,36 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   )
 
   const loadData = useCallback(async () => {
-    const [materialResponse, imageResponse] = await Promise.all([
-      fetch('/api/v1/therapy/materials?include_archived=true'),
-      fetch('/api/v1/therapy/material-images'),
-    ])
-    const [materialData, imageData] = await Promise.all([
-      readApiResponse<{ materials: TherapyMaterial[] }>(materialResponse),
-      readApiResponse<{ images: MaterialImage[]; folders: MaterialImageFolder[] }>(imageResponse),
-    ])
-    setMaterials(materialData.materials)
+    if (view === 'materials') {
+      const materialData = await readApiResponse<{ materials: TherapyMaterial[] }>(
+        await fetch('/api/v1/therapy/materials?include_archived=true'),
+      )
+      setMaterials(materialData.materials)
+      setLoadError(false)
+      setError('')
+      return
+    }
+    const imageData = await readApiResponse<{ images: MaterialImage[]; folders: MaterialImageFolder[] }>(
+      await fetch('/api/v1/therapy/material-images'),
+    )
     setImages(imageData.images)
     setFolders(imageData.folders)
-  }, [])
+    setLoadError(false)
+    setError('')
+  }, [view])
 
   useEffect(() => {
     let active = true
-    Promise.all([
-      fetch('/api/v1/therapy/materials?include_archived=true').then((response) =>
-        readApiResponse<{ materials: TherapyMaterial[] }>(response),
-      ),
-      fetch('/api/v1/therapy/material-images').then((response) =>
-        readApiResponse<{ images: MaterialImage[]; folders: MaterialImageFolder[] }>(response),
-      ),
-    ]).then(([materialData, imageData]) => {
-      if (!active) return
-      setMaterials(materialData.materials)
-      setImages(imageData.images)
-      setFolders(imageData.folders)
-    }).catch((loadError: unknown) => {
-      if (active) setError(readableApiError(loadError))
+    void Promise.resolve().then(loadData).catch((loadError: unknown) => {
+      if (active) {
+        setLoadError(true)
+        setError(readableApiError(loadError))
+      }
     }).finally(() => {
       if (active) setLoading(false)
     })
     return () => { active = false }
-  }, [])
+  }, [loadData])
 
   async function createMaterial(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -367,7 +364,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
 
     {view === 'materials' && <section className="therapy-material-section">
       <div className="section-heading"><div><p className="eyebrow">CONTROLE DE ESTOQUE</p><h2><Package size={19} /> Materiais cadastrados</h2></div><span className="module-total">{materials.filter((material) => material.active).length} ativos</span></div>
-      {loading ? <div className="history-empty">Carregando materiais…</div> : materials.length ? <div className="therapy-material-list">{materials.map((material) => <article className={`therapy-material-card ${material.active ? '' : 'therapy-material-card-archived'}`} key={material.id}>
+      {loading ? <div className="history-empty">Carregando materiais…</div> : loadError ? null : materials.length ? <div className="therapy-material-list">{materials.map((material) => <article className={`therapy-material-card ${material.active ? '' : 'therapy-material-card-archived'}`} key={material.id}>
         <div className="therapy-material-card-heading"><div><span className="therapy-material-category">{material.category}</span><h3>{material.name}</h3>{(material.color_name || material.color_code) && <p className="therapy-material-color">{material.color_name}{material.color_name && material.color_code ? ' · ' : ''}{material.color_code}</p>}</div><div className="therapy-material-stock"><strong>{material.quantity}</strong><span>{material.unit}</span></div></div>
         {!material.active && <span className="therapy-material-archived-label">Arquivado</span>}
         {canEdit && <div className="therapy-material-actions">
@@ -412,7 +409,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
             <div className="field"><span className="field-label">Arquivo (JPG, PNG ou WebP, até 12 MB)</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id="therapy-material-image-file" type="file" accept="image/jpeg,image/png,image/webp" required aria-label="Escolher imagem para a biblioteca da Oficina Terapêutica" onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor="therapy-material-image-file"><ImagePlus size={15} /> Escolher arquivo</label><span title={imageFile?.name}>{imageFile?.name ?? 'Nenhum arquivo selecionado'}</span></div></div>
             <button className="button button-primary" type="submit" disabled={saving || !imageFile}><ImagePlus size={16} /> Enviar imagem</button>
           </form>}
-          {visibleImages.length ? <div className="therapy-image-grid">{visibleImages.map((image) => <article className="therapy-image-card" key={image.id}>
+          {loading ? <div className="history-empty">Carregando biblioteca de imagens…</div> : loadError ? null : visibleImages.length ? <div className="therapy-image-grid">{visibleImages.map((image) => <article className="therapy-image-card" key={image.id}>
             <img src={image.url} alt={image.title} loading="lazy" />
             <div className="therapy-image-card-details">
               {editingImageId === image.id

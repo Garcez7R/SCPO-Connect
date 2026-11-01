@@ -41,8 +41,9 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Cartões de resumo: os resumos de Enfermagem, triagem, Recepção, sala de espera, agendamentos, exames e Oficina Terapêutica agora usam borda lateral e tons semânticos compartilhados. Estados em andamento usam progresso; pendências usam atenção; ausência de pendências usa sucesso; totais sem juízo ficam neutros. Typecheck, lint e build passaram. A revisão do restante das abas continua pendente.
 - Nutrição/Cozinha: o ícone de Nutrição foi movido para o lado esquerdo do cabeçalho, antes da identificação e do nome do módulo, seguindo o padrão dos demais módulos; o atalho para o painel da cozinha permanece à direita.
 - Oficina Terapêutica: reorganizadas as guias para Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios. A biblioteca e o controle de estoque agora aparecem em guias distintas, sem misturar suas telas.
+- Oficina Terapêutica: atividades e participantes agora carregam independentemente e exibem o erro por origem sem descartar a consulta bem-sucedida. Materiais e imagens consultam somente o serviço da guia ativa; a biblioteca também mostra estado explícito de carregamento em vez de parecer vazia durante a requisição.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
-- Pedidos adicionados ao backlog: gerar uma chave GPG pelo Superadministrador, para uso nos backups automáticos; reorganizar a Oficina Terapêutica em Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios, separando o acervo de imagens dos materiais; revisar suas consultas e tratamento de erros para eliminar falhas ao abrir o módulo.
+- Pedido adicionado ao backlog: gerar uma chave GPG pelo Superadministrador para uso nos backups automáticos.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ### Em andamento
@@ -54,7 +55,6 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Chave GPG para backup automático: oferecer no Superadministrador a geração de um par de chaves de forma segura, com proteção/custódia da chave privada e exibição/download restritos, e usar a chave pública na rotina automática. Definir o fluxo de custódia e recuperação antes da implementação.
 - Superadministrador/armazenamento: avaliar criação e seleção de diretórios de destino para backup e biblioteca de imagens, aceitando caminhos locais e compartilhamentos de rede já montados. A interface deve pedir e validar o caminho, explicar permissões e deixar claro que montar/compartilhar volumes no host depende da TI; o app não deve tentar montar sistemas de arquivos por conta própria.
 - Indicadores e cartões: continuar a revisão das abas ainda não cobertas para padronizar hierarquia e comportamento responsivo conforme Gestão Hospitalar; corrigir cores arbitrárias restantes usando somente dados reais. Os resumos operacionais de Enfermagem, triagem, Recepção, sala de espera, agendamentos, exames e Oficina Terapêutica já foram padronizados.
-- Oficina Terapêutica: revisar todas as consultas e dependências do módulo, estados de carregamento/vazio/erro e permissões, reproduzindo as falhas ao abrir e corrigindo suas causas.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
