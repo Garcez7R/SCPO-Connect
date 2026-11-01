@@ -1,14 +1,16 @@
+import json
 import os
 import re
+import tempfile
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import (
     Boolean,
@@ -29,6 +31,7 @@ from .common import (
     Base,
     DemoPrincipal,
     audit_outbox_lifespan,
+    authenticated_principal,
     database_session,
     emit_audit_event,
     require_demo_role,
@@ -160,6 +163,8 @@ MATERIAL_IMAGE_TYPES = {
     "image/webp": ".webp",
 }
 MATERIAL_IMAGE_MAX_BYTES = 12 * 1024 * 1024
+THERAPY_STORAGE_CONFIG = ".scpo-therapy-storage.json"
+THERAPY_STORAGE_LOCK = threading.Lock()
 
 
 class TherapyMaterialImageFolderPayload(BaseModel):
@@ -195,7 +200,7 @@ class TherapyMaterialImageUpdatePayload(BaseModel):
         return value
 
 
-def therapy_materials_directory() -> Path:
+def _therapy_materials_root() -> Path:
     configured_directory = os.getenv("SCPO_THERAPY_MATERIALS_DIR")
     if configured_directory:
         return Path(configured_directory).expanduser().resolve()
@@ -203,6 +208,183 @@ def therapy_materials_directory() -> Path:
     if local_data_directory:
         return (Path(local_data_directory).expanduser() / "therapy-materials").resolve()
     return (Path(__file__).resolve().parents[2] / "data" / "therapy-materials").resolve()
+
+
+def _validate_therapy_storage_directory(directory: str) -> Path:
+    if (
+        directory != directory.strip()
+        or "\\" in directory
+        or any(ord(character) < 32 for character in directory)
+    ):
+        raise ValueError("Informe uma subpasta relativa válida")
+    if not directory:
+        return _therapy_materials_root()
+    relative = PurePosixPath(directory)
+    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        raise ValueError("O destino deve permanecer dentro do volume de imagens")
+    root = _therapy_materials_root()
+    candidate = root.joinpath(*relative.parts)
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(root) or resolved == root:
+        raise ValueError("O destino deve permanecer dentro do volume de imagens")
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError("O destino não pode atravessar links simbólicos")
+    return candidate
+
+
+def _configured_therapy_storage_directory() -> str:
+    root = _therapy_materials_root()
+    config_path = root / THERAPY_STORAGE_CONFIG
+    if config_path.is_symlink():
+        raise RuntimeError("A configuração do armazenamento de imagens não é segura")
+    try:
+        value = json.loads(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ""
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Não foi possível ler a configuração do armazenamento de imagens") from exc
+    if not isinstance(value, dict) or not isinstance(value.get("directory"), str):
+        raise TypeError("A configuração do armazenamento de imagens está inválida")
+    try:
+        _validate_therapy_storage_directory(value["directory"])
+    except ValueError as exc:
+        raise RuntimeError("O destino salvo para a biblioteca de imagens está inválido") from exc
+    return value["directory"]
+
+
+def therapy_materials_directory() -> Path:
+    return _validate_therapy_storage_directory(_configured_therapy_storage_directory())
+
+
+def _save_therapy_storage_directory(directory: str) -> None:
+    root = _therapy_materials_root()
+    root.mkdir(parents=True, exist_ok=True)
+    config_path = root / THERAPY_STORAGE_CONFIG
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=root,
+            prefix=".scpo-therapy-storage.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            os.chmod(temporary_path, 0o600)
+            json.dump({"directory": directory}, temporary)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, config_path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _therapy_storage_status(db: Session) -> dict[str, object]:
+    directory = _configured_therapy_storage_directory()
+    destination = _validate_therapy_storage_directory(directory)
+    root = _therapy_materials_root()
+    return {
+        "directory": directory,
+        "image_count": db.query(TherapyMaterialImage).count(),
+        "volume_available": root.is_dir() and os.access(root, os.W_OK),
+        "destination_available": destination.is_dir() and os.access(destination, os.W_OK),
+        "destination_display": directory or ".",
+    }
+
+
+@app.get("/api/v1/therapy/storage-location")
+def get_therapy_storage_location(
+    principal: Annotated[DemoPrincipal, Depends(authenticated_principal)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    if not principal.is_superuser:
+        raise HTTPException(status_code=403, detail="Apenas o Superadministrador pode configurar o armazenamento")
+    return _therapy_storage_status(db)
+
+
+class TherapyStorageLocationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    directory: str = Field(max_length=200)
+
+
+@app.put("/api/v1/therapy/storage-location")
+def set_therapy_storage_location(
+    payload: TherapyStorageLocationPayload,
+    principal: Annotated[DemoPrincipal, Depends(authenticated_principal)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    if not principal.is_superuser:
+        raise HTTPException(status_code=403, detail="Apenas o Superadministrador pode configurar o armazenamento")
+    try:
+        destination = _validate_therapy_storage_directory(payload.directory)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    with THERAPY_STORAGE_LOCK:
+        source = therapy_materials_directory()
+        if payload.directory == _configured_therapy_storage_directory():
+            return _therapy_storage_status(db)
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="A subpasta não pode ser criada no volume de imagens") from exc
+        try:
+            destination = _validate_therapy_storage_directory(payload.directory)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not destination.is_dir() or not os.access(destination, os.W_OK):
+            raise HTTPException(status_code=503, detail="A subpasta não está disponível para gravação")
+
+        images = db.scalars(select(TherapyMaterialImage)).all()
+        moves: list[tuple[Path, Path]] = []
+        config_path = _therapy_materials_root() / THERAPY_STORAGE_CONFIG
+        had_config = config_path.exists()
+        previous_config = config_path.read_bytes() if had_config else None
+        try:
+            for image in images:
+                if not re.fullmatch(r"[a-f0-9]{32}\.(?:jpg|png|webp)", image.filename):
+                    raise RuntimeError("A biblioteca contém um nome de arquivo inválido")
+                old_path = source / image.filename
+                new_path = destination / image.filename
+                if old_path.is_symlink() or not old_path.is_file():
+                    raise RuntimeError(f"O arquivo da imagem {image.id} não está disponível no volume atual")
+                if new_path.exists() or new_path.is_symlink():
+                    raise FileExistsError("Já existe um arquivo com o mesmo nome na nova subpasta")
+                os.replace(old_path, new_path)
+                moves.append((old_path, new_path))
+            _save_therapy_storage_directory(payload.directory)
+            emit_audit_event(
+                principal,
+                "therapy",
+                "therapy_storage_location_changed",
+                payload.directory or ".",
+                db=db,
+            )
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            try:
+                if had_config and previous_config is not None:
+                    config_path.write_bytes(previous_config)
+                else:
+                    config_path.unlink(missing_ok=True)
+                for old_path, new_path in reversed(moves):
+                    os.replace(new_path, old_path)
+            except OSError as rollback_error:
+                raise RuntimeError(
+                    "A alteração do armazenamento falhou e exige verificação manual da biblioteca"
+                ) from rollback_error
+            if isinstance(exc, (HTTPException, RuntimeError)):
+                raise
+            if isinstance(exc, FileExistsError):
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="Não foi possível alterar o local da biblioteca") from exc
+    return _therapy_storage_status(db)
 
 
 def valid_material_image(content_type: str, content: bytes) -> bool:
@@ -675,7 +857,7 @@ async def upload_therapy_material_image(
     if folder_id is not None and db.get(TherapyMaterialImageFolder, folder_id) is None:
         raise HTTPException(status_code=404, detail="Pasta não encontrada")
     filename = f"{uuid.uuid4().hex}{extension}"
-    image_path = therapy_materials_directory() / filename
+    image_path: Path | None = None
     image = TherapyMaterialImage(
         id=str(uuid.uuid4()),
         filename=filename,
@@ -687,17 +869,20 @@ async def upload_therapy_material_image(
         folder_id=folder_id,
     )
     try:
-        image_path.parent.mkdir(parents=True, exist_ok=True)
-        image_path.write_bytes(content)
-        db.add(image)
-        emit_audit_event(principal, "therapy", "therapy_material_image_uploaded", image.id, db=db)
-        db.commit()
+        with THERAPY_STORAGE_LOCK:
+            image_path = therapy_materials_directory() / filename
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(content)
+            db.add(image)
+            emit_audit_event(principal, "therapy", "therapy_material_image_uploaded", image.id, db=db)
+            db.commit()
     except Exception:
         db.rollback()
-        try:
-            image_path.unlink(missing_ok=True)
-        except OSError as cleanup_error:
-            raise RuntimeError("Não foi possível finalizar ou limpar o upload da imagem.") from cleanup_error
+        if image_path is not None:
+            try:
+                image_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                raise RuntimeError("Não foi possível finalizar ou limpar o upload da imagem.") from cleanup_error
         raise
     folder = db.get(TherapyMaterialImageFolder, image.folder_id) if image.folder_id else None
     return serialize_material_image(image, folder)
@@ -708,18 +893,20 @@ def get_therapy_material_image(
     filename: str,
     principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_therapy_db)],
-) -> FileResponse:
+) -> Response:
     if not re.fullmatch(r"[a-f0-9]{32}\.(?:jpg|png|webp)", filename):
         raise HTTPException(status_code=404, detail="Imagem não encontrada")
     image = db.scalar(select(TherapyMaterialImage).where(TherapyMaterialImage.filename == filename))
     if image is None:
         raise HTTPException(status_code=404, detail="Imagem não encontrada")
-    image_path = therapy_materials_directory() / filename
-    if not image_path.is_file():
-        raise HTTPException(status_code=500, detail="Arquivo da biblioteca não está disponível no armazenamento")
+    with THERAPY_STORAGE_LOCK:
+        image_path = therapy_materials_directory() / filename
+        if not image_path.is_file():
+            raise HTTPException(status_code=500, detail="Arquivo da biblioteca não está disponível no armazenamento")
+        content = image_path.read_bytes()
     emit_audit_event(principal, "therapy", "therapy_material_image_downloaded", image.id)
-    return FileResponse(
-        image_path,
+    return Response(
+        content,
         media_type=image.content_type,
         headers={
             "Cache-Control": "private, no-store",
@@ -738,22 +925,23 @@ def delete_therapy_material_image(
     image = db.get(TherapyMaterialImage, image_id)
     if image is None:
         raise HTTPException(status_code=404, detail="Imagem não encontrada")
-    image_path = therapy_materials_directory() / image.filename
-    if not image_path.is_file():
-        raise HTTPException(status_code=500, detail="Arquivo da biblioteca não está disponível no armazenamento")
-    content = image_path.read_bytes()
-    image_path.unlink()
-    db.delete(image)
-    try:
-        emit_audit_event(principal, "therapy", "therapy_material_image_deleted", image.id, db=db)
-        db.commit()
-    except Exception:
-        db.rollback()
+    with THERAPY_STORAGE_LOCK:
+        image_path = therapy_materials_directory() / image.filename
+        if not image_path.is_file():
+            raise HTTPException(status_code=500, detail="Arquivo da biblioteca não está disponível no armazenamento")
+        content = image_path.read_bytes()
+        image_path.unlink()
+        db.delete(image)
         try:
-            image_path.write_bytes(content)
-        except OSError as restore_error:
-            raise RuntimeError("A exclusão falhou e não foi possível restaurar a imagem; contate o suporte.") from restore_error
-        raise
+            emit_audit_event(principal, "therapy", "therapy_material_image_deleted", image.id, db=db)
+            db.commit()
+        except Exception:
+            db.rollback()
+            try:
+                image_path.write_bytes(content)
+            except OSError as restore_error:
+                raise RuntimeError("A exclusão falhou e não foi possível restaurar a imagem; contate o suporte.") from restore_error
+            raise
     return Response(status_code=204)
 
 

@@ -58,6 +58,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Enfermagem: no celular, os atalhos do cabeçalho permanecem em uma única faixa rolável e aparecem antes do campo de busca do paciente, sem quebrar a navegação em várias linhas.
 - Recepção: linhas de chamada ficaram mais espaçosas, com nome, situação e ações ampliados para facilitar a leitura e o toque. O botão de cadastrar paciente na Ficha ambulatorial mantém alinhamento com o campo no desktop e ocupa a largura disponível no celular.
 - Credenciais temporárias: toda conta comum recém-criada recebe a senha padrão `0000`, conforme orientação institucional; os resets individual e global também usam `0000`. A troca de senha continua obrigatória no primeiro login, e o MFA previamente cadastrado é mantido. O bootstrap do superadministrador permite escolher a senha pessoal e já tem controles independentes para revelar/ocultar senha e confirmação; isso foi confirmado e documentado. Teste direcionado cobre senha inicial e troca obrigatória.
+- Armazenamento: na Administração do Sistema, o Superadministrador pode escolher uma subpasta dentro do volume montado para backup e outra para a Biblioteca de imagens da Oficina Terapêutica. A mudança da biblioteca move as imagens já cadastradas e mantém os registros. Caminhos são relativos e confinados ao volume configurado; a TI ainda monta os volumes locais/rede no host, concede permissões e reinicia os serviços quando necessário. O app não monta dispositivos nem compartilhamentos. Backups automáticos continuam incluindo os arquivos da biblioteca.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ### Em andamento
@@ -66,21 +67,21 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Pendente — ordem sugerida
 
-- Superadministrador/armazenamento: avaliar criação e seleção de diretórios de destino para backup e biblioteca de imagens, aceitando caminhos locais e compartilhamentos de rede já montados. A interface deve pedir e validar o caminho, explicar permissões e deixar claro que montar/compartilhar volumes no host depende da TI; o app não deve tentar montar sistemas de arquivos por conta própria.
 - Indicadores e cartões: continuar revisão visual das abas que ainda não seguem o padrão da Gestão Hospitalar e corrigir cores arbitrárias restantes usando somente dados reais. A auditoria dos resumos operacionais por fila foi concluída; ver o registro acima.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
+- PWA da Enfermagem — sinais: substituir o seletor/modal de unidade de glicose por valor padrão mg/dL; incluir pergunta de dor/algia (sim/não); permitir expandir condicionalmente campos adicionais, começando por observações e oferecendo os demais dados disponíveis na tela de sinais do módulo para PC somente quando necessários.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
 - Alinhar o botão “Cadastrar novo paciente” com os demais controles do campo na Ficha ambulatorial.
 
-### Marco posterior — servidor de testes Debian 13
+### Marco posterior — atualização do servidor de testes e piloto paralelo
 
-- Depois de concluir as pendências de software e obter as autorizações necessárias, instalar no servidor Debian 13 minimal preparado pelo usuário.
-- Antes da instalação, confirmar acesso aprovado ao host, endereço/credenciais por canal seguro, montagem dos volumes locais ou compartilhamentos de rede, DNS/HTTPS, backup e janela de manutenção. Não fazer deploy, migrações em dados reais ou testes E2E sem autorização explícita.
-- Após instalar, validar serviços/healthchecks, persistência após reboot, HTTPS, backup e restauração isolada e fluxos aprovados; registrar resultados no README e neste resume.
+- Depois de concluir as pendências do resume e obter as autorizações necessárias, atualizar o servidor Debian 13 minimal já preparado pelo usuário com a versão publicada.
+- Executar o SCPO Connect em paralelo ao sistema atualmente usado para validar fluxos e necessidades, sem substituir o sistema vigente. Antes da atualização, confirmar janela, backup/restauração, volumes e compartilhamentos montados, DNS/HTTPS e acesso aprovado. Não usar dados reais nem executar E2E sem autorização explícita.
+- Validar serviços/healthchecks, persistência após reboot, HTTPS, backup/restauração isolada e os fluxos aprovados; registrar necessidades identificadas e ajustes neste resume antes de qualquer decisão de substituir o sistema atual.
 
 ## Validações conhecidas
 

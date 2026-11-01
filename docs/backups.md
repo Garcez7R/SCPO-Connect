@@ -15,7 +15,7 @@ SCPO_BACKUP_HOST_DIR=/mnt/backup-institucional/scpo-connect
 SCPO_BACKUP_TIMEZONE=America/Sao_Paulo
 ```
 
-Após reiniciar o serviço `backup`, no Superadministrador → **Cópias de segurança**, importe somente a chave pública GPG ASCII-armored e informe uma subpasta relativa ao volume-base. Não informe caminhos do host na interface. Configure a rotina para executar diariamente, em intervalos de horas/dias, nos dias escolhidos da semana ou em datas do mês; o horário usa `America/Sao_Paulo`. Datas inexistentes no mês, como dia 31 em fevereiro, são ignoradas. O formulário exibe a configuração e a próxima execução.
+Após reiniciar o serviço `backup`, no Superadministrador → **Cópias de segurança**, importe somente a chave pública GPG ASCII-armored e informe uma subpasta relativa ao volume-base. Não informe caminhos do host na interface. O Superadministrador pode escolher a subpasta de backup; o diretório-base e a montagem física continuam sob responsabilidade da TI. Configure a rotina para executar diariamente, em intervalos de horas/dias, nos dias escolhidos da semana ou em datas do mês; o horário usa `America/Sao_Paulo`. Datas inexistentes no mês, como dia 31 em fevereiro, são ignoradas. O formulário exibe a configuração e a próxima execução.
 
 A retenção configurável mantém até 1–365 dos backups próprios mais recentes. A expiração preexistente de 30 dias continua sendo um limite máximo adicional, portanto a rotina apaga somente arquivos `.rgs` identificados como `scpo-connect-*.rgs` quando excedem o limite de quantidade ou idade. Falhas e espaço baixo são mostrados no painel; backups mais recentes não são apagados para liberar espaço. Abaixo de 10% de espaço livre, o painel alerta.
 
@@ -50,7 +50,7 @@ Na criação manual, o popup de operação mostra a geração do pacote e o prog
 
 ## Biblioteca de imagens da Oficina Terapêutica
 
-Os metadados da biblioteca são armazenados no banco Nursing; os arquivos ficam no diretório indicado por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão: `./data/therapy-materials`). A rotina automática inclui os arquivos da biblioteca; pacotes manuais de banco e a exportação AES-GCM da interface não incluem. Para usar um HD externo, a equipe de infraestrutura deve primeiro montá-lo no host em um caminho persistente e definir esse caminho no `.env`, por exemplo:
+Os metadados da biblioteca são armazenados no banco Nursing; os arquivos ficam no diretório indicado por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão: `./data/therapy-materials`). O Superadministrador pode escolher e criar uma subpasta relativa dentro desse volume na guia **Cópias de segurança**; ao mudar o local, os arquivos já cadastrados são movidos para a nova subpasta. A rotina automática inclui o volume de imagens; pacotes manuais de banco e a exportação AES-GCM da interface não incluem. Para usar um HD externo, a equipe de infraestrutura deve primeiro montá-lo no host em um caminho persistente e definir esse caminho no `.env`, por exemplo:
 
 ```sh
 SCPO_THERAPY_MATERIALS_HOST_DIR=/mnt/scpo-therapy-assets
@@ -58,7 +58,7 @@ SCPO_THERAPY_MATERIALS_HOST_DIR=/mnt/scpo-therapy-assets
 
 O aplicativo aceita imagens JPG, PNG e WebP de até 12 MB por arquivo. O acervo é autenticado e não é servido como conteúdo público.
 
-Antes de iniciar ou reiniciar os containers, confirme que o dispositivo está realmente montado no caminho configurado (`findmnt --target /mnt/scpo-therapy-assets`) e que o diretório permite leitura e gravação ao UID/GID `10001` usado pelo container. Se o disco não estiver montado, o bind mount pode gravar no disco do sistema em vez do HD externo. A preparação do mount, permissões e persistência após reinicialização deve ser validada pela TI no host; o aplicativo não detecta nem monta hardware.
+Antes de iniciar ou reiniciar os containers, confirme que o dispositivo está realmente montado no caminho configurado (`findmnt --target /mnt/scpo-therapy-assets`) e que o diretório permite leitura e gravação ao UID/GID `10001` usado pelo container. Se o disco não estiver montado, o bind mount pode gravar no disco do sistema em vez do HD externo. A preparação do mount, permissões e persistência após reinicialização deve ser validada pela TI no host; o aplicativo não detecta nem monta hardware. O app aceita somente subpastas relativas ao volume já montado; não monta discos ou compartilhamentos e não aceita caminhos absolutos do host.
 
 O banco Nursing sem o diretório de imagens não recupera os arquivos da biblioteca, e preservar somente as imagens não recupera seus metadados. Faça exercícios de restauração que validem ambos.
 

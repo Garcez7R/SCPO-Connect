@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Generator
+from datetime import UTC, datetime
 
 import pytest
 from alembic import command
@@ -346,7 +347,7 @@ def test_therapy_material_image_upload_and_delete_use_configured_storage(
     file_response = therapy.get_therapy_material_image(
         uploaded["filename"], therapist, therapy_database
     )
-    assert file_response.path == image_path
+    assert file_response.body == image_bytes
     assert file_response.headers["content-disposition"].startswith("inline;")
     response = therapy.delete_therapy_material_image(
         uploaded["id"], therapist, therapy_database
@@ -354,6 +355,90 @@ def test_therapy_material_image_upload_and_delete_use_configured_storage(
     assert response.status_code == 204
     assert not image_path.exists()
     assert therapy.list_therapy_material_images(therapist, therapy_database)["images"] == []
+
+
+def test_superadmin_can_change_image_storage_and_existing_files_are_moved(
+    therapy_database: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    root = tmp_path / "therapy-volume"
+    root.mkdir()
+    monkeypatch.setenv("SCPO_THERAPY_MATERIALS_DIR", str(root))
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    filename = "a" * 32 + ".png"
+    (root / filename).write_bytes(b"\x89PNG\r\n\x1a\nimage")
+    therapy_database.add(
+        therapy.TherapyMaterialImage(
+            id="image-record",
+            filename=filename,
+            title="Imagem de teste",
+            content_type="image/png",
+            size_bytes=13,
+            uploaded_by="Admin",
+            uploaded_at=datetime.now(UTC),
+        )
+    )
+    therapy_database.commit()
+    superadmin = DemoPrincipal(
+        "root-id",
+        "root",
+        "Superadministrador",
+        "system_admin",
+        ["admin"],
+        {"admin": ["administrar"]},
+        is_superuser=True,
+    )
+
+    before = therapy.get_therapy_storage_location(superadmin, therapy_database)
+    assert before["directory"] == ""
+    assert before["image_count"] == 1
+
+    updated = therapy.set_therapy_storage_location(
+        therapy.TherapyStorageLocationPayload(directory="imagens/oficina"),
+        superadmin,
+        therapy_database,
+    )
+
+    target = root / "imagens" / "oficina"
+    assert updated["directory"] == "imagens/oficina"
+    assert updated["destination_available"] is True
+    assert (target / filename).read_bytes() == b"\x89PNG\r\n\x1a\nimage"
+    assert not (root / filename).exists()
+    assert therapy.therapy_materials_directory() == target
+
+
+def test_therapy_storage_location_rejects_non_superadmin_and_escape_paths(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setenv("SCPO_THERAPY_MATERIALS_DIR", str(tmp_path / "therapy-volume"))
+    staff = DemoPrincipal(
+        "therapist-id",
+        "therapist",
+        "Profissional",
+        "therapy",
+        ["therapy"],
+        {"therapy": ["consultar", "alterar"]},
+    )
+    with pytest.raises(HTTPException) as unauthorized:
+        therapy.get_therapy_storage_location(staff, therapy_database)
+    assert unauthorized.value.status_code == 403
+    superadmin = DemoPrincipal(
+        "root-id",
+        "root",
+        "Superadministrador",
+        "system_admin",
+        ["admin"],
+        {"admin": ["administrar"]},
+        is_superuser=True,
+    )
+    with pytest.raises(HTTPException) as invalid:
+        therapy.set_therapy_storage_location(
+            therapy.TherapyStorageLocationPayload(directory="../outside"),
+            superadmin,
+            therapy_database,
+        )
+    assert invalid.value.status_code == 422
 
 
 def test_therapy_library_rejects_non_image_payloads() -> None:

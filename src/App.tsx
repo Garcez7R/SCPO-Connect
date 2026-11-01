@@ -75,6 +75,7 @@ import { BehavioralStatusBadge, type BehavioralStatus } from './components/Behav
 import HelpGuide from './components/HelpGuide'
 import { AppDialogProvider } from './components/AppDialogs'
 import { useAppDialogs } from './components/appDialogContext'
+import TherapyStorageSettings from './components/TherapyStorageSettings'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight'
@@ -5344,9 +5345,9 @@ function BackupExportPanel() {
       </form>
       <form className="backup-export-form backup-automatic-config-form" onSubmit={(event) => void configureAutomaticBackup(event)}>
         <label className="field">
-          <span className="field-label">Subpasta do volume-base</span>
+          <span className="field-label">Subpasta do volume de backup</span>
           <input required maxLength={200} value={automaticDirectory} onChange={(event) => setAutomaticDirectory(event.target.value)} placeholder="backups/scpo-connect" autoComplete="off" />
-          <span className="field-hint">Informe somente uma subpasta relativa. A montagem do destino físico é responsabilidade da TI.</span>
+          <span className="field-hint">Informe somente uma subpasta relativa ao volume de backup já montado pela TI, local ou de rede. Caminhos absolutos e saídas do volume não são aceitos.</span>
         </label>
         <label className="field">
           <span className="field-label">Periodicidade</span>
@@ -5442,6 +5443,7 @@ const auditActionLabels: Record<string, string> = {
   automatic_backup_key_generated: 'Par de chaves GPG gerado para backup',
   automatic_backup_private_key_exported: 'Cópia cifrada da chave privada GPG exportada',
   automatic_backup_configured: 'Rotina de backup automático configurada',
+  therapy_storage_location_changed: 'Local da biblioteca de imagens alterado',
   physician_profile_admin_updated: 'Perfil médico atualizado pela Administração',
   physician_prescription_created: 'Prescrição médica criada',
   queue_call_settings_read: 'Regra de alternância da fila consultada',
@@ -5753,7 +5755,7 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}
-    {tab === 'backup' && <BackupExportPanel />}
+    {tab === 'backup' && <><BackupExportPanel /><TherapyStorageSettings /></>}
     {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel">
       <div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha das contas comuns será redefinida para 0000 e as sessões serão encerradas. O MFA já cadastrado será mantido; no próximo acesso, quem já tem MFA deverá informar o código atual e criar uma nova senha. Contas sem MFA serão orientadas a configurá-lo.</p></div></div>
       <div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · sua própria conta não será alterada</span><button className="button button-danger" type="button" onClick={() => { setError(''); setResetAllPassword(''); setResetAllPhrase(''); setResetAllConfirmationOpen(true) }} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>
