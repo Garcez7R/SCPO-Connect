@@ -59,7 +59,42 @@ def test_backup_config_requires_a_verified_public_key_fingerprint(
     assert backup._load_automatic_backup_state()["directory"] == "previous"
 
 
-def test_backup_retention_removes_only_rgs_files_older_than_30_days(
+def test_backup_config_persists_schedule_and_copy_retention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_BACKUP_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(backup, "emit_audit_event", lambda *args, **kwargs: None)
+    (tmp_path / ".gnupg").mkdir()
+    backup._save_automatic_backup_state({"recipient": "A" * 40})
+    payload = backup.AutomaticBackupConfig(
+        directory="weekly",
+        fingerprint_confirmation="A" * 40,
+        schedule_type="weekly",
+        run_time="03:15",
+        weekdays=[0, 4],
+        retention_count=12,
+    )
+    principal = backup.DemoPrincipal(
+        "root",
+        "root",
+        "Root",
+        "system_admin",
+        ["admin"],
+        {"admin": ["administrar"]},
+        is_superuser=True,
+    )
+
+    status = backup.configure_automatic_backup(payload, principal)
+
+    assert status["schedule"] == "Semanalmente (seg, sex) às 03:15 (America/Sao_Paulo)"
+    assert status["retention_count"] == 12
+    persisted = backup._load_automatic_backup_state()
+    assert persisted["weekdays"] == [0, 4]
+    assert persisted["run_time"] == "03:15"
+    assert persisted["retention_count"] == 12
+
+
+def test_backup_retention_keeps_configured_count_and_expires_files_after_30_days(
     tmp_path: Path,
 ) -> None:
     old_backup = tmp_path / "scpo-connect-old.rgs"
@@ -80,6 +115,20 @@ def test_backup_retention_removes_only_rgs_files_older_than_30_days(
     assert unrelated.exists()
 
 
+def test_backup_retention_keeps_only_the_most_recent_configured_count(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 10, 31, tzinfo=UTC)
+    backups = [tmp_path / f"scpo-connect-{index}.rgs" for index in range(4)]
+    for index, path in enumerate(backups):
+        path.write_bytes(b"encrypted")
+        modified = (now - timedelta(days=index)).timestamp()
+        os.utime(path, (modified, modified))
+
+    assert backup._prune_automatic_backups(tmp_path, now, retention_count=2) == 2
+    assert [path.exists() for path in backups] == [True, True, False, False]
+
+
 def test_backup_schedule_retries_failed_runs_at_most_hourly() -> None:
     timezone = ZoneInfo("America/Sao_Paulo")
     now = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)
@@ -93,6 +142,106 @@ def test_backup_schedule_retries_failed_runs_at_most_hourly() -> None:
     assert not backup._should_run_automatic_backup(state, now, timezone)
     state["last_attempt_at"] = (now - timedelta(hours=1, minutes=1)).isoformat()
     assert backup._should_run_automatic_backup(state, now, timezone)
+
+
+def test_weekly_and_monthly_backup_schedules_select_configured_dates() -> None:
+    timezone = ZoneInfo("America/Sao_Paulo")
+    now = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)
+    weekly = {
+        "directory": "daily",
+        "recipient": "A" * 40,
+        "schedule_type": "weekly",
+        "run_time": "09:00",
+        "weekdays": [0, 2],
+    }
+
+    assert backup._scheduled_occurrence(weekly, now, timezone, future=False) == datetime(
+        2026, 10, 28, 9, 0, tzinfo=timezone
+    )
+    assert backup._scheduled_occurrence(weekly, now, timezone, future=True) == datetime(
+        2026, 11, 2, 9, 0, tzinfo=timezone
+    )
+
+    monthly = {
+        "directory": "daily",
+        "recipient": "A" * 40,
+        "schedule_type": "monthly",
+        "run_time": "09:00",
+        "month_days": [15, 31],
+    }
+    assert backup._scheduled_occurrence(monthly, now, timezone, future=False) == datetime(
+        2026, 10, 31, 9, 0, tzinfo=timezone
+    )
+    assert backup._scheduled_occurrence(monthly, now, timezone, future=True) == datetime(
+        2026, 11, 15, 9, 0, tzinfo=timezone
+    )
+
+
+def test_saving_a_schedule_does_not_run_an_already_missed_occurrence() -> None:
+    timezone = ZoneInfo("America/Sao_Paulo")
+    now = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)
+    state = {
+        "directory": "weekly",
+        "recipient": "A" * 40,
+        "schedule_type": "weekly",
+        "run_time": "09:00",
+        "weekdays": [5],
+        "schedule_updated_at": now.isoformat(),
+    }
+
+    assert not backup._should_run_automatic_backup(state, now, timezone)
+    assert backup._scheduled_occurrence(state, now, timezone, future=True) == datetime(
+        2026, 11, 7, 9, 0, tzinfo=timezone
+    )
+
+
+def test_interval_backup_schedule_is_anchored_and_does_not_run_early() -> None:
+    timezone = ZoneInfo("America/Sao_Paulo")
+    state = {
+        "directory": "daily",
+        "recipient": "A" * 40,
+        "schedule_type": "interval",
+        "interval_value": 2,
+        "interval_unit": "hours",
+        "run_time": "08:00",
+        "schedule_anchor_at": "2026-10-31T08:00:00-03:00",
+    }
+    before_first_run = datetime(2026, 10, 31, 10, 0, tzinfo=UTC)
+    after_second_run = datetime(2026, 10, 31, 15, 30, tzinfo=UTC)
+
+    assert backup._scheduled_occurrence(
+        state, before_first_run, timezone, future=False
+    ) is None
+    assert backup._scheduled_occurrence(
+        state, after_second_run, timezone, future=False
+    ) == datetime(2026, 10, 31, 12, 0, tzinfo=timezone)
+    assert backup._scheduled_occurrence(
+        state, after_second_run, timezone, future=True
+    ) == datetime(2026, 10, 31, 14, 0, tzinfo=timezone)
+
+    every_two_days = {
+        **state,
+        "interval_unit": "days",
+        "run_time": "09:00",
+        "schedule_anchor_at": "2026-10-28T09:00:00-03:00",
+    }
+    assert backup._scheduled_occurrence(
+        every_two_days, after_second_run, timezone, future=False
+    ) == datetime(2026, 10, 30, 9, 0, tzinfo=timezone)
+    assert backup._scheduled_occurrence(
+        every_two_days, after_second_run, timezone, future=True
+    ) == datetime(2026, 11, 1, 9, 0, tzinfo=timezone)
+
+
+def test_backup_schedule_rejects_empty_or_out_of_range_calendar_days() -> None:
+    with pytest.raises(ValueError):
+        backup.AutomaticBackupSchedule(schedule_type="weekly", weekdays=[])
+    with pytest.raises(ValueError):
+        backup.AutomaticBackupSchedule(schedule_type="monthly", month_days=[32])
+    with pytest.raises(ValueError):
+        backup.AutomaticBackupSchedule(
+            schedule_type="interval", interval_unit="hours", interval_value=25
+        )
 
 
 def test_backup_rejects_private_or_unarmored_gpg_keys(

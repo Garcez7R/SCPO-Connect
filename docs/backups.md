@@ -2,9 +2,9 @@
 
 O formato de transporte `.rgs` reúne os sete bancos da aplicação, incluindo contas locais, permissões e dados dos módulos, em um único arquivo cifrado. Os pacotes criados pelo script usam GPG; a exportação pela interface do superadministrador usa AES-GCM com senha. A restauração isolada aceita ambos os formatos. O conteúdo inclui dados pessoais e clínicos: guarde o arquivo e a chave/senha em locais institucionais controlados.
 
-## Backup automático diário
+## Backup automático
 
-O serviço de backup pode gerar diariamente, às 02:00 no fuso `America/Sao_Paulo`, um `.rgs` cifrado com a chave pública GPG aprovada. O pacote inclui os sete bancos, o `.env`, o volume de dados do Caddy e os arquivos da Oficina Terapêutica. A chave privada nunca é enviada ao aplicativo; mantenha-a em custódia técnica separada para restauração.
+O serviço de backup pode gerar um `.rgs` cifrado com a chave pública GPG aprovada. O pacote inclui os sete bancos, o `.env`, o volume de dados do Caddy e os arquivos da Oficina Terapêutica. A chave privada nunca é enviada ao aplicativo; mantenha-a em custódia técnica separada para restauração.
 
 A instalação cria um volume-base de estágio em `./data/backup-staging`, mas isso **não é um destino institucional nem imutável**. Antes de ativar a rotina, a TI deve montar o destino autorizado no host, configurar `SCPO_BACKUP_HOST_DIR` no `.env` com o caminho absoluto desse mount e garantir gravação ao UID/GID `10001` do container. Compartilhamentos de rede precisam estar montados no host Linux antes do Compose iniciar:
 
@@ -13,9 +13,11 @@ SCPO_BACKUP_HOST_DIR=/mnt/backup-institucional/scpo-connect
 SCPO_BACKUP_TIMEZONE=America/Sao_Paulo
 ```
 
-Após reiniciar o serviço `backup`, no Superadministrador → **Cópias de segurança**, importe somente a chave pública GPG ASCII-armored e informe uma subpasta relativa ao volume-base. Não informe caminhos do host na interface. Salvar essa configuração ativa a rotina; o painel mostra o último resultado, espaço livre e alertas. O serviço remove automaticamente apenas arquivos `.rgs` com mais de 30 dias. Abaixo de 10% de espaço livre, o painel alerta, mas não apaga backups mais novos para liberar espaço.
+Após reiniciar o serviço `backup`, no Superadministrador → **Cópias de segurança**, importe somente a chave pública GPG ASCII-armored e informe uma subpasta relativa ao volume-base. Não informe caminhos do host na interface. Configure a rotina para executar diariamente, em intervalos de horas/dias, nos dias escolhidos da semana ou em datas do mês; o horário usa `America/Sao_Paulo`. Datas inexistentes no mês, como dia 31 em fevereiro, são ignoradas. O formulário exibe a configuração e a próxima execução.
 
-Até a TI montar o servidor físico e testar gravação, leitura e restauração, a interface identifica a imutabilidade como **não validada**. Um volume configurado e a retenção de 30 dias, por si sós, não comprovam imutabilidade/WORM.
+A retenção configurável mantém até 1–365 dos backups próprios mais recentes. A expiração preexistente de 30 dias continua sendo um limite máximo adicional, portanto a rotina apaga somente arquivos `.rgs` identificados como `scpo-connect-*.rgs` quando excedem o limite de quantidade ou idade. Falhas e espaço baixo são mostrados no painel; backups mais recentes não são apagados para liberar espaço. Abaixo de 10% de espaço livre, o painel alerta.
+
+Até a TI montar o servidor físico e testar gravação, leitura e restauração, a interface identifica a imutabilidade como **não validada**. Um volume configurado e a retenção por quantidade/idade, por si sós, não comprovam imutabilidade/WORM.
 
 Para validar um backup automático GPG sem substituir bancos ativos, use a restauração isolada. Além do prefixo novo para os bancos, informe uma pasta absoluta, nova e fora do repositório para preservar os anexos:
 

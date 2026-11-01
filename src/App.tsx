@@ -4780,6 +4780,13 @@ type AutomaticBackupStatus = {
   recipient_configured: boolean
   recipient_fingerprint: string | null
   schedule: string
+  schedule_type: 'daily' | 'interval' | 'weekly' | 'monthly'
+  interval_value: number
+  interval_unit: 'hours' | 'days'
+  run_time: string
+  weekdays: number[]
+  month_days: number[]
+  retention_count: number
   retention_days: number
   next_run_at: string
   last_attempt_at: string | null
@@ -4822,6 +4829,15 @@ function BackupExportPanel() {
   const [automaticDirectory, setAutomaticDirectory] = useState('')
   const [automaticPublicKey, setAutomaticPublicKey] = useState<File | null>(null)
   const [automaticFingerprintConfirmation, setAutomaticFingerprintConfirmation] = useState('')
+  const [automaticSchedule, setAutomaticSchedule] = useState({
+    schedule_type: 'daily' as AutomaticBackupStatus['schedule_type'],
+    interval_value: '1',
+    interval_unit: 'days' as AutomaticBackupStatus['interval_unit'],
+    run_time: '02:00',
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+    month_days: '1',
+    retention_count: '30',
+  })
   const [automaticLoading, setAutomaticLoading] = useState(true)
   const [automaticSaving, setAutomaticSaving] = useState(false)
   const [automaticMessage, setAutomaticMessage] = useState('')
@@ -4847,6 +4863,15 @@ function BackupExportPanel() {
       )
       setAutomaticStatus(status)
       setAutomaticDirectory(status.destination_directory ?? '')
+      setAutomaticSchedule({
+        schedule_type: status.schedule_type,
+        interval_value: String(status.interval_value),
+        interval_unit: status.interval_unit,
+        run_time: status.run_time,
+        weekdays: status.weekdays,
+        month_days: status.month_days.join(', '),
+        retention_count: String(status.retention_count),
+      })
       setAutomaticError('')
     } catch (statusError) {
       setAutomaticError(statusError instanceof Error
@@ -4897,6 +4922,24 @@ function BackupExportPanel() {
     setAutomaticMessage('')
     setAutomaticError('')
     try {
+      const monthDays = automaticSchedule.schedule_type === 'monthly'
+        ? automaticSchedule.month_days.split(',').map((value) => value.trim())
+        : ['1']
+      if (automaticSchedule.schedule_type === 'monthly' && monthDays.some((value) => !/^\d{1,2}$/.test(value))) {
+        throw new Error('Informe os dias do mês como números separados por vírgula.')
+      }
+      const parsedMonthDays = monthDays.map(Number)
+      if (automaticSchedule.schedule_type === 'monthly' && (parsedMonthDays.some((day) => day < 1 || day > 31) || new Set(parsedMonthDays).size !== parsedMonthDays.length)) {
+        throw new Error('Os dias do mês devem ser únicos e estar entre 1 e 31.')
+      }
+      const intervalValue = Number(automaticSchedule.interval_value)
+      const configuredIntervalValue = automaticSchedule.schedule_type === 'interval' ? intervalValue : Number.isInteger(intervalValue) && intervalValue > 0 ? intervalValue : 1
+      if (automaticSchedule.schedule_type === 'interval' && (!Number.isInteger(intervalValue) || intervalValue < 1 || intervalValue > (automaticSchedule.interval_unit === 'hours' ? 24 : 365))) {
+        throw new Error(`O intervalo deve ser um número inteiro entre 1 e ${automaticSchedule.interval_unit === 'hours' ? 24 : 365}.`)
+      }
+      if (automaticSchedule.schedule_type === 'weekly' && automaticSchedule.weekdays.length === 0) {
+        throw new Error('Selecione ao menos um dia da semana.')
+      }
       await readApiResponse<AutomaticBackupStatus>(
         await fetch('/api/v1/backup/automatic/config', {
           method: 'PUT',
@@ -4904,10 +4947,17 @@ function BackupExportPanel() {
           body: JSON.stringify({
             directory: automaticDirectory.trim(),
             fingerprint_confirmation: automaticFingerprintConfirmation.trim(),
+            schedule_type: automaticSchedule.schedule_type,
+            interval_value: configuredIntervalValue,
+            interval_unit: automaticSchedule.interval_unit,
+            run_time: automaticSchedule.run_time,
+            weekdays: automaticSchedule.weekdays,
+            month_days: parsedMonthDays,
+            retention_count: Number(automaticSchedule.retention_count),
           }),
         }),
       )
-      setAutomaticMessage('Backup diário ativado. A próxima execução ocorrerá no horário exibido acima.')
+      setAutomaticMessage('Configuração do backup automático salva. A próxima execução ocorrerá no horário exibido acima.')
       setAutomaticFingerprintConfirmation('')
       await loadAutomaticStatus()
     } catch (saveError) {
@@ -5068,7 +5118,7 @@ function BackupExportPanel() {
     </section>
     <section className="backup-automatic-section">
       <div className="section-heading">
-        <div><p className="eyebrow">ROTINA INSTITUCIONAL</p><h3>Backup automático diário</h3><p className="welcome-copy">Cifra os sete bancos, o arquivo de ambiente, a autoridade do Caddy e os arquivos da Oficina com a chave pública GPG.</p></div>
+        <div><p className="eyebrow">ROTINA INSTITUCIONAL</p><h3>Backup automático</h3><p className="welcome-copy">Cifra os sete bancos, o arquivo de ambiente, a autoridade do Caddy e os arquivos da Oficina com a chave pública GPG.</p></div>
         <button className="button button-secondary" type="button" onClick={() => void loadAutomaticStatus()} disabled={automaticLoading}>{automaticLoading ? 'Consultando…' : 'Atualizar estado'}</button>
       </div>
       {automaticError && <ToastMessage variant="error">{automaticError}</ToastMessage>}
@@ -5076,7 +5126,7 @@ function BackupExportPanel() {
       {automaticStatus && <div className="backup-automatic-status" aria-live="polite">
         <p className={automaticStatus.enabled ? 'audit-integrity-valid' : 'audit-integrity-invalid'}>
           <strong>{automaticStatus.enabled ? 'Rotina configurada' : 'Rotina ainda não configurada'}</strong>
-          <span>{automaticStatus.schedule} · retenção de {automaticStatus.retention_days} dias · próxima execução {dateTime(automaticStatus.next_run_at)}{automaticStatus.destination_directory ? ` · subpasta ${automaticStatus.destination_directory}` : ''}</span>
+          <span>{automaticStatus.schedule} · até {automaticStatus.retention_count} cópias, por no máximo {automaticStatus.retention_days} dias · próxima execução {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }).format(new Date(automaticStatus.next_run_at))} (America/Sao_Paulo){automaticStatus.destination_directory ? ` · subpasta ${automaticStatus.destination_directory}` : ''}</span>
         </p>
         {!automaticStatus.base_volume_available && <ToastMessage variant="error">O volume-base não está acessível ou não permite gravação ao serviço de backup.</ToastMessage>}
         {automaticStatus.configured && !automaticStatus.destination_available && <ToastMessage variant="error">A subpasta configurada não está acessível para gravação.</ToastMessage>}
@@ -5101,19 +5151,64 @@ function BackupExportPanel() {
           {automaticSaving ? 'Importando chave…' : 'Importar chave pública'}
         </button>
       </form>
-      <form className="backup-export-form" onSubmit={(event) => void configureAutomaticBackup(event)}>
+      <form className="backup-export-form backup-automatic-config-form" onSubmit={(event) => void configureAutomaticBackup(event)}>
         <label className="field">
           <span className="field-label">Subpasta do volume-base</span>
           <input required maxLength={200} value={automaticDirectory} onChange={(event) => setAutomaticDirectory(event.target.value)} placeholder="backups/scpo-connect" autoComplete="off" />
           <span className="field-hint">Informe somente uma subpasta relativa. A montagem do destino físico é responsabilidade da TI.</span>
         </label>
         <label className="field">
+          <span className="field-label">Periodicidade</span>
+          <select value={automaticSchedule.schedule_type} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, schedule_type: event.target.value as AutomaticBackupStatus['schedule_type'] }))}>
+            <option value="daily">Todos os dias</option>
+            <option value="interval">A cada intervalo</option>
+            <option value="weekly">Dias da semana</option>
+            <option value="monthly">Dias do mês</option>
+          </select>
+        </label>
+        {automaticSchedule.schedule_type === 'interval' && <>
+          <label className="field">
+            <span className="field-label">Executar a cada</span>
+            <input required type="number" min="1" max={automaticSchedule.interval_unit === 'hours' ? 24 : 365} value={automaticSchedule.interval_value} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, interval_value: event.target.value }))} />
+          </label>
+          <label className="field">
+            <span className="field-label">Unidade do intervalo</span>
+            <select value={automaticSchedule.interval_unit} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, interval_unit: event.target.value as AutomaticBackupStatus['interval_unit'] }))}>
+              <option value="hours">Horas</option>
+              <option value="days">Dias</option>
+            </select>
+          </label>
+        </>}
+        {automaticSchedule.schedule_type === 'weekly' && <fieldset className="backup-weekday-field">
+          <legend className="field-label">Dias da semana</legend>
+          <div className="backup-weekday-options">{[
+            { value: 0, label: 'Seg' }, { value: 1, label: 'Ter' }, { value: 2, label: 'Qua' },
+            { value: 3, label: 'Qui' }, { value: 4, label: 'Sex' }, { value: 5, label: 'Sáb' },
+            { value: 6, label: 'Dom' },
+          ].map((day) => <label key={day.value}><input type="checkbox" checked={automaticSchedule.weekdays.includes(day.value)} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, weekdays: event.target.checked ? [...current.weekdays, day.value].sort() : current.weekdays.filter((value) => value !== day.value) }))} /> {day.label}</label>)}</div>
+        </fieldset>}
+        {automaticSchedule.schedule_type === 'monthly' && <label className="field">
+          <span className="field-label">Dias do mês</span>
+          <input required value={automaticSchedule.month_days} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, month_days: event.target.value }))} placeholder="1, 15, 28" />
+          <span className="field-hint">Separe por vírgulas. Datas inexistentes em um mês (por exemplo, dia 31) são ignoradas naquele mês.</span>
+        </label>}
+        <label className="field">
+          <span className="field-label">Horário local</span>
+          <input required type="time" value={automaticSchedule.run_time} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, run_time: event.target.value }))} />
+          <span className="field-hint">Fuso: America/Sao_Paulo. Para intervalos em horas, este horário ancora o primeiro ciclo.</span>
+        </label>
+        <label className="field">
+          <span className="field-label">Quantidade máxima de cópias</span>
+          <input required type="number" min="1" max="365" value={automaticSchedule.retention_count} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, retention_count: event.target.value }))} />
+          <span className="field-hint">Mantém as mais recentes até esse limite; a retenção máxima preexistente de 30 dias continua aplicada.</span>
+        </label>
+        <label className="field">
           <span className="field-label">Confirme a impressão digital fornecida pela TI</span>
           <input required minLength={32} maxLength={64} value={automaticFingerprintConfirmation} onChange={(event) => setAutomaticFingerprintConfirmation(event.target.value.toUpperCase())} placeholder="Impressão digital hexadecimal" autoComplete="off" />
           <span className="field-hint">Compare a impressão digital exibida acima por um canal independente antes de ativar.</span>
         </label>
-        <button className="button button-primary" type="submit" disabled={automaticSaving || automaticLoading || !automaticDirectory.trim() || !automaticStatus?.recipient_fingerprint || automaticFingerprintConfirmation.trim() !== automaticStatus.recipient_fingerprint}>
-          {automaticSaving ? 'Salvando configuração…' : automaticStatus?.enabled ? 'Atualizar rotina diária' : 'Salvar e ativar rotina diária'}
+        <button className="button button-primary" type="submit" disabled={automaticSaving || automaticLoading || !automaticDirectory.trim() || !automaticStatus?.recipient_fingerprint || automaticFingerprintConfirmation.trim() !== automaticStatus.recipient_fingerprint || Number(automaticSchedule.retention_count) < 1 || Number(automaticSchedule.retention_count) > 365 || (automaticSchedule.schedule_type === 'interval' && (Number(automaticSchedule.interval_value) < 1 || Number(automaticSchedule.interval_value) > (automaticSchedule.interval_unit === 'hours' ? 24 : 365)))}>
+          {automaticSaving ? 'Salvando configuração…' : automaticStatus?.enabled ? 'Atualizar configuração' : 'Salvar e ativar rotina'}
         </button>
       </form>
     </section>

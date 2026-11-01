@@ -43,6 +43,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Recepção: fluxos separados de admissão/internação e emergência; a chegada pode criar atomicamente um cadastro central sem quarto/leito ou vincular paciente existente.
 - Recepção: os resumos de Agendamentos e Admissões/Leitos usam contagens reais por situação, cadastro e mapa de leitos. Leitos disponíveis só incluem leitos livres e com status disponível; falhas da consulta não são mostradas como saldo zero.
 - Backup: Administração do Sistema oferece atalho para exportação manual `.rgs` por senha, sem exigir configuração do backup automático; o arquivo inclui os sete bancos e deve ser validado por restauração isolada.
+- Backup automático: Superadministrador configura frequência diária, intervalos em horas/dias, dias da semana ou do mês, horário local e quantidade de cópias (1–365); a retenção máxima existente de 30 dias continua valendo.
 - Recepção: ficha ambulatorial entra na fila do pronto atendimento e permite classificar a chamada como comum ou prioritária, conforme o critério institucional.
 - Enfermagem: a escala horária de medicações pode ser impressa em folha A4 por horário com uma linha por paciente e medicamento, com opção de registrar administração, recusa, indisponibilidade ou suspensão, preservando o motivo da exceção.
 - Gestão e Administração: relatórios históricos paginados incluem triagens de Enfermagem e atendimentos ambulatoriais da Recepção, com busca por paciente, filtros por período e impressão conforme permissões.

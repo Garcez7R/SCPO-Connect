@@ -33,11 +33,15 @@ Atualizado em 31/10/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Recepção: os resumos de Agendamentos e Admissões/Leitos agora seguem os cartões de status usados nos demais módulos, com borda lateral e layout responsivo. Incluem contagens reais do período consultado e do cadastro; o indicador de leitos livres vem do mapa e mostra indisponibilidade/estado de carregamento sem converter falha em zero.
 - Backup manual: a exportação `.rgs` por senha já existia, mas estava abaixo da configuração automática. Agora há um atalho no cabeçalho e uma seção de exportação imediata que exige somente a senha e oferece o download. O guia, README e documentação de backup descrevem o caminho e os limites; o teste sintético de ida e volta no backend já valida exportação e restauração.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
+- Pedidos adicionados ao backlog: gerar uma chave GPG pelo Superadministrador, para uso nos backups automáticos; reorganizar a Oficina Terapêutica em Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios, separando o acervo de imagens dos materiais; revisar suas consultas e tratamento de erros para eliminar falhas ao abrir o módulo.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ## Próximas fases solicitadas
 
-- Backup automático: adicionar configuração no próprio app para quantidade de cópias mantidas e periodicidade flexível (a cada X horas/dias, dias da semana ou datas do mês), com horário/fuso explícitos, validação da agenda e indicação da próxima execução. Preservar a execução sem sobreposição, retenção segura e visibilidade de erros; definir limites institucionais antes de habilitar intervalos curtos.
+- Backup automático: o Superadministrador agora configura agenda diária, intervalos de horas/dias, dias da semana ou datas do mês, horário local, quantidade máxima de cópias (1–365) e vê a próxima execução. Mantém o fuso institucional `America/Sao_Paulo`, evita execução antes do horário ancorado e preserva o limite de idade de 30 dias e a retenção de somente arquivos `.rgs` próprios. Interface, documentação, ajuda e testes cobrem as novas opções.
+- Chave GPG para backup automático: oferecer no Superadministrador a geração de um par de chaves de forma segura, com proteção/custódia da chave privada e exibição/download restritos, e usar a chave pública na rotina automática. Definir o fluxo de custódia e recuperação antes da implementação.
+- Oficina Terapêutica: ordenar as abas como Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios; manter imagens e materiais em áreas separadas.
+- Oficina Terapêutica: revisar todas as consultas e dependências do módulo, estados de carregamento/vazio/erro e permissões, reproduzindo as falhas ao abrir e corrigindo suas causas.
 - Painel de chamadas: permitir chamar o acompanhante do paciente com indicação clara de que é um acompanhante, preservando a privacidade na tela pública; definir como selecionar o acompanhante e evitar expor dados pessoais antes de implementar.
 - Revisar a Lavanderia/Rouparia em dispositivo de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.

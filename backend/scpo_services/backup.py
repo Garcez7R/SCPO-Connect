@@ -16,9 +16,9 @@ import tempfile
 import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import unquote, urlparse
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -27,7 +27,14 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from .common import DemoPrincipal, authenticated_principal, emit_audit_event
 from .rgs_format import DATABASES, MAGIC, decrypt_and_extract
@@ -40,7 +47,8 @@ RESTORE_OPERATIONS: dict[str, dict[str, object]] = {}
 RESTORE_OPERATION_RETENTION = timedelta(hours=2)
 AUTO_BACKUP_LOCK = threading.Lock()
 AUTO_BACKUP_RETENTION_DAYS = 30
-AUTO_BACKUP_HOUR = 2
+AUTO_BACKUP_RETENTION_COUNT = 30
+AUTO_BACKUP_DEFAULT_TIME = "02:00"
 LOW_DISK_SPACE_FRACTION = 0.1
 MAX_PUBLIC_KEY_BYTES = 64 * 1024
 logger = logging.getLogger(__name__)
@@ -50,14 +58,165 @@ class ExportRequest(BaseModel):
     password: str = Field(min_length=12, max_length=128)
 
 
-class AutomaticBackupConfig(BaseModel):
+class AutomaticBackupSchedule(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    schedule_type: Literal["daily", "interval", "weekly", "monthly"] = "daily"
+    interval_value: int = Field(default=1, ge=1, le=365)
+    interval_unit: Literal["hours", "days"] = "days"
+    run_time: str = Field(default=AUTO_BACKUP_DEFAULT_TIME, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    weekdays: list[int] = Field(default_factory=lambda: list(range(7)))
+    month_days: list[int] = Field(default_factory=lambda: [1])
+    retention_count: int = Field(default=AUTO_BACKUP_RETENTION_COUNT, ge=1, le=365)
+
+    @field_validator("weekdays")
+    @classmethod
+    def validate_weekdays(cls, weekdays: list[int]) -> list[int]:
+        if not weekdays or len(set(weekdays)) != len(weekdays) or any(
+            weekday < 0 or weekday > 6 for weekday in weekdays
+        ):
+            raise ValueError("Selecione ao menos um dia da semana válido")
+        return sorted(weekdays)
+
+    @field_validator("month_days")
+    @classmethod
+    def validate_month_days(cls, month_days: list[int]) -> list[int]:
+        if not month_days or len(set(month_days)) != len(month_days) or any(
+            day < 1 or day > 31 for day in month_days
+        ):
+            raise ValueError("Selecione ao menos um dia do mês entre 1 e 31")
+        return sorted(month_days)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "AutomaticBackupSchedule":
+        if self.schedule_type == "interval" and self.interval_unit == "hours" and self.interval_value > 24:
+            raise ValueError("O intervalo em horas deve ser de 1 a 24")
+        return self
+
+
+class AutomaticBackupConfig(AutomaticBackupSchedule):
     directory: str = Field(min_length=1, max_length=200)
     fingerprint_confirmation: str = Field(
         min_length=40,
         max_length=64,
         pattern=r"^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$",
     )
+
+
+def _automatic_schedule(state: dict[str, object]) -> AutomaticBackupSchedule:
+    try:
+        return AutomaticBackupSchedule.model_validate(
+            {
+                "schedule_type": state.get("schedule_type", "daily"),
+                "interval_value": state.get("interval_value", 1),
+                "interval_unit": state.get("interval_unit", "days"),
+                "run_time": state.get("run_time", AUTO_BACKUP_DEFAULT_TIME),
+                "weekdays": state.get("weekdays", list(range(7))),
+                "month_days": state.get("month_days", [1]),
+                "retention_count": state.get(
+                    "retention_count", AUTO_BACKUP_RETENTION_COUNT
+                ),
+            }
+        )
+    except ValidationError as exc:
+        raise RuntimeError("A configuração de agenda do backup está inválida") from exc
+
+
+def _local_run_time(run_date: date, run_time: str, timezone: ZoneInfo) -> datetime:
+    parsed_time = time.fromisoformat(run_time)
+    return datetime.combine(run_date, parsed_time, tzinfo=timezone)
+
+
+def _schedule_anchor(
+    state: dict[str, object], timezone: ZoneInfo
+) -> datetime:
+    anchor_value = state.get("schedule_anchor_at")
+    if not isinstance(anchor_value, str):
+        raise TypeError("A âncora da agenda por intervalo está ausente")
+    try:
+        anchor = datetime.fromisoformat(anchor_value)
+    except ValueError as exc:
+        raise RuntimeError("A âncora da agenda do backup está inválida") from exc
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=UTC)
+    return anchor.astimezone(timezone)
+
+
+def _scheduled_occurrence(
+    state: dict[str, object],
+    now: datetime,
+    timezone: ZoneInfo,
+    *,
+    future: bool,
+) -> datetime | None:
+    schedule = _automatic_schedule(state)
+    local_now = now.astimezone(timezone)
+    if schedule.schedule_type == "interval":
+        anchor = _schedule_anchor(state, timezone)
+        if now.astimezone(UTC) < anchor.astimezone(UTC):
+            return anchor if future else None
+        if schedule.interval_unit == "hours":
+            interval = timedelta(hours=schedule.interval_value)
+            elapsed = (now.astimezone(UTC) - anchor.astimezone(UTC)).total_seconds()
+            step = max(0, int(elapsed // interval.total_seconds()))
+            candidate = anchor.astimezone(UTC) + interval * step
+            if future and candidate <= now.astimezone(UTC):
+                candidate += interval
+            elif not future and candidate > now.astimezone(UTC):
+                candidate -= interval
+            return candidate.astimezone(timezone)
+
+        interval_days = schedule.interval_value
+        day_delta = (local_now.date() - anchor.date()).days
+        step = max(0, day_delta // interval_days)
+        candidate = _local_run_time(
+            anchor.date() + timedelta(days=step * interval_days),
+            schedule.run_time,
+            timezone,
+        )
+        if future and candidate <= local_now:
+            candidate = _local_run_time(
+                anchor.date() + timedelta(days=(step + 1) * interval_days),
+                schedule.run_time,
+                timezone,
+            )
+        elif not future and candidate > local_now:
+            candidate = _local_run_time(
+                anchor.date() + timedelta(days=max(0, step - 1) * interval_days),
+                schedule.run_time,
+                timezone,
+            )
+        return candidate
+
+    offsets = range(372) if future else range(0, -372, -1)
+    for offset in offsets:
+        candidate_date = local_now.date() + timedelta(days=offset)
+        if schedule.schedule_type == "weekly" and candidate_date.weekday() not in schedule.weekdays:
+            continue
+        if schedule.schedule_type == "monthly" and candidate_date.day not in schedule.month_days:
+            continue
+        candidate = _local_run_time(candidate_date, schedule.run_time, timezone)
+        if future and candidate > local_now:
+            return candidate
+        if not future and candidate <= local_now:
+            return candidate
+    return None
+
+
+def _schedule_description(
+    schedule: AutomaticBackupSchedule, timezone_name: str
+) -> str:
+    if schedule.schedule_type == "interval":
+        unit = "hora" if schedule.interval_unit == "hours" else "dia"
+        plural = "" if schedule.interval_value == 1 else "s"
+        return f"A cada {schedule.interval_value} {unit}{plural}, às {schedule.run_time} ({timezone_name})"
+    if schedule.schedule_type == "weekly":
+        weekday_names = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+        days = ", ".join(weekday_names[day] for day in schedule.weekdays)
+        return f"Semanalmente ({days}) às {schedule.run_time} ({timezone_name})"
+    if schedule.schedule_type == "monthly":
+        days = ", ".join(str(day) for day in schedule.month_days)
+        return f"Mensalmente (dias {days}) às {schedule.run_time} ({timezone_name})"
+    return f"Diariamente às {schedule.run_time} ({timezone_name})"
 
 
 def _backup_data_dir() -> Path:
@@ -130,6 +289,7 @@ def _gpg_home() -> Path:
 
 def _automatic_backup_status() -> dict[str, object]:
     state = _load_automatic_backup_state()
+    schedule = _automatic_schedule(state)
     directory = state.get("directory")
     recipient = state.get("recipient")
     configured = isinstance(directory, str) and isinstance(recipient, str)
@@ -148,24 +308,25 @@ def _automatic_backup_status() -> dict[str, object]:
     timezone_name = os.getenv("SCPO_BACKUP_TIMEZONE", "America/Sao_Paulo")
     timezone = ZoneInfo(timezone_name)
     now = datetime.now(timezone)
-    next_run = now.replace(hour=AUTO_BACKUP_HOUR, minute=0, second=0, microsecond=0)
-    if now >= next_run:
-        if configured and state.get("last_success_date") != now.date().isoformat():
-            next_run = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-            last_attempt = state.get("last_attempt_at")
-            if isinstance(last_attempt, str):
-                try:
-                    attempt_time = datetime.fromisoformat(last_attempt)
-                    if attempt_time.tzinfo is None:
-                        attempt_time = attempt_time.replace(tzinfo=UTC)
-                    next_run = max(
-                        next_run,
-                        attempt_time.astimezone(timezone) + timedelta(hours=1),
-                    )
-                except ValueError as exc:
-                    raise RuntimeError("Data da última tentativa de backup está inválida") from exc
-        else:
-            next_run += timedelta(days=1)
+    next_run = _scheduled_occurrence(state, now, timezone, future=True)
+    due_run = _scheduled_occurrence(state, now, timezone, future=False)
+    if next_run is None:
+        raise RuntimeError("Não foi possível calcular a próxima execução do backup")
+    if configured and due_run is not None and not _schedule_slot_succeeded(state, due_run):
+        next_attempt = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        last_attempt = state.get("last_attempt_at")
+        if isinstance(last_attempt, str):
+            try:
+                attempt_time = datetime.fromisoformat(last_attempt)
+                if attempt_time.tzinfo is None:
+                    attempt_time = attempt_time.replace(tzinfo=UTC)
+                next_attempt = max(
+                    next_attempt,
+                    attempt_time.astimezone(timezone) + timedelta(hours=1),
+                )
+            except ValueError as exc:
+                raise RuntimeError("Data da última tentativa de backup está inválida") from exc
+        next_run = min(next_run, next_attempt)
     return {
         "enabled": configured and base_available and destination_available,
         "configured": configured,
@@ -174,7 +335,14 @@ def _automatic_backup_status() -> dict[str, object]:
         "destination_directory": directory if configured else None,
         "recipient_configured": bool(recipient),
         "recipient_fingerprint": recipient,
-        "schedule": f"Diariamente às {AUTO_BACKUP_HOUR:02d}:00 ({timezone_name})",
+        "schedule": _schedule_description(schedule, timezone_name),
+        "schedule_type": schedule.schedule_type,
+        "interval_value": schedule.interval_value,
+        "interval_unit": schedule.interval_unit,
+        "run_time": schedule.run_time,
+        "weekdays": schedule.weekdays,
+        "month_days": schedule.month_days,
+        "retention_count": schedule.retention_count,
         "retention_days": AUTO_BACKUP_RETENTION_DAYS,
         "next_run_at": next_run.isoformat(),
         "last_attempt_at": state.get("last_attempt_at"),
@@ -208,14 +376,27 @@ def _copy_tree_without_symlinks(source: Path, destination: Path) -> int:
     return copied_files
 
 
-def _prune_automatic_backups(destination: Path, now: datetime | None = None) -> int:
+def _prune_automatic_backups(
+    destination: Path,
+    now: datetime | None = None,
+    retention_count: int = AUTO_BACKUP_RETENTION_COUNT,
+) -> int:
+    if retention_count < 1:
+        raise ValueError("A quantidade de backups mantidos deve ser positiva")
     cutoff = (now or datetime.now(UTC)) - timedelta(days=AUTO_BACKUP_RETENTION_DAYS)
+    backups = sorted(
+        (
+            backup
+            for backup in destination.glob("scpo-connect-*.rgs")
+            if not backup.is_symlink() and backup.is_file()
+        ),
+        key=lambda backup: (backup.stat().st_mtime, backup.name),
+        reverse=True,
+    )
     removed = 0
-    for backup in destination.glob("scpo-connect-*.rgs"):
-        if backup.is_symlink() or not backup.is_file():
-            continue
+    for index, backup in enumerate(backups):
         modified_at = datetime.fromtimestamp(backup.stat().st_mtime, UTC)
-        if modified_at < cutoff:
+        if index >= retention_count or modified_at < cutoff:
             backup.unlink()
             removed += 1
     return removed
@@ -253,7 +434,8 @@ def _create_automatic_backup() -> Path:
     if not _gpg_home().is_dir():
         raise RuntimeError("A chave pública GPG configurada não está disponível")
 
-    _prune_automatic_backups(destination)
+    schedule = _automatic_schedule(state)
+    _prune_automatic_backups(destination, retention_count=schedule.retention_count)
     _remove_stale_backup_staging(destination)
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup_path = destination / f"scpo-connect-{timestamp}.rgs"
@@ -341,11 +523,8 @@ def _should_run_automatic_backup(
         state.get("recipient"), str
     ):
         return False
-    local_now = now.astimezone(timezone)
-    if local_now.hour < AUTO_BACKUP_HOUR:
-        return False
-    today = local_now.date().isoformat()
-    if state.get("last_success_date") == today:
+    due_run = _scheduled_occurrence(state, now, timezone, future=False)
+    if due_run is None or _schedule_slot_succeeded(state, due_run):
         return False
     last_attempt = state.get("last_attempt_at")
     if isinstance(last_attempt, str):
@@ -360,6 +539,33 @@ def _should_run_automatic_backup(
     return True
 
 
+def _schedule_slot_succeeded(state: dict[str, object], due_run: datetime) -> bool:
+    schedule_updated_at = state.get("schedule_updated_at")
+    if isinstance(schedule_updated_at, str):
+        try:
+            configured_at = datetime.fromisoformat(schedule_updated_at)
+        except ValueError as exc:
+            raise RuntimeError("Data da configuração do backup está inválida") from exc
+        if configured_at.tzinfo is None:
+            configured_at = configured_at.replace(tzinfo=UTC)
+        if due_run.astimezone(UTC) <= configured_at.astimezone(UTC):
+            return True
+    last_success = state.get("last_success_at")
+    if isinstance(last_success, str):
+        try:
+            success_time = datetime.fromisoformat(last_success)
+        except ValueError as exc:
+            raise RuntimeError("Data do último backup concluído está inválida") from exc
+        if success_time.tzinfo is None:
+            success_time = success_time.replace(tzinfo=UTC)
+        if success_time.astimezone(UTC) >= due_run.astimezone(UTC):
+            return True
+    return (
+        state.get("schedule_type", "daily") == "daily"
+        and state.get("last_success_date") == due_run.date().isoformat()
+    )
+
+
 async def _run_automatic_backup_worker() -> None:
     timezone = ZoneInfo(os.getenv("SCPO_BACKUP_TIMEZONE", "America/Sao_Paulo"))
     while True:
@@ -370,6 +576,11 @@ async def _run_automatic_backup_worker() -> None:
                 blocking=False
             ):
                 try:
+                    scheduled_slot = _scheduled_occurrence(
+                        state, now, timezone, future=False
+                    )
+                    if scheduled_slot is None:
+                        raise RuntimeError("Não foi possível determinar o horário agendado")
                     state["last_attempt_at"] = now.isoformat()
                     state["last_error"] = None
                     _save_automatic_backup_state(state)
@@ -377,6 +588,7 @@ async def _run_automatic_backup_worker() -> None:
                     state = _load_automatic_backup_state()
                     state["last_success_at"] = datetime.now(UTC).isoformat()
                     state["last_success_date"] = now.astimezone(timezone).date().isoformat()
+                    state["last_success_slot"] = scheduled_slot.isoformat()
                     state["last_backup_name"] = backup_path.name
                     state["last_error"] = None
                     _save_automatic_backup_state(state)
@@ -828,6 +1040,21 @@ def configure_automatic_backup(
             detail="A subpasta não está disponível para gravação",
         )
     state["directory"] = payload.directory
+    schedule_values = payload.model_dump(
+        exclude={"directory", "fingerprint_confirmation"}
+    )
+    state.update(schedule_values)
+    configured_at = datetime.now(UTC)
+    if payload.schedule_type == "interval":
+        timezone = ZoneInfo(os.getenv("SCPO_BACKUP_TIMEZONE", "America/Sao_Paulo"))
+        now = configured_at.astimezone(timezone)
+        anchor = _local_run_time(now.date(), payload.run_time, timezone)
+        if anchor <= now:
+            anchor = _local_run_time(now.date() + timedelta(days=1), payload.run_time, timezone)
+        state["schedule_anchor_at"] = anchor.isoformat()
+    else:
+        state.pop("schedule_anchor_at", None)
+    state["schedule_updated_at"] = configured_at.isoformat()
     state["last_error"] = None
     _save_automatic_backup_state(state)
     emit_audit_event(
