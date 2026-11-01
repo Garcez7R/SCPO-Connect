@@ -1603,6 +1603,13 @@ html[data-theme="dark"] .backup-operation-icon { background: #20343e; color: #b6
 .about-product-brand .startup-mark { width: 72px; height: 72px; }
 .about-product-brand .startup-orbit { inset: 5px; }
 .about-product-brand .startup-glow { bottom: 5px; }
+.about-page .about-product-brand { box-sizing: border-box; width: 96px; height: 96px; min-width: 96px; min-height: 96px; flex: 0 0 96px; aspect-ratio: 1; }
+.about-page .about-product-brand .startup-mark { width: 72px; height: 72px; }
+.about-page .about-overview-card { min-height: 0; padding: 15px; }
+@media (max-width: 520px) {
+  .about-page .about-product-brand { width: 70px; height: 70px; min-width: 70px; min-height: 70px; flex-basis: 70px; }
+  .about-page .about-product-brand .startup-mark { width: 52px; height: 52px; }
+}
 .about-version h2 { margin: 2px 0 6px; font-size: 18px; }
 .about-version .welcome-copy { margin: 0; }
 .about-legal-card { display: flex; min-height: 220px; flex-direction: column; align-items: flex-start; padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }

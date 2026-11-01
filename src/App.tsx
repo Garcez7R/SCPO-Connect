@@ -2340,7 +2340,7 @@ function AboutPage() {
       <button id="about-tab-help" className={`button ${tab === 'help' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'help'} aria-controls="about-panel-help" onClick={() => setTab('help')}>Dúvidas e solução de problemas</button>
     </div>
     {tab === 'overview'
-      ? <div id="about-panel-overview" className="about-legal-grid" role="tabpanel" aria-labelledby="about-tab-overview" tabIndex={0}>{systemOverview.map((item) => <article className="about-legal-card" key={item.title}><p className="eyebrow">VISÃO GERAL</p><h2>{item.title}</h2><p>{item.details}</p></article>)}</div>
+      ? <div id="about-panel-overview" className="about-legal-grid about-overview-grid" role="tabpanel" aria-labelledby="about-tab-overview" tabIndex={0}>{systemOverview.map((item) => <article className="about-legal-card about-overview-card" key={item.title}><p className="eyebrow">VISÃO GERAL</p><h2>{item.title}</h2><p>{item.details}</p></article>)}</div>
       : tab === 'help'
         ? <div id="about-panel-help" role="tabpanel" aria-labelledby="about-tab-help" tabIndex={0}><HelpGuide /></div>
         : <div id="about-panel-compliance" className="about-legal-grid" role="tabpanel" aria-labelledby="about-tab-compliance" tabIndex={0}>{legalReferences.map((item) => <article className="about-legal-card" key={item.title}><p className="eyebrow">REFERÊNCIA OFICIAL</p><h2>{item.title}</h2><p>{item.articles}</p><a href={item.href} target="_blank" rel="noreferrer">Consultar fonte oficial <ArrowRight size={15} /></a><small>{item.source}</small></article>)}</div>}
