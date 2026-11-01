@@ -36,19 +36,19 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Recepção: os resumos de Agendamentos e Admissões/Leitos agora seguem os cartões de status usados nos demais módulos, com borda lateral e layout responsivo. Incluem contagens reais do período consultado e do cadastro; o indicador de leitos livres vem do mapa e mostra indisponibilidade/estado de carregamento sem converter falha em zero.
 - Backup manual: a exportação `.rgs` por senha já existia, mas estava abaixo da configuração automática. Agora há um atalho no cabeçalho e uma seção de exportação imediata que exige somente a senha e oferece o download. O guia, README e documentação de backup descrevem o caminho e os limites; o teste sintético de ida e volta no backend já valida exportação e restauração.
 - A configuração flexível do backup automático está publicada e tem testes para retenção, execução diária, intervalos, semanas, meses e atualização da agenda.
+- Lavanderia/Rouparia: o PWA foi adaptado para uso mobile-first, prioriza a fila com formulário de nova solicitação recolhível, mantém navegação horizontal e adapta cartões, campos e ações para toque/telas estreitas. README e guia do app foram atualizados. Typecheck, lint e build passaram; a inspeção visual autenticada ficou pendente porque os serviços de API locais responderam 502 e não foi possível sair da tela de login.
 - Backlog registrado: chamada de acompanhante no painel público, com seleção e identificação sem revelar dados pessoais.
 - Pedidos adicionados ao backlog: gerar uma chave GPG pelo Superadministrador, para uso nos backups automáticos; reorganizar a Oficina Terapêutica em Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios, separando o acervo de imagens dos materiais; revisar suas consultas e tratamento de erros para eliminar falhas ao abrir o módulo.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
 ### Em andamento
 
-- Nenhuma tarefa de implementação está em andamento. O próximo item sugerido é tornar o PWA da Lavanderia/Rouparia realmente adequado para uso mobile.
+- Nenhuma tarefa de implementação em andamento.
 
 ### Pendente — ordem sugerida
 
 - Chave GPG para backup automático: oferecer no Superadministrador a geração de um par de chaves de forma segura, com proteção/custódia da chave privada e exibição/download restritos, e usar a chave pública na rotina automática. Definir o fluxo de custódia e recuperação antes da implementação.
 - Superadministrador/armazenamento: avaliar criação e seleção de diretórios de destino para backup e biblioteca de imagens, aceitando caminhos locais e compartilhamentos de rede já montados. A interface deve pedir e validar o caminho, explicar permissões e deixar claro que montar/compartilhar volumes no host depende da TI; o app não deve tentar montar sistemas de arquivos por conta própria.
-- Lavanderia/Rouparia: adaptar o PWA para uma experiência realmente mobile, distinta do layout desktop; revisar navegação, densidade, formulários e ações em telas estreitas.
 - Ações de abertura móvel: substituir em todo o app os rótulos genéricos “Abrir PWA”/“PWA móvel” por nomes diretos e específicos do módulo, compreensíveis para pessoas leigas.
 - Indicadores e cartões: revisar todas as abas para padronizar os cartões de informação conforme Gestão Hospitalar, com hierarquia e comportamento responsivo; definir cores por significado/situação e eliminar cores arbitrárias, usando apenas dados reais.
 - Oficina Terapêutica: ordenar as abas como Atividades e calendário, Lista de presença, Biblioteca de imagens, Materiais e Relatórios; manter imagens e materiais em áreas separadas.

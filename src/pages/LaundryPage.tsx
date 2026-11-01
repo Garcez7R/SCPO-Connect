@@ -119,6 +119,7 @@ export default function LaundryPage({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [updating, setUpdating] = useState('')
+  const [mobileRequestFormOpen, setMobileRequestFormOpen] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [editingItemId, setEditingItemId] = useState('')
@@ -220,6 +221,7 @@ export default function LaundryPage({
       setRequestForm({ unit: '', area: '', description: '', priority: 'normal', lines: [{ item_id: '', quantity: '1' }] })
       setNotice('Solicitação registrada na fila da Lavanderia/Rouparia.')
       setTab('requests')
+      setMobileRequestFormOpen(false)
       await loadData()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar a solicitação.')
@@ -262,7 +264,7 @@ export default function LaundryPage({
   return <section className={`laundry-page work-orders-page page-enter${mobileMode ? ' laundry-page-mobile' : ''}`}>
     <header className="laundry-header">
       <span className="module-icon module-icon-laundry"><Shirt size={23} /></span>
-      <div><p className="eyebrow">{mobileMode ? 'LAVANDERIA/ROUPARIA' : 'MÓDULO · LAVANDERIA/ROUPARIA'}</p><h1>Lavanderia/Rouparia</h1><p className="welcome-copy">Organize o enxoval, acompanhe coleta, lavagem e devolução e consulte o estoque limpo e sujo.</p></div>
+      <div><p className="eyebrow">{mobileMode ? 'PAINEL DE TRABALHO · LAVANDERIA' : 'MÓDULO · LAVANDERIA/ROUPARIA'}</p><h1>Lavanderia/Rouparia</h1><p className="welcome-copy">{mobileMode ? 'Acompanhe solicitações e atualize cada etapa do enxoval.' : 'Organize o enxoval, acompanhe coleta, lavagem e devolução e consulte o estoque limpo e sujo.'}</p></div>
       {mobileMode ? <div className="laundry-header-actions"><a className="button button-secondary" href="/">Sistema completo</a>{onLogout && <button className="button button-secondary" type="button" onClick={onLogout}>Sair</button>}</div> : <a className="button button-secondary" href="/laundry.html" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Abrir Lavanderia no celular</a>}
     </header>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
@@ -277,7 +279,10 @@ export default function LaundryPage({
       {(Object.keys(tabLabels) as LaundryTab[]).map((value) => <button key={value} className={`button ${tab === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{tabLabels[value]}</button>)}
     </nav>
     {tab === 'requests' && <div className="laundry-content">
-      {canCreate && <section className="patient-list-panel laundry-form-panel">
+      {canCreate && mobileMode && <button className="button button-primary laundry-mobile-new-request" type="button" aria-expanded={mobileRequestFormOpen} aria-controls="laundry-request-form-panel" onClick={() => { setMobileRequestFormOpen((open) => !open); setError(''); setNotice('') }}>
+        <Plus size={17} /> {mobileRequestFormOpen ? 'Fechar solicitação' : 'Nova solicitação de enxoval'}
+      </button>}
+      {canCreate && (!mobileMode || mobileRequestFormOpen) && <section className="patient-list-panel laundry-form-panel" id={mobileMode ? 'laundry-request-form-panel' : undefined}>
         <div className="section-heading"><div><p className="eyebrow">COLETA E PROCESSAMENTO</p><h2>Nova solicitação de enxoval</h2><p className="welcome-copy">Informe a unidade e as peças sujas para acompanhar coleta, lavagem e devolução.</p></div></div>
         {!items.length ? <p className="history-empty">Cadastre os tipos de itens na aba Itens da lavanderia antes de abrir solicitações.</p> : <form className="field-grid" onSubmit={(event) => void createRequest(event)}>
           <label className="field"><span className="field-label">Unidade solicitante</span><input required minLength={2} maxLength={80} value={requestForm.unit} onChange={(event) => setRequestForm((current) => ({ ...current, unit: event.target.value }))} /></label>
