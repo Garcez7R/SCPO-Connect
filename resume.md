@@ -4,6 +4,11 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ## Quadro de acompanhamento
 
+### Forma de execução acordada
+
+- Executar validações e testes um de cada vez, aguardando a conclusão de cada comando antes de iniciar o próximo, para evitar travamentos do VS Code.
+- Ao concluir uma tarefa/fase, atualizar este resume, informar que a fase terminou e qual será a próxima, então avançar automaticamente sem aguardar nova confirmação. Fazer commit e push ao final de cada fase, preservando alterações locais preexistentes e sem incluir arquivos fora do escopo.
+
 ### Concluído e publicado
 
 - O commit anterior já publicado inclui o PWA da Cozinha, o mapa desktop, a porta 7777 e o guia de deploy.
@@ -53,6 +58,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Médico: a fila de triagens exibe totais aguardando avaliação, chamados, em atendimento e prioritários. Os cartões usam estados reais da fila, adotam quatro colunas no desktop e duas em telas estreitas; uma falha de atualização não exibe zeros nem uma fila vazia enganosa.
 - Auditoria dos resumos operacionais: revisadas as filas de Serviço Social, Psicologia/Psiquiatria e Médico, e conferidos os resumos já existentes em Enfermagem, Farmácia, Recepção, Central de Exames, Oficina Terapêutica, Manutenção/Higienização, Lavanderia/Rouparia e Cozinha. Cada indicador novo usa dados da fila correspondente; telas sem fila ou fonte adicional útil não receberam cartões redundantes.
 - Painel de chamadas: a Recepção pode chamar o responsável cadastrado ou informar o acompanhante presente. A escolha fica vinculada à chegada/agendamento e só é divulgada no painel público como “Acompanhante: primeiro nome · Paciente: primeiro nome”; a fila pública não recebe nomes completos nem outros dados pessoais.
+- Indicadores executivos e agenda: contagens e percentuais informativos usam tom neutro; estados de sucesso/andamento aparecem somente quando existem registros correspondentes e a consulta está disponível. Disponibilidade zero de leitos sinaliza atenção. Typecheck, ESLint e build passaram, executados sequencialmente.
 - Superadministrador: agora gera um par GPG RSA 3072 para o backup automático. A chave privada é protegida pela senha escolhida e armazenada no volume do servidor; a senha não é salva. A interface baixa uma cópia privada ASCII-armored ainda cifrada, exige confirmação da impressão digital antes de substituir uma chave pública existente e audita geração/exportação sem registrar a senha. Testes sintéticos validam geração, proteção, autorização, exportação e rejeição de senha incorreta. O volume de chave protegida no mesmo servidor não substitui custódia independente.
 - Backup: o botão do cabeçalho agora leva diretamente à senha de exportação manual, com rolagem e foco explícitos; os campos da agenda automática alinham pelo topo para que opções condicionais não desloquem os demais controles.
 - Conexão dos módulos: o cabeçalho da aplicação indica verificação, serviço conectado ou indisponibilidade da API associada ao módulo ativo. Rotas de saúde separadas nos proxies Caddy consultam apenas a resposta mínima de cada backend, sem ler dados clínicos ou gerar eventos de auditoria. Enfermagem e Operações móveis já tinham verificação de serviço; Cozinha agora usa a mesma verificação e Farmácia, Médico e Lavanderia/Rouparia também a exibem.
@@ -65,11 +71,11 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Em andamento
 
-- Nenhuma tarefa de implementação em andamento.
+- Revisão de cartões e indicadores: continuar a conferência das abas e dos resumos restantes, mantendo cores semânticas baseadas em dados reais e o padrão visual da Gestão Hospitalar.
 
 ### Pendente — ordem sugerida
 
-- Indicadores e cartões: continuar revisão visual das abas que ainda não seguem o padrão da Gestão Hospitalar e corrigir cores arbitrárias restantes usando somente dados reais. A auditoria dos resumos operacionais por fila foi concluída; ver o registro acima.
+- Indicadores e cartões: revisar os indicadores restantes por módulo, incluindo resumos de estoque, Enfermagem, Psicologia/Psiquiatria, exames e Operações. A auditoria dos resumos operacionais por fila foi concluída; ver os registros acima.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.

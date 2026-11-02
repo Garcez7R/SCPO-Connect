@@ -198,16 +198,22 @@ function ReceptionAppointmentsPage({ patients, canCreate, canUpdate }: {
   }), [appointments, search, statusFilter])
 
   const activePatients = patients.filter((patient) => patient.active !== false)
+  const appointmentCount = (status: AppointmentStatus) =>
+    appointments.filter((appointment) => appointment.status === status).length
+  const appointmentTone = (status: AppointmentStatus, tone: 'success' | 'progress') =>
+    !loading && !loadError && appointmentCount(status) > 0
+      ? `status-tone-${tone}`
+      : 'status-tone-neutral'
 
   return <div className="reception-appointments">
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     <div className="hygiene-summary reception-info-summary reception-appointments-summary" aria-label="Resumo da agenda" aria-busy={loading}>
-      <article className="status-tone-neutral"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'scheduled').length}</strong><span>Agendados</span></article>
-      <article className="status-tone-success"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'confirmed').length}</strong><span>Confirmados</span></article>
-      <article className="status-tone-progress"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'arrived').length}</strong><span>Chegaram</span></article>
-      <article className="status-tone-progress"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'called').length}</strong><span>Chamados</span></article>
-      <article className="status-tone-success"><strong>{loading ? '…' : loadError ? '—' : appointments.filter((item) => item.status === 'completed').length}</strong><span>Concluídos</span></article>
+      <article className="status-tone-neutral"><strong>{loading ? '…' : loadError ? '—' : appointmentCount('scheduled')}</strong><span>Agendados</span></article>
+      <article className={appointmentTone('confirmed', 'success')}><strong>{loading ? '…' : loadError ? '—' : appointmentCount('confirmed')}</strong><span>Confirmados</span></article>
+      <article className={appointmentTone('arrived', 'progress')}><strong>{loading ? '…' : loadError ? '—' : appointmentCount('arrived')}</strong><span>Chegaram</span></article>
+      <article className={appointmentTone('called', 'progress')}><strong>{loading ? '…' : loadError ? '—' : appointmentCount('called')}</strong><span>Chamados</span></article>
+      <article className={appointmentTone('completed', 'success')}><strong>{loading ? '…' : loadError ? '—' : appointmentCount('completed')}</strong><span>Concluídos</span></article>
     </div>
 
     <div className="reception-appointment-toolbar">
