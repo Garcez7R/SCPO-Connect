@@ -424,6 +424,20 @@ def test_reception_appointments_validate_conflicts_and_status_transitions(
     )
     assert arrived["status"] == "arrived"
     assert arrived["arrived_at"] is not None
+    registered_patient = nursing_db.get(nursing.Patient, str(patient["reference"]))
+    assert registered_patient is not None
+    registered_patient.responsible_name = "Responsável Registrado"
+    nursing_db.commit()
+    called = nursing.update_reception_appointment_status(
+        int(created["id"]),
+        nursing.ReceptionAppointmentStatusPayload(
+            status="called",
+            companion_type="responsible",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    assert called["companion_name"] == "Responsável Registrado"
     completed = nursing.update_reception_appointment_status(
         int(created["id"]),
         nursing.ReceptionAppointmentStatusPayload(status="completed"),
@@ -441,6 +455,60 @@ def test_reception_appointments_validate_conflicts_and_status_transitions(
     assert invalid_transition.value.status_code == 409
 
 
+def test_reception_arrival_call_records_present_companion(
+    nursing_db: Session,
+) -> None:
+    receptionist = DemoPrincipal(
+        "reception-id",
+        "reception-user",
+        "Recepcionista de teste",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar", "alterar"]},
+    )
+    created = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_name="Pessoa sem cadastro",
+            reason="Atendimento de teste",
+        ),
+        receptionist,
+        nursing_db,
+    )
+
+    called = nursing.update_emergency_arrival(
+        str(created["id"]),
+        nursing.EmergencyArrivalStatusPayload(
+            status="called",
+            companion_type="other",
+            companion_name="  Acompanhante Presente  ",
+        ),
+        receptionist,
+        nursing_db,
+    )
+
+    assert called["companion_name"] == "Acompanhante Presente"
+
+    second_arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_name="Outra pessoa sem cadastro",
+            reason="Atendimento de teste",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    with pytest.raises(HTTPException) as missing_responsible:
+        nursing.update_emergency_arrival(
+            str(second_arrival["id"]),
+            nursing.EmergencyArrivalStatusPayload(
+                status="called",
+                companion_type="responsible",
+            ),
+            receptionist,
+            nursing_db,
+        )
+    assert missing_responsible.value.status_code == 409
+
+
 def test_reception_appointment_requires_timezone_and_valid_future_interval() -> None:
     now = datetime.now(UTC)
     with pytest.raises(ValidationError):
@@ -454,7 +522,7 @@ def test_reception_appointment_requires_timezone_and_valid_future_interval() -> 
         )
 
 
-def test_public_waiting_room_queue_exposes_first_name_and_surname_without_codes(
+def test_public_waiting_room_queue_exposes_only_first_names_without_codes(
     nursing_db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -464,6 +532,7 @@ def test_public_waiting_room_queue_exposes_first_name_and_surname_without_codes(
     ).astimezone(UTC)
     ana_id = str(uuid.uuid4())
     bruna_id = str(uuid.uuid4())
+    companion_id = str(uuid.uuid4())
     nursing_db.add_all(
         [
             nursing.EmergencyArrival(
@@ -508,6 +577,21 @@ def test_public_waiting_room_queue_exposes_first_name_and_surname_without_codes(
                 clinical_priority="routine",
                 queue_type="priority",
             ),
+            nursing.EmergencyArrival(
+                id=companion_id,
+                patient_reference=None,
+                patient_name="Carlos Augusto Cavalcante",
+                arrival_mode="walk_in",
+                reason="Motivo privado do paciente",
+                status="called",
+                created_by="Recepção",
+                updated_by="Recepção",
+                created_at=now - timedelta(minutes=1),
+                updated_at=now,
+                clinical_priority="routine",
+                queue_type="common",
+                companion_name="Maria Fernanda de Souza",
+            ),
         ]
     )
     nursing_db.commit()
@@ -521,7 +605,7 @@ def test_public_waiting_room_queue_exposes_first_name_and_surname_without_codes(
             {
                 "id": nursing.hashlib.sha256(f"arrival:{ana_id}".encode()).hexdigest()[:16],
                 "type": "arrival",
-                "display_name": "Ana da Silva",
+                "display_name": "Ana",
                 "status": "waiting",
                 "queue_type": "common",
                 "arrived_at": payload["items"][0]["arrived_at"],
@@ -530,15 +614,29 @@ def test_public_waiting_room_queue_exposes_first_name_and_surname_without_codes(
             {
                 "id": nursing.hashlib.sha256(f"arrival:{bruna_id}".encode()).hexdigest()[:16],
                 "type": "arrival",
-                "display_name": "Bruna Exemplo",
+                "display_name": "Bruna",
                 "status": "called",
                 "queue_type": "priority",
                 "arrived_at": payload["items"][1]["arrived_at"],
                 "updated_at": payload["items"][1]["updated_at"],
             },
+            {
+                "id": nursing.hashlib.sha256(f"arrival:{companion_id}".encode()).hexdigest()[:16],
+                "type": "arrival",
+                "display_name": "Carlos",
+                "status": "called",
+                "queue_type": "common",
+                "arrived_at": payload["items"][2]["arrived_at"],
+                "updated_at": payload["items"][2]["updated_at"],
+                "companion_display_name": "Maria",
+            },
         ]
         assert "Ana da Silva Exemplo" not in response.text
         assert "Sobrenome" not in response.text
+        assert "Carlos Augusto" not in response.text
+        assert "Cavalcante" not in response.text
+        assert "Maria Fernanda" not in response.text
+        assert "de Souza" not in response.text
         assert '"code"' not in response.text
         assert "Ontem" not in response.text
         assert "Motivo privado" not in response.text

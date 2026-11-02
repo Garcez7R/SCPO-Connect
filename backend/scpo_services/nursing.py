@@ -342,6 +342,7 @@ class EmergencyArrival(Base):
     allergy_report_status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_asked")
     reported_allergies: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     announcement_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    companion_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
 
 
 class NursingTriage(Base):
@@ -425,6 +426,7 @@ class ReceptionAppointment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     announcement_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    companion_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
 
 
 class PatientFlowEvent(Base):
@@ -828,14 +830,45 @@ class ReceptionAppointmentPayload(BaseModel):
         return self
 
 
-class ReceptionAppointmentStatusPayload(BaseModel):
+class ReceptionCallCompanionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    companion_type: Literal["none", "responsible", "other"] = "none"
+    companion_name: str = Field(default="", max_length=120)
+
+    @field_validator("companion_name")
+    @classmethod
+    def trim_companion_name(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_companion(self) -> "ReceptionCallCompanionPayload":
+        if self.companion_type == "other" and len(self.companion_name) < 2:
+            raise ValueError("Informe o nome do acompanhante presente")
+        if self.companion_type != "other" and self.companion_name:
+            raise ValueError("Informe o nome somente para acompanhante presente")
+        return self
+
+
+class ReceptionAppointmentStatusPayload(ReceptionCallCompanionPayload):
     model_config = ConfigDict(extra="forbid")
     status: Literal["confirmed", "arrived", "called", "completed", "cancelled", "no_show"]
 
+    @model_validator(mode="after")
+    def validate_status_companion(self) -> "ReceptionAppointmentStatusPayload":
+        if self.status != "called" and self.companion_type != "none":
+            raise ValueError("Selecione acompanhante somente ao chamar o paciente")
+        return self
 
-class EmergencyArrivalStatusPayload(BaseModel):
+
+class EmergencyArrivalStatusPayload(ReceptionCallCompanionPayload):
     model_config = ConfigDict(extra="forbid")
     status: Literal["waiting", "called", "in_service", "completed", "cancelled"]
+
+    @model_validator(mode="after")
+    def validate_status_companion(self) -> "EmergencyArrivalStatusPayload":
+        if self.status != "called" and self.companion_type != "none":
+            raise ValueError("Selecione acompanhante somente ao chamar o paciente")
+        return self
 
 
 class EmergencyAdmissionPayload(BaseModel):
@@ -3015,7 +3048,7 @@ def list_public_reception_queue(
         )
     ).all()
 
-    queue_entries: list[tuple[datetime, str, str, str, str, str, datetime, int]] = []
+    queue_entries: list[tuple[datetime, str, str, str, str, str, datetime, int, str]] = []
     for arrival in arrivals:
         queue_type = (
             "priority"
@@ -3033,6 +3066,7 @@ def list_public_reception_queue(
                 "arrival",
                 arrival.updated_at,
                 arrival.announcement_version,
+                arrival.companion_name,
             )
         )
     for appointment, patient_name in appointment_rows:
@@ -3048,35 +3082,28 @@ def list_public_reception_queue(
                 "appointment",
                 appointment.updated_at,
                 appointment.announcement_version,
+                appointment.companion_name,
             )
         )
 
     queue_entries.sort(key=lambda item: (item[0], item[1]))
     public_items: list[dict[str, str]] = []
-    for arrived_at, item_id, patient_name, status, queue_type, item_type, updated_at, announcement_version in queue_entries:
+    for arrived_at, item_id, patient_name, status, queue_type, item_type, updated_at, announcement_version, companion_name in queue_entries:
         if status not in {"waiting", "arrived", "called", "in_service"}:
             continue
         name_parts = patient_name.split()
-        surname_index = next(
-            (
-                index
-                for index in range(1, len(name_parts))
-                if name_parts[index].casefold() not in {"da", "das", "de", "do", "dos", "e"}
-            ),
-            1,
-        )
-        display_name = " ".join(name_parts[:surname_index + 1])
-        public_items.append(
-            {
-                "id": hashlib.sha256(f"{item_type}:{item_id}".encode("utf-8")).hexdigest()[:16],
-                "type": item_type,
-                "display_name": display_name,
-                "status": "waiting" if status in {"waiting", "arrived"} else status,
-                "queue_type": queue_type,
-                "arrived_at": arrived_at.isoformat(),
-                "updated_at": updated_at.isoformat(),
-            }
-        )
+        item = {
+            "id": hashlib.sha256(f"{item_type}:{item_id}".encode()).hexdigest()[:16],
+            "type": item_type,
+            "display_name": name_parts[0] if name_parts else "",
+            "status": "waiting" if status in {"waiting", "arrived"} else status,
+            "queue_type": queue_type,
+            "arrived_at": arrived_at.isoformat(),
+            "updated_at": updated_at.isoformat(),
+        }
+        if companion_name and status in {"called", "in_service"}:
+            item["companion_display_name"] = companion_name.split()[0]
+        public_items.append(item)
     return {"items": public_items, "generated_at": datetime.now(UTC).isoformat()}
 
 
@@ -3701,6 +3728,10 @@ def update_reception_appointment_status(
             detail="Esta mudança de situação não é permitida para o agendamento",
         )
 
+    if payload.status == "called":
+        appointment.companion_name = resolve_reception_call_companion(
+            db, appointment.patient_reference, payload
+        )
     appointment.status = payload.status
     if payload.status == "called":
         record_manual_reception_call(db, principal, "routine")
@@ -3819,6 +3850,25 @@ def create_outpatient_encounter(
     return result
 
 
+def resolve_reception_call_companion(
+    db: Session,
+    patient_reference: str | None,
+    payload: ReceptionCallCompanionPayload,
+) -> str:
+    if payload.companion_type == "none":
+        return ""
+    if payload.companion_type == "other":
+        return payload.companion_name
+    patient = db.get(Patient, patient_reference) if patient_reference else None
+    companion_name = patient.responsible_name.strip() if patient else ""
+    if not companion_name:
+        raise HTTPException(
+            status_code=409,
+            detail="O cadastro do paciente não possui um responsável informado",
+        )
+    return companion_name
+
+
 @app.patch("/api/v1/reception/arrivals/{arrival_id}")
 def update_emergency_arrival(
     arrival_id: str,
@@ -3840,6 +3890,10 @@ def update_emergency_arrival(
         raise HTTPException(status_code=409, detail="Transição da chegada não permitida")
     if payload.status == "called" and arrival.status == "waiting":
         record_manual_reception_call(db, principal, arrival.clinical_priority)
+    if payload.status == "called":
+        arrival.companion_name = resolve_reception_call_companion(
+            db, arrival.patient_reference, payload
+        )
     arrival.status = payload.status
     arrival.updated_by = principal.actor_name
     arrival.updated_at = datetime.now(UTC)
@@ -4286,6 +4340,7 @@ def serialize_emergency_arrival(
         "clinical_priority_updated_by": arrival.clinical_priority_updated_by,
         "clinical_priority_updated_at": arrival.clinical_priority_updated_at.isoformat() if arrival.clinical_priority_updated_at else None,
         "clinical_priority_reason": arrival.clinical_priority_reason,
+        "companion_name": arrival.companion_name,
         "created_by": arrival.created_by,
         "updated_by": arrival.updated_by,
         "created_at": arrival.created_at.isoformat(),
@@ -4355,6 +4410,7 @@ def serialize_reception_appointment(
         "created_at": appointment.created_at.isoformat(),
         "updated_at": appointment.updated_at.isoformat(),
         "arrived_at": appointment.arrived_at.isoformat() if appointment.arrived_at else None,
+        "companion_name": appointment.companion_name,
     }
 
 

@@ -325,7 +325,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       <button className={`button ${tab === 'calls' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calls'} onClick={() => setTab('calls')}><span>Painel de chamadas</span><span>{counts.waiting + counts.called}</span></button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode canDeletePatients={user.is_superuser || (user.modules.includes('admin') && (user.permissions.admin?.includes('excluir') === true || user.permissions.admin?.includes('administrar') === true))} /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard canUpdate={canUpdate} canUploadImages={canUploadScreensaver} canDeleteImages={canDeleteScreensaver} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode canDeletePatients={user.is_superuser || (user.modules.includes('admin') && (user.permissions.admin?.includes('excluir') === true || user.permissions.admin?.includes('administrar') === true))} /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard patients={patients} canUpdate={canUpdate} canUploadImages={canUploadScreensaver} canDeleteImages={canDeleteScreensaver} /> : <>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <div className="hygiene-summary" aria-label="Resumo operacional do pronto atendimento"><article className={counts.waiting ? 'status-tone-warning' : 'status-tone-success'}><strong>{counts.waiting}</strong><span>Aguardando</span></article><article className={counts.in_service ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article className="status-tone-success"><strong>{counts.completed}</strong><span>Concluídos</span></article><article className="status-tone-neutral"><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
@@ -408,7 +408,10 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
 type WaitingRoomItem = {
   id: string
   patient_name: string
+  patient_reference?: string | null
   display_name?: string
+  companion_name?: string
+  companion_display_name?: string
   status: 'waiting' | 'called' | 'in_service' | 'other'
   type: 'appointment' | 'arrival'
   arrived_at: string
@@ -416,6 +419,7 @@ type WaitingRoomItem = {
   clinical_priority: EmergencyArrival['clinical_priority']
   queue_type: 'common' | 'priority'
 }
+type CallCompanionType = 'none' | 'responsible' | 'other'
 
 type ScreensaverImage = {
   filename: string
@@ -453,12 +457,14 @@ function readScreensaverPreference() {
   }
 }
 
-function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kioskMode = false }: { canUpdate: boolean; canUploadImages: boolean; canDeleteImages: boolean; kioskMode?: boolean }) {
+function WaitingRoomCallBoard({ patients = [], canUpdate, canUploadImages, canDeleteImages, kioskMode = false }: { patients?: Patient[]; canUpdate: boolean; canUploadImages: boolean; canDeleteImages: boolean; kioskMode?: boolean }) {
   const screensaverStorageKey = 'scpo-reception-screensaver-enabled'
   const [callBoardTab, setCallBoardTab] = useState<'board' | 'screensaver'>('board')
   useBreadcrumb('reception-call-board', callBoardTab === 'screensaver' ? 'Proteção de tela' : null, 2)
   const [screensaverPreference] = useState(readScreensaverPreference)
   const [items, setItems] = useState<WaitingRoomItem[]>([])
+  const [companionTypes, setCompanionTypes] = useState<Record<string, CallCompanionType>>({})
+  const [companionNames, setCompanionNames] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState('')
   const [isCallHighlighting, setIsCallHighlighting] = useState(false)
@@ -658,10 +664,17 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
       setError('Este navegador não oferece anúncio por voz. A chamada visual continua disponível.')
       return Promise.resolve()
     }
-    const patientName = item.display_name ?? item.patient_name.trim().split(/\s+/).slice(0, 2).join(' ')
+    const patientName = item.companion_display_name
+      ? item.display_name ?? item.patient_name.trim().split(/\s+/)[0]
+      : item.display_name ?? item.patient_name.trim().split(/\s+/).slice(0, 2).join(' ')
+    const companionName = item.companion_display_name
+      ?? item.companion_name?.trim().split(/\s+/)[0]
+    const calledPerson = companionName
+      ? `Acompanhante ${companionName} e paciente ${patientName}`
+      : patientName
     const announcement = item.queue_type === 'priority'
-      ? `Chamada prioritária para ${patientName}. Por favor, dirija-se ao atendimento.`
-      : `${patientName}, por favor, dirija-se ao atendimento.`
+      ? `Chamada prioritária para ${calledPerson}. Por favor, dirija-se ao atendimento.`
+      : `${calledPerson}, por favor, dirija-se ao atendimento.`
     const utterance = new SpeechSynthesisUtterance(announcement)
     utterance.lang = 'pt-BR'
     return new Promise<void>((resolve) => {
@@ -753,8 +766,8 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         fetch(`/api/v1/reception/arrivals?limit=100&offset=0&${params}`),
       ])
       const [appointmentData, arrivalData] = await Promise.all([
-        readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; arrived_at?: string | null; status: string }>; total?: number }>(appointmentsResponse),
-        readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority']; queue_type?: 'common' | 'priority' }>; total?: number }>(arrivalsResponse),
+        readApiResponse<{ appointments?: Array<{ id: number; patient_reference: string; patient_name: string; companion_name?: string; starts_at: string; arrived_at?: string | null; status: string }>; total?: number }>(appointmentsResponse),
+        readApiResponse<{ arrivals?: Array<{ id: string; patient_reference: string | null; patient_name: string; companion_name?: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority']; queue_type?: 'common' | 'priority' }>; total?: number }>(arrivalsResponse),
       ])
       const allAppointments = [...(appointmentData.appointments ?? [])]
       const appointmentsTotal = appointmentData.total ?? allAppointments.length
@@ -763,7 +776,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         nextParams.set('limit', '100')
         nextParams.set('offset', String(allAppointments.length))
         const nextResponse = await fetch(`/api/v1/reception/appointments?${nextParams}`)
-        const nextPage = await readApiResponse<{ appointments?: Array<{ id: number; patient_name: string; starts_at: string; arrived_at?: string | null; status: string }> }>(nextResponse)
+        const nextPage = await readApiResponse<{ appointments?: Array<{ id: number; patient_reference: string; patient_name: string; companion_name?: string; starts_at: string; arrived_at?: string | null; status: string }> }>(nextResponse)
         const nextAppointments = nextPage.appointments ?? []
         if (!nextAppointments.length) break
         allAppointments.push(...nextAppointments)
@@ -775,7 +788,7 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         nextParams.set('limit', '100')
         nextParams.set('offset', String(allArrivals.length))
         const nextResponse = await fetch(`/api/v1/reception/arrivals?${nextParams}`)
-        const nextPage = await readApiResponse<{ arrivals?: Array<{ id: string; patient_name: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority'] }> }>(nextResponse)
+        const nextPage = await readApiResponse<{ arrivals?: Array<{ id: string; patient_reference: string | null; patient_name: string; companion_name?: string; created_at: string; status: string; clinical_priority: EmergencyArrival['clinical_priority'] }> }>(nextResponse)
         const nextArrivals = nextPage.arrivals ?? []
         if (!nextArrivals.length) break
         allArrivals.push(...nextArrivals)
@@ -787,7 +800,9 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         )
         .map((item): WaitingRoomItem => ({
           id: String(item.id),
+          patient_reference: item.patient_reference,
           patient_name: item.patient_name,
+          companion_name: item.companion_name,
           arrived_at: item.arrived_at ?? item.starts_at,
           status: item.status === 'called' ? 'called' : item.status === 'arrived' ? 'waiting' : 'other',
           type: 'appointment',
@@ -802,7 +817,9 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         })
         .map((item): WaitingRoomItem => ({
           id: item.id,
+          patient_reference: item.patient_reference,
           patient_name: item.patient_name,
+          companion_name: item.companion_name,
           arrived_at: item.created_at,
           status: item.status === 'called'
             ? 'called'
@@ -862,7 +879,11 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
     enqueueAnnouncements([item], false)
   }
 
-  async function callPatient(item: WaitingRoomItem) {
+  async function callPatient(
+    item: WaitingRoomItem,
+    companionType: CallCompanionType,
+    companionName: string,
+  ) {
     setUpdating(`${item.type}-${item.id}`)
     setError('')
     setNotice('')
@@ -873,9 +894,15 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
       await readApiResponse(await fetch(path, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'called' }),
+        body: JSON.stringify({
+          status: 'called',
+          companion_type: companionType,
+          companion_name: companionType === 'other' ? companionName : '',
+        }),
       }))
-      setNotice(`${item.patient_name} foi chamado pelo nome. O painel público anunciará a chamada automaticamente.`)
+      setNotice(companionType === 'none'
+        ? `${item.patient_name} foi chamado pelo nome. O painel público anunciará a chamada automaticamente.`
+        : 'Chamada registrada. O painel público anunciará o acompanhante e o paciente pelo primeiro nome.')
       await loadQueue()
     } catch (callError) {
       setError(callError instanceof Error ? callError.message : 'Não foi possível chamar o paciente.')
@@ -943,12 +970,14 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
     const currentCall = [calledFor(priorityItems), calledFor(commonItems)]
       .filter((item): item is WaitingRoomItem => Boolean(item))
       .sort((left, right) => (right.updated_at ?? right.arrived_at).localeCompare(left.updated_at ?? left.arrived_at))[0]
-    const currentCallName = currentCall?.display_name ?? currentCall?.patient_name.trim().split(/\s+/).slice(0, 2).join(' ') ?? ''
+    const currentCallName = currentCall?.companion_display_name
+      ? `Acompanhante: ${currentCall.companion_display_name} · Paciente: ${currentCall.display_name ?? currentCall.patient_name.trim().split(/\s+/)[0]}`
+      : currentCall?.display_name ?? currentCall?.patient_name.trim().split(/\s+/).slice(0, 2).join(' ') ?? ''
     return <main className={`waiting-room-kiosk${isCallHighlighting ? ' waiting-room-kiosk-call-highlight' : ''}`} aria-label="Chamadas da Santa Casa Pedro Osório">
       <header>
         <div className="waiting-room-kiosk-brand">
           <img src="/scpo-connect-icon.png" alt="" />
-          <div><h1>Santa Casa de Pedro Osório</h1><strong>Aguarde ser atendido</strong><span>Chamadas pelo primeiro nome e primeiro sobrenome</span><span>Cartão vermelho: prioritário · cartão verde: comum</span></div>
+          <div><h1>Santa Casa de Pedro Osório</h1><strong>Aguarde ser atendido</strong><span>Chamadas pelo primeiro nome; acompanhantes identificados</span><span>Cartão vermelho: prioritário · cartão verde: comum</span></div>
         </div>
         <div className="waiting-room-kiosk-tools">
           <time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(clock)}</time>
@@ -1006,13 +1035,57 @@ function WaitingRoomCallBoard({ canUpdate, canUploadImages, canDeleteImages, kio
         if (!queueItems.length) return null
         return <section className="waiting-room-operator-column" key={queueType}>
           <h3>{queueType === 'priority' ? 'Prioritários' : 'Comuns'}</h3>
-          <div className="waiting-room-operator-list">{queueItems.map((item) => <article className={`waiting-room-operator-row ${item.status === 'called' ? 'is-called' : ''}`} key={`${item.type}-${item.id}`}>
-            <span className={`waiting-room-code ${queueType}`}>{queueType === 'priority' ? 'Prioritário' : 'Comum'}</span>
-            <strong>{item.patient_name}</strong>
-            <small>{item.status === 'called' ? 'Chamado' : 'Aguardando'} · {dateTime(item.arrived_at)}</small>
-            {canUpdate && item.status === 'waiting' && <div className="waiting-room-actions"><button className="button button-primary" type="button" disabled={Boolean(updating)} onClick={() => void callPatient(item)}>Chamar este paciente</button></div>}
-            {canUpdate && item.status === 'called' && <button className="button button-secondary" type="button" onClick={() => reannounce(item)}>Reanunciar aqui</button>}
-          </article>)}</div>
+          <div className="waiting-room-operator-list">{queueItems.map((item) => {
+            const itemKey = `${item.type}-${item.id}`
+            const registeredCompanion = patients.find((patient) =>
+              patient.reference === item.patient_reference,
+            )?.responsible_name?.trim() ?? ''
+            const companionType = companionTypes[itemKey] ?? 'none'
+            const companionName = companionNames[itemKey] ?? ''
+            const canCall = companionType !== 'other' || companionName.trim().length >= 2
+            return <article className={`waiting-room-operator-row ${item.status === 'called' ? 'is-called' : ''}`} key={itemKey}>
+              <span className={`waiting-room-code ${queueType}`}>{queueType === 'priority' ? 'Prioritário' : 'Comum'}</span>
+              <strong>{item.patient_name}</strong>
+              <small>{item.status === 'called' ? 'Chamado' : 'Aguardando'} · {dateTime(item.arrived_at)}</small>
+              {canUpdate && item.status === 'waiting' && <>
+                <label className="field">
+                  <span className="field-label">Acompanhar a chamada</span>
+                  <select
+                    value={companionType}
+                    onChange={(event) => setCompanionTypes({
+                      ...companionTypes,
+                      [itemKey]: event.target.value as CallCompanionType,
+                    })}
+                  >
+                    <option value="none">Sem acompanhante</option>
+                    {registeredCompanion && <option value="responsible">Responsável cadastrado</option>}
+                    <option value="other">Acompanhante presente</option>
+                  </select>
+                </label>
+                {companionType === 'other' && <label className="field">
+                  <span className="field-label">Nome do acompanhante presente</span>
+                  <input
+                    maxLength={120}
+                    value={companionName}
+                    onChange={(event) => setCompanionNames({
+                      ...companionNames,
+                      [itemKey]: event.target.value,
+                    })}
+                    required
+                  />
+                </label>}
+                <div className="waiting-room-actions">
+                  <button
+                    className="button button-primary"
+                    type="button"
+                    disabled={Boolean(updating) || !canCall}
+                    onClick={() => void callPatient(item, companionType, companionName)}
+                  >Chamar este paciente</button>
+                </div>
+              </>}
+              {canUpdate && item.status === 'called' && <button className="button button-secondary" type="button" onClick={() => reannounce(item)}>Reanunciar aqui</button>}
+            </article>
+          })}</div>
         </section>
       })}
     </div>}
