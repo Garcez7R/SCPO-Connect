@@ -2521,7 +2521,7 @@ function AboutPage() {
   const systemOverview = [
     { title: '1. Acesso individual', details: 'Cada pessoa utiliza sua própria conta. O acesso exige credenciais individuais e configuração de autenticação adicional; não compartilhe senhas ou códigos.' },
     { title: '2. Espaços de trabalho', details: 'A navegação apresenta os módulos disponíveis para o perfil da pessoa. As permissões definem quais ações podem ser feitas em cada módulo.' },
-    { title: '3. Atendimento integrado', details: 'As equipes registram atividades nos fluxos correspondentes, como recepção, cadastro de pacientes, enfermagem, atendimento médico, farmácia e serviços de apoio.' },
+    { title: '3. Atendimento integrado', details: 'As equipes registram atividades nos fluxos correspondentes, como recepção, cadastro de pacientes, enfermagem, atendimento médico, farmácia, lavanderia/rouparia e serviços de apoio.' },
     { title: '4. Acompanhamento e rastreabilidade', details: 'Painéis e relatórios apoiam o acompanhamento operacional. Ações administrativas relevantes são registradas para consulta e verificação.' },
     { title: '5. Proteção das informações', details: 'Consulte somente os dados necessários à sua atividade, confirme as informações antes de salvar e siga as políticas institucionais de privacidade e segurança.' },
   ]

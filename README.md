@@ -33,7 +33,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Os módulos Manutenção e Higienização exibem o ícone específico junto ao título, antes do nome, para facilitar a identificação da equipe em cada tela.
 - Central de Exames: guias de Raio X, Eletrocardiograma e Exames laboratoriais; requisições vinculadas ao paciente, fila por situação e impressão da solicitação laboratorial.
 - Médico: resumo da fila triada por situação e prioridade, consulta de alergias e sinais vitais com gráficos, perfil CRM/UF, prescrição interna integrada à Farmácia e Enfermagem e receita simples para impressão (sem assinatura digital e sem medicamentos controlados). O PWA `/physician.html` oferece atalhos para a fila e para localizar pacientes, mantendo conexão, autenticação e permissões do módulo.
-- PWAs instaláveis em paralelo ao aplicativo completo: Enfermagem (`/nursing.html`), Manutenção e Higienização (`/operations.html`), Farmácia (`/pharmacy.html`), Médico (`/physician.html`) e Cozinha (`/kitchen.html`). Cada atalho usa identidade e ícone próprios; consulte [como instalar os PWAs](docs/pwa-installation.md). A disponibilidade e o fluxo de instalação variam conforme o navegador e o dispositivo.
+- PWAs instaláveis em paralelo ao aplicativo completo: Enfermagem (`/nursing.html`), Manutenção e Higienização (`/operations.html`), Farmácia (`/pharmacy.html`), Médico (`/physician.html`), Cozinha (`/kitchen.html`) e Lavanderia/Rouparia (`/laundry.html`). Cada atalho usa identidade e ícone próprios; consulte [como instalar os PWAs](docs/pwa-installation.md). A disponibilidade e o fluxo de instalação variam conforme o navegador e o dispositivo.
 - Serviço Social: encaminhamentos ligados ao paciente, com busca, filtros, resumo da fila por situação e prioridade, e atualização até o encerramento.
 - Farmácia: inventário normalizado por produto, lote e local; movimentações com autoria e saldo resultante; leitura GS1, sugestões de identificação pelo catálogo público Anvisa/CMED e indicação informativa do lote válido com vencimento mais próximo (FEFO), sem seleção automática.
 - Farmácia: consulta alfabética consolidada do estoque de medicamentos e fila de prescrições médicas pendentes para conferência e dispensação.
@@ -81,7 +81,7 @@ Execute `npx playwright install chromium` uma vez e depois `npm run test:e2e` pa
 
 ### Áreas de trabalho
 
-Cadastro de pacientes, Enfermagem, Farmácia, Central de Exames, Médico, Serviço Social, Psicologia / Psiquiatria, Nutrição, Recepção, Oficina Terapêutica, Manutenção, Higienização e Gestão Hospitalar.
+Cadastro de pacientes, Enfermagem, Farmácia, Central de Exames, Médico, Serviço Social, Psicologia / Psiquiatria, Nutrição, Recepção, Oficina Terapêutica, Manutenção, Higienização, Lavanderia/Rouparia e Gestão Hospitalar.
 
 ## Arquitetura
 
@@ -93,7 +93,7 @@ Cadastro de pacientes, Enfermagem, Farmácia, Central de Exames, Médico, Servi�
 | Instalação com containers | Docker Compose e PostgreSQL 17 |
 | HTTPS interno | Caddy com autoridade certificadora local |
 
-As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem e cadastro central de pacientes (incluindo Recepção e prescrições médicas), Farmácia, Oficina Terapêutica, Central de Exames, Serviço Social e Psicologia/Psiquiatria, Manutenção e Higienização, além do serviço de Backup. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
+As APIs são separadas por domínio: Identidade e Acesso, Auditoria, Enfermagem e cadastro central de pacientes (incluindo Recepção e prescrições médicas), Farmácia, Oficina Terapêutica, Central de Exames, Serviço Social e Psicologia/Psiquiatria, além dos fluxos de Manutenção, Higienização e Lavanderia/Rouparia integrados ao backend de Manutenção e do serviço de Backup. Cada serviço possui migrações próprias e documentação OpenAPI em `/docs`.
 
 ## Executar para desenvolvimento
 
@@ -134,7 +134,7 @@ O lançador de desenvolvimento usa `data/demo/` por padrão, onde já estão os 
 
 Somente a Administração do aplicativo e o Superadministrador do Sistema podem administrar contas. A Administração do aplicativo atribui os módulos necessários, inclusive Médico ou Gestão Hospitalar, conforme aprovação institucional. Após criar uma conta com o módulo Médico, a Administração cadastra o nome profissional e o CRM/UF em **Perfis médicos**; o próprio médico consulta esses dados, mas não pode criá-los nem alterá-los. Confira as informações antes da emissão de prescrições. O login `rgarcez` é reservado ao Superadministrador do Sistema; esse acesso é distinto da Gestão Hospitalar e não aparece na lista de contas dos demais administradores. As funções de backup/restauração e a seleção das subpastas de backup e da biblioteca de imagens são exclusivas do Superadministrador; a TI precisa montar e autorizar os volumes no host. Nunca compartilhe sua conta ou credenciais.
 
-Para desenvolver a interface com atualização instantânea, use `npm run dev -- --host 127.0.0.1`; o endereço local é `http://127.0.0.1:7777`. Para testar em outro computador da mesma rede, inicie o Vite com `npm run dev -- --host 0.0.0.0 --strictPort` e abra `http://<IP-da-VM>:7777` (por exemplo, `http://192.168.1.205:7777`). Esse modo usa HTTP sem TLS, serve apenas para testes controlados com dados demonstrativos e não deve ser exposto à Internet nem usado com dados reais. As APIs continuam escutando somente no loopback da VM. Se o acesso for bloqueado, libere a porta TCP `7777` na rede/firewall local. Os logs locais são gravados em `.logs/`.
+Para desenvolver a interface com atualização instantânea, use `npm run dev -- --host 127.0.0.1`; o endereço local é `http://127.0.0.1:7777`. O Vite e o Caddy local usam essa mesma porta padrão, portanto não podem servi-la ao mesmo tempo: encerre um deles ou inicie o Vite com `--port 7778`. Para testar em outro computador da mesma rede, use, por exemplo, `npm run dev -- --host 0.0.0.0 --port 7778 --strictPort` e abra `http://<IP-da-VM>:7778` (por exemplo, `http://192.168.1.205:7778`). Esse modo usa HTTP sem TLS, serve apenas para testes controlados com dados demonstrativos e não deve ser exposto à Internet nem usado com dados reais. As APIs continuam escutando somente no loopback da VM. Se o acesso for bloqueado, libere a porta TCP escolhida na rede/firewall local. Os logs locais são gravados em `.logs/`.
 
 ## Instalação com Docker Compose
 

@@ -106,10 +106,16 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - README e ajuda interna foram revisados; as instruções atuais de acesso e uso móvel continuam corretas, sem atualização necessária.
 - Retomar a inspeção visual autenticada quando a API local de autenticação e uma sessão de teste estiverem disponíveis.
 
+### Concluído nesta retomada — revisão do README, Sobre e Conformidade
+
+- README atualizado para incluir Lavanderia/Rouparia na lista de PWAs e áreas de trabalho, esclarecer que seus fluxos usam o backend de Manutenção e evitar conflito entre Vite e Caddy na porta padrão `7777` (com alternativa local `7778`).
+- “Como o sistema funciona” agora cita Lavanderia/Rouparia. A ajuda interna específica do módulo já correspondia ao uso atual; as referências legais permanecem informativas e sem alegação de conformidade institucional.
+- `npm run typecheck`, `npm run lint` e `npm run build` passaram, executados um por vez. O build mantém o aviso conhecido do Vite sobre o chunk principal maior que 500 kB.
+- Arquivos alterados: `README.md` e `src/App.tsx`; o resumo registra a revisão documental. Não foram alteradas referências legais.
+
 ### Pendente — ordem sugerida
 
 - Retomar a revisão da Lavanderia/Rouparia em viewport móvel quando a API local de autenticação e uma sessão de teste estiverem disponíveis.
-- Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
 
