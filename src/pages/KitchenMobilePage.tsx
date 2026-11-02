@@ -150,10 +150,10 @@ export default function KitchenMobilePage({ user, onLogout }: {
       {error && <div className="kitchen-mobile-error" role="alert">{error}</div>}
       {!loading && <div className="kitchen-mobile-summary" aria-label="Resumo dos pacientes internados">
         <article className="status-tone-neutral"><strong>{rosterSummary.inpatients}</strong><span>Internados</span></article>
-        <article className={rosterSummary.knownAllergies ? 'status-tone-warning' : 'status-tone-success'}><strong>{rosterSummary.knownAllergies}</strong><span>Alergia conhecida</span></article>
+        <article className={error ? 'status-tone-neutral' : rosterSummary.knownAllergies ? 'status-tone-warning' : 'status-tone-neutral'}><strong>{rosterSummary.knownAllergies}</strong><span>Alergia conhecida</span></article>
         <article className={rosterSummary.allergyReview ? 'status-tone-warning' : 'status-tone-success'}><strong>{rosterSummary.allergyReview}</strong><span>Confirmar alergias</span></article>
         <article className={rosterSummary.missingDiet ? 'status-tone-warning' : 'status-tone-success'}><strong>{rosterSummary.missingDiet}</strong><span>Dieta não informada</span></article>
-        <article className={rosterSummary.fasting ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{rosterSummary.fasting}</strong><span>Jejum programado</span></article>
+        <article className={error ? 'status-tone-neutral' : rosterSummary.fasting ? 'status-tone-warning' : 'status-tone-neutral'}><strong>{rosterSummary.fasting}</strong><span>Jejum programado</span></article>
       </div>}
 
       <label className="kitchen-mobile-search">
