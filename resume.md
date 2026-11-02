@@ -1,13 +1,15 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 02/11/2026, antes da pausa. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
 ## Quadro de acompanhamento
 
 ### Forma de execução acordada
 
-- Executar validações e testes um de cada vez, aguardando a conclusão de cada comando antes de iniciar o próximo, para evitar travamentos do VS Code.
-- Ao concluir uma tarefa/fase, atualizar este resume, informar que a fase terminou e qual será a próxima, então avançar automaticamente sem aguardar nova confirmação. Fazer commit e push ao final de cada fase, atualizando também README e ajuda interna quando houver mudanças de uso que devam ser documentadas. Preservar alterações locais preexistentes e não incluir arquivos fora do escopo.
+- Executar validações e testes estritamente um de cada vez: iniciar um único comando, aguardar sua conclusão e só então iniciar o próximo. Não executar pytest, TypeScript, ESLint, build ou outras verificações em paralelo; isso já travou o VS Code anteriormente.
+- Ao concluir uma tarefa/fase, atualizar este resume, revisar README e as informações/ajuda dentro do app, informar que a fase terminou e qual será a próxima, então avançar automaticamente sem aguardar nova confirmação. Fazer commit e push ao final de cada fase; atualizar a documentação para refletir mudanças de uso e, quando não houver conteúdo pertinente a alterar, registrar que ela foi revisada sem inventar instruções.
+- Preservar alterações locais preexistentes; antes de cada commit, conferir `git status` e revisar/stagear somente os arquivos da fase. Não restaurar nem incluir a exclusão preexistente de `RESUME.md`.
+- E2E e deploy/atualização do servidor de testes permanecem pausados até orientação/autorização. Não executar migrações em dados reais.
 
 ### Concluído e publicado
 
@@ -72,18 +74,26 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Armazenamento: na Administração do Sistema, o Superadministrador pode escolher uma subpasta dentro do volume montado para backup e outra para a Biblioteca de imagens da Oficina Terapêutica. A mudança da biblioteca move as imagens já cadastradas e mantém os registros. Caminhos são relativos e confinados ao volume configurado; a TI ainda monta os volumes locais/rede no host, concede permissões e reinicia os serviços quando necessário. O app não monta dispositivos nem compartilhamentos. Backups automáticos continuam incluindo os arquivos da biblioteca.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
-### Retomada atual — alterações locais ainda não publicadas
+### Publicado nesta retomada
+
+- Commit `98fc041` (`feat: add shared patient history and technical dashboard`) já foi enviado para `origin/main`.
 
 - Prontuário compartilhado: cadastro provisório iniciado na Recepção, vínculo ao cadastro definitivo sem reescrever históricos e evolução clínica append-only; o endpoint médico agora exige permissão de criação. Testes focados passaram na execução anterior desta fase.
 - Enfermagem/glicemia: unidade de entrada padronizada em mg/dL; a escolha de unidade foi removida da triagem e os registros históricos em mmol/L são convertidos na exibição de tabelas, gráficos, histórico e fila médica, além de compatibilizar fila offline antiga ao sincronizar. A API preserva o suporte legado sem reescrever dados.
 - Superusuário: o dashboard técnico é a primeira guia e mostra versão do app, número de contas comuns, atalhos e estado de nove endpoints de saúde. O estado conectado só comprova resposta HTTP/API, não a disponibilidade dos bancos ou dos dados. Os formulários/status do backup foram reorganizados para usar melhor a largura disponível.
 - Credenciais: Administração informa a senha inicial institucional `0000`; a ajuda interna e o resumo mantêm essa orientação e não mencionam geração aleatória.
 - Oficina Terapêutica: falhas de carregamento já expunham a mensagem da API; agora a tela oferece retentativa explícita para falhas de carregamento. Nenhum erro concreto de execução foi fornecido nesta retomada, portanto não foram feitas correções especulativas no domínio. Se os erros persistirem, registrar a mensagem completa e o fluxo que a reproduz para corrigir a causa.
-- Validação desta retomada concluída, executando um comando por vez: typecheck, lint e build frontend passaram; testes focados de Enfermagem/Oficina passaram (67) e migrações passaram (25). O build mantém o aviso já conhecido de chunk principal maior que 500 kB. `git diff --check` passou. E2E e deploy permanecem pausados.
+- Validação do commit acima, um comando por vez: `npm run typecheck`, `npm run lint`, `npm run build`, `uv run --group dev pytest backend/tests/test_nursing.py backend/tests/test_therapy_reports.py` (67 passaram) e `uv run --group dev pytest backend/tests/test_migrations.py` (25 passaram). O build mantém o aviso conhecido de chunk principal maior que 500 kB. `git diff --check` passou.
+
+### Concluído nesta retomada — uniformização visual dos quadros da Farmácia
+
+- O resumo do estoque mantém os mesmos indicadores e semântica, ganhou nome acessível de grupo e estado de carregamento (`aria-busy`); os cartões acompanham o movimento/hover dos níveis de estoque e a apresentação usada em Gestão Hospitalar. As regras responsivas existentes para desktop e telas estreitas foram revisadas.
+- README e ajuda interna (`HelpGuide`) foram revisados; como a fase é somente visual e não altera o uso, não houve conteúdo de instrução pertinente a acrescentar.
+- `npm run typecheck`, `npm run lint` e `npm run build` passaram, executados um por vez. O build mantém o aviso conhecido do Vite sobre o chunk principal maior que 500 kB. A inspeção foi de código/CSS responsivo; não foi feito teste visual autenticado nem E2E, que permanecem pausados.
+- Arquivos da fase: `src/pages/PharmacyPage.tsx` e `src/app.css`; este registro em `resume.md` será publicado no commit da fase.
 
 ### Pendente — ordem sugerida
 
-- Farmácia: revisar todos os quadros/cartões informativos e uniformizar animação/movimento, estados visuais e apresentação conforme o padrão já usado na Gestão Hospitalar; verificar desktop e telas estreitas sem alterar semântica clínica ou indicadores.
 - Escalas graduais vermelho-verde: avaliar somente para indicadores com limites numéricos próprios e validados. A revisão semântica dos cartões já foi concluída; não inventar limites clínicos nem aplicar cores de avaliação a contagens informativas.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.

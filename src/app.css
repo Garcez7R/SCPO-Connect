@@ -674,6 +674,7 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .pharmacy-summary article > span { color: var(--muted); font-size: 12px; }
 .pharmacy-summary article > strong { color: var(--ink); font-size: 25px; line-height: 1.1; }
 .pharmacy-summary article > small { color: var(--subtle); font-size: 10px; }
+.pharmacy-summary.is-loading > article { animation: none; }
 .pharmacy-allergy-confirm { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 11px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); cursor: pointer; }
 .pharmacy-allergy-confirm input { width: 20px; height: 20px; flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--blue); }
 .pharmacy-allergy-confirm > span { display: grid; gap: 4px; }
@@ -2684,6 +2685,7 @@ html[data-theme="dark"] .toast-message-success { border-left-color: #79c49a; }
 .executive-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .executive-summary-grid article { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .executive-summary-grid span { color: var(--muted); font-size: 12px; }
+.pharmacy-summary > article:hover { transform: translateY(-2px); }
 .executive-stock-alerts { display: grid; gap: 10px; }
 .patient-flow-risk-panel > .patient-list-panel { box-shadow: none; }
 .patient-risk-audit summary { cursor: pointer; color: var(--blue-dark); font-weight: 600; }

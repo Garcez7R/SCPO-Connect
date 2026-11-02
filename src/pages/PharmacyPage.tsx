@@ -591,7 +591,12 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     />
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {pharmacyTab === 'stock' && <>
-    <div className="pharmacy-summary"><article className="status-tone-neutral"><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article><article className={expiringCount ? 'status-tone-warning' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article><article className={expiredCount ? 'status-tone-critical' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article><article className={criticalCount ? 'status-tone-critical' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No limite mínimo ou abaixo</small></article></div>
+    <div className={`pharmacy-summary${loading ? ' is-loading' : ''}`} role="group" aria-label="Resumo do estoque" aria-busy={loading}>
+      <article className="status-tone-neutral"><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article>
+      <article className={expiringCount ? 'status-tone-warning' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article>
+      <article className={expiredCount ? 'status-tone-critical' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article>
+      <article className={criticalCount ? 'status-tone-critical' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No limite mínimo ou abaixo</small></article>
+    </div>
     <div className="pharmacy-quick-filters" role="group" aria-label="Filtrar estoque">
       {([
         ['all', 'Todos', items.length],
