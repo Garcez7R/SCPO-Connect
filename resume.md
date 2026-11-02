@@ -1,6 +1,6 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 02/11/2026, antes da pausa. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
 ## Quadro de acompanhamento
 
@@ -90,11 +90,17 @@ Atualizado em 02/11/2026, antes da pausa. Repositório: `/home/rgarcez/SCPO-Conn
 - O resumo do estoque mantém os mesmos indicadores e semântica, ganhou nome acessível de grupo e estado de carregamento (`aria-busy`); os cartões acompanham o movimento/hover dos níveis de estoque e a apresentação usada em Gestão Hospitalar. As regras responsivas existentes para desktop e telas estreitas foram revisadas.
 - README e ajuda interna (`HelpGuide`) foram revisados; como a fase é somente visual e não altera o uso, não houve conteúdo de instrução pertinente a acrescentar.
 - `npm run typecheck`, `npm run lint` e `npm run build` passaram, executados um por vez. O build mantém o aviso conhecido do Vite sobre o chunk principal maior que 500 kB. A inspeção foi de código/CSS responsivo; não foi feito teste visual autenticado nem E2E, que permanecem pausados.
-- Arquivos da fase: `src/pages/PharmacyPage.tsx` e `src/app.css`; este registro em `resume.md` será publicado no commit da fase.
+- Arquivos da fase: `src/pages/PharmacyPage.tsx` e `src/app.css`; fase publicada em `8b045db` (`fix: polish pharmacy inventory summaries`).
+
+### Avaliação concluída — escalas graduais vermelho-verde
+
+- Não foi aplicada escala contínua. Percentual de ocupação usa leitos físicos operacionais, mas não há faixas de avaliação aprovadas; os demais indicadores executivos são contagens ou estados operacionais, não medidas com limites graduais validados.
+- Os níveis da Farmácia já usam estados crítico/atenção/adequado baseados no mínimo e na meta média configuráveis por produto. A API e o formulário aceitam esses limites sem validar que o mínimo seja menor ou igual à meta média; usá-los como extremos de um gradiente poderia produzir sinal inconsistente. Não criar cores contínuas antes de definir e validar essa regra.
+- README e ajuda interna foram revisados; não há instrução nova enquanto nenhuma escala for aprovada ou implementada.
+- Nenhum código mudou nesta avaliação; a conclusão e o próximo passo ficam registrados neste resume.
 
 ### Pendente — ordem sugerida
 
-- Escalas graduais vermelho-verde: avaliar somente para indicadores com limites numéricos próprios e validados. A revisão semântica dos cartões já foi concluída; não inventar limites clínicos nem aplicar cores de avaliação a contagens informativas.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
