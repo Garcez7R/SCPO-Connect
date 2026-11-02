@@ -8,8 +8,15 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 - Executar validações e testes estritamente um de cada vez: iniciar um único comando, aguardar sua conclusão e só então iniciar o próximo. Não executar pytest, TypeScript, ESLint, build ou outras verificações em paralelo; isso já travou o VS Code anteriormente.
 - Ao concluir uma tarefa/fase, atualizar este resume, revisar README e as informações/ajuda dentro do app, informar que a fase terminou e qual será a próxima, então avançar automaticamente sem aguardar nova confirmação. Fazer commit e push ao final de cada fase; atualizar a documentação para refletir mudanças de uso e, quando não houver conteúdo pertinente a alterar, registrar que ela foi revisada sem inventar instruções.
-- Preservar alterações locais preexistentes; antes de cada commit, conferir `git status` e revisar/stagear somente os arquivos da fase. Não restaurar nem incluir a exclusão preexistente de `RESUME.md`.
+- Preservar alterações locais preexistentes; antes de cada commit, conferir `git status` e revisar/stagear somente os arquivos da fase. Manter apenas este `resume.md`; a exclusão do `RESUME.md` legado foi solicitada pelo usuário e será publicada.
 - E2E e deploy/atualização do servidor de testes permanecem pausados até orientação/autorização. Não executar migrações em dados reais.
+
+### Situação resumida das fases
+
+- **Concluído/publicado:** revisão visual dos quadros da Farmácia (`8b045db`); avaliação de escalas graduais sem inventar limites (`9bd9e2b`); revisão do README e do Sobre (`501aff4`).
+- **Tentativa bloqueada/publicada:** inspeção da Lavanderia em viewport móvel chegou somente à tela de login porque a API local não estava disponível (`1a0cf38`); repetir após preparar autenticação local.
+- **Em andamento/próxima fase:** ampliar o dashboard do Superadministrador com controles funcionais e seguros de gerenciamento, além dos indicadores de status.
+- **Próximas fases:** repetir a inspeção móvel autenticada da Lavanderia quando a API local estiver disponível; obter reprodução/logs para investigar tela branca e instabilidade no Chrome/Windows 11; por último, realizar o piloto/atualização do servidor somente com as autorizações e pré-requisitos registrados.
 
 ### Concluído e publicado
 
@@ -113,11 +120,20 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - `npm run typecheck`, `npm run lint` e `npm run build` passaram, executados um por vez. O build mantém o aviso conhecido do Vite sobre o chunk principal maior que 500 kB.
 - Arquivos alterados: `README.md` e `src/App.tsx`; o resumo registra a revisão documental. Não foram alteradas referências legais.
 
+### Concluído nesta retomada — ciclo de sessão e remoção de referências a Zentyal
+
+- O refresh da sessão já renova a validade de 12 horas enquanto o app está visível e conectado; falhas são exibidas e tentadas novamente, e 401/403 encerram a sessão. O teste direcionado `uv run --group dev pytest backend/tests/test_domain_services.py -k session_refresh_renews_expiration` passou.
+- A mensagem de expiração agora contempla prazo atingido ou sessão revogada. Typecheck, lint e build passaram, executados sequencialmente.
+- O guia de integração adiada com Zentyal foi removido; consumidores dos documentos foram atualizados para descrever a autenticação local atual. A busca não encontrou referências restantes no código nem na documentação ativa; as menções neste resume apenas registram a remoção.
+- Não foi possível reproduzir tela branca/instabilidade no Chrome/Windows 11 neste ambiente Linux; não foi fornecida mensagem de erro nem sequência de reprodução. A investigação específica fica condicionada a evidência reproduzível, sem correção especulativa.
+- README, guia de permissões e ajuda interna foram revisados; a ajuda sobre sessão informa que a renovação requer app visível e conectado.
+- Esta fase reuniu os ajustes de sessão/documentação com este `resume.md` e excluiu o `RESUME.md` legado conforme solicitado.
+
 ### Pendente — ordem sugerida
 
 - Retomar a revisão da Lavanderia/Rouparia em viewport móvel quando a API local de autenticação e uma sessão de teste estiverem disponíveis.
-- Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
-- Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
+- **Próxima fase — dashboard do Superadministrador:** ampliar o dashboard para ações de gerenciamento, além da versão/conectividade atual. Inventariar os controles existentes e propor painel funcional com ativação/desativação não destrutiva de módulos/funções, preservando dados e registrando autoria/auditoria; garantir aplicação das regras no backend e na interface. Antes de implementar, confirmar escopo e comportamento de desativação, sem confundir disponibilidade global com permissões individuais.
+- Investigar tela branca/instabilidade no Chrome/Windows 11 quando houver relato reproduzível, incluindo versão do navegador/SO, etapa, frequência, mensagem/console e passos seguros para reproduzir.
 
 ### Marco posterior — atualização do servidor de testes e piloto paralelo
 
@@ -134,6 +150,7 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Ruff passou nos demais arquivos backend alterados. `nursing.py` ainda tem um aviso preexistente (`UP012`) em linha não modificada; o lint global também aponta um import não usado em `demo_reception.py`, fora do escopo.
 - Docker CLI 29.9.2 e Compose v5.6.1 estão disponíveis neste ambiente; `docker compose config --quiet` passou. O build da imagem frontend foi validado em 31/10/2026 após incluir `laundry.html`; não houve deploy/execução de containers do sistema.
 - A suíte E2E permanece pausada conforme orientação do usuário.
+- O teste direcionado de renovação de sessão passou nesta retomada: `uv run --group dev pytest backend/tests/test_domain_services.py -k session_refresh_renews_expiration` (1 passou).
 - O workflow GitHub disponível até o último commit publicado concluiu com sucesso; alterações locais precisam de novo push para que o CI as valide.
 
 ## Comandos locais

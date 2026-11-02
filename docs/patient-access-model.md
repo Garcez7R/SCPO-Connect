@@ -52,9 +52,9 @@ Auditar pelo menos leitura de perfil/dados clínicos, abertura/visualização da
 ## Pré-requisitos técnicos
 
 - Diretório central de pacientes e identificador único, com chaves estrangeiras dos registros dos módulos.
-- Sessão institucional validada no servidor contra o AD do Zentyal; grupos do AD mapeados para papéis, e permissões por usuário persistidas em configuração administrativa controlada.
-- Autorização por endpoint e por operação/campo, negação por padrão, MFA/sessão segura conforme decisão institucional e revogação de acesso sincronizada com o diretório.
+- Sessão autenticada no backend por conta local individual, com MFA; identidade ativa e permissões derivadas do cadastro de usuário, nunca de valores enviados pelo navegador.
+- Autorização por endpoint e por operação/campo, negação por padrão, MFA/sessão segura e revogação de acesso pela conta local.
 - Migração dos registros fictícios e estratégia de backup/recuperação revisadas antes de qualquer dado real.
 - Auditoria de leitura e mudança implementada antes de liberar o acesso clínico total para Gestão Hospitalar.
 
-Até esses requisitos serem implementados e validados, o cadastro mostrado no app é apenas uma estrutura de navegação; não use dados identificáveis nem fotos reais.
+O cadastro central e os vínculos estão implementados para uso demonstrativo, mas a matriz de acesso e a finalidade dos campos descritos nesta proposta ainda dependem de aprovação institucional. Não use dados identificáveis nem fotos reais até essa validação.
