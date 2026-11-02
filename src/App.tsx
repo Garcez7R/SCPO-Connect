@@ -945,10 +945,10 @@ function BetaCelebration({ onClose, iconError, onIconError }: { onClose: () => v
     return () => { window.clearTimeout(closeTimer); window.removeEventListener('keydown', closeOnEscape) }
   }, [onClose])
 
-  return <div className="beta-celebration" role="dialog" aria-modal="true" aria-labelledby="beta-title" onClick={onClose}>
+  return <div className="beta-celebration" role="presentation" onClick={onClose}>
     <div className="beta-celebration-backdrop" />
     <div className="beta-confetti-layer" aria-hidden="true">{betaConfettiPieces.map((style, index) => <span className="beta-confetti-piece" key={index} style={style} />)}</div>
-    <section className="beta-dialog" onClick={(event) => event.stopPropagation()}>
+    <section className="beta-dialog" role="dialog" aria-modal="true" aria-labelledby="beta-title" onClick={(event) => event.stopPropagation()}>
       <button className="icon-button beta-dialog-close" type="button" aria-label="Fechar" onClick={onClose}><X size={18} /></button>
       <span className="beta-dialog-icon">{iconError ? <Activity size={30} aria-label="Ícone do SCPO Connect" /> : <img src="/scpo-connect-icon.png" alt="Ícone do SCPO Connect" onError={onIconError} />}</span>
       <p className="eyebrow">SCPO CONNECT</p>
@@ -4895,9 +4895,9 @@ type AutomaticBackupStatus = {
 }
 
 function BackupOperationDialog({ operation }: { operation: BackupOperationProgress }) {
-  return <div className="backup-operation-overlay" role="dialog" aria-modal="true" aria-labelledby="backup-operation-title">
+  return <div className="backup-operation-overlay" role="presentation">
     <div className="backup-operation-backdrop" />
-    <section className="backup-operation-dialog">
+    <section className="backup-operation-dialog" role="dialog" aria-modal="true" aria-labelledby="backup-operation-title">
       <span className="backup-operation-icon"><ShieldCheck size={28} /></span>
       <p className="eyebrow">{operation.kind === 'backup' ? 'PROTEÇÃO DE DADOS' : 'RESTAURAÇÃO DE BACKUP'}</p>
       <h2 id="backup-operation-title">{operation.title}</h2>

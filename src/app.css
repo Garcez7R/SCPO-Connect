@@ -471,6 +471,7 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .placeholder-page > .module-icon { margin-bottom: 20px; }
 .placeholder-page .eyebrow { margin-bottom: 8px; }
 .placeholder-state { display: flex; align-items: flex-start; gap: 12px; margin: 23px 0 17px; padding: 17px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+html[data-theme="dark"] .placeholder-state { background: var(--surface); color: var(--ink); }
 .placeholder-state-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 6px; background: var(--amber-pale); color: var(--amber); }
 .placeholder-state strong { display: block; margin: 2px 0 4px; font-size: 12px; }
 .placeholder-state p { max-width: 52ch; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
@@ -1604,7 +1605,6 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .backup-operation-progress.is-indeterminate > span { width: 40%; animation: backup-progress-indeterminate 1.4s ease-in-out infinite alternate; }
 @keyframes backup-progress-indeterminate { from { transform: translateX(0); } to { transform: translateX(150%); } }
 @media (prefers-reduced-motion: reduce) { .backup-operation-dialog { animation-duration: .01ms; } .backup-operation-progress.is-indeterminate > span { animation-duration: 2.8s; } }
-html[data-theme="dark"] .backup-operation-icon { background: #20343e; color: #b6dce8; }
 .app-error-boundary { display: grid; min-height: 100vh; align-content: center; justify-items: center; gap: 14px; padding: 24px; color: var(--ink); background: var(--page); text-align: center; }
 .app-error-boundary > svg { color: var(--status-critical-ink); }
 .app-error-boundary h1 { margin: 0; font-size: 22px; }
@@ -1900,6 +1900,7 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
 }
 
 .auth-loading, .auth-page { display: grid; min-height: 100vh; place-items: center; padding: 24px 16px; background: radial-gradient(ellipse at top, #eaf2f6 0, #f2f6f8 55%); }
+.auth-page { --page: #f4f7fa; --surface: #fff; --ink: #18324a; --muted: #526575; --subtle: #748493; --line: #d8e1e8; --blue: #246b8e; --blue-dark: #1b5877; --blue-pale: #eaf3f7; --green: #2e7d62; --green-pale: #eaf5ef; --amber: #a86600; --amber-pale: #fff5e4; --red: #b4232f; --red-pale: #fff0f0; --status-neutral-background: #f0f3f5; --status-neutral-border: #d8e1e8; --status-neutral-ink: #526575; --status-progress-background: #eaf3f7; --status-progress-border: #b9dbe9; --status-progress-ink: #205e78; --status-warning-background: #fff5e4; --status-warning-border: #e8c879; --status-warning-ink: #805400; --status-success-background: #eaf5ef; --status-success-border: #a8cfb3; --status-success-ink: #28633e; --status-critical-background: #fff0f0; --status-critical-border: #e1a2a5; --status-critical-ink: #a4232e; color: var(--ink); color-scheme: light; }
 .auth-loading { display: flex; gap: 12px; color: var(--muted); }
 .startup-screen { display: flex; min-height: 100vh; flex-direction: column; align-items: center; justify-content: center; gap: 11px; padding: 24px; color: var(--muted); background: radial-gradient(ellipse at 50% 38%, #e4f0f4 0, #f2f6f8 58%); }
 .startup-screen > strong { margin-top: 3px; color: var(--ink); font-size: 19px; letter-spacing: -.3px; }
@@ -3234,14 +3235,46 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
 .app-dialog form { display: grid; gap: 16px; }
 .app-dialog .form-actions { justify-content: flex-end; }
 
-html[data-theme="dark"] :is([role="dialog"], .patient-detail-modal, .patient-archive-dialog, .pharmacy-scanner-dialog, .beta-dialog, .install-dialog) {
+html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-detail-modal, .patient-archive-dialog, .pharmacy-scanner-dialog, .beta-dialog, .install-dialog) {
+  color-scheme: light;
   --page: #f4f7fa;
   --surface: #fff;
   --ink: #18324a;
   --muted: #526575;
   --subtle: #748493;
   --line: #d8e1e8;
+  --blue: #246b8e;
+  --blue-dark: #1b5877;
   --blue-pale: #eaf3f7;
+  --green: #2e7d62;
+  --green-pale: #eaf5ef;
+  --amber: #a86600;
+  --amber-pale: #fff5e4;
+  --red: #b4232f;
+  --red-pale: #fff0f0;
+  --status-neutral-background: #f0f3f5;
+  --status-neutral-border: #d8e1e8;
+  --status-neutral-ink: #526575;
+  --status-progress-background: #eaf3f7;
+  --status-progress-border: #b9dbe9;
+  --status-progress-ink: #205e78;
+  --status-warning-background: #fff5e4;
+  --status-warning-border: #e8c879;
+  --status-warning-ink: #805400;
+  --status-success-background: #eaf5ef;
+  --status-success-border: #a8cfb3;
+  --status-success-ink: #28633e;
+  --status-critical-background: #fff0f0;
+  --status-critical-border: #e1a2a5;
+  --status-critical-ink: #a4232e;
+  background-color: #fff;
+  color: #18324a;
+}
+
+html[data-theme="dark"] .auth-page .auth-brand { border-color: #e6edf0; background: linear-gradient(110deg, #f2f8fa 0%, #fff 88%); }
+html[data-theme="dark"] .auth-page :is(input, select, textarea) { border-color: var(--line); background-color: #fff; color: var(--ink); }
+html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-detail-modal, .patient-archive-dialog, .pharmacy-scanner-dialog, .beta-dialog, .install-dialog) :is(input, select, textarea) {
+  border-color: #d8e1e8;
   background-color: #fff;
   color: #18324a;
 }

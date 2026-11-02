@@ -1,6 +1,6 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
 ## Quadro de acompanhamento
 
@@ -61,6 +61,7 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Indicadores executivos e agenda: contagens e percentuais informativos usam tom neutro; estados de sucesso/andamento aparecem somente quando existem registros correspondentes e a consulta está disponível. Disponibilidade zero de leitos sinaliza atenção. Typecheck, ESLint e build passaram, executados sequencialmente.
 - Recepção/Exames/Psicologia-Psiquiatria: conferidos os tons dos resumos; status de fila, alerta e andamento correspondem aos registros reais. No pronto atendimento, “Concluídos” só recebe tom positivo quando a contagem é maior que zero. As demais regras revisadas permaneceram sem mudanças. Typecheck, ESLint e build passaram, executados sequencialmente.
 - Revisão de cartões/indicadores: concluída a conferência dos resumos do app. Contagens/status vazios não recebem sinal positivo ou de alerta por padrão; estados positivos e de atenção dependem dos dados. Na Farmácia, alertas sem produtos ficam neutros; na Cozinha, zero alergias conhecidas não implica confirmação clínica e jejuns programados sinalizam atenção; contagens informativas da Oficina, Gestão e Recepção ficam neutras. Typecheck, ESLint e build passaram, executados um por vez.
+- Tema e diálogos: no tema escuro, o estado vazio usa a superfície do tema; login e diálogos/popups mantêm cores claras, inclusive campos internos e confirmações. Os diálogos de beta e progresso de backup agora aplicam o papel acessível ao painel, não ao overlay de tela inteira. Typecheck, ESLint e build passaram, executados um por vez; E2E e deploy não foram executados.
 - Superadministrador: agora gera um par GPG RSA 3072 para o backup automático. A chave privada é protegida pela senha escolhida e armazenada no volume do servidor; a senha não é salva. A interface baixa uma cópia privada ASCII-armored ainda cifrada, exige confirmação da impressão digital antes de substituir uma chave pública existente e audita geração/exportação sem registrar a senha. Testes sintéticos validam geração, proteção, autorização, exportação e rejeição de senha incorreta. O volume de chave protegida no mesmo servidor não substitui custódia independente.
 - Backup: o botão do cabeçalho agora leva diretamente à senha de exportação manual, com rolagem e foco explícitos; os campos da agenda automática alinham pelo topo para que opções condicionais não desloquem os demais controles.
 - Conexão dos módulos: o cabeçalho da aplicação indica verificação, serviço conectado ou indisponibilidade da API associada ao módulo ativo. Rotas de saúde separadas nos proxies Caddy consultam apenas a resposta mínima de cada backend, sem ler dados clínicos ou gerar eventos de auditoria. Enfermagem e Operações móveis já tinham verificação de serviço; Cozinha agora usa a mesma verificação e Farmácia, Médico e Lavanderia/Rouparia também a exibem.
@@ -71,14 +72,9 @@ Atualizado em 01/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Armazenamento: na Administração do Sistema, o Superadministrador pode escolher uma subpasta dentro do volume montado para backup e outra para a Biblioteca de imagens da Oficina Terapêutica. A mudança da biblioteca move as imagens já cadastradas e mantém os registros. Caminhos são relativos e confinados ao volume configurado; a TI ainda monta os volumes locais/rede no host, concede permissões e reinicia os serviços quando necessário. O app não monta dispositivos nem compartilhamentos. Backups automáticos continuam incluindo os arquivos da biblioteca.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
-### Em andamento
-
-- Tema e diálogos: investigar os seletores de tema, login, popups e diálogos de backup para aplicar o tema claro independentemente do tema geral.
-
 ### Pendente — ordem sugerida
 
-- Tema e diálogos: corrigir o estado vazio de Enfermagem no tema escuro, cujo painel de cadastro de paciente permanece branco; manter as opções da tela de login em tema claro independentemente do tema selecionado; e padronizar todos os popups/diálogos do app em tema claro, incluindo o progresso de criação e restauração de backups.
-- Regras de cores dos indicadores: definir e documentar cores semânticas com vermelho para crítico, amarelo para intermediário/atenção e verde para situação adequada, sempre com base em valores e regras explícitas de cada indicador. Uma escala gradual vermelho-verde só deve ser usada onde existirem limites numéricos próprios e validados para aquele indicador; não criar limites clínicos universais ou inferidos. Exibir também rótulos/valores para que a cor não seja o único sinal.
+- Escalas graduais vermelho-verde: avaliar somente para indicadores com limites numéricos próprios e validados. A revisão semântica dos cartões já foi concluída; não inventar limites clínicos nem aplicar cores de avaliação a contagens informativas.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
