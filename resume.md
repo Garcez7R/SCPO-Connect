@@ -99,9 +99,16 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - README e ajuda interna foram revisados; não há instrução nova enquanto nenhuma escala for aprovada ou implementada.
 - Nenhum código mudou nesta avaliação; a conclusão e o próximo passo ficam registrados neste resume.
 
+### Revisão móvel da Lavanderia — bloqueada por indisponibilidade da API local
+
+- Após a publicação, a página local `/laundry.html` respondeu; a simulação de viewport móvel foi ajustada para 390×844. A tela ficou na autenticação porque `/api/v1/auth/session` e `/api/v1/auth/status` retornaram 502 (`ECONNREFUSED` em `127.0.0.1:8002`).
+- Não foi possível revisar a interface autenticada. Nenhum E2E ou acesso ao servidor de testes foi realizado; a instância temporária de Vite foi encerrada sem alterar a instância HTTPS existente.
+- README e ajuda interna foram revisados; as instruções atuais de acesso e uso móvel continuam corretas, sem atualização necessária.
+- Retomar a inspeção visual autenticada quando a API local de autenticação e uma sessão de teste estiverem disponíveis.
+
 ### Pendente — ordem sugerida
 
-- Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
+- Retomar a revisão da Lavanderia/Rouparia em viewport móvel quando a API local de autenticação e uma sessão de teste estiverem disponíveis.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
