@@ -169,9 +169,12 @@ def create_request(
     principal: Annotated[DemoPrincipal, Depends(XRAY_ROLE)],
     db: Annotated[Session, Depends(get_xray_db)],
 ) -> dict[str, object]:
-    verify_patient_reference(payload.patient_reference)
+    patient = verify_patient_reference(payload.patient_reference)
     request = ExamRequest(
-        **payload.model_dump(), status="requested", created_at=datetime.now(UTC)
+        **payload.model_dump(exclude={"patient_reference"}),
+        patient_reference=patient["reference"],
+        status="requested",
+        created_at=datetime.now(UTC),
     )
     db.add(request)
     emit_audit_event(
@@ -188,14 +191,14 @@ def create_laboratory_requests(
     principal: Annotated[DemoPrincipal, Depends(require_demo_role("physician", "xray"))],
     db: Annotated[Session, Depends(get_xray_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    verify_patient_reference(payload.patient_reference)
+    patient = verify_patient_reference(payload.patient_reference)
     labels = list(payload.exams)
     if payload.other_exam:
         labels.append(f"Outros: {payload.other_exam}")
     group_id = str(uuid.uuid4())
     requests = [
         ExamRequest(
-            patient_reference=payload.patient_reference,
+            patient_reference=patient["reference"],
             exam_label=label,
             exam_type="laboratory",
             group_id=group_id,

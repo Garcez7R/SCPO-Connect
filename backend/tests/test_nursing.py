@@ -2492,3 +2492,197 @@ def test_hourly_nursing_round_rejects_second_open_round(
     with pytest.raises(HTTPException) as conflict:
         nursing.start_nursing_hourly_round(nurse, nursing_db)
     assert conflict.value.status_code == 409
+
+
+def test_reception_can_create_provisional_patient_and_link_history(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    receptionist = DemoPrincipal(
+        "reception-id",
+        "reception-user",
+        "Recepcionista de teste",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar", "alterar"]},
+    )
+    arrival = nursing.create_emergency_arrival(
+        nursing.EmergencyArrivalPayload(
+            patient_name="Cadastro provisório",
+            create_provisional_record=True,
+            reason="Atendimento contingencial",
+        ),
+        receptionist,
+        nursing_db,
+    )
+    provisional_reference = str(arrival["patient_reference"])
+    provisional = nursing_db.get(nursing.Patient, provisional_reference)
+    assert provisional is not None
+    assert provisional.is_provisional is True
+    assert arrival["patient_name"] == provisional.name
+
+    note = nursing.create_patient_record_entry(
+        provisional_reference,
+        nursing.PatientRecordEntryPayload(
+            entry_type="nursing_evolution",
+            evolution="Paciente aguardando avaliação médica.",
+        ),
+        nurse,
+        nursing_db,
+    )
+    target = nursing.create_patient(
+        nursing.PatientPayload(name="Cadastro definitivo", room="", bed=""),
+        nurse,
+        nursing_db,
+    )
+    target_reference = str(target["reference"])
+
+    merged = nursing.merge_provisional_patient(
+        provisional_reference,
+        nursing.PatientMergePayload(target_reference=target_reference),
+        receptionist,
+        nursing_db,
+    )
+
+    assert merged["target_reference"] == target_reference
+    assert merged["history_preserved"] is True
+    assert provisional.active is False
+    assert nursing_db.get(nursing.PatientMergeAlias, provisional_reference).target_reference == target_reference
+    assert nursing_db.get(nursing.PatientRecordEntry, note["id"]).patient_reference == provisional_reference
+    resolved_patient, references = nursing.resolve_patient_identity(nursing_db, provisional_reference)
+    assert resolved_patient.reference == target_reference
+    assert set(references) == {provisional_reference, target_reference}
+    timeline = nursing.list_patient_record_entries(
+        target_reference, nurse, nursing_db
+    )
+    assert timeline["total"] == 1
+    assert timeline["entries"][0]["id"] == note["id"]
+    assert nursing.list_patient_flow_events(nurse, nursing_db)["total"] == 0
+
+
+def test_patient_merge_rejects_non_provisional_and_missing_alter_permission(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    source = create_patient(
+        nursing_db, nurse, room="", bed=""
+    )
+    target = create_patient(
+        nursing_db, nurse, room="", bed=""
+    )
+    receptionist = DemoPrincipal(
+        "reception-id",
+        "reception-user",
+        "Recepcionista de teste",
+        "reception",
+        ["reception"],
+        {"reception": ["consultar", "criar"]},
+    )
+
+    with pytest.raises(HTTPException) as missing_permission:
+        nursing.merge_provisional_patient(
+            str(source["reference"]),
+            nursing.PatientMergePayload(target_reference=str(target["reference"])),
+            receptionist,
+            nursing_db,
+        )
+    assert missing_permission.value.status_code == 403
+
+    receptionist.permissions["reception"].append("alterar")
+    with pytest.raises(HTTPException) as non_provisional:
+        nursing.merge_provisional_patient(
+            str(source["reference"]),
+            nursing.PatientMergePayload(target_reference=str(target["reference"])),
+            receptionist,
+            nursing_db,
+        )
+    assert non_provisional.value.status_code == 409
+
+
+def test_patient_record_entries_are_append_only_and_role_specific(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    patient = create_patient(nursing_db, nurse, room="", bed="")
+    reference = str(patient["reference"])
+    physician = DemoPrincipal(
+        "physician-id",
+        "physician-user",
+        "Médico de teste",
+        "physician",
+        ["physician"],
+        {"physician": ["consultar", "criar"]},
+    )
+    nursing_db.add(
+        nursing.PhysicianProfile(
+            user_id=physician.user_id,
+            name="Dr. Teste",
+            crm="12345",
+            crm_state="RS",
+            updated_at=datetime.now(UTC),
+        )
+    )
+    nursing_db.commit()
+
+    with pytest.raises(HTTPException) as wrong_role:
+        nursing.create_patient_record_entry(
+            reference,
+            nursing.PatientRecordEntryPayload(
+                entry_type="medical_evolution",
+                evolution="Evolução médica objetiva.",
+                diagnosis="Hipótese clínica",
+                conduct="Manter observação.",
+            ),
+            nurse,
+            nursing_db,
+        )
+    assert wrong_role.value.status_code == 403
+
+    physician_without_create = DemoPrincipal(
+        "physician-read-only-id",
+        "physician-read-only",
+        "Médico sem permissão de criação",
+        "physician",
+        ["physician"],
+        {"physician": ["consultar"]},
+    )
+    with pytest.raises(HTTPException) as missing_create_permission:
+        nursing.create_patient_record_entry(
+            reference,
+            nursing.PatientRecordEntryPayload(
+                entry_type="medical_evolution",
+                evolution="Evolução médica objetiva.",
+                diagnosis="Hipótese clínica",
+                conduct="Manter observação.",
+            ),
+            physician_without_create,
+            nursing_db,
+        )
+    assert missing_create_permission.value.status_code == 403
+
+    created = nursing.create_patient_record_entry(
+        reference,
+        nursing.PatientRecordEntryPayload(
+            entry_type="medical_evolution",
+            evolution="Evolução médica objetiva.",
+            diagnosis="Hipótese clínica",
+            conduct="Manter observação.",
+        ),
+        physician,
+        nursing_db,
+    )
+    assert created["actor_name"] == "Dr. Teste"
+    assert created["diagnosis"] == "Hipótese clínica"
+    assert created["conduct"] == "Manter observação."
+    with pytest.raises(ValidationError):
+        nursing.PatientRecordEntryPayload(
+            entry_type="nursing_evolution",
+            evolution="Evolução de enfermagem.",
+            diagnosis="Campo exclusivo médico",
+        )

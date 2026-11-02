@@ -135,7 +135,7 @@ function ReceptionAllergyAlert({ status }: { status?: Patient['allergies_status'
   return <div className="clinical-alert clinical-alert-unknown" role="status"><Info size={19} /><div><strong>Alergias não verificadas</strong><span>Encaminhe para confirmação pela equipe clínica.</span></div></div>
 }
 
-function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean; canDeletePatients?: boolean }> }) {
+function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientRegistryPage: ComponentType<{ receptionMode?: boolean; canDeletePatients?: boolean; canMergeProvisional?: boolean }> }) {
   const [tab, setTab] = usePersistentTab(`scpo-tab-reception-${user.id}`, 'emergency', receptionTabs, receptionTabLabels)
   const [patients, setPatients] = useState<Patient[]>([])
   const [beds, setBeds] = useState<HospitalBed[]>([])
@@ -144,6 +144,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
   const [patientReference, setPatientReference] = useState('')
   const [patientName, setPatientName] = useState('')
   const [createCentralPatient, setCreateCentralPatient] = useState(false)
+  const [createProvisionalRecord, setCreateProvisionalRecord] = useState(false)
   const [emergencyPatient, setEmergencyPatient] = useState(emptyEmergencyPatient)
   const [arrivalMode, setArrivalMode] = useState<EmergencyArrival['arrival_mode']>('walk_in')
   const [reason, setReason] = useState('')
@@ -238,6 +239,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
             state: emergencyPatient.state.trim().toUpperCase(),
             postal_code: emergencyPatient.postal_code.replace(/\D/g, ''),
           } : null,
+          create_provisional_record: createProvisionalRecord,
           arrival_mode: arrivalMode,
           reason: reason.trim(),
           allergy_report_status: allergyReportStatus,
@@ -247,13 +249,14 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       const arrival = await readApiResponse<EmergencyArrival>(response)
       setPatientReference(''); setPatientName('')
       setCreateCentralPatient(false)
+      setCreateProvisionalRecord(false)
       setEmergencyPatient(emptyEmergencyPatient())
       setArrivalMode('walk_in'); setReason('')
       setAllergyReportStatus('not_asked'); setReportedAllergies('')
       setArrivalFormOpen(false)
       setNotice(`Chegada registrada na fila do pronto atendimento para ${arrival.patient_name}.`)
       await loadArrivals(statusFilter, query, 0)
-      if (createCentralPatient) {
+      if (createCentralPatient || createProvisionalRecord) {
         try {
           const patientResponse = await fetch('/api/v1/nursing/patients')
           const patientData = await readApiResponse<{ patients?: Patient[] }>(patientResponse)
@@ -325,7 +328,7 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       <button className={`button ${tab === 'calls' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calls'} onClick={() => setTab('calls')}><span>Painel de chamadas</span><span>{counts.waiting + counts.called}</span></button>
       <button className={`button ${tab === 'admissions' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'admissions'} onClick={() => setTab('admissions')}>Admissões e leitos</button>
     </div>
-    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode canDeletePatients={user.is_superuser || (user.modules.includes('admin') && (user.permissions.admin?.includes('excluir') === true || user.permissions.admin?.includes('administrar') === true))} /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard patients={patients} canUpdate={canUpdate} canUploadImages={canUploadScreensaver} canDeleteImages={canDeleteScreensaver} /> : <>
+    {tab === 'admissions' ? <div className="reception-admissions-page"><PatientRegistryPage receptionMode canMergeProvisional={canUpdate} canDeletePatients={user.is_superuser || (user.modules.includes('admin') && (user.permissions.admin?.includes('excluir') === true || user.permissions.admin?.includes('administrar') === true))} /></div> : tab === 'outpatient' ? <OutpatientEncounterPage userId={user.id} canCreate={canCreate} onArrivalQueued={() => void loadArrivals('all', '', 0)} /> : tab === 'appointments' ? <ReceptionAppointmentsPage patients={patients} canCreate={canCreate} canUpdate={canUpdate} /> : tab === 'calls' ? <WaitingRoomCallBoard patients={patients} canUpdate={canUpdate} canUploadImages={canUploadScreensaver} canDeleteImages={canDeleteScreensaver} /> : <>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <div className="hygiene-summary" aria-label="Resumo operacional do pronto atendimento"><article className={counts.waiting ? 'status-tone-warning' : 'status-tone-success'}><strong>{counts.waiting}</strong><span>Aguardando</span></article><article className={counts.in_service ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{counts.in_service}</strong><span>Em atendimento</span></article><article className={counts.completed ? 'status-tone-success' : 'status-tone-neutral'}><strong>{counts.completed}</strong><span>Concluídos</span></article><article className="status-tone-neutral"><strong>{counts.cancelled}</strong><span>Cancelados</span></article></div>
@@ -333,9 +336,10 @@ function ReceptionPage({ user, PatientRegistryPage }: { user: AuthUser; PatientR
       {arrivalFormOpen && <form id="reception-arrival-form" className="hygiene-panel" onSubmit={(event) => void createArrival(event)}>
         <div className="section-heading"><div><p className="eyebrow">CHEGADA À EMERGÊNCIA</p><h2>Registrar atendimento</h2></div></div>
         <div className="field-grid field-grid-two">
-          {!createCentralPatient && <><PatientSelect label="Vincular ao cadastro existente (opcional)" patients={patients} value={patientReference} onChange={(reference) => { const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? '') }} emptyLabel="Sem vínculo cadastral" placeholder="Nome, quarto, leito, CPF, CNS ou telefone" optionLabel={(patient) => `${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}${patient.cpf ? ` · CPF ${patient.cpf}` : ''}`} />{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}</>}
+          {!createCentralPatient && !createProvisionalRecord && <><PatientSelect label="Vincular ao cadastro existente (opcional)" patients={patients} value={patientReference} onChange={(reference) => { const patient = patients.find((item) => item.reference === reference); setPatientReference(reference); setPatientName(patient?.name ?? '') }} emptyLabel="Sem vínculo cadastral" placeholder="Nome, quarto, leito, CPF, CNS ou telefone" optionLabel={(patient) => `${patient.name} · ${patient.room && patient.bed ? `Qto ${patient.room} · Leito ${patient.bed}` : 'sem acomodação atribuída'}${patient.cpf ? ` · CPF ${patient.cpf}` : ''}`} />{selectedPatient && <div className="reception-selected-patient"><ReceptionAllergyAlert status={selectedPatient.allergies_status} /><small>Vínculo cadastral selecionado · {selectedPatient.cpf ? `CPF ${selectedPatient.cpf}` : 'CPF não informado'}{selectedPatient.phone ? ` · ${selectedPatient.phone}` : ''}</small></div>}</>}
           <label className="field"><span className="field-label">{createCentralPatient ? 'Nome completo para novo cadastro' : 'Nome da pessoa atendida'}</span><input required minLength={2} maxLength={120} value={patientName} onChange={(event) => { setPatientName(event.target.value); if (patientReference) setPatientReference('') }} placeholder="Nome informado na recepção" /></label>
-          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) setPatientName(''); setPatientReference(''); setEmergencyPatient(emptyEmergencyPatient()) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
+          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro compartilhado completo</span><span><input type="checkbox" checked={createCentralPatient} onChange={(event) => { setCreateCentralPatient(event.target.checked); if (event.target.checked) { setCreateProvisionalRecord(false); setPatientName('') } setPatientReference(''); setEmergencyPatient(emptyEmergencyPatient()) }} /> Criar também o cadastro central sem quarto ou leito</span></label>
+          <label className="field emergency-patient-toggle"><span className="field-label">Cadastro provisório mínimo</span><span><input type="checkbox" checked={createProvisionalRecord} onChange={(event) => { setCreateProvisionalRecord(event.target.checked); if (event.target.checked) { setCreateCentralPatient(false); setPatientName('') } setPatientReference(''); setEmergencyPatient(emptyEmergencyPatient()) }} /> Criar cadastro provisório somente com o nome, para vincular depois ao cadastro definitivo</span></label>
           {createCentralPatient && <>
             <label className="field"><span className="field-label">CPF (opcional)</span><input inputMode="numeric" maxLength={14} value={formatCpf(emergencyPatient.cpf)} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, cpf: formatCpf(event.target.value) })} placeholder="000.000.000-00" /></label>
             <label className="field"><span className="field-label">Cartão Nacional de Saúde (opcional)</span><input inputMode="numeric" maxLength={20} value={emergencyPatient.sus_card} onChange={(event) => setEmergencyPatient({ ...emergencyPatient, sus_card: event.target.value.replace(/\D/g, '').slice(0, 20) })} /></label>

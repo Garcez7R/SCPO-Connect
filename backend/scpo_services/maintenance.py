@@ -1048,8 +1048,9 @@ def create_order(
     principal: Annotated[DemoPrincipal, AUTHENTICATED],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
+    patient_reference = payload.patient_reference
     if payload.patient_reference:
-        verify_patient_reference(payload.patient_reference)
+        patient_reference = verify_patient_reference(payload.patient_reference)["reference"]
     asset_id = payload.asset_id
     if payload.asset_tag:
         asset = db.scalar(
@@ -1070,7 +1071,8 @@ def create_order(
     order = WorkOrder(
         id=str(uuid.uuid4()),
         service_number_id=_new_service_request_number(db, now),
-        **payload.model_dump(exclude={"asset_tag", "asset_id"}),
+        **payload.model_dump(exclude={"asset_tag", "asset_id", "patient_reference"}),
+        patient_reference=patient_reference,
         asset_id=asset_id,
         status="open",
         requester_id=principal.user_id,

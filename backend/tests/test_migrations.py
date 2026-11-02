@@ -51,7 +51,7 @@ def test_each_service_migration_creates_only_its_owned_table(
             "laundry_inventory_movements",
         } <= tables
     if service == "nursing":
-        assert len(tables) == 33
+        assert len(tables) == 35
         assert "nursing_offline_action_receipts" in tables
         assert {"nursing_hourly_rounds", "nursing_hourly_round_patients"} <= tables
         assert {"physician_profiles", "physician_prescriptions"} <= tables

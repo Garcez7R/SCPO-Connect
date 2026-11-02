@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowRight, RefreshCw } from 'lucide-react'
 import { readApiResponse } from '../api'
+import { glucoseInMgDl } from '../glucose'
 import ToastMessage from './ToastMessage'
 import type { TriageArrival } from '../triageTypes'
 
@@ -69,7 +70,7 @@ export default function PhysicianTriageQueue({ onOpenPatient, compact = false }:
         <div className="physician-triage-details">
           <section><strong>Alergias neste atendimento</strong><span>{triage.allergies_status === 'unknown' ? 'Não avaliadas / informação indisponível' : triage.allergies_status === 'none_known' ? 'Sem alergias conhecidas após conferência' : triage.allergies}</span></section>
           <section><strong>Condições, comorbidades ou tratamentos relatados</strong><span>{triage.conditions_treatments || 'Não informado'}</span></section>
-          <section><strong>Sinais vitais medidos</strong>{vitalEntries.length ? <ul>{vitalEntries.map(([key, value]) => <li key={key}>{vitalLabels[key] ?? key}: {value}{key === 'pressure' ? ' mmHg' : key === 'heartRate' ? ' bpm' : key === 'respiratoryRate' ? ' rpm' : key === 'saturation' ? '%' : key === 'temperature' ? ' °C' : key === 'glucose' ? ` ${triage.glucose_unit}` : ''}</li>)}</ul> : <span>Nenhum valor registrado</span>}{triage.measured_at && <small>Aferidos em {formatDateTime(triage.measured_at)}</small>}</section>
+          <section><strong>Sinais vitais medidos</strong>{vitalEntries.length ? <ul>{vitalEntries.map(([key, value]) => <li key={key}>{vitalLabels[key] ?? key}: {key === 'glucose' ? `${glucoseInMgDl(value, triage.glucose_unit)} mg/dL` : value}{key === 'pressure' ? ' mmHg' : key === 'heartRate' ? ' bpm' : key === 'respiratoryRate' ? ' rpm' : key === 'saturation' ? '%' : key === 'temperature' ? ' °C' : ''}</li>)}</ul> : <span>Nenhum valor registrado</span>}{triage.measured_at && <small>Aferidos em {formatDateTime(triage.measured_at)}</small>}</section>
         </div>
         <p className="physician-triage-meta">Registrado por {triage.registered_by} em {formatDateTime(triage.registered_at)} · Chegada {formatDateTime(arrival.created_at)}</p>
         {arrival.patient_reference

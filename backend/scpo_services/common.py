@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypedDict
 from urllib.parse import quote
 
 import httpx
@@ -64,6 +64,14 @@ class DemoPrincipal:
     modules: list[str]
     permissions: dict[str, list[str]]
     is_superuser: bool = False
+
+
+class VerifiedPatientReference(TypedDict):
+    reference: str
+    references: list[str]
+    name: str
+    room: str
+    bed: str
 
 
 _engines: dict[str, Engine] = {}
@@ -374,7 +382,7 @@ def require_service_token(
         raise HTTPException(status_code=403, detail="Serviço não autorizado")
 
 
-def verify_patient_reference(reference: str) -> dict[str, str]:
+def verify_patient_reference(reference: str) -> VerifiedPatientReference:
     """Resolve a shared patient identifier against the nursing registry."""
     nursing_url = os.getenv("SCPO_NURSING_API_URL", "http://nursing:8000").rstrip("/")
     service_token = os.getenv("SCPO_SERVICE_TOKEN", "")
@@ -395,7 +403,21 @@ def verify_patient_reference(reference: str) -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Não foi possível validar o paciente")
     try:
         data = response.json()
-        return {"reference": str(data["reference"]), "name": str(data["name"]), "room": str(data["room"]), "bed": str(data["bed"])}
+        canonical_reference = data["reference"]
+        references = data.get("references", [canonical_reference])
+        if not isinstance(canonical_reference, str) or not isinstance(references, list):
+            raise TypeError("Invalid patient reference response")
+        if any(not isinstance(item, str) for item in references):
+            raise TypeError("Invalid patient reference aliases")
+        if canonical_reference not in references:
+            references.insert(0, canonical_reference)
+        return {
+            "reference": canonical_reference,
+            "references": references,
+            "name": str(data["name"]),
+            "room": str(data["room"]),
+            "bed": str(data["bed"]),
+        }
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=503, detail="Resposta inválida do cadastro de pacientes") from exc
 

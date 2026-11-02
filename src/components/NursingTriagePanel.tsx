@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { RefreshCw, Save, UserRound } from 'lucide-react'
 import { readApiResponse } from '../api'
+import { glucoseInMgDl } from '../glucose'
 import ToastMessage from './ToastMessage'
 import type { TriageArrival } from '../triageTypes'
 
@@ -10,7 +11,7 @@ type TriageForm = {
   allergies: string
   conditions_treatments: string
   vital_values: Record<string, string>
-  glucose_unit: 'mg/dL' | 'mmol/L'
+  glucose_unit: 'mg/dL'
 }
 
 const emptyTriageForm = (): TriageForm => ({
@@ -54,8 +55,9 @@ function toForm(arrival?: TriageArrival): TriageForm {
     vital_values: {
       ...emptyTriageForm().vital_values,
       ...arrival.triage.vital_values,
+      glucose: glucoseInMgDl(arrival.triage.vital_values.glucose, arrival.triage.glucose_unit),
     },
-    glucose_unit: arrival.triage.glucose_unit,
+    glucose_unit: 'mg/dL',
   }
 }
 
@@ -206,8 +208,7 @@ export default function NursingTriagePanel({ canUpdate, isOnline = true }: { can
             value={form.vital_values[key] ?? ''}
             onChange={(event) => setForm((current) => ({ ...current, vital_values: { ...current.vital_values, [key]: event.target.value } }))}
           /></label>)}
-            <label className="field"><span className="field-label">Unidade da glicemia</span><select value={form.glucose_unit} onChange={(event) => setForm((current) => ({ ...current, glucose_unit: event.target.value as TriageForm['glucose_unit'] }))}><option value="mg/dL">mg/dL</option><option value="mmol/L">mmol/L</option></select></label>
-          </div><p className="field-hint">Informe somente valores efetivamente aferidos. Não são geradas interpretações automáticas.</p></fieldset>
+          </div><p className="field-hint">Glicemia em mg/dL. Informe somente valores efetivamente aferidos. Não são geradas interpretações automáticas.</p></fieldset>
           {canUpdate && <button className="button button-primary" type="submit" disabled={saving || (form.allergies_status === 'known' && !form.allergies.trim())}><Save size={16} />{saving ? 'Salvando triagem…' : selectedArrival.triage ? 'Salvar nova revisão' : 'Registrar triagem'}</button>}
         </form>}
       </div>}

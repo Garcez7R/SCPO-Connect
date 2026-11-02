@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Activity, AlertTriangle, Check, ChevronLeft, Clock3, HeartPulse, LogOut, RefreshCw, ShieldCheck, UsersRound, Wifi, WifiOff } from 'lucide-react'
 import { ApiResponseError, readApiResponse, readableApiError } from '../api'
+import { glucoseInMgDl } from '../glucose'
 import { readOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
 import NursingTriagePanel from '../components/NursingTriagePanel'
 
@@ -314,7 +315,14 @@ export default function NursingMobilePage({
           const response = await fetch('/api/v1/nursing/vitals', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(action.body),
+            body: JSON.stringify({
+              ...action.body,
+              values: {
+                ...action.body.values,
+                glucose: glucoseInMgDl(action.body.values.glucose, action.body.glucose_unit),
+              },
+              glucose_unit: 'mg/dL',
+            }),
           })
           await readApiResponse(response)
           next = {

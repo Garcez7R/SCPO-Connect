@@ -1167,7 +1167,8 @@ def list_dispensations(
 ) -> dict[str, object]:
     query = select(MedicationDispense)
     if patient_reference:
-        query = query.where(MedicationDispense.patient_reference == patient_reference)
+        patient = verify_patient_reference(patient_reference)
+        query = query.where(MedicationDispense.patient_reference.in_(patient["references"]))
     if status:
         query = query.where(MedicationDispense.status == status)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0

@@ -239,9 +239,12 @@ def create_referral(
     principal: Annotated[DemoPrincipal, Depends(SOCIAL_ROLE)],
     db: Annotated[Session, Depends(get_social_db)],
 ) -> dict[str, object]:
-    verify_patient_reference(payload.patient_reference)
+    patient = verify_patient_reference(payload.patient_reference)
     referral = Referral(
-        **payload.model_dump(), status="open", created_at=datetime.now(UTC)
+        **payload.model_dump(exclude={"patient_reference"}),
+        patient_reference=patient["reference"],
+        status="open",
+        created_at=datetime.now(UTC),
     )
     db.add(referral)
     emit_audit_event(
@@ -348,7 +351,8 @@ def list_psychology_encounters(
 ) -> dict[str, object]:
     query = select(PsychologyEncounter)
     if patient_reference:
-        query = query.where(PsychologyEncounter.patient_reference == patient_reference)
+        patient = verify_patient_reference(patient_reference)
+        query = query.where(PsychologyEncounter.patient_reference.in_(patient["references"]))
     rows = db.scalars(
         query.order_by(
             PsychologyEncounter.created_at.desc(), PsychologyEncounter.id.desc()
@@ -370,9 +374,9 @@ def create_psychology_encounter(
     principal: Annotated[DemoPrincipal, Depends(PSYCHOLOGY_ROLE)],
     db: Annotated[Session, Depends(get_social_db)],
 ) -> dict[str, object]:
-    verify_patient_reference(payload.patient_reference)
+    patient = verify_patient_reference(payload.patient_reference)
     encounter = PsychologyEncounter(
-        patient_reference=payload.patient_reference,
+        patient_reference=patient["reference"],
         encounter_type=payload.encounter_type,
         objective=payload.objective.strip(),
         evolution=payload.evolution.strip(),
@@ -459,10 +463,10 @@ def create_interprofessional_share(
     ):
         raise HTTPException(status_code=403, detail="Sem permissão para compartilhar por este módulo")
 
-    verify_patient_reference(payload.patient_reference)
+    patient = verify_patient_reference(payload.patient_reference)
     now = datetime.now(UTC)
     share = InterprofessionalShare(
-        patient_reference=payload.patient_reference,
+        patient_reference=patient["reference"],
         sender_module=payload.sender_module,
         recipient_module=payload.recipient_module,
         categories=payload.categories,

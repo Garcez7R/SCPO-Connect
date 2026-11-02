@@ -71,6 +71,7 @@ import { APP_VERSION } from './appVersion'
 import { MOBILE_FEEDBACK_STORAGE_KEY, triggerMobileFeedback } from './mobileFeedback'
 import VitalTrendsDashboard from './components/VitalTrendsDashboard'
 import { squareImageFile, squareVideoFrame } from './patientPhoto'
+import { glucoseInMgDl } from './glucose'
 import { BehavioralStatusBadge, type BehavioralStatus } from './components/BehavioralStatusBadge'
 import HelpGuide from './components/HelpGuide'
 import { AppDialogProvider } from './components/AppDialogs'
@@ -89,8 +90,19 @@ const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior',
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'images', 'materials', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', materials: 'Materiais', reports: 'Relatórios' }
-const systemAdminTabValues = ['accounts', 'backup', 'recovery'] as const
-const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemAdminTabValues = ['dashboard', 'accounts', 'backup', 'recovery'] as const
+const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemAdminServices: { id: ModuleService; label: string }[] = [
+  { id: 'access', label: 'Acesso' },
+  { id: 'audit', label: 'Auditoria' },
+  { id: 'backup', label: 'Backup' },
+  { id: 'maintenance', label: 'Manutenção' },
+  { id: 'nursing', label: 'Enfermagem' },
+  { id: 'pharmacy', label: 'Farmácia' },
+  { id: 'social', label: 'Serviço social' },
+  { id: 'therapy', label: 'Oficina terapêutica' },
+  { id: 'xray', label: 'Radiologia' },
+]
 const resetAllConfirmationText = 'REDEFINIR CREDENCIAIS DE TODOS OS USUÁRIOS'
 const patientRegistryTabLabels = { registry: 'Novo cadastro', list: 'Lista de pacientes', reports: 'Relatórios' } as const
 type Patient = {
@@ -100,7 +112,7 @@ type Patient = {
   responsible_name?: string; responsible_status?: 'unknown' | 'not_applicable' | 'provided'; responsible_relationship?: string; responsible_phone?: string; responsible_address?: string
   responsible_address_number?: string; responsible_address_complement?: string; responsible_neighborhood?: string
   responsible_city?: string; responsible_state?: string; responsible_postal_code?: string; photo_data?: string
-  created_at?: string | null; updated_at?: string | null; updated_by?: string; active?: boolean
+  created_at?: string | null; updated_at?: string | null; updated_by?: string; active?: boolean; is_provisional?: boolean
 }
 type NursingHourlyRoundPatient = {
   patient_reference: string
@@ -318,7 +330,6 @@ const emptyRecord = {
   respiratoryRate: '',
   temperature: '',
   glucose: '',
-  glucoseUnit: 'mg/dL',
   venousSite: '',
   venousCondition: '',
   venousNote: '',
@@ -363,7 +374,6 @@ const fieldLabels: Record<keyof RecordFields, string> = {
   respiratoryRate: 'Frequência respiratória',
   temperature: 'Temperatura',
   glucose: 'Glicose',
-  glucoseUnit: 'Unidade da glicose',
   venousSite: 'Local do acesso',
   venousCondition: 'Tipo de acesso',
   venousNote: 'Observação do acesso',
@@ -1122,7 +1132,7 @@ function AddressFields({ form, patients, prefix, onChange }: { form: PatientForm
   </div>{lookupMessage && <p className="cep-lookup-message" role="status">{lookupMessage}</p>}</>
 }
 
-function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatients = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean; canDeletePatients?: boolean }) {
+function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatients = false, canMergeProvisional = false }: { onHistory?: (reference: string) => void; receptionMode?: boolean; canDeletePatients?: boolean; canMergeProvisional?: boolean }) {
   const patientPageSize = 50
   const [patients, setPatients] = useState<Patient[]>([])
   const [patientTotal, setPatientTotal] = useState(0)
@@ -1147,6 +1157,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
   const [viewingPatient, setViewingPatient] = useState<Patient | null>(null)
   const [archivingPatient, setArchivingPatient] = useState<Patient | null>(null)
   const [archiveReason, setArchiveReason] = useState('')
+  const [mergeTargets, setMergeTargets] = useState<Record<string, string>>({})
+  const [mergingReference, setMergingReference] = useState('')
   const [showPatientFollowUp, setShowPatientFollowUp] = useState(false)
   const [patientObservations, setPatientObservations] = useState<PatientObservation[]>([])
   const [patientObservationsReference, setPatientObservationsReference] = useState('')
@@ -1485,6 +1497,35 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
     } catch (archiveError) { setError(archiveError instanceof Error ? archiveError.message : 'Falha ao arquivar cadastro.') }
   }
 
+  async function mergeProvisionalPatient(source: Patient) {
+    const targetReference = mergeTargets[source.reference]
+    if (!targetReference) {
+      setError('Selecione o cadastro definitivo antes de vincular.')
+      return
+    }
+    setMergingReference(source.reference)
+    setError('')
+    setNotice('')
+    try {
+      const result = await readApiResponse<{ target_name: string }>(await fetch(
+        `/api/v1/reception/patients/${encodeURIComponent(source.reference)}/merge`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_reference: targetReference }),
+        },
+      ))
+      setMergeTargets((current) => ({ ...current, [source.reference]: '' }))
+      setPatientPage(0)
+      setPatientReload((current) => current + 1)
+      setNotice(`Cadastro provisório de ${source.name} vinculado a ${result.target_name}; o histórico foi preservado.`)
+    } catch (mergeError) {
+      setError(mergeError instanceof Error ? mergeError.message : 'Não foi possível vincular os cadastros.')
+    } finally {
+      setMergingReference('')
+    }
+  }
+
   const filteredPatients = patients
   const patientPageCount = Math.max(1, Math.ceil(patientTotal / patientPageSize))
   const currentPatientPage = Math.min(patientPage, patientPageCount - 1)
@@ -1606,7 +1647,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       </div>
       {loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? patientGroups.map(([groupLabel, groupPatients]) => <section className="patient-registry-group" key={groupLabel}>
         {groupPatientsByRoom && <h3>{groupLabel}<span>{groupPatients.length}</span></h3>}
-        <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card ${patientCareTrackClass(patient.treatment_track)}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><PatientCareTrackBadge track={patient.treatment_track} /><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => openPatientFollowUp(patient)}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(patient.reference); setViewingPatient(null); setShowPatientFollowUp(false) }}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button>{canDeletePatients && <button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button>}</div></article>)}</div>
+        <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card ${patientCareTrackClass(patient.treatment_track)}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.is_provisional && patient.active !== false ? 'Cadastro provisório' : patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><PatientCareTrackBadge track={patient.treatment_track} /><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => openPatientFollowUp(patient)}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(patient.reference); setViewingPatient(null); setShowPatientFollowUp(false) }}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button>{canDeletePatients && <button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button>}</div>{receptionMode && canMergeProvisional && patient.is_provisional && patient.active !== false && <div className="provisional-patient-merge"><p className="field-hint">O cadastro provisório pode ser vinculado ao registro definitivo; os históricos serão preservados.</p><div className="field-grid field-grid-two"><PatientSelect label="Cadastro definitivo correspondente" patients={patients.filter((candidate) => candidate.active !== false && !candidate.is_provisional && candidate.reference !== patient.reference)} value={mergeTargets[patient.reference] ?? ''} onChange={(reference) => setMergeTargets((current) => ({ ...current, [patient.reference]: reference }))} emptyLabel="Selecione o cadastro definitivo" placeholder="Buscar por nome ou identificador" optionLabel={(candidate) => `${candidate.name} · ${candidate.room && candidate.bed ? `Quarto ${candidate.room}, leito ${candidate.bed}` : 'sem acomodação'}`} /><button className="button button-primary" type="button" onClick={() => void mergeProvisionalPatient(patient)} disabled={!mergeTargets[patient.reference] || mergingReference === patient.reference}>{mergingReference === patient.reference ? 'Vinculando…' : 'Vincular cadastro'}</button></div></div>}</article>)}</div>
       </section>) : <div className="history-empty"><UsersRound size={20} /><span>{query || roomFilter || bedFilter || treatmentTrackFilter || patientStatusFilter !== 'all' ? 'Nenhum paciente corresponde aos filtros selecionados.' : 'Nenhum paciente cadastrado.'}</span></div>}
       {!loading && patientTotal > 0 && <nav className="history-pagination" aria-label="Paginação da lista de pacientes"><span>Exibindo {currentPatientPage * patientPageSize + 1}–{Math.min((currentPatientPage + 1) * patientPageSize, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={currentPatientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentPatientPage + 1 >= patientPageCount} onClick={() => setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}
     </section>}
@@ -1719,6 +1760,16 @@ type BehavioralHistoryRecord = {
   created_at: string
 }
 
+type PatientRecordHistoryRecord = {
+  id: string
+  entry_type: 'medical_evolution' | 'nursing_evolution'
+  evolution: string
+  diagnosis: string
+  conduct: string
+  actor_name: string
+  created_at: string
+}
+
 type PatientBehavioralStatus = {
   patient_reference: string
   status: BehavioralStatus | null
@@ -1774,6 +1825,13 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
   const [behaviorSaving, setBehaviorSaving] = useState(false)
   const [behaviorError, setBehaviorError] = useState('')
   const [behaviorNotice, setBehaviorNotice] = useState('')
+  const [clinicalRecordType, setClinicalRecordType] = useState<'medical_evolution' | 'nursing_evolution'>(
+    () => user.modules.includes('physician') && !user.modules.includes('nursing') ? 'medical_evolution' : 'nursing_evolution',
+  )
+  const [clinicalRecordForm, setClinicalRecordForm] = useState({ evolution: '', diagnosis: '', conduct: '' })
+  const [clinicalRecordSaving, setClinicalRecordSaving] = useState(false)
+  const [clinicalRecordError, setClinicalRecordError] = useState('')
+  const [clinicalRecordNotice, setClinicalRecordNotice] = useState('')
   const patient = patients.find((item) => item.reference === patientReference)
   const hasPermission = (module: string, action: string) => user.is_superuser
     || (user.modules.includes(module as ModuleId) && user.permissions[module]?.includes(action) === true)
@@ -1781,6 +1839,10 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
   const canReadClinical = ['nursing', 'physician', 'psychology', 'admin'].some((module) => hasPermission(module, 'consultar'))
   const canReadOutpatient = ['reception', 'nursing', 'physician', 'psychology', 'admin'].some((module) => hasPermission(module, 'consultar'))
   const canReadFlow = ['patients', 'nursing', 'physician', 'management', 'admin'].some((module) => hasPermission(module, 'consultar'))
+  const canReadPatientRecord = ['nursing', 'physician'].some((module) => hasPermission(module, 'consultar'))
+  const canWriteNursingRecord = user.is_superuser || hasPermission('nursing', 'criar')
+  const canWriteMedicalRecord = user.is_superuser || hasPermission('physician', 'criar')
+  const canWritePatientRecord = canWriteNursingRecord || canWriteMedicalRecord
   const canWriteBehavior = user.is_superuser
     || ['nursing', 'physician', 'psychology'].some((module) => hasPermission(module, 'consultar') && hasPermission(module, 'criar'))
     || hasPermission('admin', 'administrar')
@@ -1840,6 +1902,12 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
         },
       )
     }
+    if (canReadPatientRecord) sources.push({
+      key: 'record',
+      label: 'Evoluções médicas e de Enfermagem',
+      endpoint: `/api/v1/nursing/patients/${reference}/record`,
+      collection: 'entries',
+    })
     if (canReadOutpatient) sources.push({
       key: 'outpatient',
       label: 'Atendimentos ambulatoriais',
@@ -1848,7 +1916,9 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
     })
     void Promise.all(sources.map(async (source) => {
       try {
-        const rows = source.key === 'flow'
+        const rows = source.key === 'record'
+            ? await loadPatientHistoryPages<PatientRecordHistoryRecord>(source.endpoint, source.collection)
+            : source.key === 'flow'
             ? await loadPatientHistoryPages<PatientFlowHistoryRecord>(source.endpoint, source.collection)
             : source.key === 'triage'
               ? await loadPatientHistoryPages<TriageHistoryRecord>(source.endpoint, source.collection)
@@ -1858,6 +1928,22 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
                   ? await loadPatientHistoryPages<BehavioralHistoryRecord>(source.endpoint, source.collection)
                 : await loadPatientHistoryPages<OutpatientHistoryRecord>(source.endpoint, source.collection)
         const entries: ClinicalHistoryEntry[] = rows.map((row) => {
+          if (source.key === 'record') {
+            const record = row as PatientRecordHistoryRecord
+            return {
+              id: `${source.key}-${record.id}`,
+              source: source.key,
+              category: source.label,
+              created_at: record.created_at,
+              actor_name: record.actor_name,
+              title: record.entry_type === 'medical_evolution' ? 'Evolução médica' : 'Evolução de Enfermagem',
+              details: [
+                record.evolution,
+                record.diagnosis && `Diagnóstico: ${record.diagnosis}`,
+                record.conduct && `Conduta: ${record.conduct}`,
+              ].filter(Boolean),
+            }
+          }
           if (source.key === 'flow') {
             const event = row as PatientFlowHistoryRecord
             const title = event.event_type === 'admission'
@@ -1873,7 +1959,7 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
               triage.arrival_reason && `Motivo da chegada: ${triage.arrival_reason}`,
               `Alergias: ${triage.allergies_status === 'none_known' ? 'nenhuma conhecida' : triage.allergies_status === 'known' ? triage.allergies || 'relatadas' : 'não verificadas'}`,
               triage.conditions_treatments && `Condições e tratamentos: ${triage.conditions_treatments}`,
-              ...Object.entries(triage.vital_values ?? {}).map(([name, value]) => `${name}: ${value}${name === 'glucose' ? ` ${triage.glucose_unit}` : ''}`),
+              ...Object.entries(triage.vital_values ?? {}).map(([name, value]) => `${name}: ${name === 'glucose' ? `${glucoseInMgDl(value, triage.glucose_unit)} mg/dL` : value}`),
             ].filter((detail): detail is string => Boolean(detail))
             return { id: `${source.key}-${triage.id}`, source: source.key, category: source.label, created_at: triage.created_at, actor_name: triage.actor_name, title: 'Triagem registrada', details }
           }
@@ -1921,18 +2007,20 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
       setTimelineLoading(false)
     })
     return () => { current = false }
-  }, [patientReference, timelineRevision, canReadClinical, canReadFlow, canReadOutpatient])
+  }, [patientReference, timelineRevision, canReadClinical, canReadFlow, canReadOutpatient, canReadPatientRecord])
 
   const currentBehaviorStatus = timeline.find((entry) => entry.source === 'behavior' && entry.status)?.status ?? null
   const timelineSources = [
     { key: 'flow', label: 'Movimentações e internações', rows: timeline.filter((entry) => entry.source === 'flow') },
+    { key: 'record', label: 'Evoluções médicas e de Enfermagem', rows: timeline.filter((entry) => entry.source === 'record') },
     { key: 'triage', label: 'Triagens de enfermagem', rows: timeline.filter((entry) => entry.source === 'triage') },
     { key: 'outpatient', label: 'Atendimentos ambulatoriais', rows: timeline.filter((entry) => entry.source === 'outpatient') },
     { key: 'psychology', label: 'Psicologia e Psiquiatria', rows: timeline.filter((entry) => entry.source === 'psychology') },
     { key: 'behavior', label: 'Histórico comportamental', rows: timeline.filter((entry) => entry.source === 'behavior') },
   ].filter((source) => source.key === 'flow' ? canReadFlow
-    : source.key === 'outpatient' ? canReadOutpatient
-      : canReadClinical)
+    : source.key === 'record' ? canReadPatientRecord
+      : source.key === 'outpatient' ? canReadOutpatient
+        : canReadClinical)
 
   async function saveBehaviorObservation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1961,6 +2049,36 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
       setBehaviorError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar a observação.')
     } finally {
       setBehaviorSaving(false)
+    }
+  }
+
+  async function savePatientRecordEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setClinicalRecordSaving(true)
+    setClinicalRecordError('')
+    setClinicalRecordNotice('')
+    try {
+      await readApiResponse<PatientRecordHistoryRecord>(await fetch(
+        `/api/v1/nursing/patients/${encodeURIComponent(patientReference)}/record`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entry_type: clinicalRecordType,
+            evolution: clinicalRecordForm.evolution,
+            diagnosis: clinicalRecordType === 'medical_evolution' ? clinicalRecordForm.diagnosis : '',
+            conduct: clinicalRecordType === 'medical_evolution' ? clinicalRecordForm.conduct : '',
+          }),
+        },
+      ))
+      setClinicalRecordForm({ evolution: '', diagnosis: '', conduct: '' })
+      setClinicalRecordNotice('Evolução registrada no prontuário compartilhado.')
+      setTimelineLoading(true)
+      setTimelineRevision((revision) => revision + 1)
+    } catch (saveError) {
+      setClinicalRecordError(saveError instanceof Error ? saveError.message : 'Não foi possível registrar a evolução clínica.')
+    } finally {
+      setClinicalRecordSaving(false)
     }
   }
 
@@ -2004,6 +2122,20 @@ function PatientHistoryPage({ patientReference, user, onBack }: { patientReferen
         <label className="field"><span className="field-label">Resposta ou conduta adotada (opcional)</span><textarea maxLength={1000} value={behaviorForm.response} onChange={(event) => setBehaviorForm((current) => ({ ...current, response: event.target.value }))} /></label>
         {canSetBehaviorStatus && <label className="field"><span className="field-label">Semáforo comportamental · revisão profissional</span><select value={behaviorForm.status} onChange={(event) => setBehaviorForm((current) => ({ ...current, status: event.target.value as '' | BehavioralStatus }))}><option value="">Não alterar a sinalização atual</option><option value="green">Verde · bom comportamento</option><option value="yellow">Amarelo · requer atenção</option><option value="red">Vermelho · supervisão constante</option></select><span className="field-hint">Use somente conforme avaliação profissional e protocolo institucional; a atualização fica registrada no histórico.</span></label>}
         <button className="button button-primary" type="submit" disabled={behaviorSaving || behaviorForm.observation.trim().length < 5}>{behaviorSaving ? 'Registrando…' : 'Registrar observação'}</button>
+      </form>
+    </section>}
+    {canWritePatientRecord && <section className="patient-list-panel patient-record-entry-form-panel">
+      <div className="section-heading"><div><p className="eyebrow">PRONTUÁRIO COMPARTILHADO</p><h2>Registrar evolução clínica</h2><p className="welcome-copy">Os registros são append-only e ficam disponíveis às equipes autorizadas.</p></div></div>
+      {clinicalRecordError && <ToastMessage variant="error">{clinicalRecordError}</ToastMessage>}
+      {clinicalRecordNotice && <ToastMessage variant="success">{clinicalRecordNotice}</ToastMessage>}
+      <form className="field-grid field-grid-two" onSubmit={(event) => void savePatientRecordEntry(event)}>
+        {canWriteNursingRecord && canWriteMedicalRecord && <label className="field"><span className="field-label">Tipo de evolução</span><select value={clinicalRecordType} onChange={(event) => setClinicalRecordType(event.target.value as typeof clinicalRecordType)}><option value="nursing_evolution">Evolução de Enfermagem</option><option value="medical_evolution">Evolução médica</option></select></label>}
+        <label className="field"><span className="field-label">{clinicalRecordType === 'medical_evolution' ? 'Evolução médica' : 'Evolução de Enfermagem'}</span><textarea required minLength={5} maxLength={8000} value={clinicalRecordForm.evolution} onChange={(event) => setClinicalRecordForm((current) => ({ ...current, evolution: event.target.value }))} /></label>
+        {clinicalRecordType === 'medical_evolution' && <>
+          <label className="field"><span className="field-label">Diagnóstico / hipótese diagnóstica (opcional)</span><textarea maxLength={2000} value={clinicalRecordForm.diagnosis} onChange={(event) => setClinicalRecordForm((current) => ({ ...current, diagnosis: event.target.value }))} /></label>
+          <label className="field"><span className="field-label">Conduta (opcional)</span><textarea maxLength={4000} value={clinicalRecordForm.conduct} onChange={(event) => setClinicalRecordForm((current) => ({ ...current, conduct: event.target.value }))} /></label>
+        </>}
+        <button className="button button-primary" type="submit" disabled={clinicalRecordSaving || clinicalRecordForm.evolution.trim().length < 5}>{clinicalRecordSaving ? 'Registrando…' : 'Registrar evolução'}</button>
       </form>
     </section>}
   </section>
@@ -2120,6 +2252,8 @@ function TherapyPage({ profile }: { profile: Profile }) {
   const [month, setMonth] = useState(() => { const current = new Date(); return new Date(current.getFullYear(), current.getMonth(), 1) })
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loadRetry, setLoadRetry] = useState(0)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [loadedMonthKey, setLoadedMonthKey] = useState('')
   const [failedActivityMonthKey, setFailedActivityMonthKey] = useState('')
   const [error, setError] = useState('')
@@ -2158,6 +2292,7 @@ function TherapyPage({ profile }: { profile: Profile }) {
         loadErrors.push(`Atividades: ${readableApiError(activityResult.reason)}`)
       }
       setError(loadErrors.join(' · '))
+      setLoadFailed(loadErrors.length > 0)
       setLoadedMonthKey(monthKey)
     }).catch((loadError: unknown) => {
       if (!current) return
@@ -2166,10 +2301,24 @@ function TherapyPage({ profile }: { profile: Profile }) {
       setReportStatuses({})
       setFailedActivityMonthKey(monthKey)
       setError(readableApiError(loadError))
+      setLoadFailed(true)
       setLoadedMonthKey(monthKey)
     })
     return () => { current = false }
-  }, [month, monthKey])
+  }, [month, monthKey, loadRetry])
+
+  function retryTherapyLoad() {
+    setError('')
+    setLoadFailed(false)
+    setLoadedMonthKey('')
+    setLoadRetry((current) => current + 1)
+  }
+
+  function changeTherapyMonth(nextMonth: Date) {
+    setError('')
+    setLoadFailed(false)
+    setMonth(nextMonth)
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -2283,10 +2432,10 @@ function TherapyPage({ profile }: { profile: Profile }) {
       <button className={`button ${tab === 'materials' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'materials'} onClick={() => setTab('materials')}><Package size={16} /> Materiais</button>
       <button className={`button ${tab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}><ClipboardList size={16} /> Relatórios</button>
     </div>
-    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <div className="therapy-load-error"><ToastMessage variant="error">{error}</ToastMessage>{loadFailed && <button className="button button-secondary" type="button" onClick={retryTherapyLoad} disabled={loading}>Tentar novamente</button>}</div>}
     {tab === 'calendar' && <>
     <div className="hygiene-summary therapy-summary" aria-label="Resumo da Oficina Terapêutica" aria-busy={loading}><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : activities.length}</strong><span>Atividades no mês</span></article><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : todayActivityCount}</strong><span>Agendadas para hoje</span></article><article className={activityCountTone(inProgressCount, 'progress')}><strong>{loading ? '…' : activityLoadFailed ? '—' : inProgressCount}</strong><span>Em andamento</span></article><article className={activityCountTone(completedCount, 'success')}><strong>{loading ? '…' : activityLoadFailed ? '—' : completedCount}</strong><span>Realizadas</span></article><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : activities.reduce((sum, activity) => sum + (activity.participants ?? []).filter((participant) => participant.attendance === 'attended').length, 0)}</strong><span>Presenças registradas</span></article></div>
-    <div className="therapy-layout"><section className="therapy-calendar-panel"><div className="therapy-calendar-heading"><button className="icon-button" type="button" aria-label="Mês anterior" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={19} /></button><h2>{monthLabel}</h2><button className="icon-button" type="button" aria-label="Próximo mês" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={19} /></button></div><div className="therapy-calendar-grid therapy-calendar-weekdays">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => <span key={day}>{day}</span>)}</div><div className="therapy-calendar-grid">{calendarCells.map((cell, index) => cell ? <article className={`therapy-calendar-day ${cell.birthdays.length ? 'has-birthday' : ''} ${cell.activities.length ? 'has-activity' : ''}`} key={cell.dateKey}><strong>{cell.day}</strong>{cell.birthdays.slice(0, 2).map((patient) => <span className="therapy-calendar-tag birthday-tag" key={patient.reference} title={`Aniversário: ${patient.name}`}>🎂 {patient.name.split(' ')[0]}</span>)}{cell.activities.slice(0, 2).map((activity) => <span className="therapy-calendar-tag activity-tag" key={activity.id} title={activity.title}>• {activity.title}</span>)}{cell.birthdays.length + cell.activities.length > 4 && <small>+{cell.birthdays.length + cell.activities.length - 4}</small>}</article> : <span className="therapy-calendar-day therapy-calendar-empty" key={`empty-${index}`} />)}</div><div className="therapy-calendar-legend"><span><i className="legend-birthday" /> Aniversários</span><span><i className="legend-activity" /> Atividades</span></div></section>
+    <div className="therapy-layout"><section className="therapy-calendar-panel"><div className="therapy-calendar-heading"><button className="icon-button" type="button" aria-label="Mês anterior" onClick={() => changeTherapyMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={19} /></button><h2>{monthLabel}</h2><button className="icon-button" type="button" aria-label="Próximo mês" onClick={() => changeTherapyMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={19} /></button></div><div className="therapy-calendar-grid therapy-calendar-weekdays">{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => <span key={day}>{day}</span>)}</div><div className="therapy-calendar-grid">{calendarCells.map((cell, index) => cell ? <article className={`therapy-calendar-day ${cell.birthdays.length ? 'has-birthday' : ''} ${cell.activities.length ? 'has-activity' : ''}`} key={cell.dateKey}><strong>{cell.day}</strong>{cell.birthdays.slice(0, 2).map((patient) => <span className="therapy-calendar-tag birthday-tag" key={patient.reference} title={`Aniversário: ${patient.name}`}>🎂 {patient.name.split(' ')[0]}</span>)}{cell.activities.slice(0, 2).map((activity) => <span className="therapy-calendar-tag activity-tag" key={activity.id} title={activity.title}>• {activity.title}</span>)}{cell.birthdays.length + cell.activities.length > 4 && <small>+{cell.birthdays.length + cell.activities.length - 4}</small>}</article> : <span className="therapy-calendar-day therapy-calendar-empty" key={`empty-${index}`} />)}</div><div className="therapy-calendar-legend"><span><i className="legend-birthday" /> Aniversários</span><span><i className="legend-activity" /> Atividades</span></div></section>
       <aside className="therapy-birthday-panel"><div className="section-heading"><div><p className="eyebrow">DATAS ESPECIAIS</p><h2>Aniversários</h2></div><span className="module-total">{birthdaysThisMonth.length}</span></div>{birthdaysThisMonth.length ? <div className="therapy-birthday-list">{birthdaysThisMonth.map((patient) => <article key={patient.reference}><span className="birthday-date">{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'short' }).format(new Date(`${month.getFullYear()}-${patient.birth_date!.slice(5)}T00:00:00Z`))}</span><div><strong>{patient.name}</strong></div></article>)}</div> : <div className="history-empty">Nenhum aniversário cadastrado neste mês.</div>}<p className="field-hint">A agenda usa apenas nome e data de nascimento para organizar atividades e aniversários.</p></aside></div>
     {showForm && <form className="therapy-form" onSubmit={(event) => void submit(event)}><div className="section-heading"><div><p className="eyebrow">NOVA ATIVIDADE</p><h2>Dados da oficina</h2><p className="welcome-copy">Cadastre a proposta e os participantes; as presenças podem ser atualizadas depois.</p></div></div><div className="field-grid field-grid-two"><label className="field"><span className="field-label">Nome da atividade</span><input required minLength={3} maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ex.: oficina de pintura" /></label><label className="field"><span className="field-label">Modalidade</span><select required value={form.activity_type} onChange={(event) => setForm({ ...form, activity_type: event.target.value })}><option value="">Selecione</option><option value="grupo">Grupo terapêutico</option><option value="arte">Arte e expressão</option><option value="música">Música</option><option value="movimento">Movimento corporal</option><option value="ocupacional">Atividade ocupacional</option><option value="recreação">Recreação</option><option value="outro">Outra</option></select></label><label className="field"><span className="field-label">Início</span><input required type="datetime-local" value={form.starts_at} onChange={(event) => setForm({ ...form, starts_at: event.target.value })} /></label><label className="field"><span className="field-label">Término (opcional)</span><input type="datetime-local" min={form.starts_at || undefined} value={form.ends_at} onChange={(event) => setForm({ ...form, ends_at: event.target.value })} /></label>
       <PatientSelect label="Paciente principal (opcional)" patients={patients} value={form.patient_reference} onChange={selectActivityPatient} emptyLabel="Atividade coletiva sem paciente principal" />
@@ -2553,7 +2702,7 @@ function NursingHistoryPage({ onBack }: { onBack: () => void }) {
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
   const vitalPrintRows: PrintRow[] = records.map((record) => {
     const patient = patients.find((item) => item.reference === record.patient_reference)
-    return { id: String(record.id), date: record.recorded_at, title: patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente', fields: [...Object.entries(record.values).map(([key, value]) => [fieldLabels[key as keyof RecordFields] ?? (key === 'painScale' ? 'Escala utilizada' : key === 'bowel' ? 'Eliminação intestinal (registro anterior)' : key), value] as [string, string]), ['Unidade de glicose', record.glucose_unit], ['Profissional', record.actor_name]] }
+    return { id: String(record.id), date: record.recorded_at, title: patient ? `${patient.name} · Quarto ${patient.room}, leito ${patient.bed}` : 'Paciente', fields: [...Object.entries(record.values).map(([key, value]) => [fieldLabels[key as keyof RecordFields] ?? (key === 'painScale' ? 'Escala utilizada' : key === 'bowel' ? 'Eliminação intestinal (registro anterior)' : key), key === 'glucose' ? `${glucoseInMgDl(value, record.glucose_unit)} mg/dL` : value] as [string, string]), ['Profissional', record.actor_name]] }
   })
 
   function clearFilters() {
@@ -2902,8 +3051,8 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patient_reference: patientRef,
-          values: Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'glucoseUnit')),
-          glucose_unit: record.glucoseUnit,
+          values: Object.fromEntries(Object.entries(record)),
+          glucose_unit: 'mg/dL',
           not_applicable: notApplicable,
         }),
       })
@@ -3040,10 +3189,9 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
             </div>
           </FormSection>
 
-          <FormSection number="02" title="Glicose" detail="A unidade é exibida e pode ser alterada para esta coleta.">
+          <FormSection number="02" title="Glicose" detail="Unidade padrão: mg/dL.">
             <div className="field-grid field-grid-two glucose-entry-grid">
-              <ValueField label="Valor" unit={record.glucoseUnit} value={record.glucose} disabled={notApplicable.includes('glucose')} onChange={(value) => updateField('glucose', value)} onNA={() => toggleNotApplicable('glucose')} isNA={notApplicable.includes('glucose')} inputMode="decimal" />
-              <label className="field glucose-unit-field"><span className="field-label">Unidade</span><select value={record.glucoseUnit} onChange={(event) => updateField('glucoseUnit', event.target.value)} disabled={notApplicable.includes('glucose')}><option>mg/dL</option><option>mmol/L</option></select></label>
+              <ValueField label="Valor" unit="mg/dL" value={record.glucose} disabled={notApplicable.includes('glucose')} onChange={(value) => updateField('glucose', value)} onNA={() => toggleNotApplicable('glucose')} isNA={notApplicable.includes('glucose')} inputMode="decimal" />
             </div>
           </FormSection>
           </>}
@@ -3388,22 +3536,21 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
   </section>
 }
 
-const vitalMetrics: { key: string; label: string; unit: string; field: string; part?: number; glucoseUnit?: string }[] = [
+const vitalMetrics: { key: string; label: string; unit: string; field: string; part?: number }[] = [
   { key: 'saturation', label: 'Saturação', unit: '%', field: 'saturation' },
   { key: 'pressure', label: 'Pressão arterial · sistólica e diastólica', unit: 'mmHg', field: 'pressure' },
   { key: 'heartRate', label: 'Frequência cardíaca', unit: 'bpm', field: 'heartRate' },
   { key: 'respiratoryRate', label: 'Frequência respiratória', unit: 'rpm', field: 'respiratoryRate' },
-  { key: 'glucose_mgdl', label: 'Glicose · mg/dL', unit: 'mg/dL', field: 'glucose', glucoseUnit: 'mg/dL' },
-  { key: 'glucose_mmoll', label: 'Glicose · mmol/L', unit: 'mmol/L', field: 'glucose', glucoseUnit: 'mmol/L' },
+  { key: 'glucose', label: 'Glicose', unit: 'mg/dL', field: 'glucose' },
 ]
 
 function VitalHistory({ records, patients, patientReference, metric, onMetric, onVoid, showChart = true }: { records: VitalRecordData[]; patients: Patient[]; patientReference?: string; metric: string; onMetric: (value: string) => void; onVoid?: (id: number) => void; showChart?: boolean }) {
   const config = vitalMetrics.find((item) => item.key === metric) ?? vitalMetrics[0]
   const chartRecords = patientReference ? records.filter((record) => record.patient_reference === patientReference) : []
   const points = chartRecords.slice().reverse().flatMap((record, index) => {
-    if ('glucoseUnit' in config && config.glucoseUnit && record.glucose_unit !== config.glucoseUnit) return []
     const raw = record.values[config.field]
-    const value = raw ? Number.parseFloat(raw.replace(',', '.').split('/')[config.part ?? 0]) : NaN
+    const displayedValue = config.field === 'glucose' ? glucoseInMgDl(raw, record.glucose_unit) : raw
+    const value = displayedValue ? Number.parseFloat(displayedValue.replace(',', '.').split('/')[config.part ?? 0]) : NaN
     return Number.isFinite(value) ? [{ value, label: new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(record.recorded_at)), index }] : []
   })
   const min = Math.min(...points.map((point) => point.value))
@@ -3411,7 +3558,7 @@ function VitalHistory({ records, patients, patientReference, metric, onMetric, o
   const span = max - min || 1
   const coordinates = points.map((point, index) => ({ ...point, x: points.length < 2 ? 50 : 8 + index * 84 / (points.length - 1), y: 90 - ((point.value - min) / span) * 72 }))
   const line = coordinates.map((point) => `${point.x},${point.y}`).join(' ')
-  return <section className="vital-history">{showChart ? <><div className="history-heading"><div><p className="eyebrow">CONSULTA DE REGISTROS</p><h2>Histórico de sinais vitais</h2><p className="welcome-copy">Confira os valores registrados, horário e profissional responsável.</p></div><label className="history-metric"><span className="field-label">Indicador</span><select value={metric} onChange={(event) => onMetric(event.target.value)}>{vitalMetrics.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label></div>{!patientReference ? <div className="history-empty"><Activity size={20} /><span>Selecione um paciente para visualizar a evolução no gráfico.</span></div> : points.length ? <><div className="history-chart"><svg viewBox="0 0 100 100" role="img" aria-label={`Gráfico de ${config.label}`} preserveAspectRatio="none"><line x1="5" y1="90" x2="95" y2="90" className="chart-axis" />{points.length > 1 && <polyline points={line} className="chart-line" />}{coordinates.map((point) => <circle key={`${point.label}-${point.index}`} cx={point.x} cy={point.y} r="2.1" className="chart-point"><title>{point.label}: {point.value} {config.unit}</title></circle>)}</svg></div><div className="history-values">{coordinates.slice(-5).reverse().map((point) => <span key={`${point.label}-${point.index}`}><strong>{point.value} {config.unit}</strong><small>{point.label}</small></span>)}</div></> : <div className="history-empty"><Activity size={20} /><span>Não há valores deste indicador no período consultado.</span></div>}</> : <div className="section-heading"><div><p className="eyebrow">REGISTROS DO PRONTUÁRIO</p><h2>Coletas recentes</h2><p className="welcome-copy">Valores registrados, horário e profissional responsável.</p></div></div>}{records.length > 0 && <div className="collection-list"><h3>{showChart ? 'Coletas recentes' : 'Coletas registradas'}</h3>{records.map((record) => { const patient = patients.find((item) => item.reference === record.patient_reference); return <article className="collection-row" key={record.id}><div className="collection-row-heading"><strong>{patient?.name ?? 'Paciente'} · Qto {patient?.room ?? '—'} · Leito {patient?.bed ?? '—'}</strong><time>{dateTime(record.recorded_at)}</time></div><div className="collection-values">{[['Saturação', record.values.saturation && `${record.values.saturation}%`], ['Pressão', record.values.pressure], ['FC', record.values.heartRate && `${record.values.heartRate} bpm`], ['FR', record.values.respiratoryRate && `${record.values.respiratoryRate} rpm`], ['Glicose', record.values.glucose && `${record.values.glucose} ${record.glucose_unit}`], ['Dor/algia', record.values.painPresent], ['Valor da dor', record.values.pain], ['Oxigênio', record.values.oxygenStatus], ['Lesões', record.values.wounds], ['Exame', record.values.examName]].filter(([, value]) => value).map(([label, value]) => <span key={label}><small>{label}</small><strong>{value}</strong></span>)}</div><small className="collection-actor">Registrado por {record.actor_name}</small>{onVoid && <button className="button button-danger" type="button" onClick={() => onVoid(record.id)}>Arquivar registro incorreto</button>}</article> })}</div>}</section>
+  return <section className="vital-history">{showChart ? <><div className="history-heading"><div><p className="eyebrow">CONSULTA DE REGISTROS</p><h2>Histórico de sinais vitais</h2><p className="welcome-copy">Confira os valores registrados, horário e profissional responsável.</p></div><label className="history-metric"><span className="field-label">Indicador</span><select value={metric} onChange={(event) => onMetric(event.target.value)}>{vitalMetrics.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label></div>{!patientReference ? <div className="history-empty"><Activity size={20} /><span>Selecione um paciente para visualizar a evolução no gráfico.</span></div> : points.length ? <><div className="history-chart"><svg viewBox="0 0 100 100" role="img" aria-label={`Gráfico de ${config.label}`} preserveAspectRatio="none"><line x1="5" y1="90" x2="95" y2="90" className="chart-axis" />{points.length > 1 && <polyline points={line} className="chart-line" />}{coordinates.map((point) => <circle key={`${point.label}-${point.index}`} cx={point.x} cy={point.y} r="2.1" className="chart-point"><title>{point.label}: {point.value} {config.unit}</title></circle>)}</svg></div><div className="history-values">{coordinates.slice(-5).reverse().map((point) => <span key={`${point.label}-${point.index}`}><strong>{point.value} {config.unit}</strong><small>{point.label}</small></span>)}</div></> : <div className="history-empty"><Activity size={20} /><span>Não há valores deste indicador no período consultado.</span></div>}</> : <div className="section-heading"><div><p className="eyebrow">REGISTROS DO PRONTUÁRIO</p><h2>Coletas recentes</h2><p className="welcome-copy">Valores registrados, horário e profissional responsável.</p></div></div>}{records.length > 0 && <div className="collection-list"><h3>{showChart ? 'Coletas recentes' : 'Coletas registradas'}</h3>{records.map((record) => { const patient = patients.find((item) => item.reference === record.patient_reference); return <article className="collection-row" key={record.id}><div className="collection-row-heading"><strong>{patient?.name ?? 'Paciente'} · Qto {patient?.room ?? '—'} · Leito {patient?.bed ?? '—'}</strong><time>{dateTime(record.recorded_at)}</time></div><div className="collection-values">{[['Saturação', record.values.saturation && `${record.values.saturation}%`], ['Pressão', record.values.pressure], ['FC', record.values.heartRate && `${record.values.heartRate} bpm`], ['FR', record.values.respiratoryRate && `${record.values.respiratoryRate} rpm`], ['Glicose', record.values.glucose && `${glucoseInMgDl(record.values.glucose, record.glucose_unit)} mg/dL`], ['Dor/algia', record.values.painPresent], ['Valor da dor', record.values.pain], ['Oxigênio', record.values.oxygenStatus], ['Lesões', record.values.wounds], ['Exame', record.values.examName]].filter(([, value]) => value).map(([label, value]) => <span key={label}><small>{label}</small><strong>{value}</strong></span>)}</div><small className="collection-actor">Registrado por {record.actor_name}</small>{onVoid && <button className="button button-danger" type="button" onClick={() => onVoid(record.id)}>Arquivar registro incorreto</button>}</article> })}</div>}</section>
 }
 
 function VitalExtraDetails({ records, patientReference }: { records: VitalRecordData[]; patientReference: string }) {
@@ -3442,9 +3589,9 @@ function TextField({ label, value, onChange, placeholder, inputMode }: { label: 
 }
 
 function ReviewPanel({ record, notApplicable, patient, onBack, onConfirm, isSaving }: { record: RecordFields; notApplicable: string[]; patient?: Patient; onBack: () => void; onConfirm: () => void; isSaving: boolean }) {
-  const items = (Object.keys(record) as (keyof RecordFields)[]).filter((key) => key !== 'glucoseUnit').map((key) => {
+  const items = (Object.keys(record) as (keyof RecordFields)[]).map((key) => {
     const rawValue = notApplicable.includes(key) ? 'Não se aplica' : record[key] || 'Não preenchido'
-    const value = key === 'glucose' && record[key] ? `${record[key]} ${record.glucoseUnit}` : rawValue
+    const value = key === 'glucose' && record[key] ? `${record[key]} mg/dL` : rawValue
     return { label: fieldLabels[key], value }
   })
 
@@ -3723,7 +3870,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
       options={availableTabs.map((value) => ({ value, label: adminTabLabels[value] }))}
     />}
     {activeTab === 'users' && canManageApp && <>
-    <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Acesso restrito à gestão de contas autorizada.</strong><span>Uma senha aleatória de uso único é gerada para cada conta. Entregue-a ao titular por um canal seguro.</span></div></div>
+    <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Acesso restrito à gestão de contas autorizada.</strong><span>Ao criar ou redefinir uma conta, a senha inicial é 0000. Oriente o titular a alterá-la no primeiro acesso.</span></div></div>
     {status === 'unavailable' && <ToastMessage variant="error">Não foi possível carregar usuários. Confirme se as APIs e o banco estão ativos.</ToastMessage>}
     {mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
@@ -5670,7 +5817,7 @@ function AuditLogPanel() {
 
 function SystemAdminPage({ user }: { user: AuthUser }) {
   const { confirm } = useAppDialogs()
-  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-${user.id}`, 'accounts', systemAdminTabValues, systemAdminTabLabels)
+  const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-v2-${user.id}`, 'dashboard', systemAdminTabValues, systemAdminTabLabels)
   const [users, setUsers] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -5756,6 +5903,21 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Superusuário</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><a className="button button-secondary" href="/scpo-root-ca.crt" download="scpo-connect-root-ca.crt"><Download size={16} /> Baixar certificado do app</a><span className="module-icon"><ShieldCheck size={20} /></span></div>
     <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
+    {tab === 'dashboard' && <section className="system-dashboard">
+      <div className="system-dashboard-summary">
+        <article><span>Versão do aplicativo</span><strong>{APP_VERSION}</strong></article>
+        <article><span>Contas comuns cadastradas</span><strong>{loading ? '…' : users.length}</strong></article>
+        <article><span>Serviços monitorados</span><strong>{systemAdminServices.length}</strong></article>
+      </div>
+      <section className="patient-list-panel">
+        <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>
+        <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>
+      </section>
+      <section className="patient-list-panel">
+        <div className="section-heading"><div><p className="eyebrow">ATALHOS DE MANUTENÇÃO</p><h2>Operações do Superusuário</h2></div></div>
+        <div className="system-dashboard-actions"><button className="button button-secondary" type="button" onClick={() => setTab('accounts')}>Usuários e permissões</button><button className="button button-secondary" type="button" onClick={() => setTab('backup')}>Cópias de segurança</button><button className="button button-secondary" type="button" onClick={() => setTab('recovery')}>Recuperação de acesso</button></div>
+      </section>
+    </section>}
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}
     {tab === 'backup' && <><BackupExportPanel /><TherapyStorageSettings /></>}
     {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel">

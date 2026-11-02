@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, Printer } from 'lucide-react'
 import { readApiResponse } from '../api'
+import { glucoseInMgDl } from '../glucose'
 import ToastMessage from './ToastMessage'
 
 type VitalRecord = {
@@ -135,7 +136,13 @@ function TrendChart({
     {selected && <div className="vital-trend-selected" aria-live="polite">
       <strong>{dateTime(selected.measured_at)}</strong>
       <span>Registrado em {dateTime(selected.recorded_at)} por {selected.actor_name}</span>
-      <div>{Object.entries(selected.values).filter(([, value]) => value).map(([key, value]) => <span key={key}>{key === 'heartRate' ? 'FC' : key === 'respiratoryRate' ? 'FR' : key === 'temperature' ? 'Temperatura' : key === 'saturation' ? 'Saturação' : key === 'pressure' ? 'Pressão arterial' : key === 'glucose' ? `Glicose (${selected.glucose_unit})` : null}{['heartRate', 'respiratoryRate', 'temperature', 'saturation', 'pressure', 'glucose'].includes(key) ? `: ${value}${key === 'temperature' ? ' °C' : key === 'saturation' ? '%' : key === 'heartRate' ? ' bpm' : key === 'respiratoryRate' ? ' rpm' : key === 'pressure' ? ' mmHg' : ''}` : ''}</span>)}</div>
+      <div>{Object.entries(selected.values).filter(([, value]) => value).map(([key, value]) => {
+        const label = key === 'heartRate' ? 'FC' : key === 'respiratoryRate' ? 'FR' : key === 'temperature' ? 'Temperatura' : key === 'saturation' ? 'Saturação' : key === 'pressure' ? 'Pressão arterial' : key === 'glucose' ? 'Glicose' : null
+        if (!label) return null
+        const displayedValue = key === 'glucose' ? glucoseInMgDl(value, selected.glucose_unit) : value
+        const unit = key === 'glucose' ? ' mg/dL' : key === 'temperature' ? ' °C' : key === 'saturation' ? '%' : key === 'heartRate' ? ' bpm' : key === 'respiratoryRate' ? ' rpm' : key === 'pressure' ? ' mmHg' : ''
+        return <span key={key}>{label}: {displayedValue}{unit}</span>
+      })}</div>
     </div>}
   </section>
 }
@@ -203,7 +210,7 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
     respiratoryRate: { key: 'respiratoryRate', label: 'Frequência respiratória', color: '#6476b8', read: (record: VitalRecord) => numberValue(record.values.respiratoryRate) },
     saturation: { key: 'saturation', label: 'Saturação', color: '#32825a', read: (record: VitalRecord) => numberValue(record.values.saturation) },
     temperature: { key: 'temperature', label: 'Temperatura', color: '#b17b22', read: (record: VitalRecord) => numberValue(record.values.temperature) },
-    glucose: (unit: string): TrendSeries => ({ key: `glucose-${unit}`, label: `Glicose · ${unit}`, color: '#7255a1', read: (record) => record.glucose_unit === unit ? numberValue(record.values.glucose) : null }),
+    glucose: { key: 'glucose', label: 'Glicose · mg/dL', color: '#7255a1', read: (record: VitalRecord) => numberValue(glucoseInMgDl(record.values.glucose, record.glucose_unit)) },
   }
   const pressureSeries = pressureView === 'both'
     ? [series.systolic, series.diastolic]
@@ -233,7 +240,7 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
       <td>${cell(record.values.respiratoryRate, ' rpm')}</td>
       <td>${cell(record.values.saturation, '%')}</td>
       <td>${cell(record.values.temperature, ' °C')}</td>
-      <td>${cell(record.values.glucose, record.glucose_unit ? ` ${escapeHtml(record.glucose_unit)}` : '')}</td>
+      <td>${cell(record.values.glucose ? glucoseInMgDl(record.values.glucose, record.glucose_unit) : undefined, ' mg/dL')}</td>
       <td>${escapeHtml(dateTime(record.recorded_at))}</td>
       <td>${escapeHtml(record.actor_name || 'Não informado')}</td>
     </tr>`).join('')
@@ -278,8 +285,7 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
           <TrendChart title="Frequência respiratória" unit="rpm" records={records} series={[series.respiratoryRate]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
           <TrendChart title="Saturação" unit="%" records={records} series={[series.saturation]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
           <TrendChart title="Temperatura" unit="°C" records={records} series={[series.temperature]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
-          <TrendChart title="Glicose · mg/dL" unit="mg/dL" records={records} series={[series.glucose('mg/dL')]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
-          <TrendChart title="Glicose · mmol/L" unit="mmol/L" records={records} series={[series.glucose('mmol/L')]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
+          <TrendChart title="Glicose" unit="mg/dL" records={records} series={[series.glucose]} start={start} end={end} selectedRecordId={selectedRecordId} onSelectRecord={setSelectedRecordId} />
         </div> : <div className="vital-trends-table-wrap" role="region" aria-label="Tabela de medições de sinais vitais" tabIndex={0}>
           <table className="vital-trends-table">
             <caption>{patientName ? `Paciente: ${patientName}` : 'Medições de sinais vitais'} · {recordCount} {recordCount === 1 ? 'registro' : 'registros'} · {periodLabel}</caption>
@@ -291,7 +297,7 @@ export default function VitalTrendsDashboard({ patientReference, patientName }: 
               <td>{record.values.respiratoryRate || '—'}</td>
               <td>{record.values.saturation ? `${record.values.saturation}%` : '—'}</td>
               <td>{record.values.temperature ? `${record.values.temperature} °C` : '—'}</td>
-              <td>{record.values.glucose ? `${record.values.glucose} ${record.glucose_unit}` : '—'}</td>
+              <td>{record.values.glucose ? `${glucoseInMgDl(record.values.glucose, record.glucose_unit)} mg/dL` : '—'}</td>
               <td>{dateTime(record.recorded_at)}</td>
               <td>{record.actor_name || 'Não informado'}</td>
             </tr>)}</tbody>

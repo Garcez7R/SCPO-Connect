@@ -198,6 +198,49 @@ class Patient(Base):
     updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     elopement_risk: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_provisional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class PatientMergeAlias(Base):
+    __tablename__ = "patient_merge_aliases"
+    __table_args__ = (
+        Index("ix_patient_merge_aliases_target", "target_reference"),
+    )
+
+    source_reference: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("patients.reference", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    target_reference: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("patients.reference", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    merged_by_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    merged_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    merged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PatientRecordEntry(Base):
+    __tablename__ = "patient_record_entries"
+    __table_args__ = (
+        Index("ix_patient_record_entries_patient_created", "patient_reference", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    patient_reference: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("patients.reference", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    entry_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    evolution: Mapped[str] = mapped_column(Text, nullable=False)
+    diagnosis: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    conduct: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class NursingHourlyRound(Base):
@@ -657,6 +700,7 @@ class EmergencyArrivalPayload(BaseModel):
     patient_reference: str | None = Field(default=None, max_length=36)
     patient_name: str = Field(default="", max_length=120)
     new_patient: "EmergencyPatientPayload | None" = None
+    create_provisional_record: bool = False
     arrival_mode: Literal["walk_in", "ambulance", "other"] = "walk_in"
     reason: str = Field(min_length=3, max_length=1000)
     queue_type: Literal["common", "priority"] = "common"
@@ -667,6 +711,8 @@ class EmergencyArrivalPayload(BaseModel):
     def validate_patient_source(self) -> "EmergencyArrivalPayload":
         if self.new_patient and self.patient_reference:
             raise ValueError("Escolha um paciente existente ou crie um novo cadastro")
+        if self.create_provisional_record and (self.new_patient or self.patient_reference):
+            raise ValueError("O cadastro provisório não pode ser combinado com outro cadastro")
         if not self.new_patient and not self.patient_reference and len(self.patient_name.strip()) < 2:
             raise ValueError("Informe o nome da pessoa atendida")
         if self.allergy_report_status == "reported" and not self.reported_allergies.strip():
@@ -1761,6 +1807,32 @@ class PatientPayload(BaseModel):
         return self
 
 
+class PatientMergePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_reference: str = Field(min_length=1, max_length=36)
+
+
+class PatientRecordEntryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entry_type: Literal["medical_evolution", "nursing_evolution"]
+    evolution: str = Field(min_length=5, max_length=8000)
+    diagnosis: str = Field(default="", max_length=2000)
+    conduct: str = Field(default="", max_length=4000)
+
+    @field_validator("evolution", "diagnosis", "conduct")
+    @classmethod
+    def trim_record_text(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_entry_type_fields(self) -> "PatientRecordEntryPayload":
+        if len(self.evolution) < 5:
+            raise ValueError("Registre uma evolução com pelo menos cinco caracteres")
+        if self.entry_type == "nursing_evolution" and (self.diagnosis or self.conduct):
+            raise ValueError("Diagnóstico e conduta são campos exclusivos da evolução médica")
+        return self
+
+
 class ElopementRiskPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     at_risk: bool
@@ -2147,7 +2219,13 @@ def list_patients(
 ) -> dict[str, object]:
     if full_profile and not can_view_full_patient_profile(principal):
         raise HTTPException(status_code=403, detail="Acesso aos dados cadastrais completos não autorizado")
-    query = select(Patient)
+    query = select(Patient).where(
+        ~exists(
+            select(PatientMergeAlias.source_reference).where(
+                PatientMergeAlias.source_reference == Patient.reference
+            )
+        )
+    )
     if not include_archived:
         query = query.where(Patient.deleted_at.is_(None))
     if status == "active":
@@ -2859,12 +2937,11 @@ def list_patient_triage_history(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
-    if db.get(Patient, patient_reference) is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    patient, references = resolve_patient_identity(db, patient_reference, allow_inactive=True)
     query = (
         select(NursingTriage, EmergencyArrival)
         .join(EmergencyArrival, EmergencyArrival.id == NursingTriage.arrival_id)
-        .where(NursingTriage.patient_reference == patient_reference)
+        .where(NursingTriage.patient_reference.in_(references))
     )
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     records = db.execute(
@@ -2873,7 +2950,7 @@ def list_patient_triage_history(
         .offset(offset)
     ).all()
     emit_audit_event(
-        principal, "nursing", "patient_triage_history_read", patient_reference
+        principal, "nursing", "patient_triage_history_read", patient.reference
     )
     return {
         "records": [
@@ -3543,6 +3620,21 @@ def create_emergency_arrival(
         )
         db.add(patient)
         db.flush()
+    elif payload.create_provisional_record:
+        now = datetime.now(UTC)
+        patient = Patient(
+            reference=str(uuid.uuid4()),
+            name=payload.patient_name.strip(),
+            room="",
+            bed="",
+            created_at=now,
+            updated_at=now,
+            updated_by=principal.actor_name,
+            active=True,
+            is_provisional=True,
+        )
+        db.add(patient)
+        db.flush()
     arrival = EmergencyArrival(
         id=str(uuid.uuid4()),
         patient_reference=patient.reference if patient else None,
@@ -3573,6 +3665,10 @@ def create_emergency_arrival(
     if payload.new_patient and patient:
         emit_audit_event(
             principal, "patients", "emergency_patient_created", patient.reference, db=db
+        )
+    elif payload.create_provisional_record and patient:
+        emit_audit_event(
+            principal, "patients", "provisional_patient_created", patient.reference, db=db
         )
     emit_audit_event(
         principal, "reception", "emergency_arrival_created", arrival.id, db=db
@@ -3775,7 +3871,8 @@ def list_outpatient_encounters(
 ) -> dict[str, object]:
     query = select(OutpatientEncounter)
     if patient_reference:
-        query = query.where(OutpatientEncounter.patient_reference == patient_reference)
+        _, references = resolve_patient_identity(db, patient_reference)
+        query = query.where(OutpatientEncounter.patient_reference.in_(references))
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     encounters = db.scalars(
         query.order_by(OutpatientEncounter.created_at.desc(), OutpatientEncounter.id.desc())
@@ -3978,7 +4075,8 @@ def list_medication_administrations(
 ) -> dict[str, object]:
     query = select(MedicationAdministration)
     if patient_reference:
-        query = query.where(MedicationAdministration.patient_reference == patient_reference)
+        _, references = resolve_patient_identity(db, patient_reference)
+        query = query.where(MedicationAdministration.patient_reference.in_(references))
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     records = db.scalars(
         query.order_by(MedicationAdministration.administered_at.desc()).offset(offset).limit(limit)
@@ -4148,7 +4246,8 @@ def list_physician_prescriptions(
 ) -> dict[str, object]:
     query = select(PhysicianPrescription)
     if patient_reference:
-        query = query.where(PhysicianPrescription.patient_reference == patient_reference)
+        _, references = resolve_patient_identity(db, patient_reference)
+        query = query.where(PhysicianPrescription.patient_reference.in_(references))
     if status:
         query = query.where(PhysicianPrescription.status == status)
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -4586,14 +4685,21 @@ def list_patient_flow_events(
 ) -> dict[str, object]:
     query = select(PatientFlowEvent)
     count_query = select(func.count(PatientFlowEvent.id))
+    patient: Patient | None = None
     if patient_reference:
-        query = query.where(PatientFlowEvent.patient_reference == patient_reference)
-        count_query = count_query.where(PatientFlowEvent.patient_reference == patient_reference)
+        patient, references = resolve_patient_identity(db, patient_reference, allow_inactive=True)
+        query = query.where(PatientFlowEvent.patient_reference.in_(references))
+        count_query = count_query.where(PatientFlowEvent.patient_reference.in_(references))
     events = db.scalars(
         query.order_by(PatientFlowEvent.occurred_at.desc()).offset(offset).limit(limit)
     ).all()
     total = db.scalar(count_query) or 0
-    emit_audit_event(principal, "patients", "patient_flow_history_read", patient_reference or "all")
+    emit_audit_event(
+        principal,
+        "patients",
+        "patient_flow_history_read",
+        patient.reference if patient is not None else "all",
+    )
     return {"events": [serialize_patient_flow_event(event) for event in events], "total": total}
 
 
@@ -5063,15 +5169,14 @@ def list_patient_allergy_history(
     principal: Annotated[DemoPrincipal, CLINICAL_RISK_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    if db.get(Patient, patient_reference) is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    patient, references = resolve_patient_identity(db, patient_reference, allow_inactive=True)
     records = db.scalars(
         select(PatientAllergyHistory)
-        .where(PatientAllergyHistory.patient_reference == patient_reference)
+        .where(PatientAllergyHistory.patient_reference.in_(references))
         .order_by(PatientAllergyHistory.recorded_at.desc())
         .limit(100)
     ).all()
-    emit_audit_event(principal, "nursing", "patient_allergy_history_read", patient_reference)
+    emit_audit_event(principal, "nursing", "patient_allergy_history_read", patient.reference)
     return {"events": [serialize_patient_allergy_history(record) for record in records]}
 
 
@@ -5176,11 +5281,9 @@ def get_patient(
     principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    patient = db.get(Patient, patient_reference)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    patient, _ = resolve_patient_identity(db, patient_reference)
     full_profile = can_view_full_patient_profile(principal)
-    emit_audit_event(principal, "patients", "patient_record_read", patient_reference)
+    emit_audit_event(principal, "patients", "patient_record_read", patient.reference)
     return serialize_patient(patient, principal=principal, full_profile=full_profile)
 
 
@@ -5217,12 +5320,175 @@ def resolve_patient(
     payload: dict[str, str],
     db: Annotated[Session, Depends(get_nursing_db)],
     _: Annotated[None, Depends(require_service_token)],
-) -> dict[str, str]:
+) -> dict[str, object]:
     reference = payload.get("reference", "")
-    patient = db.get(Patient, reference)
-    if patient is None or not patient.active:
+    patient, references = resolve_patient_identity(db, reference)
+    return {
+        "reference": patient.reference,
+        "references": references,
+        "name": patient.name,
+        "room": patient.room,
+        "bed": patient.bed,
+    }
+
+
+def resolve_patient_identity(
+    db: Session, reference: str, *, allow_inactive: bool = False
+) -> tuple[Patient, list[str]]:
+    alias = db.get(PatientMergeAlias, reference)
+    canonical_reference = alias.target_reference if alias else reference
+    patient = db.get(Patient, canonical_reference)
+    if patient is None or (not patient.active and not allow_inactive):
         raise HTTPException(status_code=404, detail="Paciente não encontrado ou inativo")
-    return {"reference": patient.reference, "name": patient.name, "room": patient.room, "bed": patient.bed}
+    aliases = db.scalars(
+        select(PatientMergeAlias.source_reference).where(
+            PatientMergeAlias.target_reference == patient.reference
+        )
+    ).all()
+    return patient, [patient.reference, *aliases]
+
+
+@app.post("/api/v1/reception/patients/{source_reference}/merge", status_code=200)
+def merge_provisional_patient(
+    source_reference: str,
+    payload: PatientMergePayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("reception"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    if not principal.is_superuser and "alterar" not in principal.permissions.get("reception", []):
+        raise HTTPException(status_code=403, detail="Permissão para vincular cadastros não autorizada")
+    if source_reference == payload.target_reference:
+        raise HTTPException(status_code=422, detail="Escolha outro cadastro definitivo")
+
+    source = db.get(Patient, source_reference)
+    target = db.get(Patient, payload.target_reference)
+    if source is None or target is None:
+        raise HTTPException(status_code=404, detail="Cadastro de paciente não encontrado")
+    if db.get(PatientMergeAlias, source.reference):
+        raise HTTPException(status_code=409, detail="Este cadastro provisório já foi vinculado")
+    if not source.active or not source.is_provisional:
+        raise HTTPException(status_code=409, detail="Somente um cadastro provisório ativo pode ser vinculado")
+    if _active_assignment_for_patient(db, source.reference):
+        raise HTTPException(status_code=409, detail="Registre a alta do cadastro provisório antes de vinculá-lo")
+    if not target.active or target.is_provisional or db.get(PatientMergeAlias, target.reference):
+        raise HTTPException(status_code=409, detail="Escolha um cadastro definitivo ativo")
+
+    now = datetime.now(UTC)
+    source.active = False
+    source.updated_at = now
+    source.updated_by = principal.actor_name
+    merge = PatientMergeAlias(
+        source_reference=source.reference,
+        target_reference=target.reference,
+        merged_by_id=principal.user_id,
+        merged_by_name=principal.actor_name,
+        merged_at=now,
+    )
+    db.add(merge)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="O cadastro provisório já foi vinculado") from exc
+
+    emit_audit_event(
+        principal, "patients", "provisional_patient_merged", source.reference, db=db
+    )
+    db.commit()
+    return {
+        "source_reference": source.reference,
+        "target_reference": target.reference,
+        "target_name": target.name,
+        "merged_at": now.isoformat(),
+        "history_preserved": True,
+    }
+
+
+def serialize_patient_record_entry(entry: PatientRecordEntry) -> dict[str, object]:
+    return {
+        "id": entry.id,
+        "patient_reference": entry.patient_reference,
+        "entry_type": entry.entry_type,
+        "evolution": entry.evolution,
+        "diagnosis": entry.diagnosis,
+        "conduct": entry.conduct,
+        "actor_id": entry.actor_id,
+        "actor_name": entry.actor_name,
+        "created_at": entry.created_at.isoformat(),
+    }
+
+
+@app.get("/api/v1/nursing/patients/{patient_reference}/record")
+def list_patient_record_entries(
+    patient_reference: str,
+    principal: Annotated[
+        DemoPrincipal, Depends(require_demo_role_or_superuser("nursing", "physician"))
+    ],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    patient, references = resolve_patient_identity(db, patient_reference)
+    query = select(PatientRecordEntry).where(
+        PatientRecordEntry.patient_reference.in_(references)
+    )
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    entries = db.scalars(
+        query.order_by(PatientRecordEntry.created_at.desc(), PatientRecordEntry.id.desc())
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    emit_audit_event(principal, "nursing", "patient_clinical_record_read", patient.reference)
+    return {
+        "patient_reference": patient.reference,
+        "entries": [serialize_patient_record_entry(entry) for entry in entries],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@app.post("/api/v1/nursing/patients/{patient_reference}/record", status_code=201)
+def create_patient_record_entry(
+    patient_reference: str,
+    payload: PatientRecordEntryPayload,
+    principal: Annotated[
+        DemoPrincipal, Depends(require_demo_role_or_superuser("nursing", "physician"))
+    ],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    module = "physician" if payload.entry_type == "medical_evolution" else "nursing"
+    if not principal.is_superuser and (
+        module not in principal.modules
+        or "criar" not in principal.permissions.get(module, [])
+    ):
+        raise HTTPException(status_code=403, detail="Acesso não autorizado para este tipo de evolução")
+    patient, _ = resolve_patient_identity(db, patient_reference)
+    actor_name = principal.actor_name
+    if payload.entry_type == "medical_evolution":
+        profile = db.get(PhysicianProfile, principal.user_id)
+        if profile is None:
+            raise HTTPException(status_code=409, detail="Cadastre e valide o perfil médico antes de registrar a evolução")
+        actor_name = profile.name
+
+    entry = PatientRecordEntry(
+        id=str(uuid.uuid4()),
+        patient_reference=patient.reference,
+        entry_type=payload.entry_type,
+        evolution=payload.evolution,
+        diagnosis=payload.diagnosis,
+        conduct=payload.conduct,
+        actor_id=principal.user_id,
+        actor_name=actor_name,
+        created_at=datetime.now(UTC),
+    )
+    db.add(entry)
+    emit_audit_event(
+        principal, module, "patient_clinical_record_entry_created", entry.id, db=db
+    )
+    db.commit()
+    db.refresh(entry)
+    return serialize_patient_record_entry(entry)
 
 
 def create_patient_record(
@@ -5372,13 +5638,12 @@ def list_patient_history(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
-    if db.get(Patient, patient_reference) is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-    query = select(VitalRecord).where(VitalRecord.patient_reference == patient_reference, VitalRecord.voided_at.is_(None)).order_by(VitalRecord.recorded_at.desc())
-    total = db.scalar(select(func.count(VitalRecord.id)).where(VitalRecord.patient_reference == patient_reference, VitalRecord.voided_at.is_(None))) or 0
+    patient, references = resolve_patient_identity(db, patient_reference, allow_inactive=True)
+    query = select(VitalRecord).where(VitalRecord.patient_reference.in_(references), VitalRecord.voided_at.is_(None)).order_by(VitalRecord.recorded_at.desc())
+    total = db.scalar(select(func.count(VitalRecord.id)).where(VitalRecord.patient_reference.in_(references), VitalRecord.voided_at.is_(None))) or 0
     records = db.scalars(query.offset(offset).limit(limit)).all()
-    emit_audit_event(_, "nursing", "patient_vitals_history_read", patient_reference)
-    return {"records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
+    emit_audit_event(_, "nursing", "patient_vitals_history_read", patient.reference)
+    return {"patient_reference": patient.reference, "records": [serialize_record(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/v1/nursing/patients/{patient_reference}/vital-trends")
@@ -5392,8 +5657,7 @@ def list_patient_vital_trends(
     from_at: datetime | None = None,
     to_at: datetime | None = None,
 ) -> dict[str, object]:
-    if db.get(Patient, patient_reference) is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    patient, references = resolve_patient_identity(db, patient_reference, allow_inactive=True)
     now = datetime.now(UTC)
     if (from_date is None) != (to_date is None):
         raise HTTPException(status_code=422, detail="Informe as duas datas para consultar um período personalizado")
@@ -5423,16 +5687,16 @@ def list_patient_vital_trends(
     records = db.scalars(
         select(VitalRecord)
         .where(
-            VitalRecord.patient_reference == patient_reference,
+            VitalRecord.patient_reference.in_(references),
             VitalRecord.voided_at.is_(None),
             measured_time >= start,
             measured_time <= end,
         )
         .order_by(measured_time.asc(), VitalRecord.id.asc())
     ).all()
-    emit_audit_event(principal, "nursing", "patient_vital_trends_read", patient_reference)
+    emit_audit_event(principal, "nursing", "patient_vital_trends_read", patient.reference)
     return {
-        "patient_reference": patient_reference,
+        "patient_reference": patient.reference,
         "hours": period_hours,
         "generated_at": now.isoformat(),
         "range_start": start.isoformat(),
@@ -5448,10 +5712,9 @@ def list_patient_observations(
     principal: Annotated[DemoPrincipal, PATIENT_HISTORY_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, list[dict[str, object]]]:
-    if db.get(Patient, patient_reference) is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-    rows = db.scalars(select(PatientObservation).where(PatientObservation.patient_reference == patient_reference).order_by(PatientObservation.created_at.desc())).all()
-    emit_audit_event(principal, "patients", "patient_observations_read", patient_reference)
+    patient, references = resolve_patient_identity(db, patient_reference, allow_inactive=True)
+    rows = db.scalars(select(PatientObservation).where(PatientObservation.patient_reference.in_(references)).order_by(PatientObservation.created_at.desc())).all()
+    emit_audit_event(principal, "patients", "patient_observations_read", patient.reference)
     return {"observations": [{"id": row.id, "attention_level": row.attention_level, "observation": row.observation, "treatment_status": row.treatment_status, "actor_name": row.actor_name, "created_at": row.created_at.isoformat()} for row in rows]}
 
 
@@ -5462,13 +5725,11 @@ def create_patient_observation(
     principal: Annotated[DemoPrincipal, PATIENT_ACCESS],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    patient = db.get(Patient, patient_reference)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
-    row = PatientObservation(patient_reference=patient_reference, attention_level=payload.attention_level, observation=payload.observation.strip(), treatment_status=payload.treatment_status, actor_id=principal.user_id, actor_name=principal.actor_name, created_at=datetime.now(UTC))
+    patient, _ = resolve_patient_identity(db, patient_reference)
+    row = PatientObservation(patient_reference=patient.reference, attention_level=payload.attention_level, observation=payload.observation.strip(), treatment_status=payload.treatment_status, actor_id=principal.user_id, actor_name=principal.actor_name, created_at=datetime.now(UTC))
     db.add(row)
     emit_audit_event(
-        principal, "patients", "patient_observation_created", patient_reference, db=db
+        principal, "patients", "patient_observation_created", patient.reference, db=db
     )
     db.commit()
     db.refresh(row)
@@ -5820,6 +6081,7 @@ def serialize_patient(patient: Patient, *, principal: DemoPrincipal, full_profil
         "bed": patient.bed,
         "birth_date": patient.birth_date,
         "active": patient.active,
+        "is_provisional": patient.is_provisional,
     }
     if full_profile:
         for key in PatientPayload.model_fields:
@@ -5868,7 +6130,8 @@ def list_vital_records(
 
     filters = []
     if patient_reference:
-        filters.append(VitalRecord.patient_reference == patient_reference)
+        _, references = resolve_patient_identity(db, patient_reference)
+        filters.append(VitalRecord.patient_reference.in_(references))
     if room:
         filters.append(Patient.room == room)
     if bed:
@@ -6048,18 +6311,16 @@ def get_patient_nutrition_plan(
     principal: Annotated[DemoPrincipal, Depends(NURSING_ROLE)],
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
-    patient = db.get(Patient, patient_reference)
-    if patient is None:
-        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+    patient, references = resolve_patient_identity(db, patient_reference)
     records = db.scalars(select(NutritionRecord).where(
-        NutritionRecord.patient_reference == patient_reference,
+        NutritionRecord.patient_reference.in_(references),
         NutritionRecord.voided_at.is_(None),
     ).order_by(NutritionRecord.assessment_date.desc(), NutritionRecord.id.desc()).limit(10)).all()
     next_fast = db.scalar(select(NutritionRecord).where(
-        NutritionRecord.patient_reference == patient_reference,
+        NutritionRecord.patient_reference.in_(references),
         NutritionRecord.voided_at.is_(None), NutritionRecord.fasting_at >= datetime.now(UTC),
     ).order_by(NutritionRecord.fasting_at).limit(1))
-    emit_audit_event(principal, "nursing", "patient_nutrition_plan_read", patient_reference)
+    emit_audit_event(principal, "nursing", "patient_nutrition_plan_read", patient.reference)
     return {
         "allergies": patient.allergies,
         "assessment_date": records[0].assessment_date.isoformat() if records else None,

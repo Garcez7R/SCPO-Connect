@@ -72,12 +72,21 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Armazenamento: na Administração do Sistema, o Superadministrador pode escolher uma subpasta dentro do volume montado para backup e outra para a Biblioteca de imagens da Oficina Terapêutica. A mudança da biblioteca move as imagens já cadastradas e mantém os registros. Caminhos são relativos e confinados ao volume configurado; a TI ainda monta os volumes locais/rede no host, concede permissões e reinicia os serviços quando necessário. O app não monta dispositivos nem compartilhamentos. Backups automáticos continuam incluindo os arquivos da biblioteca.
 - A busca no repositório encontrou somente um `resume.md`; este arquivo é o ponto único atualizado.
 
+### Retomada atual — alterações locais ainda não publicadas
+
+- Prontuário compartilhado: cadastro provisório iniciado na Recepção, vínculo ao cadastro definitivo sem reescrever históricos e evolução clínica append-only; o endpoint médico agora exige permissão de criação. Testes focados passaram na execução anterior desta fase.
+- Enfermagem/glicemia: unidade de entrada padronizada em mg/dL; a escolha de unidade foi removida da triagem e os registros históricos em mmol/L são convertidos na exibição de tabelas, gráficos, histórico e fila médica, além de compatibilizar fila offline antiga ao sincronizar. A API preserva o suporte legado sem reescrever dados.
+- Superusuário: o dashboard técnico é a primeira guia e mostra versão do app, número de contas comuns, atalhos e estado de nove endpoints de saúde. O estado conectado só comprova resposta HTTP/API, não a disponibilidade dos bancos ou dos dados. Os formulários/status do backup foram reorganizados para usar melhor a largura disponível.
+- Credenciais: Administração informa a senha inicial institucional `0000`; a ajuda interna e o resumo mantêm essa orientação e não mencionam geração aleatória.
+- Oficina Terapêutica: falhas de carregamento já expunham a mensagem da API; agora a tela oferece retentativa explícita para falhas de carregamento. Nenhum erro concreto de execução foi fornecido nesta retomada, portanto não foram feitas correções especulativas no domínio. Se os erros persistirem, registrar a mensagem completa e o fluxo que a reproduz para corrigir a causa.
+- Validação desta retomada concluída, executando um comando por vez: typecheck, lint e build frontend passaram; testes focados de Enfermagem/Oficina passaram (67) e migrações passaram (25). O build mantém o aviso já conhecido de chunk principal maior que 500 kB. `git diff --check` passou. E2E e deploy permanecem pausados.
+
 ### Pendente — ordem sugerida
 
+- Farmácia: revisar todos os quadros/cartões informativos e uniformizar animação/movimento, estados visuais e apresentação conforme o padrão já usado na Gestão Hospitalar; verificar desktop e telas estreitas sem alterar semântica clínica ou indicadores.
 - Escalas graduais vermelho-verde: avaliar somente para indicadores com limites numéricos próprios e validados. A revisão semântica dos cartões já foi concluída; não inventar limites clínicos nem aplicar cores de avaliação a contagens informativas.
 - Revisar a Lavanderia/Rouparia em dispositivo móvel de teste após publicar.
 - Revisar README, Sobre e Conformidade após as mudanças aplicáveis.
-- Criar prontuário simples e completo compartilhado entre Médico e Enfermagem; permitir cadastro contingencial rápido na Recepção e acompanhar historicamente as fases do atendimento.
 - Investigar expiração de sessão, tela branca e instabilidade no Chrome/Windows 11; remover integração Zentyal cancelada com validação dos consumidores.
 - Criar controles seguros no Superadministrador para ativar/desativar funções sem remover dados.
 
