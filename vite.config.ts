@@ -24,6 +24,7 @@ export default defineConfig({
     port: 7777,
     proxy: {
       '/api/v1/auth': 'http://127.0.0.1:8002',
+      '/api/v1/app': 'http://127.0.0.1:8002',
       '/api/v1/access': 'http://127.0.0.1:8002',
       '/api/v1/system-admin': 'http://127.0.0.1:8002',
       '/api/v1/audit': 'http://127.0.0.1:8006',

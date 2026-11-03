@@ -4,7 +4,7 @@ O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada dom
 
 | Serviço | Aplicação | Banco próprio | API versionada |
 | --- | --- | --- | --- |
-| Identidade e acesso | `scpo_services.access` | `scpo_access` | `/api/v1/access`, `/api/v1/system-admin` |
+| Identidade e acesso | `scpo_services.access` | `scpo_access` | `/api/v1/app`, `/api/v1/access`, `/api/v1/system-admin` |
 | Auditoria | `scpo_services.audit` | `scpo_audit` | `/api/v1/audit` |
 | Enfermagem | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/nursing` |
 | Gestão Hospitalar | `scpo_services.nursing` | `scpo_nursing` | `/api/v1/management` |
@@ -17,7 +17,7 @@ O protótipo usa um monorepo para facilitar desenvolvimento, mas inicia cada dom
 | Oficina Terapêutica | `scpo_services.therapy` | `scpo_nursing` (compartilhado) | `/api/v1/therapy` |
 | Backup | `scpo_services.backup` | Bancos dos serviços | `/api/v1/backup` |
 
-A agenda da Recepção, as prescrições médicas e os endpoints de Gestão Hospitalar são persistidos no banco Nursing e usam o cadastro central de pacientes. O serviço Médico também expõe os gráficos de sinais vitais e dados cadastrais clínicos autorizados. Os proxies de produção e desenvolvimento encaminham `/api/v1/physicians` e `/api/v1/management` ao serviço Nursing. A Oficina Terapêutica é encaminhada ao seu próprio serviço (`/api/v1/therapy`); os três proxies (`Caddyfile`, `Caddyfile.local` e Vite) devem manter esses prefixos alinhados às rotas registradas.
+A agenda da Recepção, as prescrições médicas e os endpoints de Gestão Hospitalar são persistidos no banco Nursing e usam o cadastro central de pacientes. O serviço Médico também expõe os gráficos de sinais vitais e dados cadastrais clínicos autorizados. Os proxies de produção e desenvolvimento encaminham `/api/v1/physicians` e `/api/v1/management` ao serviço Nursing. A API `/api/v1/app` fornece configurações globais de disponibilidade para os clientes autenticados e deve ser encaminhada ao serviço de Acesso, junto com `/api/v1/access` e `/api/v1/system-admin`. A Oficina Terapêutica é encaminhada ao seu próprio serviço (`/api/v1/therapy`); os proxies Caddy de produção, Caddy local e Vite devem manter esses prefixos alinhados às rotas registradas.
 
 Os proxies Caddy de produção e desenvolvimento publicam `/api/v1/health/<serviço>` para verificar a disponibilidade de cada processo backend sem consultar dados clínicos nem gerar eventos de auditoria. As respostas expõem apenas o identificador do serviço e `status: ok`; não verificam conectividade do banco nem substituem healthchecks, monitoramento ou validação de dados. As rotas `/api/v1/maintenance`, `/api/v1/hygiene` e `/api/v1/laundry` são encaminhadas ao serviço Maintenance nos proxies de produção, desenvolvimento local e Vite.
 

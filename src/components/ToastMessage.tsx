@@ -39,6 +39,7 @@ export default function ToastMessage({
   if (dismissedMessage === children) return null
   return createPortal(
     <div className={`toast-message toast-message-${variant}`} role={variant === 'error' ? 'alert' : 'status'}>
+      <img className="toast-message-icon" src="/scpo-connect-icon.png" alt="" aria-hidden="true" />
       <div className="toast-message-body">
         <div>{children}</div>
         {progress !== undefined && <div

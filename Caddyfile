@@ -88,6 +88,11 @@ http://{$SCPO_INTERNAL_HOST:localhost} {
 		reverse_proxy access:8000
 	}
 
+	@app path /api/v1/app/*
+	handle @app {
+		reverse_proxy access:8000
+	}
+
 	@access path /api/v1/access/*
 	handle @access {
 		reverse_proxy access:8000

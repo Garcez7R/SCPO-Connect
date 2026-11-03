@@ -48,6 +48,9 @@
 	handle /api/v1/auth/* {
 		reverse_proxy 127.0.0.1:8002
 	}
+	handle /api/v1/app/* {
+		reverse_proxy 127.0.0.1:8002
+	}
 	handle /api/v1/access/* {
 		reverse_proxy 127.0.0.1:8002
 	}

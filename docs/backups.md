@@ -15,6 +15,17 @@ SCPO_BACKUP_HOST_DIR=/mnt/backup-institucional/scpo-connect
 SCPO_BACKUP_TIMEZONE=America/Sao_Paulo
 ```
 
+### Diretórios locais provisórios para testes
+
+Para validar a funcionalidade com dados sintéticos, a instalação pode manter o estágio de backup e as imagens da Oficina dentro do diretório do app:
+
+```dotenv
+SCPO_BACKUP_HOST_DIR=./data/backup-staging
+SCPO_THERAPY_MATERIALS_HOST_DIR=./data/therapy-materials
+```
+
+Esses já são os caminhos padrão do Compose e estão excluídos do Git por `data/`. Se necessário, crie-os no host antes de subir os serviços: `mkdir -p data/backup-staging data/therapy-materials`. A rotina automática grava no volume de estágio; a exportação manual continua sendo baixada pelo navegador. São diretórios no mesmo disco do app, não uma cópia externa, imutável ou adequada para produção. Use somente dados sintéticos/desidentificados durante a avaliação; monitore o espaço disponível e confirme as permissões de gravação do container. Para operação institucional, migre para volumes persistentes autorizados e teste a recuperação isolada antes de guardar dados reais.
+
 Após reiniciar o serviço `backup`, no Superadministrador → **Cópias de segurança**, importe somente a chave pública GPG ASCII-armored e informe uma subpasta relativa ao volume-base. Não informe caminhos do host na interface. O Superadministrador pode escolher a subpasta de backup; o diretório-base e a montagem física continuam sob responsabilidade da TI. Configure a rotina para executar diariamente, em intervalos de horas/dias, nos dias escolhidos da semana ou em datas do mês; o horário usa `America/Sao_Paulo`. Datas inexistentes no mês, como dia 31 em fevereiro, são ignoradas. O formulário exibe a configuração e a próxima execução.
 
 A retenção configurável mantém até 1–365 dos backups próprios mais recentes. A expiração preexistente de 30 dias continua sendo um limite máximo adicional, portanto a rotina apaga somente arquivos `.rgs` identificados como `scpo-connect-*.rgs` quando excedem o limite de quantidade ou idade. Falhas e espaço baixo são mostrados no painel; backups mais recentes não são apagados para liberar espaço. Abaixo de 10% de espaço livre, o painel alerta.
@@ -46,7 +57,7 @@ bash scripts/backup-rgs.sh
 
 Em Administração do Sistema → **Cópias de segurança**, use o atalho **Backup manual** ou a seção **Exportação imediata** para informar somente a senha e baixar o `.rgs`; não é necessário configurar a rotina automática. A exportação manual da interface inclui os sete bancos, usa AES-GCM e não inclui os arquivos da Oficina Terapêutica. A interface não importa nem aplica backups aos bancos ativos. Para validar um arquivo exportado pela interface, use a restauração isolada abaixo; o script solicitará a senha sem expô-la na linha de comando.
 
-Na exportação manual, uma notificação persistente fixa na tela indica a geração do pacote com barra indeterminada e mostra o percentual recebido durante o download do `.rgs`; a geração em si é indeterminada porque o servidor só inicia a resposta após criar o arquivo. Na restauração pela interface, a mesma notificação fixa mostra o envio e consulta as etapas no servidor: descriptografia, validação dos sete bancos, cópias temporárias e restauração de cada banco. Não feche a página até a conclusão. As operações de CPU e PostgreSQL rodam fora do ciclo HTTP para que a tela continue atualizando. Antes de tocar nos dados atuais, o servidor valida a senha, o manifesto e cada dump com `pg_restore --list`; um arquivo incompatível é rejeitado antes da criação das cópias de segurança ou de qualquer alteração. A tela informa explicitamente que arquivos GPG da rotina automática usam a chave privada custodiada e não podem ser restaurados nesse fluxo da interface.
+Na exportação manual, uma notificação persistente fixa na tela com o ícone do app indica a geração do pacote com barra indeterminada e mostra o percentual recebido durante o download do `.rgs`; a geração em si é indeterminada porque o servidor só inicia a resposta após criar o arquivo. Na restauração pela interface, a mesma notificação fixa mostra o envio e consulta as etapas no servidor: descriptografia, validação dos sete bancos, cópias temporárias e restauração de cada banco. Não feche a página até a conclusão. As operações de CPU e PostgreSQL rodam fora do ciclo HTTP para que a tela continue atualizando. Antes de tocar nos dados atuais, o servidor valida a senha, o manifesto e cada dump com `pg_restore --list`; um arquivo incompatível é rejeitado antes da criação das cópias de segurança ou de qualquer alteração. A tela informa explicitamente que arquivos GPG da rotina automática usam a chave privada custodiada e não podem ser restaurados nesse fluxo da interface.
 
 ## Biblioteca de imagens da Oficina Terapêutica
 

@@ -4209,12 +4209,12 @@ function NutritionPage({ user }: { user: AuthUser }) {
     {nutritionTab === 'kitchen' ? <section id="nutrition-panel-kitchen" className="patient-list-panel nutrition-kitchen-panel" role="tabpanel" aria-labelledby="nutrition-tab-kitchen">
       <div className="section-heading"><div><p className="eyebrow">PRODUÇÃO ALIMENTAR · INTERNADOS</p><h2>Dietas, alergias e restrições</h2><p className="welcome-copy">Consulte a avaliação nutricional mais recente e os alertas alimentares para apoiar a montagem e a entrega das refeições. Confirme a prescrição e a identificação à beira-leito.</p></div><div className="nutrition-kitchen-actions"><button className="button button-secondary" type="button" onClick={() => void loadKitchenRoster()} disabled={kitchenLoading}>{kitchenLoading ? 'Atualizando…' : 'Atualizar lista'}</button></div></div>
       <PrintSelectionPanel title="Dietas e alertas dos internados" rows={kitchenPrintRows} />
-      <div className="nutrition-kitchen-summary" aria-label="Resumo do mapa da cozinha">
-        <article><strong>{kitchenSummary.patients}</strong><span>Internados</span></article>
-        <article className="is-alert"><strong>{kitchenSummary.knownAllergies}</strong><span>Alergia conhecida</span></article>
-        <article className="is-warning"><strong>{kitchenSummary.unconfirmedAllergies}</strong><span>Alergia não confirmada</span></article>
-        <article className="is-warning"><strong>{kitchenSummary.fasting}</strong><span>Jejum programado</span></article>
-        <article className="is-muted"><strong>{kitchenSummary.missingDiet}</strong><span>Dieta não informada</span></article>
+      <div className="hygiene-summary nutrition-kitchen-summary" aria-label="Resumo do mapa da cozinha">
+        <article className="status-tone-neutral"><strong>{kitchenSummary.patients}</strong><span>Internados</span></article>
+        <article className="status-tone-critical"><strong>{kitchenSummary.knownAllergies}</strong><span>Alergia conhecida</span></article>
+        <article className="status-tone-warning"><strong>{kitchenSummary.unconfirmedAllergies}</strong><span>Alergia não confirmada</span></article>
+        <article className="status-tone-warning"><strong>{kitchenSummary.fasting}</strong><span>Jejum programado</span></article>
+        <article className="status-tone-neutral"><strong>{kitchenSummary.missingDiet}</strong><span>Dieta não informada</span></article>
       </div>
       <label className="field nutrition-kitchen-search"><span className="field-label">Buscar paciente, localização, dieta ou restrição</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={kitchenQuery} onChange={(event) => setKitchenQuery(event.target.value)} placeholder="Nome, quarto, leito ou dieta" /></span></label>
       {kitchenUpdatedAt && <p className="field-hint">Atualizado em {dateTime(kitchenUpdatedAt)}. Confirme alergias e restrições antes de preparar ou entregar refeições.</p>}
@@ -5486,9 +5486,8 @@ function BackupExportPanel() {
     </div>
     <section className="backup-manual-section">
       <div className="section-heading"><div><p className="eyebrow">EXPORTAÇÃO IMEDIATA</p><h3>Backup manual</h3><p className="welcome-copy">Informe a senha de criptografia para gerar e baixar o arquivo `.rgs`. Não é necessário configurar a rotina automática.</p></div></div>
-      <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
-        <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input id="backup-manual-password" required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
-        <button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar e baixar .rgs'}</button>
+      <form className="backup-manual-export-form" onSubmit={(event) => void exportBackup(event)}>
+        <div className="field"><label className="field-label" htmlFor="backup-manual-password">Senha de criptografia</label><div className="backup-manual-password-row"><span className="auth-password-control"><input id="backup-manual-password" required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><button className="button button-primary" type="submit" disabled={busy || password.length < 12}>{busy ? 'Preparando bancos…' : 'Gerar e baixar .rgs'}</button></div><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></div>
       </form>
       {message && <ToastMessage variant="success">{message}</ToastMessage>}
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
@@ -5537,19 +5536,21 @@ function BackupExportPanel() {
           </button>
         </form>
       </section>}
-      <form className="backup-export-form" onSubmit={(event) => void importAutomaticBackupKey(event)}>
-        <label className="field">
-          <span className="field-label">Chave pública GPG autorizada</span>
-          <div className="therapy-image-file-picker">
-            <input className="therapy-image-file-input" id="automatic-backup-public-key" required type="file" accept=".asc,.pgp,.gpg,application/pgp-keys" onChange={(event) => setAutomaticPublicKey(event.target.files?.[0] ?? null)} />
-            <label className="button button-secondary" htmlFor="automatic-backup-public-key"><Upload size={16} /> Escolher arquivo</label>
-            <span title={automaticPublicKey?.name}>{automaticPublicKey?.name ?? 'Nenhum arquivo selecionado'}</span>
+      <form className="backup-key-import-form" onSubmit={(event) => void importAutomaticBackupKey(event)}>
+        <div className="field">
+          <label className="field-label" htmlFor="automatic-backup-public-key">Chave pública GPG autorizada</label>
+          <div className="backup-key-import-row">
+            <div className="therapy-image-file-picker">
+              <input className="therapy-image-file-input" id="automatic-backup-public-key" required type="file" accept=".asc,.pgp,.gpg,application/pgp-keys" onChange={(event) => setAutomaticPublicKey(event.target.files?.[0] ?? null)} />
+              <label className="button button-secondary" htmlFor="automatic-backup-public-key"><Upload size={16} /> Escolher arquivo</label>
+              <span title={automaticPublicKey?.name}>{automaticPublicKey?.name ?? 'Nenhum arquivo selecionado'}</span>
+            </div>
+            <button className="button button-secondary" type="submit" disabled={automaticSaving || automaticLoading || !automaticPublicKey}>
+              {automaticSaving ? 'Importando chave…' : 'Importar chave pública'}
+            </button>
           </div>
           <span className="field-hint">Somente chave pública ASCII-armored, até 64 KB. A chave privada não deve ser enviada.</span>
-        </label>
-        <button className="button button-secondary" type="submit" disabled={automaticSaving || automaticLoading || !automaticPublicKey}>
-          {automaticSaving ? 'Importando chave…' : 'Importar chave pública'}
-        </button>
+        </div>
       </form>
       <form className="backup-export-form backup-automatic-config-form" onSubmit={(event) => void configureAutomaticBackup(event)}>
         <label className="field">

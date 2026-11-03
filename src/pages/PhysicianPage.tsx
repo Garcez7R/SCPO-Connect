@@ -292,17 +292,16 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {error && !loading && <button className="button button-secondary physician-retry" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><RefreshCw size={15} /> Tentar carregar novamente</button>}
     {loading ? <div className="history-empty" role="status">Carregando dados clínicos…</div> : <>
-      {!mobileMode && <section className="patient-list-panel">
-        <div className="section-heading"><div><p className="eyebrow">IDENTIFICAÇÃO PROFISSIONAL</p><h2>Perfil do prescritor</h2><p className="welcome-copy">Nome e CRM/UF vinculados às prescrições e à receita impressa.</p></div></div>
-        {profile ? <div className="physician-profile-summary"><strong>{profile.name}</strong><span>CRM {profile.crm}/{profile.crm_state}</span></div> : <div className="admin-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira seu nome e CRM/UF antes de registrar prescrições.</span></div></div>}
-      </section>}
-        <div className="admin-tabs module-tabs physician-tabs" role="tablist" aria-label="Fluxo de trabalho médico">
+      <div className="admin-tabs module-tabs physician-tabs" role="tablist" aria-label="Fluxo de trabalho médico">
           <button className={`button ${physicianTab === 'queue' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'queue'} onClick={() => setPhysicianTab('queue')}>{mobileMode ? 'Fila' : '1. Fila de atendimento'}</button>
           <button className={`button ${physicianTab === 'records' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={physicianTab === 'records'} onClick={() => setPhysicianTab('records')}>{mobileMode ? 'Atender paciente' : '2. Prontuário e prescrições'}</button>
       </div>
         <p className="field-hint physician-workflow-help">{physicianTab === 'queue' ? mobileMode ? 'Revise os atendimentos triados e toque em “Abrir ficha” para iniciar.' : 'Revise a triagem e abra o paciente para seguir ao prontuário. Atendimentos sem triagem podem ser localizados na busca de pacientes.' : mobileMode ? 'Busque e selecione um paciente para conferir os dados e registrar uma prescrição.' : 'Escolha o grupo e o perfil de cuidado; selecione uma linha para abrir ou recolher o prontuário e registrar prescrições.'}</p>
         {physicianTab === 'queue' && <PhysicianTriageQueue compact={mobileMode} onOpenPatient={(reference) => void openPatientFromTriage(reference)} />}
         {physicianTab === 'records' && <>
+      {profile
+        ? <div className="physician-profile-strip"><Stethoscope size={17} /><span><strong>{profile.name}</strong> · CRM {profile.crm}/{profile.crm_state}</span></div>
+        : <div className="admin-warning physician-profile-warning"><Stethoscope size={19} /><div><strong>Perfil profissional não cadastrado</strong><span>Solicite à Administração que cadastre e confira o nome e o CRM/UF antes de registrar prescrições.</span></div></div>}
       <div className="patient-list-panel physician-patient-groups">
         <div className="admin-tabs module-tabs" role="tablist" aria-label="Separar pacientes cadastrados e internados">
           <button className={`button ${patientGroup === 'inpatients' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={patientGroup === 'inpatients'} onClick={() => { setPatientGroup('inpatients'); setPatientPage(0); setPatientReference(''); setForm((current) => ({ ...current, patient_reference: '' })) }}>Internados</button>
@@ -332,7 +331,6 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
         </section>
         <section className="patient-list-panel">
           <div className="section-heading"><div><p className="eyebrow">PRESCRIÇÃO INTERNA</p><h2>Nova prescrição</h2><p className="welcome-copy">A prescrição fica visível à Farmácia e à Enfermagem. Medicamentos controlados são permitidos no fluxo interno.</p></div></div>
-          {!profile && <ToastMessage variant="error">Salve o perfil profissional acima antes de prescrever.</ToastMessage>}
           <form className="form-grid" onSubmit={(event) => void createPrescription(event)}>
             <label className="field"><span className="field-label">Medicamento</span><input required minLength={2} maxLength={160} value={form.medication_name} onChange={(event) => setForm((current) => ({ ...current, medication_name: event.target.value }))} /></label>
             <label className="field"><span className="field-label">Princípio ativo</span><input maxLength={160} value={form.active_ingredient} onChange={(event) => setForm((current) => ({ ...current, active_ingredient: event.target.value }))} /></label>
