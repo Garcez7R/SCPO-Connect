@@ -2,7 +2,7 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY index.html kitchen.html laundry.html nursing.html operations.html pharmacy.html physician.html tsconfig.json vite.config.ts ./
+COPY index.html hygiene.html kitchen.html laundry.html maintenance.html nursing.html operations.html pharmacy.html physician.html tsconfig.json vite.config.ts ./
 COPY scripts ./scripts
 COPY src ./src
 COPY public ./public

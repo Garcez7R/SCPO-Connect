@@ -110,30 +110,36 @@ function statusLabel(status: WorkOrder['status']) {
 export default function OperationsMobilePage({
   user,
   onLogout,
+  serviceScope,
 }: {
   user: OperationsMobileUser
   onLogout: () => void
+  serviceScope: ServiceTab
 }) {
-  const canSeeMaintenance = user.modules.includes('maintenance')
-    && (user.permissions.maintenance?.includes('consultar') ?? false)
-  const canSeeHygiene = user.modules.includes('hygiene')
-    && (user.permissions.hygiene?.includes('consultar') ?? false)
+  const canSeeMaintenance = serviceScope === 'maintenance'
+    && (user.is_superuser || (user.modules.includes('maintenance')
+      && (user.permissions.maintenance?.includes('consultar') ?? false)))
+  const canSeeHygiene = serviceScope === 'hygiene'
+    && (user.is_superuser || ((user.role === 'hygiene' || user.role === 'management' || user.role === 'admin' || user.role === 'oversight')
+      && user.modules.includes('hygiene')
+      && (user.permissions.hygiene?.includes('consultar') ?? false)))
+  const showMaintenance = canSeeMaintenance
+  const showHygiene = canSeeHygiene
   const [disabledModules, setDisabledModules] = useState<string[]>([])
   const [maintenanceMode, setMaintenanceMode] = useState(false)
-  const canUpdateMaintenance = user.role === 'maintenance'
+  const canUpdateMaintenance = serviceScope === 'maintenance'
+    && (user.is_superuser || user.modules.includes('maintenance'))
     && (user.permissions.maintenance?.includes('alterar') ?? false)
-  const canUpdateHygiene = user.role === 'hygiene'
+  const canUpdateHygiene = serviceScope === 'hygiene'
+    && (user.role === 'hygiene' || user.is_superuser)
+    && (user.is_superuser || user.modules.includes('hygiene'))
     && (user.permissions.hygiene?.includes('alterar') ?? false)
-  const showMaintenance = (user.role === 'maintenance' || user.role === 'management' || user.role === 'admin')
-    && canSeeMaintenance
-  const showHygiene = (user.role === 'hygiene' || user.role === 'management' || user.role === 'admin')
-    && canSeeHygiene
-  const availableTabs = useMemo<ServiceTab[]>(() => [
-    ...(showMaintenance && !disabledModules.includes('maintenance') ? ['maintenance' as const] : []),
-    ...(showHygiene && !disabledModules.includes('hygiene') ? ['hygiene' as const] : []),
-  ], [disabledModules, showHygiene, showMaintenance])
-  const [tab, setTab] = useState<ServiceTab>(availableTabs[0] ?? 'maintenance')
-  const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'maintenance'
+  const availableTabs = useMemo<ServiceTab[]>(
+    () => (showMaintenance || showHygiene) && !disabledModules.includes(serviceScope) ? [serviceScope] : [],
+    [disabledModules, serviceScope, showHygiene, showMaintenance],
+  )
+  const activeTab = serviceScope
+  const serviceLabel = serviceScope === 'maintenance' ? 'Manutenção' : 'Higienização'
   const [maintenanceOrders, setMaintenanceOrders] = useState<WorkOrder[]>([])
   const [hygieneRequests, setHygieneRequests] = useState<HygieneRequest[]>([])
   const [maintenanceCacheAt, setMaintenanceCacheAt] = useState('')
@@ -148,7 +154,7 @@ export default function OperationsMobilePage({
   const [notice, setNotice] = useState('')
   const [updatingId, setUpdatingId] = useState('')
   const [statusDrafts, setStatusDrafts] = useState<Record<string, WorkOrder['status']>>({})
-  const vaultId = `operations:${user.id}`
+  const vaultId = `operations:${serviceScope}:${user.id}`
 
   const loadData = useCallback(async () => {
     setRefreshing(true)
@@ -163,9 +169,7 @@ export default function OperationsMobilePage({
           throw new Error('Resposta inválida das configurações de módulos.')
         }
         setMaintenanceMode(settings.maintenance_mode)
-        disabledForRun = ['maintenance', 'hygiene'].filter(
-          (module) => settings.module_enabled[module] === false,
-        )
+        disabledForRun = settings.module_enabled[serviceScope] === false ? [serviceScope] : []
         setDisabledModules((current) =>
           current.length === disabledForRun.length
             && current.every((module, index) => module === disabledForRun[index])
@@ -188,16 +192,18 @@ export default function OperationsMobilePage({
         }
         if (!isTemporaryConnectionError(settingsError)) {
           setDisabledModules((current) =>
-            current.length === 2
-              && current.includes('maintenance')
-              && current.includes('hygiene')
+            current.length === 1
+              && current[0] === serviceScope
               ? current
-              : ['maintenance', 'hygiene'],
+              : [serviceScope],
           )
-          setMaintenanceOrders([])
-          setHygieneRequests([])
-          setMaintenanceCacheAt('')
-          setHygieneCacheAt('')
+          if (serviceScope === 'maintenance') {
+            setMaintenanceOrders([])
+            setMaintenanceCacheAt('')
+          } else {
+            setHygieneRequests([])
+            setHygieneCacheAt('')
+          }
           try {
             await removeOfflineVault(vaultId)
             setError(`Não foi possível verificar a disponibilidade dos módulos. O acesso offline foi bloqueado por segurança. ${readableApiError(settingsError)}`)
@@ -219,14 +225,14 @@ export default function OperationsMobilePage({
       cacheReadError = readError
     }
     let nextVault = cached ?? { version: 1 as const }
-    const maintenanceEnabled = user.is_superuser || !disabledForRun.includes('maintenance')
-    const hygieneEnabled = user.is_superuser || !disabledForRun.includes('hygiene')
-    if (!showMaintenance || !maintenanceEnabled) {
+    const maintenanceEnabled = showMaintenance && (user.is_superuser || !disabledForRun.includes('maintenance'))
+    const hygieneEnabled = showHygiene && (user.is_superuser || !disabledForRun.includes('hygiene'))
+    if (serviceScope === 'maintenance' && !maintenanceEnabled) {
       delete nextVault.maintenance
       setMaintenanceOrders([])
       setMaintenanceCacheAt('')
     }
-    if (!showHygiene || !hygieneEnabled) {
+    if (serviceScope === 'hygiene' && !hygieneEnabled) {
       delete nextVault.hygiene
       setHygieneRequests([])
       setHygieneCacheAt('')
@@ -240,8 +246,8 @@ export default function OperationsMobilePage({
         }
       } catch (cacheError) {
         setError(`Um módulo foi desativado, mas o cache local não pôde ser atualizado. O conteúdo não será exibido. ${readableApiError(cacheError)}`)
-        setMaintenanceOrders([])
-        setHygieneRequests([])
+        if (serviceScope === 'maintenance') setMaintenanceOrders([])
+        else setHygieneRequests([])
         setServerAvailable(false)
         setRefreshing(false)
         setLoading(false)
@@ -295,16 +301,16 @@ export default function OperationsMobilePage({
 
     try {
       await Promise.all([
-        ...(showMaintenance && maintenanceEnabled ? [loadMaintenance()] : []),
-        ...(showHygiene && hygieneEnabled ? [loadHygiene()] : []),
+        ...(maintenanceEnabled ? [loadMaintenance()] : []),
+        ...(hygieneEnabled ? [loadHygiene()] : []),
       ])
       const unauthorized = failures.find((failure) =>
         failure.error instanceof ApiResponseError && failure.error.status === 401,
       )
       if (unauthorized) {
         setError('Sua sessão expirou. Entre novamente para consultar a fila.')
-        setMaintenanceOrders([])
-        setHygieneRequests([])
+        if (serviceScope === 'maintenance') setMaintenanceOrders([])
+        else setHygieneRequests([])
         await removeOfflineVault(vaultId)
         onLogout()
         return
@@ -368,7 +374,7 @@ export default function OperationsMobilePage({
       setLoading(false)
       setRefreshing(false)
     }
-  }, [disabledModules, onLogout, showHygiene, showMaintenance, user.is_superuser, vaultId])
+  }, [disabledModules, onLogout, serviceScope, showHygiene, showMaintenance, user.is_superuser, vaultId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0)
@@ -413,9 +419,7 @@ export default function OperationsMobilePage({
         return
       }
       const maintenanceChanged = settings.maintenance_mode !== maintenanceMode
-      const currentlyDisabled = ['maintenance', 'hygiene'].filter(
-        (module) => settings.module_enabled[module] === false,
-      )
+      const currentlyDisabled = settings.module_enabled[serviceScope] === false ? [serviceScope] : []
       if (maintenanceChanged || currentlyDisabled.length !== disabledModules.length
         || currentlyDisabled.some((module, index) => module !== disabledModules[index])) {
         await loadData()
@@ -423,7 +427,7 @@ export default function OperationsMobilePage({
     }
     const timer = window.setInterval(() => void checkModuleAvailability(), 30_000)
     return () => window.clearInterval(timer)
-  }, [disabledModules, loadData, maintenanceMode, user.is_superuser])
+  }, [disabledModules, loadData, maintenanceMode, serviceScope, user.is_superuser])
 
   const visibleWorkOrders = maintenanceOrders.filter((order) => {
     const isActive = order.status === 'open' || order.status === 'in_progress'
@@ -557,10 +561,10 @@ export default function OperationsMobilePage({
   if (!availableTabs.length) {
     return <main className="nursing-mobile-page nursing-mobile-denied">
       <img src="/scpo-connect-icon.png" alt="" />
-      <h1>{disabledModules.some((module) => user.modules.includes(module)) ? 'Módulo operacional temporariamente desativado' : 'Acesso operacional necessário'}</h1>
+      <h1>{disabledModules.includes(serviceScope) ? `${serviceLabel} temporariamente desativada` : `Acesso à ${serviceLabel} necessário`}</h1>
       <p>{disabledModules.some((module) => user.modules.includes(module))
-        ? 'O acesso online foi bloqueado e o cache de leitura do módulo foi removido após a reconexão.'
-        : 'Esta interface exige permissão de consulta na fila operacional correspondente ao seu perfil.'}</p>
+        ? 'O acesso online foi bloqueado e a cópia de leitura desta fila foi removida após a reconexão.'
+        : `Esta interface mostra somente a fila de ${serviceLabel} e exige permissão de consulta correspondente ao seu perfil.`}</p>
       {error && <div className="nursing-mobile-message nursing-mobile-error" role="alert"><AlertTriangle size={17} /><span>{error}</span></div>}
       <a className="button button-secondary" href="/">Voltar ao SCPO Connect</a>
       <button className="button button-secondary" type="button" onClick={() => void logout()}>Sair</button>
@@ -569,23 +573,17 @@ export default function OperationsMobilePage({
 
   return <main className="nursing-mobile-page operations-mobile-page">
     <header className="nursing-mobile-header">
-      <div className="nursing-mobile-brand"><img src="/scpo-connect-icon.png" alt="" /><div><span>SCPO CONNECT</span><strong>Serviços operacionais</strong></div></div>
+      <div className="nursing-mobile-brand"><img src="/scpo-connect-icon.png" alt="" /><div><span>SCPO CONNECT</span><strong>{serviceLabel}</strong></div></div>
       <button className="nursing-mobile-logout" type="button" onClick={() => void logout()} aria-label="Sair"><LogOut size={18} /></button>
     </header>
     <section className="nursing-mobile-identity">
-      <div><p className="eyebrow">CONSULTA DE ORDENS</p><h1>Olá, {(user.display_name || user.name).split(/\s+/)[0]}</h1></div>
+      <div><p className="eyebrow">FILA DE {serviceLabel.toLocaleUpperCase('pt-BR')}</p><h1>Olá, {(user.display_name || user.name).split(/\s+/)[0]}</h1></div>
       <span className={`nursing-mobile-connection ${serverAvailable ? 'is-online' : 'is-offline'}`}><i />{serverAvailable ? <><Wifi size={14} /> Servidor conectado</> : <><WifiOff size={14} /> {online ? 'Servidor indisponível' : 'Sem conexão'}</>}</span>
     </section>
     {maintenanceMode && !user.is_superuser && <div className="nursing-mobile-connectivity-warning" role="status"><AlertTriangle size={17} /><span>Modo de manutenção ativo. As consultas permanecem disponíveis, mas alterações e liberações de leito estão pausadas.</span></div>}
     {!serverAvailable && !maintenanceMode && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Consulta offline somente leitura com dados salvos em cache. Para alterar status ou concluir uma ordem, conecte ao servidor.</span></div>}
     {error && <div className="nursing-mobile-message nursing-mobile-error" role="alert"><AlertTriangle size={17} /><span>{error}</span></div>}
     {notice && <div className="nursing-mobile-message nursing-mobile-success" role="status">{notice}</div>}
-    <nav className="nursing-mobile-tabs" aria-label="Filas operacionais">
-      {availableTabs.map((service) => <button key={service} type="button" aria-pressed={activeTab === service} className={activeTab === service ? 'is-active' : ''} onClick={() => { setTab(service); setFilter('active'); setSearch('') }}>
-        {service === 'maintenance' ? <Wrench size={17} /> : <SprayCan size={17} />}
-        {service === 'maintenance' ? 'Manutenção' : 'Higienização'}
-      </button>)}
-    </nav>
     <section className="nursing-mobile-panel operations-mobile-panel">
       <div className="nursing-mobile-section-title"><div><p className="eyebrow">{serverAvailable ? 'ATUALIZADA DO SERVIDOR' : 'CÓPIA SOMENTE PARA CONSULTA'}</p><h2>{activeTab === 'maintenance' ? <><Wrench size={19} /> Ordens de serviço</> : <><SprayCan size={19} /> Higienização</>}</h2><small>Atualizada: {formatTime(activeTab === 'maintenance' ? maintenanceCacheAt : hygieneCacheAt) || 'sem cache'}</small></div><button className="nursing-mobile-refresh" type="button" onClick={() => void loadData()} disabled={refreshing} aria-label="Atualizar ordens"><RefreshCw size={17} /></button></div>
       <label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option><option value="open">Abertas</option><option value="in_progress">Em andamento</option><option value="completed">Concluídas</option><option value="cancelled">Canceladas</option></select></label>

@@ -10,6 +10,8 @@ export default defineConfig({
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         nursing: fileURLToPath(new URL('./nursing.html', import.meta.url)),
         operations: fileURLToPath(new URL('./operations.html', import.meta.url)),
+        maintenance: fileURLToPath(new URL('./maintenance.html', import.meta.url)),
+        hygiene: fileURLToPath(new URL('./hygiene.html', import.meta.url)),
         pharmacy: fileURLToPath(new URL('./pharmacy.html', import.meta.url)),
         physician: fileURLToPath(new URL('./physician.html', import.meta.url)),
         kitchen: fileURLToPath(new URL('./kitchen.html', import.meta.url)),

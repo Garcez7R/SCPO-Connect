@@ -701,7 +701,10 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     }
   }, [onSessionExpired, onUserUpdated, sessionExpiresAt])
   useEffect(() => {
-    if (window.location.pathname === '/nursing.html' || window.location.pathname === '/operations.html') return
+    if (window.location.pathname === '/nursing.html'
+      || window.location.pathname === '/operations.html'
+      || window.location.pathname === '/maintenance.html'
+      || window.location.pathname === '/hygiene.html') return
     let active = true
     const refreshModuleSettings = async () => {
       if (document.visibilityState !== 'visible') return
@@ -817,8 +820,17 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   if (window.location.pathname === '/nursing.html') {
     return <Suspense fallback={<StartupScreen />}><NursingMobilePage user={user} onLogout={onLogout} /></Suspense>
   }
-  if (window.location.pathname === '/operations.html') {
-    return <Suspense fallback={<StartupScreen />}><OperationsMobilePage user={user} onLogout={onLogout} /></Suspense>
+  const operationsPage = window.location.pathname === '/operations.html'
+    || window.location.pathname === '/maintenance.html'
+    || window.location.pathname === '/hygiene.html'
+  if (operationsPage) {
+    const canSeeMaintenance = user.is_superuser || (user.modules.includes('maintenance')
+      && (user.permissions.maintenance?.includes('consultar') ?? false))
+    const legacyScope = canSeeMaintenance ? 'maintenance' : 'hygiene'
+    const serviceScope = window.location.pathname === '/hygiene.html'
+      ? 'hygiene'
+      : window.location.pathname === '/maintenance.html' ? 'maintenance' : legacyScope
+    return <Suspense fallback={<StartupScreen />}><OperationsMobilePage user={user} onLogout={onLogout} serviceScope={serviceScope} /></Suspense>
   }
   if (window.location.pathname === '/pharmacy.html') {
     return <Suspense fallback={<StartupScreen />}><PharmacyMobilePage user={user} onLogout={onLogout} /></Suspense>

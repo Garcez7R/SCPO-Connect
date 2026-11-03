@@ -6,7 +6,8 @@ O aplicativo completo e os PWAs dos módulos podem ser adicionados separadamente
 | --- | --- |
 | Aplicativo completo | `/` |
 | Enfermagem | `/nursing.html` |
-| Manutenção e Higienização | `/operations.html` |
+| Manutenção | `/maintenance.html` |
+| Higienização | `/hygiene.html` |
 | Farmácia | `/pharmacy.html` |
 | Médico | `/physician.html` |
 | Cozinha | `/kitchen.html` |
@@ -16,7 +17,7 @@ O aplicativo completo e os PWAs dos módulos podem ser adicionados separadamente
 
 1. Abra o endereço HTTPS do módulo que deseja usar no Chrome ou em outro navegador compatível.
 2. No menu do navegador, escolha **Instalar app** ou **Adicionar à tela inicial**.
-3. Repita o processo somente para os outros módulos necessários; cada endereço tem identidade própria.
+3. Manutenção e Higienização são atalhos separados; instale somente os necessários. `/operations.html` continua disponível para instalações antigas.
 
 ## iPhone e iPad
 
@@ -24,7 +25,7 @@ O aplicativo completo e os PWAs dos módulos podem ser adicionados separadamente
 2. Use **Compartilhar** e escolha **Adicionar à Tela de Início**.
 3. Confira o nome e o ícone apresentados antes de confirmar. As opções e o comportamento podem variar entre versões do iOS/iPadOS.
 
-Os PWAs usam as mesmas contas, permissões e serviços do aplicativo completo; instalar um atalho não concede acesso adicional. A autenticação e os recursos de cada perfil continuam sujeitos às permissões do servidor. Os módulos móveis dependem de conexão com o servidor, salvo os fluxos offline explicitamente descritos pela equipe.
+Os PWAs usam as mesmas contas, permissões e serviços do aplicativo completo; instalar um atalho não concede acesso adicional. A autenticação e os recursos de cada perfil continuam sujeitos às permissões do servidor. As filas de Manutenção e Higienização e seus caches offline cifrados são separados. As cópias locais são somente para consulta, expiram em até 24 horas e não permitem login offline; alterações de situação exigem conexão ao servidor.
 
 O PWA da Lavanderia/Rouparia registra solicitações e movimentações de enxoval somente após confirmação do servidor; não há acesso offline nem armazenamento de dados operacionais no aparelho.
 

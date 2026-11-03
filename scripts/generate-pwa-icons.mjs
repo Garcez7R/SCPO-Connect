@@ -15,6 +15,8 @@ if (source.width !== 512 || source.height !== 512) {
 const modules = [
   { name: 'nursing', color: '#246b8e', symbol: drawCross },
   { name: 'operations', color: '#455a64', symbol: drawGear },
+  { name: 'maintenance', color: '#455a64', symbol: drawWrench },
+  { name: 'hygiene', color: '#2b7a78', symbol: drawSprayCan },
   { name: 'pharmacy', color: '#2f855a', symbol: drawCapsule },
   { name: 'physician', color: '#1f5f99', symbol: drawStethoscope },
   { name: 'kitchen', color: '#c05621', symbol: drawUtensils },
@@ -110,6 +112,28 @@ function drawGear(image, centerX, centerY) {
       '#ffffff',
     )
   }
+}
+
+function drawWrench(image, centerX, centerY) {
+  drawLine(image, centerX - 20, centerY + 20, centerX + 13, centerY - 13, 12, '#ffffff')
+  drawCircle(image, centerX - 23, centerY + 23, 10, '#455a64')
+  drawCircle(image, centerX - 23, centerY + 23, 4, '#ffffff')
+  drawLine(image, centerX + 8, centerY - 18, centerX + 24, centerY - 31, 10, '#ffffff')
+  drawLine(image, centerX + 24, centerY - 31, centerX + 31, centerY - 24, 10, '#ffffff')
+  drawLine(image, centerX + 31, centerY - 24, centerX + 18, centerY - 8, 10, '#ffffff')
+}
+
+function drawSprayCan(image, centerX, centerY) {
+  drawLine(image, centerX - 16, centerY - 16, centerX + 16, centerY - 16, 8, '#ffffff')
+  drawLine(image, centerX - 16, centerY - 16, centerX - 16, centerY + 29, 8, '#ffffff')
+  drawLine(image, centerX + 16, centerY - 16, centerX + 16, centerY + 29, 8, '#ffffff')
+  drawLine(image, centerX - 16, centerY + 29, centerX + 16, centerY + 29, 8, '#ffffff')
+  drawLine(image, centerX + 3, centerY - 16, centerX + 3, centerY - 28, 8, '#ffffff')
+  drawLine(image, centerX + 3, centerY - 28, centerX + 22, centerY - 28, 8, '#ffffff')
+  drawLine(image, centerX + 22, centerY - 28, centerX + 22, centerY - 22, 6, '#ffffff')
+  drawLine(image, centerX + 30, centerY - 28, centerX + 38, centerY - 31, 4, '#ffffff')
+  drawLine(image, centerX + 31, centerY - 20, centerX + 40, centerY - 20, 4, '#ffffff')
+  drawLine(image, centerX + 30, centerY - 12, centerX + 38, centerY - 9, 4, '#ffffff')
 }
 
 function drawCapsule(image, centerX, centerY) {

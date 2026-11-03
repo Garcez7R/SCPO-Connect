@@ -49,14 +49,14 @@ Após o levantamento, cada função deve ser classificada como: já atendida; la
 
 ### Manutenção e Higienização
 
-- Entrada instalável independente em `/operations.html`, com manifesto próprio e acesso nas páginas completas das equipes.
-- Celulares pessoais podem consultar, sem conexão, uma cópia cifrada e limitada a 24 horas das filas autorizadas. Os dados ficam separados por usuário e por aplicação; o service worker não armazena respostas de API.
-- O PWA é somente leitura: criar, alterar e encerrar ordens exige conexão. A Higienização só libera o leito depois da confirmação do servidor.
+- Entradas instaláveis independentes em `/maintenance.html` e `/hygiene.html`, com manifestos próprios e links nas páginas completas das equipes. `/operations.html` permanece para compatibilidade com instalações anteriores.
+- Celulares pessoais podem consultar, sem conexão, uma cópia cifrada e limitada a 24 horas da fila autorizada. Os dados ficam separados por usuário e por equipe; o service worker não armazena respostas de API.
+- Com conexão, as equipes autorizadas podem atualizar o status de suas filas. A Higienização só libera o leito depois da confirmação do servidor; nenhuma alteração é enfileirada offline.
 - A autenticação offline não é permitida. O cache só pode ser consultado enquanto a sessão previamente autenticada permanecer aberta; após fechar ou recarregar sem rede, é necessário autenticar novamente quando o servidor estiver acessível. Sair apaga o cache operacional do aparelho.
 
 ### Limites e prontidão
 
-O service worker pré-carrega a interface e os recursos estáticos dos três pontos de entrada, sem guardar `/api/`. A direção autorizou o uso real dos PWAs móveis dentro do escopo descrito acima. A autorização não substitui os controles acordados: celulares pessoais devem permanecer protegidos por bloqueio do aparelho, sessão autenticada e limpeza do cache ao sair; o app limita os dados locais a cache cifrado com validade máxima de 24 horas e não oferece login offline.
+O service worker pré-carrega a interface e os recursos estáticos dos pontos de entrada, sem guardar `/api/`. A direção autorizou o uso real dos PWAs móveis dentro do escopo descrito acima. A autorização não substitui os controles acordados: celulares pessoais devem permanecer protegidos por bloqueio do aparelho, sessão autenticada e limpeza do cache da equipe ao sair; o app limita os dados locais a cache cifrado com validade máxima de 24 horas e não oferece login offline.
 
 1. **Mapear:** equipes validam tarefas e telas correspondentes no programa antigo; documentar campos, autoria, periodicidade e exceções.
 2. **Prototipar e testar:** validar navegação, cache e restauração de conexão com contas e dados fictícios nos aparelhos-alvo.
