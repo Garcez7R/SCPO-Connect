@@ -1640,8 +1640,8 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 @media (prefers-reduced-motion: reduce) { .beta-confetti-piece { animation-duration: .01ms !important; animation-delay: 0s !important; } .beta-dialog, .beta-celebration-backdrop { animation-duration: .01ms !important; } }
 @media (prefers-reduced-motion: reduce) { .beta-dialog-icon img, .module-card .module-icon > svg { animation: none !important; transition: none !important; } }
 .backup-operation-overlay { position: fixed; z-index: 1900; inset: 0; display: grid; place-items: center; overflow: auto; padding: 20px; }
-.backup-operation-backdrop { position: absolute; inset: 0; background: rgb(18 37 49 / 58%); }
-.backup-operation-dialog { position: relative; display: grid; width: min(100%, 440px); justify-items: center; gap: 12px; padding: 30px 28px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgb(14 34 48 / 25%); text-align: center; animation: beta-dialog-in .32s cubic-bezier(.16, 1, .3, 1) both; }
+.backup-operation-backdrop { position: absolute; z-index: 0; inset: 0; background: rgb(18 37 49 / 58%); }
+.backup-operation-dialog { position: relative; z-index: 1; display: grid; width: min(100%, 440px); justify-items: center; gap: 12px; padding: 30px 28px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 24px 70px rgb(14 34 48 / 25%); text-align: center; animation: beta-dialog-in .32s cubic-bezier(.16, 1, .3, 1) both; }
 .backup-operation-icon { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 15px; background: #eaf3f7; color: var(--blue-dark); }
 .backup-operation-dialog .eyebrow { margin: 0; }
 .backup-operation-dialog h2 { margin: 0; color: var(--ink); font-size: 20px; }
