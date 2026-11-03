@@ -3238,6 +3238,43 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
 }
 @media (max-width: 420px) {
   .vital-trends-meta { flex-direction: column; }
+}
+
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(4):last-child) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) > article {
+  grid-column: span 2;
+}
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) > article:nth-child(4) {
+  grid-column-start: 2;
+}
+:is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) > article:nth-child(5) {
+  grid-column-start: 4;
+}
+@media (max-width: 900px) {
+  :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(4):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) > article {
+    grid-column: auto;
+  }
+  :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) > article:nth-child(4) {
+    grid-column-start: auto;
+  }
+  :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) > article:nth-child(5) {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: calc(50% - 6px);
+  }
   .vital-trend-chart { height: 180px; }
   .vital-pressure-view { gap: 2px; }
   .vital-pressure-view button { padding-inline: 6px; font-size: 9px; }
