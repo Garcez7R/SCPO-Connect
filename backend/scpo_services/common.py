@@ -381,8 +381,10 @@ async def authenticated_principal(request: Request) -> DemoPrincipal:
                 headers={"X-Service-Token": service_token},
                 json={"token": token},
             )
-        if response.status_code != 200:
+        if response.status_code == 401:
             raise HTTPException(status_code=401, detail="Sessão inválida ou expirada")
+        if response.status_code != 200:
+            raise HTTPException(status_code=503, detail="Autenticação indisponível")
         data = response.json()
         is_superuser = bool(data.get("is_superuser", False))
         maintenance_mode = data.get("maintenance_mode")

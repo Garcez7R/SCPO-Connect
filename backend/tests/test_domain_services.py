@@ -173,12 +173,12 @@ def test_authenticated_api_gate_blocks_disabled_module_and_preserves_superadmin(
     module_enabled = {module: True for module in access.GLOBAL_MODULES}
     module_enabled["pharmacy"] = False
     maintenance_mode = False
+    introspection_status = 200
 
     class MockResponse:
-        status_code = 200
-
-        def __init__(self, payload: dict[str, object]) -> None:
+        def __init__(self, payload: dict[str, object], status_code: int) -> None:
             self.payload = payload
+            self.status_code = status_code
 
         def json(self) -> dict[str, object]:
             return self.payload
@@ -205,7 +205,7 @@ def test_authenticated_api_gate_blocks_disabled_module_and_preserves_superadmin(
                 "is_superuser": False,
                 "module_enabled": module_enabled,
                 "maintenance_mode": maintenance_mode,
-            })
+            }, introspection_status)
 
     monkeypatch.setattr("scpo_services.common.httpx.AsyncClient", MockClient)
     def make_request(method: str, path: str) -> Request:
@@ -221,6 +221,15 @@ def test_authenticated_api_gate_blocks_disabled_module_and_preserves_superadmin(
     with pytest.raises(HTTPException) as denied:
         asyncio.run(authenticated_principal(request))
     assert denied.value.status_code == 403
+    introspection_status = 401
+    with pytest.raises(HTTPException) as expired_session:
+        asyncio.run(authenticated_principal(request))
+    assert expired_session.value.status_code == 401
+    introspection_status = 503
+    with pytest.raises(HTTPException) as unavailable_auth:
+        asyncio.run(authenticated_principal(request))
+    assert unavailable_auth.value.status_code == 503
+    introspection_status = 200
     module_enabled["pharmacy"] = True
     maintenance_mode = True
     request = make_request("POST", "/api/v1/pharmacy/items")
@@ -243,7 +252,7 @@ def test_authenticated_api_gate_blocks_disabled_module_and_preserves_superadmin(
             "is_superuser": True,
             "module_enabled": module_enabled,
             "maintenance_mode": maintenance_mode,
-        })
+        }, introspection_status)
 
     MockClient.post = resolve_superadmin
     request = make_request("POST", "/api/v1/pharmacy/items")
