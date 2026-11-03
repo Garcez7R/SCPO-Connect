@@ -718,9 +718,9 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .system-dashboard-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .system-module-settings { display: grid; gap: 14px; }
 .system-module-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); gap: 9px; }
-.system-module-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; }
+.system-module-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .system-maintenance-control { cursor: default; }
-.system-maintenance-control input[role="switch"] { cursor: pointer; }
+.system-module-control input[role="switch"] { cursor: pointer; }
 .system-module-control > span { display: grid; gap: 4px; min-width: 0; }
 .system-module-control strong { color: var(--ink); font-size: 13px; }
 .system-module-control small { color: var(--muted); font-size: 11px; line-height: 1.4; }
@@ -731,6 +731,10 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .system-module-control input[role="switch"]:focus-visible { outline: 3px solid var(--status-progress-border); outline-offset: 2px; }
 .system-module-control input[role="switch"]:disabled { cursor: wait; opacity: 0.65; }
 .system-module-control-disabled { border-color: var(--status-warning-border); background: var(--amber-pale); }
+html[data-theme="dark"] .system-module-control-disabled { border-color: #705b31; background: #332d20; }
+html[data-theme="dark"] .system-module-control input[role="switch"] { border-color: #586a75; background: #34434c; }
+html[data-theme="dark"] .system-module-control input[role="switch"]::before { background: #e7f2f7; }
+html[data-theme="dark"] .system-module-control input[role="switch"]:checked { border-color: #58a3c4; background: #287da0; }
 .management-operations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .asset-maintenance-grid { grid-template-columns: minmax(0, 1fr); }
 .asset-maintenance-grid > .admin-tabs { grid-column: 1 / -1; }
@@ -2138,6 +2142,12 @@ html[data-theme="dark"] .patient-registry-card.care-track-combined { border-left
 html[data-theme="dark"] .patient-registry-card.care-track-unclassified { border-left-color: #9aa5ad; }
 html[data-theme="dark"] .topbar { background-color: rgb(25 38 48 / 96%); }
 html[data-theme="dark"] .topbar::before { opacity: .12; }
+@media (max-width: 760px) {
+  html[data-theme="dark"] .menu-trigger,
+  html[data-theme="dark"] .sidebar-close { border-color: var(--line); background: var(--surface); color: var(--ink); }
+  html[data-theme="dark"] .menu-trigger:hover,
+  html[data-theme="dark"] .sidebar-close:hover { background: #263944; color: #e7f2f7; }
+}
 html[data-theme="dark"] .beta-dialog::before { opacity: .16; }
 html[data-theme="dark"] .about-page::before { opacity: .13; }
 html[data-theme="dark"] :is(input, select, textarea, .profile-switch) { border-color: var(--line); background-color: #111c23; color: var(--ink); }

@@ -6181,10 +6181,10 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
         {moduleSettingsError && !moduleSettings && <button className="button button-secondary" type="button" onClick={() => void loadModuleSettings()} disabled={moduleSettingsLoading}><RefreshCw size={15} /> Tentar carregar os controles novamente</button>}
         {moduleSettings && <div className="system-module-control-grid">{systemControlModules.map(({ id, label }) => {
           const enabled = moduleSettings.module_enabled[id] === true
-          return <label className={`system-module-control ${enabled ? '' : 'system-module-control-disabled'}`} key={id}>
+          return <div className={`system-module-control ${enabled ? '' : 'system-module-control-disabled'}`} key={id}>
             <span><strong>{label}</strong><small>{enabled ? 'Disponível para contas autorizadas' : 'Desativado para contas comuns'}</small></span>
             <input type="checkbox" role="switch" checked={enabled} disabled={moduleSettingsLoading || Boolean(moduleSettingsBusy)} aria-label={`${enabled ? 'Desativar' : 'Ativar'} ${label}`} onChange={(event) => void updateModuleAvailability(id, event.target.checked, label)} />
-          </label>
+          </div>
         })}</div>}
         {moduleSettings?.updated_at && <p className="field-hint">Última alteração: {dateTime(moduleSettings.updated_at)} · {moduleSettings.updated_by_name}</p>}
       </section>
