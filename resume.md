@@ -1,6 +1,6 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
 ## Quadro de acompanhamento
 
@@ -17,8 +17,11 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - **Tentativa bloqueada/publicada:** inspeção da Lavanderia em viewport móvel chegou somente à tela de login porque a API local não estava disponível (`1a0cf38`); repetir após preparar autenticação local.
 - **Dashboard concluído e publicado:** disponibilidade global por módulo, modo de manutenção, resumo/atalho de backup, switches on/off e recuperação de erro ao carregar configurações. Commit `47b2b30`; suíte backend, typecheck, lint e build passaram. A inspeção autenticada manual ficou pendente porque a API local de Acesso em `localhost:8002` não está em execução.
 - **Dashboard publicado** (`47b2b30`): revisão de erros, switches on/off, modo de manutenção, disponibilidade global e resumo/atalhos de backup.
-- **Em andamento — tela de backups:** mantidos os grids, a ordem e a quebra responsiva existentes; alinhados ao topo os campos de configuração condicional, chave e restauração para evitar diferenças verticais quando opções são exibidas. O botão de backup manual duplicado foi removido, e o seletor da chave pública segue o padrão visual do app.
-- **Próxima fase:** separar os PWAs e acessos de Manutenção e Higienização. Depois, simplificar a tela de sinais vitais da Enfermagem, balancear os quadros informativos e avaliar gráficos úteis por módulo. Inspeção autenticada da Lavanderia, investigação de falha no Chrome/Windows 11 e piloto do servidor continuam sujeitos aos pré-requisitos listados abaixo.
+- **Backups publicados** (`d3ad178`): preservados grids, ordem e quebra responsiva existentes; alinhados ao topo os campos de configuração condicional, chave e restauração. O botão de backup manual duplicado foi removido e o seletor da chave pública segue o padrão visual do app. A revisão visual da chave hexadecimal ainda está pendente.
+- **Diagnóstico de sessão — bloqueado para reprodução:** foi verificado o fluxo de inicialização e renovação da sessão no frontend e a validação do cookie no serviço de Acesso. Nesta máquina, o proxy HTTPS local respondeu, mas a API de Acesso em `localhost:8002` recusou conexão; portanto, não foi possível autenticar, reproduzir o erro nos módulos ou determinar se a causa está no cookie, serviço, proxy ou navegador. Repetir com a API em execução e evidência de uma resposta autenticada. Não tratar um erro HTTP isolado como causa confirmada.
+- **Relatos pendentes do usuário:** sessões/conexões expiradas ao abrir vários módulos; controles globais do Superadministrador com HTTP 404 e resposta que falha ao interpretar JSON; chave hexadecimal dos backups agendados desalinhada e com textos amontoados; quadros de Gestão Hospitalar/Relatórios fora do padrão visual. Investigar os códigos, corpo e serviço de origem das respostas antes de corrigir; preservar o layout de backup já aprovado.
+- **Em andamento — PWAs:** separar os acessos móveis de Manutenção e Higienização, mantendo filas e permissões isoladas. A alteração local está incompleta e ainda não foi validada nem publicada.
+- **Próximas fases:** concluir os PWAs e atualizar documentação/ajuda; corrigir os relatos pendentes após reproduzi-los; simplificar a tela de sinais vitais da Enfermagem; balancear quadros informativos; avaliar apenas gráficos úteis por módulo. Inspeção autenticada da Lavanderia, investigação de falha no Chrome/Windows 11 e piloto do servidor continuam sujeitos aos pré-requisitos listados abaixo.
 
 ### Concluído e publicado
 
