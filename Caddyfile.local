@@ -87,6 +87,9 @@
 	handle /api/v1/hygiene/* {
 		reverse_proxy 127.0.0.1:8007
 	}
+	handle /api/v1/laundry/* {
+		reverse_proxy 127.0.0.1:8007
+	}
 	handle /api/v1/reception/* {
 		reverse_proxy 127.0.0.1:8001
 	}
