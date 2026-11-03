@@ -4899,11 +4899,11 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
       </div>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
       {invalidPeriod && <ToastMessage variant="error">A data e hora inicial devem ser anteriores ou iguais à data e hora final.</ToastMessage>}
-      <div className="admin-report-summary" aria-label="Resumo dos resultados">
-        <article><strong>{filteredRows.length}</strong><span>Correspondem aos filtros</span></article>
-        <article><strong>{reportTotal ?? rows.length}</strong><span>Total informado pela origem</span></article>
-        <article><strong>{recordsWithDate}</strong><span>Com data identificada</span></article>
-        {statusSummary.length > 0 && <article className="admin-report-status-summary"><strong>Situação mais comum</strong><span>{statusSummary.map(([status, count]) => `${status}: ${count}`).join(' · ')}</span></article>}
+      <div className="admin-report-summary executive-kpis" aria-label="Resumo dos resultados">
+        <article className="status-tone-neutral"><strong>{filteredRows.length}</strong><span>Correspondem aos filtros</span></article>
+        <article className="status-tone-neutral"><strong>{reportTotal ?? rows.length}</strong><span>Total informado pela origem</span></article>
+        <article className="status-tone-neutral"><strong>{recordsWithDate}</strong><span>Com data identificada</span></article>
+        {statusSummary.length > 0 && <article className="admin-report-status-summary status-tone-neutral"><strong>Situação mais comum</strong><span>{statusSummary.map(([status, count]) => `${status}: ${count}`).join(' · ')}</span></article>}
       </div>
       <p className="field-hint">A consulta percorre as páginas disponíveis do módulo. {reportLoadedAt ? `Atualizado em ${dateTime(reportLoadedAt)}. ` : ''}{recordsWithoutDate ? `${recordsWithoutDate} registro(s) da origem não têm data e só aparecem sem filtro de período.` : ''}</p>
       {sourceId === 'patient-status' && <p className="field-hint">Os status são registros de acompanhamento identificados por cor. Alterar aqui acrescenta uma anotação ao histórico; nenhum registro anterior é sobrescrito.</p>}
