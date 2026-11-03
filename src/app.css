@@ -904,6 +904,7 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .psychology-panel > .button { justify-self: end; min-height: 44px; }
 .psychology-help { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .psychology-filter-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); align-items: end; gap: 14px; }
+.social-referral-filters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .psychology-referral-list, .psychology-encounter-list { display: grid; gap: 10px; }
 .psychology-referral-card, .psychology-encounter-card { display: grid; gap: 13px; padding: 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .psychology-referral-card.patient-care-track-card { border-left: 5px solid #77828b; }
@@ -1695,7 +1696,10 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .about-page .about-product-brand .startup-mark { width: 72px; height: 72px; }
 .about-page .about-overview-card { min-height: 0; padding: 15px; }
 @media (max-width: 520px) {
-  .about-page .about-product-brand { width: 70px; height: 70px; min-width: 70px; min-height: 70px; flex-basis: 70px; }
+  .about-page .about-product-brand { width: 70px; height: 70px; min-width: 70px; min-height: 70px; flex-basis: 70px;   }
+  @media (min-width: 521px) and (max-width: 760px) {
+    .social-referral-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   .about-page .about-product-brand .startup-mark { width: 52px; height: 52px; }
 }
 .about-version h2 { margin: 2px 0 6px; font-size: 18px; }
