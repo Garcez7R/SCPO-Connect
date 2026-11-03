@@ -14,21 +14,46 @@ function getToastRoot() {
   return toastRoot
 }
 
-export default function ToastMessage({ children, variant }: { children: string; variant: ToastVariant }) {
+export default function ToastMessage({
+  children,
+  variant,
+  persistent = false,
+  progress,
+  progressLabel = 'Progresso da operação',
+}: {
+  children: string
+  variant: ToastVariant
+  persistent?: boolean
+  progress?: number | null
+  progressLabel?: string
+}) {
   const [root] = useState(getToastRoot)
   const [dismissedMessage, setDismissedMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    if (variant === 'error') return
+    if (persistent || variant === 'error') return
     const timeout = window.setTimeout(() => setDismissedMessage(children), 6000)
     return () => window.clearTimeout(timeout)
-  }, [children, variant])
+  }, [children, persistent, variant])
 
   if (dismissedMessage === children) return null
   return createPortal(
     <div className={`toast-message toast-message-${variant}`} role={variant === 'error' ? 'alert' : 'status'}>
-      <div>{children}</div>
-      <button type="button" aria-label="Fechar notificação" onClick={() => setDismissedMessage(children)}>Fechar</button>
+      <div className="toast-message-body">
+        <div>{children}</div>
+        {progress !== undefined && <div
+          className={`backup-operation-progress ${progress === null ? 'is-indeterminate' : ''}`}
+          role="progressbar"
+          aria-label={progressLabel}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress ?? undefined}
+          aria-valuetext={progress === null ? children : `${progress}%`}
+        >
+          <span style={progress === null ? undefined : { width: `${progress}%` }} />
+        </div>}
+      </div>
+      {!persistent && <button type="button" aria-label="Fechar notificação" onClick={() => setDismissedMessage(children)}>Fechar</button>}
     </div>,
     root,
   )

@@ -2680,7 +2680,8 @@ html[data-theme="dark"] .account-settings-dialog .field :is(input, select):disab
   animation: toast-enter 180ms ease-out both;
   pointer-events: auto;
 }
-.toast-message > div { min-width: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.toast-message-body { display: grid; flex: 1; min-width: 0; gap: 8px; }
+.toast-message-body > div:first-child { min-width: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .toast-message button { flex: 0 0 auto; padding: 3px 0; border: 0; background: transparent; color: var(--blue-dark); font-size: 11px; font-weight: 700; cursor: pointer; }
 .toast-message-error { border-color: #d9a9ad; border-left-color: var(--red); }
 .toast-message-error button { color: var(--red); }

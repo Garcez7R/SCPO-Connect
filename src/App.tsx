@@ -5650,7 +5650,13 @@ function BackupExportPanel() {
       {restoreMessage && <ToastMessage variant="success">{restoreMessage}</ToastMessage>}
       {restoreError && <ToastMessage variant="error">{restoreError}</ToastMessage>}
     </section>
-    {operation && <BackupOperationDialog operation={operation} />}
+    {operation?.kind === 'restore' && <BackupOperationDialog operation={operation} />}
+    {operation?.kind === 'backup' && <ToastMessage
+      variant="info"
+      persistent
+      progress={operation.progress}
+      progressLabel="Progresso da geração e do download do backup"
+    >{`${operation.title}. ${operation.message}`}</ToastMessage>}
   </section>
 }
 
