@@ -509,14 +509,29 @@ def test_superadmin_can_change_image_storage_and_existing_files_are_moved(
     root.mkdir()
     monkeypatch.setenv("SCPO_THERAPY_MATERIALS_DIR", str(root))
     monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    (root / therapy.THERAPY_STORAGE_CONFIG).write_text('{"directory": ""}', encoding="utf-8")
     filename = "a" * 32 + ".png"
+    album_filename = "b" * 32 + ".webp"
     (root / filename).write_bytes(b"\x89PNG\r\n\x1a\nimage")
+    (root / "photo-album").mkdir()
+    (root / "photo-album" / album_filename).write_bytes(b"RIFFalbumWEBP")
     therapy_database.add(
         therapy.TherapyMaterialImage(
             id="image-record",
             filename=filename,
             title="Imagem de teste",
             content_type="image/png",
+            size_bytes=13,
+            uploaded_by="Admin",
+            uploaded_at=datetime.now(UTC),
+        )
+    )
+    therapy_database.add(
+        therapy.TherapyPhotoAlbumImage(
+            id="album-image-record",
+            filename=album_filename,
+            title="Foto de teste",
+            content_type="image/webp",
             size_bytes=13,
             uploaded_by="Admin",
             uploaded_at=datetime.now(UTC),
@@ -535,20 +550,41 @@ def test_superadmin_can_change_image_storage_and_existing_files_are_moved(
 
     before = therapy.get_therapy_storage_location(superadmin, therapy_database)
     assert before["directory"] == ""
+    assert before["library_directory"] == ""
+    assert before["album_directory"] == "photo-album"
     assert before["image_count"] == 1
+    assert before["album_image_count"] == 1
 
     updated = therapy.set_therapy_storage_location(
-        therapy.TherapyStorageLocationPayload(directory="imagens/oficina"),
+        therapy.TherapyStorageLocationPayload(
+            library_directory="imagens/biblioteca",
+            album_directory="imagens/album",
+        ),
         superadmin,
         therapy_database,
     )
 
-    target = root / "imagens" / "oficina"
-    assert updated["directory"] == "imagens/oficina"
-    assert updated["destination_available"] is True
-    assert (target / filename).read_bytes() == b"\x89PNG\r\n\x1a\nimage"
+    library_target = root / "imagens" / "biblioteca"
+    album_target = root / "imagens" / "album"
+    assert updated["library_directory"] == "imagens/biblioteca"
+    assert updated["album_directory"] == "imagens/album"
+    assert updated["library_destination_available"] is True
+    assert updated["album_destination_available"] is True
+    assert (library_target / filename).read_bytes() == b"\x89PNG\r\n\x1a\nimage"
+    assert (album_target / album_filename).read_bytes() == b"RIFFalbumWEBP"
     assert not (root / filename).exists()
-    assert therapy.therapy_materials_directory() == target
+    assert not (root / "photo-album" / album_filename).exists()
+    assert therapy.therapy_materials_directory() == library_target
+    assert therapy.therapy_photo_album_directory() == album_target
+
+    legacy_updated = therapy.set_therapy_storage_location(
+        therapy.TherapyStorageLocationPayload(directory="legacy-library"),
+        superadmin,
+        therapy_database,
+    )
+    assert legacy_updated["library_directory"] == "legacy-library"
+    assert legacy_updated["album_directory"] == "imagens/album"
+    assert (root / "legacy-library" / filename).read_bytes() == b"\x89PNG\r\n\x1a\nimage"
 
 
 def test_therapy_storage_location_rejects_non_superadmin_and_escape_paths(
@@ -582,6 +618,16 @@ def test_therapy_storage_location_rejects_non_superadmin_and_escape_paths(
             therapy_database,
         )
     assert invalid.value.status_code == 422
+    with pytest.raises(HTTPException) as overlap:
+        therapy.set_therapy_storage_location(
+            therapy.TherapyStorageLocationPayload(
+                library_directory="shared",
+                album_directory="shared",
+            ),
+            superadmin,
+            therapy_database,
+        )
+    assert overlap.value.status_code == 422
 
 
 def test_therapy_library_rejects_non_image_payloads() -> None:

@@ -1592,6 +1592,9 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-media-usage { margin: 0; color: var(--muted); font-size: 11px; }
 .therapy-media-usage strong { color: var(--ink); }
 .therapy-media-quota-warning { margin: 0; padding: 8px 10px; border: 1px solid var(--status-warning-border); border-radius: 6px; background: var(--status-warning-background); color: var(--status-warning-ink); font-size: 11px; line-height: 1.45; }
+.therapy-storage-resource-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.therapy-storage-resource { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.therapy-storage-resource > .field-hint { margin: 0; }
 .therapy-media-quota-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
 .therapy-media-quota-form .field { min-width: 0; }
 .therapy-image-preview-button { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }

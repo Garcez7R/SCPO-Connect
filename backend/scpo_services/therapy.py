@@ -289,7 +289,7 @@ def _validate_therapy_storage_directory(directory: str) -> Path:
     return candidate
 
 
-def _configured_therapy_storage_directory() -> str:
+def _configured_therapy_storage_directories() -> dict[str, str]:
     root = _therapy_materials_root()
     config_path = root / THERAPY_STORAGE_CONFIG
     if config_path.is_symlink():
@@ -297,33 +297,36 @@ def _configured_therapy_storage_directory() -> str:
     try:
         value = json.loads(config_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return ""
+        value = {}
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError("Não foi possível ler a configuração do armazenamento de imagens") from exc
-    if not isinstance(value, dict) or not isinstance(value.get("directory"), str):
+    if not isinstance(value, dict):
+        raise TypeError("A configuração do armazenamento de imagens está inválida")
+
+    library_directory = value.get("library_directory", value.get("directory", ""))
+    album_directory = value.get("album_directory", "photo-album")
+    if not isinstance(library_directory, str) or not isinstance(album_directory, str):
         raise TypeError("A configuração do armazenamento de imagens está inválida")
     try:
-        _validate_therapy_storage_directory(value["directory"])
+        library_path = _validate_therapy_storage_directory(library_directory)
+        album_path = _validate_therapy_storage_directory(album_directory)
     except ValueError as exc:
-        raise RuntimeError("O destino salvo para a biblioteca de imagens está inválido") from exc
-    return value["directory"]
+        raise RuntimeError("Um destino salvo para os acervos está inválido") from exc
+    if not album_directory:
+        raise RuntimeError("O destino salvo para o Álbum não pode ser a raiz do volume")
+    if library_path == album_path:
+        raise RuntimeError("Biblioteca e Álbum não podem usar a mesma pasta")
+    return {"library": library_directory, "album": album_directory}
 
 
 def therapy_materials_directory() -> Path:
-    return _validate_therapy_storage_directory(_configured_therapy_storage_directory())
+    directory = _configured_therapy_storage_directories()["library"]
+    return _validate_therapy_storage_directory(directory)
 
 
 def therapy_photo_album_directory() -> Path:
-    root = _therapy_materials_root()
-    directory = root / "photo-album"
-    if directory.is_symlink() or not directory.resolve().is_relative_to(root):
-        raise RuntimeError("O diretório do álbum não está dentro do volume de imagens")
-    if therapy_materials_directory() == directory:
-        raise HTTPException(
-            status_code=503,
-            detail="O local configurado para a Biblioteca conflita com o Álbum; escolha outra subpasta da Biblioteca",
-        )
-    return directory
+    directory = _configured_therapy_storage_directories()["album"]
+    return _validate_therapy_storage_directory(directory)
 
 
 def _therapy_media_settings(db: Session) -> TherapyMediaSettings:
@@ -405,7 +408,7 @@ def _assert_therapy_media_quota(
         )
 
 
-def _save_therapy_storage_directory(directory: str) -> None:
+def _save_therapy_storage_directories(directories: dict[str, str]) -> None:
     root = _therapy_materials_root()
     root.mkdir(parents=True, exist_ok=True)
     config_path = root / THERAPY_STORAGE_CONFIG
@@ -421,7 +424,10 @@ def _save_therapy_storage_directory(directory: str) -> None:
         ) as temporary:
             temporary_path = Path(temporary.name)
             os.chmod(temporary_path, 0o600)
-            json.dump({"directory": directory}, temporary)
+            json.dump({
+                "library_directory": directories["library"],
+                "album_directory": directories["album"],
+            }, temporary)
             temporary.flush()
             os.fsync(temporary.fileno())
         os.replace(temporary_path, config_path)
@@ -431,15 +437,23 @@ def _save_therapy_storage_directory(directory: str) -> None:
 
 
 def _therapy_storage_status(db: Session) -> dict[str, object]:
-    directory = _configured_therapy_storage_directory()
-    destination = _validate_therapy_storage_directory(directory)
+    directories = _configured_therapy_storage_directories()
     root = _therapy_materials_root()
+    library_destination = _validate_therapy_storage_directory(directories["library"])
+    album_destination = _validate_therapy_storage_directory(directories["album"])
     return {
-        "directory": directory,
+        "library_directory": directories["library"],
+        "album_directory": directories["album"],
+        "directory": directories["library"],
         "image_count": db.query(TherapyMaterialImage).count(),
+        "album_image_count": db.query(TherapyPhotoAlbumImage).count(),
         "volume_available": root.is_dir() and os.access(root, os.W_OK),
-        "destination_available": destination.is_dir() and os.access(destination, os.W_OK),
-        "destination_display": directory or ".",
+        "library_destination_available": library_destination.is_dir() and os.access(library_destination, os.W_OK),
+        "album_destination_available": album_destination.is_dir() and os.access(album_destination, os.W_OK),
+        "library_destination_display": directories["library"] or ". (raiz do volume)",
+        "album_destination_display": directories["album"],
+        "destination_available": library_destination.is_dir() and os.access(library_destination, os.W_OK),
+        "destination_display": directories["library"] or ".",
     }
 
 
@@ -455,7 +469,9 @@ def get_therapy_storage_location(
 
 class TherapyStorageLocationPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    directory: str = Field(max_length=200)
+    library_directory: str | None = Field(default=None, max_length=200)
+    album_directory: str | None = Field(default=None, max_length=200)
+    directory: str | None = Field(default=None, max_length=200)
 
 
 @app.put("/api/v1/therapy/storage-location")
@@ -466,51 +482,85 @@ def set_therapy_storage_location(
 ) -> dict[str, object]:
     if not principal.is_superuser:
         raise HTTPException(status_code=403, detail="Apenas o Superadministrador pode configurar o armazenamento")
-    try:
-        destination = _validate_therapy_storage_directory(payload.directory)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if payload.directory and PurePosixPath(payload.directory).parts[0] == "photo-album":
-        raise HTTPException(status_code=422, detail="A subpasta photo-album é reservada ao Álbum terapêutico")
+    if payload.library_directory is None and payload.album_directory is None and payload.directory is None:
+        raise HTTPException(status_code=422, detail="Informe ao menos um caminho para os acervos")
+    if payload.directory is not None and payload.library_directory is not None:
+        raise HTTPException(status_code=422, detail="Informe directory ou library_directory, não ambos")
 
     with THERAPY_STORAGE_LOCK:
-        source = therapy_materials_directory()
-        if payload.directory == _configured_therapy_storage_directory():
-            return _therapy_storage_status(db)
+        current = _configured_therapy_storage_directories()
+        updated = {
+            "library": payload.library_directory
+            if payload.library_directory is not None
+            else payload.directory
+            if payload.directory is not None
+            else current["library"],
+            "album": payload.album_directory if payload.album_directory is not None else current["album"],
+        }
         try:
-            destination.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise HTTPException(status_code=503, detail="A subpasta não pode ser criada no volume de imagens") from exc
-        try:
-            destination = _validate_therapy_storage_directory(payload.directory)
+            destinations = {
+                name: _validate_therapy_storage_directory(directory)
+                for name, directory in updated.items()
+            }
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        if not destination.is_dir() or not os.access(destination, os.W_OK):
-            raise HTTPException(status_code=503, detail="A subpasta não está disponível para gravação")
+        if not updated["album"]:
+            raise HTTPException(status_code=422, detail="O Álbum precisa ficar em uma subpasta do volume")
+        if destinations["library"] == destinations["album"]:
+            raise HTTPException(
+                status_code=422,
+                detail="Biblioteca e Álbum precisam usar pastas diferentes",
+            )
+        if updated == current:
+            return _therapy_storage_status(db)
 
-        images = db.scalars(select(TherapyMaterialImage)).all()
+        for name, destination in destinations.items():
+            if updated[name] == current[name]:
+                continue
+            try:
+                destination.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise HTTPException(status_code=503, detail="A subpasta não pode ser criada no volume de imagens") from exc
+            if not destination.is_dir() or not os.access(destination, os.W_OK):
+                raise HTTPException(status_code=503, detail="A subpasta não está disponível para gravação")
+
+        image_sets = {
+            "library": (
+                therapy_materials_directory(),
+                destinations["library"],
+                db.scalars(select(TherapyMaterialImage)).all(),
+            ),
+            "album": (
+                therapy_photo_album_directory(),
+                destinations["album"],
+                db.scalars(select(TherapyPhotoAlbumImage)).all(),
+            ),
+        }
         moves: list[tuple[Path, Path]] = []
         config_path = _therapy_materials_root() / THERAPY_STORAGE_CONFIG
         had_config = config_path.exists()
         previous_config = config_path.read_bytes() if had_config else None
         try:
-            for image in images:
-                if not re.fullmatch(r"[a-f0-9]{32}\.(?:jpg|png|webp)", image.filename):
-                    raise RuntimeError("A biblioteca contém um nome de arquivo inválido")
-                old_path = source / image.filename
-                new_path = destination / image.filename
-                if old_path.is_symlink() or not old_path.is_file():
-                    raise RuntimeError(f"O arquivo da imagem {image.id} não está disponível no volume atual")
-                if new_path.exists() or new_path.is_symlink():
-                    raise FileExistsError("Já existe um arquivo com o mesmo nome na nova subpasta")
-                os.replace(old_path, new_path)
-                moves.append((old_path, new_path))
-            _save_therapy_storage_directory(payload.directory)
+            for name, (source, destination, images) in image_sets.items():
+                if updated[name] == current[name]:
+                    continue
+                for image in images:
+                    if not re.fullmatch(r"[a-f0-9]{32}\.(?:jpg|png|webp)", image.filename):
+                        raise RuntimeError(f"O {name} contém um nome de arquivo inválido")
+                    old_path = source / image.filename
+                    new_path = destination / image.filename
+                    if old_path.is_symlink() or not old_path.is_file():
+                        raise RuntimeError(f"O arquivo da imagem {image.id} não está disponível no volume atual")
+                    if new_path.exists() or new_path.is_symlink():
+                        raise FileExistsError("Já existe um arquivo com o mesmo nome na nova subpasta")
+                    os.replace(old_path, new_path)
+                    moves.append((old_path, new_path))
+            _save_therapy_storage_directories(updated)
             emit_audit_event(
                 principal,
                 "therapy",
                 "therapy_storage_location_changed",
-                payload.directory or ".",
+                f"Biblioteca: {updated['library'] or '.'}; Álbum: {updated['album']}",
                 db=db,
             )
             db.commit()
@@ -525,7 +575,7 @@ def set_therapy_storage_location(
                     os.replace(new_path, old_path)
             except OSError as rollback_error:
                 raise RuntimeError(
-                    "A alteração do armazenamento falhou e exige verificação manual da biblioteca"
+                    "A alteração do armazenamento falhou e exige verificação manual dos acervos"
                 ) from rollback_error
             if isinstance(exc, (HTTPException, RuntimeError)):
                 raise

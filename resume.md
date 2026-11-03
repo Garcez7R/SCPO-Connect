@@ -198,10 +198,10 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Concluído nesta retomada — configurações de armazenamento da Oficina Terapêutica
 
-- A configuração da subpasta da Biblioteca de imagens foi movida da guia Cópias de segurança para a seção Biblioteca e Álbum de fotos no Dashboard técnico, junto dos controles de ativação e cotas. O backup continua sem uma opção isolada de armazenamento da Biblioteca.
-- O caminho configurável se aplica à Biblioteca; o Álbum permanece em sua pasta reservada no mesmo volume. A confirmação de alteração continua informando a movimentação das imagens cadastradas.
-- README e ajuda interna foram atualizados. A próxima implementação transversal a planejar é uma experiência avançada e consistente de filtros e relatórios nas áreas em que fizer sentido, incluindo a guia Pacientes.
-- `npm run typecheck`, `npm run lint`, `npm run build` e `git diff --check` passaram. Nenhuma migração, alteração de backend ou operação em servidor foi necessária.
+- A configuração permanece no Dashboard técnico, junto dos controles de ativação e cotas, e agora permite escolher subpastas independentes para Biblioteca e Álbum. Cada alteração exige confirmação e move somente os arquivos cadastrados do acervo selecionado; os destinos iguais são rejeitados. A API ainda aceita a propriedade antiga `directory` e mantém chaves de resposta legadas para compatibilidade.
+- O caminho-base continua sob responsabilidade da TI por `SCPO_THERAPY_MATERIALS_HOST_DIR`; a aplicação aceita somente subpastas relativas ao volume montado. `/biblio` pode ser configurado como esse volume-base, com subpastas selecionáveis pela interface. Esta máquina não encontrou `/biblio`; nenhuma configuração `.env`, mount ou servidor foi alterado.
+- README, ajuda interna e guia de backup foram atualizados. `uv run --group dev pytest backend/tests/test_therapy_reports.py` (13 testes), Ruff direcionado, `npm run typecheck`, `npm run lint` e `npm run build` passaram; o build mantém o aviso conhecido do chunk principal grande. Nenhuma migração de banco foi necessária.
+- A próxima implementação transversal a planejar é uma experiência avançada e consistente de filtros e relatórios nas áreas em que fizer sentido, incluindo a guia Pacientes.
 
 ### Pendente — ordem sugerida
 
