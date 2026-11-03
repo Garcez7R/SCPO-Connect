@@ -51,7 +51,7 @@ def test_each_service_migration_creates_only_its_owned_table(
             "laundry_inventory_movements",
         } <= tables
     if service == "nursing":
-        assert len(tables) == 35
+        assert len(tables) == 38
         assert "nursing_offline_action_receipts" in tables
         assert {"nursing_hourly_rounds", "nursing_hourly_round_patients"} <= tables
         assert {"physician_profiles", "physician_prescriptions"} <= tables
@@ -102,6 +102,9 @@ def test_each_service_migration_creates_only_its_owned_table(
             "therapy_material_movements",
             "therapy_material_images",
             "therapy_material_image_folders",
+            "therapy_photo_album_images",
+            "therapy_photo_album_folders",
+            "therapy_media_settings",
         } <= tables
         assert "folder_id" in {
             column["name"]

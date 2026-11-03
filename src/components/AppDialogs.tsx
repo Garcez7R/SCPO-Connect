@@ -65,7 +65,7 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
     {children}
     {active && <div className="app-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && active.kind !== 'alert') finish(active.kind === 'confirm' ? false : null) }}>
       <section className="app-dialog" role={active.kind === 'alert' ? 'dialog' : 'alertdialog'} aria-modal="true" aria-labelledby={`app-dialog-title-${active.id}`} aria-describedby={`app-dialog-message-${active.id}`}>
-        <div><p className="eyebrow">SCPO CONNECT</p><h2 id={`app-dialog-title-${active.id}`}>{active.title}</h2></div>
+        <div className="app-dialog-heading"><img src="/scpo-connect-icon.png" alt="" aria-hidden="true" /><div><p className="eyebrow">SCPO CONNECT</p><h2 id={`app-dialog-title-${active.id}`}>{active.title}</h2></div></div>
         <p id={`app-dialog-message-${active.id}`}>{active.message}</p>
         {active.kind === 'prompt' ? <form onSubmit={(event) => { event.preventDefault(); const value = new FormData(event.currentTarget).get('app-dialog-input'); if (typeof value === 'string' && value.trim()) finish(value) }}>
           <label className="field"><span className="field-label">{active.inputLabel}</span><input id={`app-dialog-input-${active.id}`} name="app-dialog-input" required /></label>

@@ -37,6 +37,7 @@ import {
   HeartPulse,
   Home,
   Info,
+  Images,
   LockKeyhole,
   LogOut,
   Menu,
@@ -78,6 +79,7 @@ import HelpGuide from './components/HelpGuide'
 import { AppDialogProvider } from './components/AppDialogs'
 import { useAppDialogs } from './components/appDialogContext'
 import TherapyStorageSettings from './components/TherapyStorageSettings'
+import TherapyMediaSettings from './components/TherapyMediaSettings'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight'
@@ -89,8 +91,8 @@ const adminTabValues = ['users', 'reports', 'audit'] as const
 const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Usuários e permissões', reports: 'Relatórios', audit: 'Auditoria de ações' }
 const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior', 'governance', 'shortcuts'] as const
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
-const therapyTabValues = ['calendar', 'attendance', 'images', 'materials', 'reports'] as const
-const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', materials: 'Materiais', reports: 'Relatórios' }
+const therapyTabValues = ['calendar', 'attendance', 'images', 'album', 'materials', 'reports'] as const
+const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', album: 'Álbum', materials: 'Materiais', reports: 'Relatórios' }
 const systemAdminTabValues = ['dashboard', 'accounts', 'backup', 'recovery'] as const
 const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const systemControlModules = [
@@ -111,6 +113,7 @@ const systemControlModules = [
   { id: 'admin', label: 'Administração do aplicativo' },
 ] as const
 type SystemModuleSettings = { module_enabled: Record<string, boolean>; maintenance_mode: boolean; updated_at?: string; updated_by_name?: string }
+type TherapyMediaAvailability = { library: { enabled: boolean }; album: { enabled: boolean } }
 const systemAdminServices: { id: ModuleService; label: string }[] = [
   { id: 'access', label: 'Acesso' },
   { id: 'audit', label: 'Auditoria' },
@@ -2327,6 +2330,9 @@ function TherapyAttendanceEditor({ activity, patients, canEdit, onSaved }: {
 
 function TherapyPage({ profile }: { profile: Profile }) {
   const [tab, setTab] = usePersistentTab(`scpo-tab-therapy-${profile.id}`, 'calendar', therapyTabValues, therapyTabLabels)
+  const [mediaAvailability, setMediaAvailability] = useState<TherapyMediaAvailability | null>(null)
+  const [mediaAvailabilityLoading, setMediaAvailabilityLoading] = useState(true)
+  const [mediaAvailabilityError, setMediaAvailabilityError] = useState('')
   const [patients, setPatients] = useState<TherapyPatient[]>([])
   const [activities, setActivities] = useState<TherapyActivity[]>([])
   const [reportDrafts, setReportDrafts] = useState<Record<string, string>>({})
@@ -2348,6 +2354,33 @@ function TherapyPage({ profile }: { profile: Profile }) {
   const [newParticipantReference, setNewParticipantReference] = useState('')
   const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`
   const loading = loadedMonthKey !== monthKey
+
+  const loadMediaAvailability = useCallback(async () => {
+    setMediaAvailabilityLoading(true)
+    try {
+      const settings = await readApiResponse<TherapyMediaAvailability>(
+        await fetch('/api/v1/therapy/media-settings', { cache: 'no-store' }),
+      )
+      setMediaAvailability(settings)
+      setMediaAvailabilityError('')
+    } catch (loadError) {
+      setMediaAvailabilityError(readableApiError(loadError))
+    } finally {
+      setMediaAvailabilityLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadMediaAvailability(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadMediaAvailability])
+
+  useEffect(() => {
+    if (mediaAvailability && (
+      (tab === 'images' && !mediaAvailability.library.enabled)
+      || (tab === 'album' && !mediaAvailability.album.enabled)
+    )) setTab('calendar')
+  }, [mediaAvailability, setTab, tab])
 
   useEffect(() => {
     let current = true
@@ -2514,10 +2547,12 @@ function TherapyPage({ profile }: { profile: Profile }) {
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Áreas da Oficina Terapêutica">
       <button className={`button ${tab === 'calendar' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'calendar'} onClick={() => setTab('calendar')}><CalendarDays size={16} /> Atividades e calendário</button>
       <button className={`button ${tab === 'attendance' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'attendance'} onClick={() => setTab('attendance')}><UsersRound size={16} /> Lista de presença</button>
-      <button className={`button ${tab === 'images' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'images'} onClick={() => setTab('images')}><Camera size={16} /> Biblioteca de imagens</button>
+      {mediaAvailability?.library.enabled && <button className={`button ${tab === 'images' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'images'} onClick={() => setTab('images')}><Camera size={16} /> Biblioteca de imagens</button>}
+      {mediaAvailability?.album.enabled && <button className={`button ${tab === 'album' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'album'} onClick={() => setTab('album')}><Images size={16} /> Álbum</button>}
       <button className={`button ${tab === 'materials' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'materials'} onClick={() => setTab('materials')}><Package size={16} /> Materiais</button>
       <button className={`button ${tab === 'reports' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === 'reports'} onClick={() => setTab('reports')}><ClipboardList size={16} /> Relatórios</button>
     </div>
+    {mediaAvailabilityError && <div className="therapy-load-error"><ToastMessage variant="error">{`Não foi possível carregar a disponibilidade da Biblioteca e do Álbum: ${mediaAvailabilityError}`}</ToastMessage><button className="button button-secondary" type="button" onClick={() => void loadMediaAvailability()} disabled={mediaAvailabilityLoading}><RefreshCw size={15} /> Tentar novamente</button></div>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <div className="therapy-load-error"><ToastMessage variant="error">{error}</ToastMessage>{loadFailed && <button className="button button-secondary" type="button" onClick={retryTherapyLoad} disabled={loading}>Tentar novamente</button>}</div>}
     {tab === 'calendar' && <>
     <div className="hygiene-summary therapy-summary" aria-label="Resumo da Oficina Terapêutica" aria-busy={loading}><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : activities.length}</strong><span>Atividades no mês</span></article><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : todayActivityCount}</strong><span>Agendadas para hoje</span></article><article className={activityCountTone(inProgressCount, 'progress')}><strong>{loading ? '…' : activityLoadFailed ? '—' : inProgressCount}</strong><span>Em andamento</span></article><article className={activityCountTone(completedCount, 'success')}><strong>{loading ? '…' : activityLoadFailed ? '—' : completedCount}</strong><span>Realizadas</span></article><article className="status-tone-neutral"><strong>{loading ? '…' : activityLoadFailed ? '—' : activities.reduce((sum, activity) => sum + (activity.participants ?? []).filter((participant) => participant.attendance === 'attended').length, 0)}</strong><span>Presenças registradas</span></article></div>
@@ -2598,7 +2633,8 @@ function TherapyPage({ profile }: { profile: Profile }) {
     </>}
     {tab === 'attendance' && (activityLoadFailed ? <div className="history-empty">Não foi possível carregar as atividades. Consulte o erro informado acima.</div> : <TherapyAttendanceManager activities={activities} patients={patients} canEdit={profile.modules.includes('therapy')} selectedActivityId={selectedActivityId} onSelectActivity={setSelectedActivityId} onSaved={(updated) => setActivities((current) => current.map((activity) => activity.id === updated.id ? updated : activity))} />)}
     {tab === 'materials' && <Suspense fallback={<div className="history-empty" role="status">Carregando materiais…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="materials" /></Suspense>}
-    {tab === 'images' && <Suspense fallback={<div className="history-empty" role="status">Carregando biblioteca de imagens…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="images" /></Suspense>}
+    {tab === 'images' && mediaAvailability?.library.enabled && <Suspense fallback={<div className="history-empty" role="status">Carregando biblioteca de imagens…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="images" /></Suspense>}
+    {tab === 'album' && mediaAvailability?.album.enabled && <Suspense fallback={<div className="history-empty" role="status">Carregando álbum de fotos…</div>}><TherapyMaterialsPanel canEdit={profile.modules.includes('therapy')} view="album" /></Suspense>}
   </section>
 }
 
@@ -6089,6 +6125,7 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
           <input type="checkbox" role="switch" checked={moduleSettings.maintenance_mode} disabled={moduleSettingsLoading || Boolean(moduleSettingsBusy)} aria-label={moduleSettings.maintenance_mode ? 'Desativar modo de manutenção' : 'Ativar modo de manutenção'} onChange={(event) => void updateMaintenanceMode(event.target.checked)} />
         </label>}
       </section>
+      <TherapyMediaSettings />
       <section className="patient-list-panel">
         <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>
         <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>

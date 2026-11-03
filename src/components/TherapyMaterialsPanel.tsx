@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Archive, Download, Folder, FolderOpen, FolderPlus, History, ImagePlus, Package, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
+import ToastMessage from './ToastMessage'
 
 type TherapyMaterial = {
   id: string
@@ -51,7 +52,31 @@ function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
 
-export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: boolean; view: 'materials' | 'images' }) {
+function uploadImageWithProgress(url: string, file: File, onProgress: (progress: number | null) => void) {
+  return new Promise<MaterialImage>((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('POST', url)
+    request.setRequestHeader('Content-Type', file.type)
+    request.upload.addEventListener('progress', (event) => {
+      onProgress(event.lengthComputable ? Math.round((event.loaded / event.total) * 100) : null)
+    })
+    request.addEventListener('load', () => {
+      const headers = new Headers()
+      const contentType = request.getResponseHeader('Content-Type')
+      if (contentType) headers.set('Content-Type', contentType)
+      void readApiResponse<MaterialImage>(new Response(request.responseText, {
+        status: request.status,
+        statusText: request.statusText,
+        headers,
+      })).then(resolve, reject)
+    })
+    request.addEventListener('error', () => reject(new Error('Não foi possível conectar ao serviço para enviar a imagem.')))
+    request.addEventListener('abort', () => reject(new Error('O envio da imagem foi interrompido.')))
+    request.send(file)
+  })
+}
+
+export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: boolean; view: 'materials' | 'images' | 'album' }) {
   const [materials, setMaterials] = useState<TherapyMaterial[]>([])
   const [images, setImages] = useState<MaterialImage[]>([])
   const [folders, setFolders] = useState<MaterialImageFolder[]>([])
@@ -80,6 +105,9 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   const [loadError, setLoadError] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [mediaOperation, setMediaOperation] = useState<{ message: string; progress?: number | null } | null>(null)
+  const [previewImage, setPreviewImage] = useState<MaterialImage | null>(null)
+  const mediaCollection = view === 'album' ? 'photo-album' : 'material-images'
   const visibleImages = images.filter((image) =>
     (activeFolderId === 'all'
       || (activeFolderId === 'root' ? !image.folder_id : image.folder_id === activeFolderId))
@@ -97,13 +125,22 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
       return
     }
     const imageData = await readApiResponse<{ images: MaterialImage[]; folders: MaterialImageFolder[] }>(
-      await fetch('/api/v1/therapy/material-images'),
+      await fetch(`/api/v1/therapy/${mediaCollection}`),
     )
     setImages(imageData.images)
     setFolders(imageData.folders)
     setLoadError(false)
     setError('')
-  }, [view])
+  }, [mediaCollection, view])
+
+  useEffect(() => {
+    if (!previewImage) return
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setPreviewImage(null)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [previewImage])
 
   useEffect(() => {
     let active = true
@@ -236,23 +273,25 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
     event.preventDefault()
     if (!imageFile) { setError('Selecione uma imagem para enviar.'); return }
     setSaving(true); setError(''); setNotice('')
+    setMediaOperation({ message: `Enviando ${view === 'album' ? 'foto' : 'imagem'}…`, progress: null })
     try {
       const uploadParams = new URLSearchParams({ title: imageTitle.trim() })
       if (activeFolderId !== 'all' && activeFolderId !== 'root') uploadParams.set('folder_id', activeFolderId)
-      await readApiResponse<MaterialImage>(await fetch(`/api/v1/therapy/material-images?${uploadParams}`, {
-        method: 'POST',
-        headers: { 'Content-Type': imageFile.type },
-        body: imageFile,
-      }))
+      await uploadImageWithProgress(
+        `/api/v1/therapy/${mediaCollection}?${uploadParams}`,
+        imageFile,
+        (progress) => setMediaOperation({ message: `Enviando ${view === 'album' ? 'foto' : 'imagem'}…`, progress }),
+      )
       setImageTitle('')
       setImageFile(null)
-      const input = document.getElementById('therapy-material-image-file')
+      const input = document.getElementById(`therapy-${mediaCollection}-file`)
       if (input instanceof HTMLInputElement) input.value = ''
       await loadData()
-      setNotice('Imagem adicionada à biblioteca.')
+      setNotice(view === 'album' ? 'Foto adicionada ao álbum.' : 'Imagem adicionada à biblioteca.')
     } catch (saveError) {
       setError(readableApiError(saveError))
     } finally {
+      setMediaOperation(null)
       setSaving(false)
     }
   }
@@ -261,7 +300,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
     event.preventDefault()
     setSaving(true); setError(''); setNotice('')
     try {
-      const folder = await readApiResponse<MaterialImageFolder>(await fetch('/api/v1/therapy/material-images/folders', {
+      const folder = await readApiResponse<MaterialImageFolder>(await fetch(`/api/v1/therapy/${mediaCollection}/folders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: folderName }),
@@ -280,7 +319,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   async function renameImageFolder(folder: MaterialImageFolder) {
     setSaving(true); setError(''); setNotice('')
     try {
-      await readApiResponse<MaterialImageFolder>(await fetch(`/api/v1/therapy/material-images/folders/${encodeURIComponent(folder.id)}`, {
+      await readApiResponse<MaterialImageFolder>(await fetch(`/api/v1/therapy/${mediaCollection}/folders/${encodeURIComponent(folder.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: editingFolderName }),
@@ -298,7 +337,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   async function deleteImageFolder(folder: MaterialImageFolder) {
     setSaving(true); setError(''); setNotice('')
     try {
-      await readApiResponse<void>(await fetch(`/api/v1/therapy/material-images/folders/${encodeURIComponent(folder.id)}`, {
+      await readApiResponse<void>(await fetch(`/api/v1/therapy/${mediaCollection}/folders/${encodeURIComponent(folder.id)}`, {
         method: 'DELETE',
       }))
       setDeleteFolderId('')
@@ -315,7 +354,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   async function updateImage(image: MaterialImage, update: { title?: string; folder_id?: string | null }) {
     setSaving(true); setError(''); setNotice('')
     try {
-      await readApiResponse<MaterialImage>(await fetch(`/api/v1/therapy/material-images/${encodeURIComponent(image.id)}`, {
+      await readApiResponse<MaterialImage>(await fetch(`/api/v1/therapy/${mediaCollection}/${encodeURIComponent(image.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(update),
@@ -332,16 +371,18 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
 
   async function deleteImage(image: MaterialImage) {
     setSaving(true); setError(''); setNotice('')
+    setMediaOperation({ message: view === 'album' ? 'Excluindo foto…' : 'Excluindo imagem…', progress: null })
     try {
-      await readApiResponse<void>(await fetch(`/api/v1/therapy/material-images/${encodeURIComponent(image.id)}`, {
+      await readApiResponse<void>(await fetch(`/api/v1/therapy/${mediaCollection}/${encodeURIComponent(image.id)}`, {
         method: 'DELETE',
       }))
       setDeleteImageId('')
       await loadData()
-      setNotice('Imagem removida da biblioteca.')
+      setNotice(view === 'album' ? 'Foto removida do álbum.' : 'Imagem removida da biblioteca.')
     } catch (deleteError) {
       setError(readableApiError(deleteError))
     } finally {
+      setMediaOperation(null)
       setSaving(false)
     }
   }
@@ -349,6 +390,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   return <section className="therapy-materials-panel">
     {notice && <p className="therapy-material-message" role="status">{notice}</p>}
     {error && <p className="therapy-material-message therapy-material-error" role="alert">{error}</p>}
+    {mediaOperation && <ToastMessage variant="info" persistent progress={mediaOperation.progress} progressLabel="Progresso do envio">{mediaOperation.message}</ToastMessage>}
     {view === 'materials' && canEdit && <form className="therapy-material-form" onSubmit={(event) => void createMaterial(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVO CADASTRO</p><h2>Adicionar material</h2><p className="welcome-copy">Cadastre materiais, ferramentas e tintas. A quantidade inicial também entra no histórico.</p></div></div>
       <div className="therapy-material-fields">
@@ -387,11 +429,11 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
       </article>)}</div> : <div className="history-empty">Nenhum material cadastrado.</div>}
     </section>}
 
-    {view === 'images' && <section className="therapy-material-section">
+    {view !== 'materials' && <section className="therapy-material-section">
       <div className="therapy-image-manager">
-        <aside className="therapy-image-sidebar" aria-label="Pastas da biblioteca">
+        <aside className="therapy-image-sidebar" aria-label={`Pastas ${view === 'album' ? 'do álbum' : 'da biblioteca'}`}>
           <div className="therapy-image-sidebar-heading"><strong>Pastas</strong><span>{folders.length}</span></div>
-          <button className={`therapy-image-folder ${activeFolderId === 'all' ? 'is-selected' : ''}`} type="button" onClick={() => setActiveFolderId('all')}><FolderOpen size={16} /><span>Todas as imagens</span><b>{images.length}</b></button>
+          <button className={`therapy-image-folder ${activeFolderId === 'all' ? 'is-selected' : ''}`} type="button" onClick={() => setActiveFolderId('all')}><FolderOpen size={16} /><span>Todas as {view === 'album' ? 'fotos' : 'imagens'}</span><b>{images.length}</b></button>
           <button className={`therapy-image-folder ${activeFolderId === 'root' ? 'is-selected' : ''}`} type="button" onClick={() => setActiveFolderId('root')}><ImagePlus size={16} /><span>Sem pasta</span><b>{images.filter((image) => !image.folder_id).length}</b></button>
           {folders.map((folder) => <div className={`therapy-image-folder-row ${activeFolderId === folder.id ? 'is-selected' : ''}`} key={folder.id}>
             {editingFolderId === folder.id
@@ -402,15 +444,15 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
           {canEdit && <form className="therapy-image-new-folder" onSubmit={(event) => void createImageFolder(event)}><label className="field"><span className="field-label">Criar pasta</span><input required maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="Nome da pasta" /></label><button className="button button-secondary" type="submit" disabled={saving || !folderName.trim()}><FolderPlus size={15} /> Nova pasta</button></form>}
         </aside>
         <div className="therapy-image-browser">
-          <div className="therapy-image-browser-header"><div><p className="eyebrow">ACERVO DA OFICINA</p><h2><ImagePlus size={19} /> Biblioteca de imagens</h2><p className="welcome-copy">Organize, renomeie, mova, baixe ou exclua arquivos. Imagens ficam no armazenamento próprio da Oficina Terapêutica.</p></div><span className="module-total">{visibleImages.length} {visibleImages.length === 1 ? 'imagem' : 'imagens'}</span></div>
-          <div className="therapy-image-toolbar"><label className="therapy-image-search"><Search size={16} /><input type="search" value={imageSearch} onChange={(event) => setImageSearch(event.target.value)} placeholder="Buscar imagem nesta pasta" aria-label="Buscar imagens" /></label><span>{activeFolderId === 'all' ? 'Todas as pastas' : activeFolderId === 'root' ? 'Sem pasta' : folders.find((folder) => folder.id === activeFolderId)?.name}</span></div>
+          <div className="therapy-image-browser-header"><div><p className="eyebrow">ACERVO DA OFICINA</p><h2><ImagePlus size={19} /> {view === 'album' ? 'Álbum de fotos' : 'Biblioteca de imagens'}</h2><p className="welcome-copy">{view === 'album' ? 'Organize e visualize fotos do álbum sem misturá-las com a Biblioteca de imagens.' : 'Organize, renomeie, mova, baixe ou exclua arquivos. Imagens ficam no armazenamento próprio da Oficina Terapêutica.'}</p></div><span className="module-total">{visibleImages.length} {view === 'album' ? visibleImages.length === 1 ? 'foto' : 'fotos' : visibleImages.length === 1 ? 'imagem' : 'imagens'}</span></div>
+          <div className="therapy-image-toolbar"><label className="therapy-image-search"><Search size={16} /><input type="search" value={imageSearch} onChange={(event) => setImageSearch(event.target.value)} placeholder={`Buscar ${view === 'album' ? 'foto' : 'imagem'} nesta pasta`} aria-label={`Buscar ${view === 'album' ? 'fotos' : 'imagens'}`} /></label><span>{activeFolderId === 'all' ? 'Todas as pastas' : activeFolderId === 'root' ? 'Sem pasta' : folders.find((folder) => folder.id === activeFolderId)?.name}</span></div>
           {canEdit && <form className="therapy-material-form therapy-image-upload" onSubmit={(event) => void uploadImage(event)}>
-            <label className="field"><span className="field-label">Título da imagem</span><input required minLength={2} maxLength={120} value={imageTitle} onChange={(event) => setImageTitle(event.target.value)} placeholder="Ex.: formas geométricas para pintura" /></label>
-            <div className="field"><span className="field-label">Arquivo (JPG, PNG ou WebP, até 12 MB)</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id="therapy-material-image-file" type="file" accept="image/jpeg,image/png,image/webp" required aria-label="Escolher imagem para a biblioteca da Oficina Terapêutica" onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor="therapy-material-image-file"><ImagePlus size={15} /> Escolher arquivo</label><span title={imageFile?.name}>{imageFile?.name ?? 'Nenhum arquivo selecionado'}</span></div></div>
+            <label className="field"><span className="field-label">Título da {view === 'album' ? 'foto' : 'imagem'}</span><input required minLength={2} maxLength={120} value={imageTitle} onChange={(event) => setImageTitle(event.target.value)} placeholder={view === 'album' ? 'Ex.: atividade de pintura' : 'Ex.: formas geométricas para pintura'} /></label>
+            <div className="field"><span className="field-label">Arquivo (JPG, PNG ou WebP, até 12 MB)</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id={`therapy-${mediaCollection}-file`} type="file" accept="image/jpeg,image/png,image/webp" required aria-label={`Escolher imagem para ${view === 'album' ? 'o álbum' : 'a Biblioteca de imagens'}`} onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor={`therapy-${mediaCollection}-file`}><ImagePlus size={15} /> Escolher arquivo</label><span title={imageFile?.name}>{imageFile?.name ?? 'Nenhum arquivo selecionado'}</span></div></div>
             <button className="button button-primary" type="submit" disabled={saving || !imageFile}><ImagePlus size={16} /> Enviar imagem</button>
           </form>}
-          {loading ? <div className="history-empty">Carregando biblioteca de imagens…</div> : loadError ? null : visibleImages.length ? <div className="therapy-image-grid">{visibleImages.map((image) => <article className="therapy-image-card" key={image.id}>
-            <img src={image.url} alt={image.title} loading="lazy" />
+          {loading ? <div className="history-empty">Carregando {view === 'album' ? 'álbum' : 'biblioteca de imagens'}…</div> : loadError ? null : visibleImages.length ? <div className="therapy-image-grid">{visibleImages.map((image) => <article className="therapy-image-card" key={image.id}>
+            {view === 'album' ? <button className="therapy-album-preview-button" type="button" onClick={() => setPreviewImage(image)} aria-label={`Visualizar ${image.title}`}><img src={image.url} alt={image.title} loading="lazy" /></button> : <img src={image.url} alt={image.title} loading="lazy" />}
             <div className="therapy-image-card-details">
               {editingImageId === image.id
                 ? <form className="therapy-image-rename" onSubmit={(event) => { event.preventDefault(); void updateImage(image, { title: editingImageTitle }) }}><label className="field"><span className="field-label">Nome do arquivo</span><input required minLength={2} maxLength={120} value={editingImageTitle} onChange={(event) => setEditingImageTitle(event.target.value)} /></label><button className="button button-primary" type="submit" disabled={saving}><Save size={14} /> Salvar</button><button className="button button-secondary" type="button" onClick={() => setEditingImageId('')}><X size={14} /> Cancelar</button></form>
@@ -421,9 +463,17 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
               <label className="therapy-image-move"><span className="field-label">Mover para</span><select aria-label={`Mover ${image.title} para uma pasta`} value={image.folder_id ?? ''} disabled={saving} onChange={(event) => void updateImage(image, { folder_id: event.target.value || null })}><option value="">Sem pasta</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>
               {deleteImageId === image.id ? <><button className="button button-secondary" type="button" disabled={saving} onClick={() => void deleteImage(image)}><Trash2 size={15} /> Confirmar exclusão</button><button className="button button-secondary" type="button" onClick={() => setDeleteImageId('')}><X size={15} /> Cancelar</button></> : <button className="button button-secondary" type="button" disabled={saving} onClick={() => setDeleteImageId(image.id)}><Trash2 size={15} /> Excluir</button>}
             </>}</div>
-          </article>)}</div> : <div className="history-empty">{imageSearch ? 'Nenhuma imagem corresponde à busca.' : 'Nenhuma imagem disponível nesta pasta.'}</div>}
+          </article>)}</div> : <div className="history-empty">{imageSearch ? `Nenhuma ${view === 'album' ? 'foto' : 'imagem'} corresponde à busca.` : `Nenhuma ${view === 'album' ? 'foto' : 'imagem'} disponível nesta pasta.`}</div>}
         </div>
       </div>
+      {previewImage && view === 'album' && <div className="therapy-album-lightbox" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewImage(null) }}>
+        <section className="therapy-album-lightbox-panel" role="dialog" aria-modal="true" aria-label={`Visualização: ${previewImage.title}`}>
+          <button className="therapy-album-lightbox-close" type="button" aria-label="Fechar visualização" autoFocus onClick={() => setPreviewImage(null)}><X size={20} /></button>
+          <img className="therapy-album-lightbox-icon" src="/scpo-connect-icon.png" alt="" aria-hidden="true" />
+          <img src={previewImage.url} alt={previewImage.title} />
+          <h2>{previewImage.title}</h2>
+        </section>
+      </div>}
     </section>}
   </section>
 }

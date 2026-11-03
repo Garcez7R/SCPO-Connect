@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     select,
+    update,
 )
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -143,6 +145,50 @@ class TherapyMaterialImageFolder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class TherapyPhotoAlbumImage(Base):
+    __tablename__ = "therapy_photo_album_images"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(48), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    folder_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey(
+            "therapy_photo_album_folders.id",
+            name="fk_therapy_photo_album_images_folder_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+
+
+class TherapyPhotoAlbumFolder(Base):
+    __tablename__ = "therapy_photo_album_folders"
+    __table_args__ = (UniqueConstraint("name", name="uq_therapy_photo_album_folders_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TherapyMediaSettings(Base):
+    __tablename__ = "therapy_media_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    library_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    album_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    library_quota_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    album_quota_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_by_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    updated_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 def get_therapy_db():
     yield from database_session("nursing")
 
@@ -182,6 +228,14 @@ class TherapyMaterialImageFolderPayload(BaseModel):
         ) or any(ord(character) < 32 for character in name):
             raise ValueError("Informe um nome de pasta válido, sem separadores de caminho")
         return name
+
+
+class TherapyMediaSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    library_enabled: bool | None = None
+    album_enabled: bool | None = None
+    library_quota_bytes: int | None = Field(default=None, ge=1, le=9_223_372_036_854_775_807)
+    album_quota_bytes: int | None = Field(default=None, ge=1, le=9_223_372_036_854_775_807)
 
 
 class TherapyMaterialImageUpdatePayload(BaseModel):
@@ -259,6 +313,98 @@ def therapy_materials_directory() -> Path:
     return _validate_therapy_storage_directory(_configured_therapy_storage_directory())
 
 
+def therapy_photo_album_directory() -> Path:
+    root = _therapy_materials_root()
+    directory = root / "photo-album"
+    if directory.is_symlink() or not directory.resolve().is_relative_to(root):
+        raise RuntimeError("O diretório do álbum não está dentro do volume de imagens")
+    if therapy_materials_directory() == directory:
+        raise HTTPException(
+            status_code=503,
+            detail="O local configurado para a Biblioteca conflita com o Álbum; escolha outra subpasta da Biblioteca",
+        )
+    return directory
+
+
+def _therapy_media_settings(db: Session) -> TherapyMediaSettings:
+    settings = db.get(TherapyMediaSettings, 1)
+    if settings is None:
+        raise HTTPException(status_code=503, detail="Configurações da Biblioteca e do Álbum não foram inicializadas")
+    return settings
+
+
+def _therapy_media_settings_response(db: Session) -> dict[str, object]:
+    settings = _therapy_media_settings(db)
+    library_used = db.scalar(
+        select(func.coalesce(func.sum(TherapyMaterialImage.size_bytes), 0))
+    ) or 0
+    album_used = db.scalar(
+        select(func.coalesce(func.sum(TherapyPhotoAlbumImage.size_bytes), 0))
+    ) or 0
+    return {
+        "library": {
+            "enabled": settings.library_enabled,
+            "quota_bytes": settings.library_quota_bytes,
+            "used_bytes": library_used,
+        },
+        "album": {
+            "enabled": settings.album_enabled,
+            "quota_bytes": settings.album_quota_bytes,
+            "used_bytes": album_used,
+        },
+        "updated_at": settings.updated_at.isoformat(),
+        "updated_by_name": settings.updated_by_name,
+    }
+
+
+def _ensure_therapy_media_enabled(db: Session, collection: Literal["library", "album"]) -> None:
+    settings = _therapy_media_settings(db)
+    if not getattr(settings, f"{collection}_enabled"):
+        raise HTTPException(status_code=404, detail="Este recurso foi desativado pelo Superadministrador")
+
+
+def _lock_therapy_media_settings(db: Session) -> TherapyMediaSettings:
+    db.execute(
+        update(TherapyMediaSettings)
+        .where(TherapyMediaSettings.id == 1)
+        .values(updated_at=TherapyMediaSettings.updated_at)
+    )
+    settings = db.scalar(
+        select(TherapyMediaSettings)
+        .where(TherapyMediaSettings.id == 1)
+        .with_for_update()
+    )
+    if settings is None:
+        raise HTTPException(status_code=503, detail="Configurações de armazenamento indisponíveis")
+    return settings
+
+
+def _assert_therapy_media_quota(
+    db: Session,
+    collection: Literal["library", "album"],
+    incoming_bytes: int,
+) -> None:
+    models = {
+        "library": TherapyMaterialImage,
+        "album": TherapyPhotoAlbumImage,
+    }
+    image_model = models[collection]
+    used_bytes = db.scalar(
+        select(func.coalesce(func.sum(image_model.size_bytes), 0))
+    ) or 0
+    quota_bytes = getattr(_therapy_media_settings(db), f"{collection}_quota_bytes")
+    if quota_bytes is not None and used_bytes + incoming_bytes > quota_bytes:
+        remaining_bytes = max(0, quota_bytes - used_bytes)
+        resource_name = "do Álbum" if collection == "album" else "da Biblioteca de imagens"
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"A cota {resource_name} foi atingida. "
+                f"Espaço disponível: {remaining_bytes} bytes. Exclua imagens ou solicite ajuste ao Superadministrador."
+            ),
+        )
+
+
 def _save_therapy_storage_directory(directory: str) -> None:
     root = _therapy_materials_root()
     root.mkdir(parents=True, exist_ok=True)
@@ -324,6 +470,8 @@ def set_therapy_storage_location(
         destination = _validate_therapy_storage_directory(payload.directory)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if payload.directory and PurePosixPath(payload.directory).parts[0] == "photo-album":
+        raise HTTPException(status_code=422, detail="A subpasta photo-album é reservada ao Álbum terapêutico")
 
     with THERAPY_STORAGE_LOCK:
         source = therapy_materials_directory()
@@ -385,6 +533,39 @@ def set_therapy_storage_location(
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise HTTPException(status_code=503, detail="Não foi possível alterar o local da biblioteca") from exc
     return _therapy_storage_status(db)
+
+
+@app.get("/api/v1/therapy/media-settings")
+def get_therapy_media_settings(
+    _: Annotated[DemoPrincipal, Depends(authenticated_principal)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    return _therapy_media_settings_response(db)
+
+
+@app.patch("/api/v1/therapy/media-settings")
+def update_therapy_media_settings(
+    payload: TherapyMediaSettingsPayload,
+    principal: Annotated[DemoPrincipal, Depends(authenticated_principal)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    if not principal.is_superuser:
+        raise HTTPException(status_code=403, detail="Apenas o Superadministrador pode configurar a Biblioteca e o Álbum")
+    settings = _therapy_media_settings(db)
+    if not payload.model_fields_set:
+        return _therapy_media_settings_response(db)
+    if ("library_enabled" in payload.model_fields_set and payload.library_enabled is None) or (
+        "album_enabled" in payload.model_fields_set and payload.album_enabled is None
+    ):
+        raise HTTPException(status_code=422, detail="Informe se o recurso deve ficar ativado ou desativado")
+    for field in payload.model_fields_set:
+        setattr(settings, field, getattr(payload, field))
+    settings.updated_at = datetime.now(UTC)
+    settings.updated_by_id = principal.user_id
+    settings.updated_by_name = principal.actor_name[:120]
+    emit_audit_event(principal, "therapy", "therapy_media_settings_updated", "therapy_media_settings", db=db)
+    db.commit()
+    return _therapy_media_settings_response(db)
 
 
 def valid_material_image(content_type: str, content: bytes) -> bool:
@@ -709,6 +890,7 @@ def list_therapy_material_images(
     principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_therapy_db)],
 ) -> dict[str, list[dict[str, object]]]:
+    _ensure_therapy_media_enabled(db, "library")
     images = db.scalars(
         select(TherapyMaterialImage).order_by(TherapyMaterialImage.title, TherapyMaterialImage.uploaded_at.desc())
     ).all()
@@ -747,6 +929,7 @@ def create_therapy_material_image_folder(
     principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
     db: Annotated[Session, Depends(get_therapy_db)],
 ) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "library")
     folder_name = payload.name.casefold()
     existing_folders = db.scalars(select(TherapyMaterialImageFolder)).all()
     if any(folder.name.casefold() == folder_name for folder in existing_folders):
@@ -771,6 +954,7 @@ def rename_therapy_material_image_folder(
     principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
     db: Annotated[Session, Depends(get_therapy_db)],
 ) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "library")
     folder = db.get(TherapyMaterialImageFolder, folder_id)
     if folder is None:
         raise HTTPException(status_code=404, detail="Pasta não encontrada")
@@ -793,6 +977,7 @@ def delete_therapy_material_image_folder(
     principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
     db: Annotated[Session, Depends(get_therapy_db)],
 ) -> Response:
+    _ensure_therapy_media_enabled(db, "library")
     folder = db.get(TherapyMaterialImageFolder, folder_id)
     if folder is None:
         raise HTTPException(status_code=404, detail="Pasta não encontrada")
@@ -816,6 +1001,7 @@ def update_therapy_material_image(
     principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
     db: Annotated[Session, Depends(get_therapy_db)],
 ) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "library")
     image = db.get(TherapyMaterialImage, image_id)
     if image is None:
         raise HTTPException(status_code=404, detail="Imagem não encontrada")
@@ -840,6 +1026,7 @@ async def upload_therapy_material_image(
     db: Annotated[Session, Depends(get_therapy_db)],
     folder_id: str | None = None,
 ) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "library")
     title = title.strip()
     if len(title) < 2:
         raise HTTPException(status_code=422, detail="Informe um título com pelo menos 2 caracteres")
@@ -870,6 +1057,8 @@ async def upload_therapy_material_image(
     )
     try:
         with THERAPY_STORAGE_LOCK:
+            _lock_therapy_media_settings(db)
+            _assert_therapy_media_quota(db, "library", len(content))
             image_path = therapy_materials_directory() / filename
             image_path.parent.mkdir(parents=True, exist_ok=True)
             image_path.write_bytes(content)
@@ -894,6 +1083,7 @@ def get_therapy_material_image(
     principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
     db: Annotated[Session, Depends(get_therapy_db)],
 ) -> Response:
+    _ensure_therapy_media_enabled(db, "library")
     if not re.fullmatch(r"[a-f0-9]{32}\.(?:jpg|png|webp)", filename):
         raise HTTPException(status_code=404, detail="Imagem não encontrada")
     image = db.scalar(select(TherapyMaterialImage).where(TherapyMaterialImage.filename == filename))
@@ -922,6 +1112,7 @@ def delete_therapy_material_image(
     principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
     db: Annotated[Session, Depends(get_therapy_db)],
 ) -> Response:
+    _ensure_therapy_media_enabled(db, "library")
     image = db.get(TherapyMaterialImage, image_id)
     if image is None:
         raise HTTPException(status_code=404, detail="Imagem não encontrada")
@@ -941,6 +1132,281 @@ def delete_therapy_material_image(
                 image_path.write_bytes(content)
             except OSError as restore_error:
                 raise RuntimeError("A exclusão falhou e não foi possível restaurar a imagem; contate o suporte.") from restore_error
+            raise
+    return Response(status_code=204)
+
+
+def serialize_therapy_photo_album_image(
+    image: TherapyPhotoAlbumImage,
+    folder: TherapyPhotoAlbumFolder | None = None,
+) -> dict[str, object]:
+    return {
+        "id": image.id,
+        "filename": image.filename,
+        "title": image.title,
+        "content_type": image.content_type,
+        "size_bytes": image.size_bytes,
+        "uploaded_by": image.uploaded_by,
+        "uploaded_at": image.uploaded_at.isoformat(),
+        "folder_id": image.folder_id,
+        "folder_name": folder.name if folder else "",
+        "url": f"/api/v1/therapy/photo-album/{image.filename}",
+    }
+
+
+def serialize_therapy_photo_album_folder(
+    folder: TherapyPhotoAlbumFolder,
+    db: Session,
+) -> dict[str, object]:
+    image_count = db.scalar(
+        select(func.count()).select_from(TherapyPhotoAlbumImage).where(
+            TherapyPhotoAlbumImage.folder_id == folder.id
+        )
+    ) or 0
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "image_count": image_count,
+        "created_by": folder.created_by,
+        "created_at": folder.created_at.isoformat(),
+    }
+
+
+@app.get("/api/v1/therapy/photo-album")
+def list_therapy_photo_album(
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, list[dict[str, object]]]:
+    _ensure_therapy_media_enabled(db, "album")
+    images = db.scalars(
+        select(TherapyPhotoAlbumImage).order_by(
+            TherapyPhotoAlbumImage.title,
+            TherapyPhotoAlbumImage.uploaded_at.desc(),
+        )
+    ).all()
+    folders = db.scalars(
+        select(TherapyPhotoAlbumFolder).order_by(TherapyPhotoAlbumFolder.name)
+    ).all()
+    folders_by_id = {folder.id: folder for folder in folders}
+    emit_audit_event(principal, "therapy", "therapy_photo_album_read", "therapy_photo_album")
+    return {
+        "images": [
+            serialize_therapy_photo_album_image(image, folders_by_id.get(image.folder_id or ""))
+            for image in images
+        ],
+        "folders": [serialize_therapy_photo_album_folder(folder, db) for folder in folders],
+    }
+
+
+@app.post("/api/v1/therapy/photo-album/folders", status_code=201)
+def create_therapy_photo_album_folder(
+    payload: TherapyMaterialImageFolderPayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "album")
+    folder_name = payload.name.casefold()
+    existing_folders = db.scalars(select(TherapyPhotoAlbumFolder)).all()
+    if any(folder.name.casefold() == folder_name for folder in existing_folders):
+        raise HTTPException(status_code=409, detail="Já existe uma pasta com esse nome no álbum")
+    folder = TherapyPhotoAlbumFolder(
+        id=str(uuid.uuid4()),
+        name=payload.name,
+        created_by=principal.actor_name,
+        created_at=datetime.now(UTC),
+    )
+    db.add(folder)
+    emit_audit_event(principal, "therapy", "therapy_photo_album_folder_created", folder.id, db=db)
+    db.commit()
+    db.refresh(folder)
+    return serialize_therapy_photo_album_folder(folder, db)
+
+
+@app.patch("/api/v1/therapy/photo-album/folders/{folder_id}")
+def rename_therapy_photo_album_folder(
+    folder_id: str,
+    payload: TherapyMaterialImageFolderPayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "album")
+    folder = db.get(TherapyPhotoAlbumFolder, folder_id)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Pasta do álbum não encontrada")
+    folder_name = payload.name.casefold()
+    duplicates = db.scalars(
+        select(TherapyPhotoAlbumFolder).where(TherapyPhotoAlbumFolder.id != folder_id)
+    ).all()
+    if any(item.name.casefold() == folder_name for item in duplicates):
+        raise HTTPException(status_code=409, detail="Já existe uma pasta com esse nome no álbum")
+    folder.name = payload.name
+    emit_audit_event(principal, "therapy", "therapy_photo_album_folder_renamed", folder.id, db=db)
+    db.commit()
+    db.refresh(folder)
+    return serialize_therapy_photo_album_folder(folder, db)
+
+
+@app.delete("/api/v1/therapy/photo-album/folders/{folder_id}", status_code=204)
+def delete_therapy_photo_album_folder(
+    folder_id: str,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> Response:
+    _ensure_therapy_media_enabled(db, "album")
+    folder = db.get(TherapyPhotoAlbumFolder, folder_id)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Pasta do álbum não encontrada")
+    image_count = db.scalar(
+        select(func.count()).select_from(TherapyPhotoAlbumImage).where(
+            TherapyPhotoAlbumImage.folder_id == folder.id
+        )
+    ) or 0
+    if image_count:
+        raise HTTPException(status_code=409, detail="Mova ou exclua as fotos antes de excluir a pasta")
+    emit_audit_event(principal, "therapy", "therapy_photo_album_folder_deleted", folder.id, db=db)
+    db.delete(folder)
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.patch("/api/v1/therapy/photo-album/{image_id}")
+def update_therapy_photo_album_image(
+    image_id: str,
+    payload: TherapyMaterialImageUpdatePayload,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "album")
+    image = db.get(TherapyPhotoAlbumImage, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Foto não encontrada")
+    if "title" in payload.model_fields_set and payload.title is not None:
+        image.title = payload.title
+    if "folder_id" in payload.model_fields_set:
+        if payload.folder_id is not None and db.get(TherapyPhotoAlbumFolder, payload.folder_id) is None:
+            raise HTTPException(status_code=404, detail="Pasta do álbum não encontrada")
+        image.folder_id = payload.folder_id
+    emit_audit_event(principal, "therapy", "therapy_photo_album_image_updated", image.id, db=db)
+    db.commit()
+    db.refresh(image)
+    folder = db.get(TherapyPhotoAlbumFolder, image.folder_id) if image.folder_id else None
+    return serialize_therapy_photo_album_image(image, folder)
+
+
+@app.post("/api/v1/therapy/photo-album", status_code=201)
+async def upload_therapy_photo_album_image(
+    request: Request,
+    title: Annotated[str, Query(min_length=2, max_length=120)],
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+    folder_id: str | None = None,
+) -> dict[str, object]:
+    _ensure_therapy_media_enabled(db, "album")
+    title = title.strip()
+    if len(title) < 2:
+        raise HTTPException(status_code=422, detail="Informe um título com pelo menos 2 caracteres")
+    content_type = request.headers.get("content-type", "").split(";", maxsplit=1)[0].strip().lower()
+    extension = MATERIAL_IMAGE_TYPES.get(content_type)
+    if extension is None:
+        raise HTTPException(status_code=415, detail="Formato não aceito. Envie JPG, PNG ou WebP.")
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > MATERIAL_IMAGE_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Cada foto deve ter no máximo 12 MB.")
+    if not valid_material_image(content_type, content):
+        raise HTTPException(status_code=422, detail="O arquivo não corresponde a uma imagem válida do formato informado.")
+    if folder_id is not None and db.get(TherapyPhotoAlbumFolder, folder_id) is None:
+        raise HTTPException(status_code=404, detail="Pasta do álbum não encontrada")
+    filename = f"{uuid.uuid4().hex}{extension}"
+    image_path: Path | None = None
+    image = TherapyPhotoAlbumImage(
+        id=str(uuid.uuid4()),
+        filename=filename,
+        title=title,
+        content_type=content_type,
+        size_bytes=len(content),
+        uploaded_by=principal.actor_name,
+        uploaded_at=datetime.now(UTC),
+        folder_id=folder_id,
+    )
+    try:
+        with THERAPY_STORAGE_LOCK:
+            _lock_therapy_media_settings(db)
+            _assert_therapy_media_quota(db, "album", len(content))
+            image_path = therapy_photo_album_directory() / filename
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(content)
+            db.add(image)
+            emit_audit_event(principal, "therapy", "therapy_photo_album_image_uploaded", image.id, db=db)
+            db.commit()
+    except Exception:
+        db.rollback()
+        if image_path is not None:
+            try:
+                image_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                raise RuntimeError("Não foi possível finalizar ou limpar o envio da foto.") from cleanup_error
+        raise
+    folder = db.get(TherapyPhotoAlbumFolder, image.folder_id) if image.folder_id else None
+    return serialize_therapy_photo_album_image(image, folder)
+
+
+@app.get("/api/v1/therapy/photo-album/{filename}")
+def get_therapy_photo_album_image(
+    filename: str,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_REPORT_ACCESS)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> Response:
+    _ensure_therapy_media_enabled(db, "album")
+    if not re.fullmatch(r"[a-f0-9]{32}\.(?:jpg|png|webp)", filename):
+        raise HTTPException(status_code=404, detail="Foto não encontrada")
+    image = db.scalar(select(TherapyPhotoAlbumImage).where(TherapyPhotoAlbumImage.filename == filename))
+    if image is None:
+        raise HTTPException(status_code=404, detail="Foto não encontrada")
+    with THERAPY_STORAGE_LOCK:
+        image_path = therapy_photo_album_directory() / filename
+        if not image_path.is_file():
+            raise HTTPException(status_code=500, detail="Arquivo do álbum não está disponível no armazenamento")
+        content = image_path.read_bytes()
+    emit_audit_event(principal, "therapy", "therapy_photo_album_image_downloaded", image.id)
+    return Response(
+        content,
+        media_type=image.content_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="{image.id}{image_path.suffix}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.delete("/api/v1/therapy/photo-album/{image_id}", status_code=204)
+def delete_therapy_photo_album_image(
+    image_id: str,
+    principal: Annotated[DemoPrincipal, Depends(THERAPY_ROLE)],
+    db: Annotated[Session, Depends(get_therapy_db)],
+) -> Response:
+    _ensure_therapy_media_enabled(db, "album")
+    image = db.get(TherapyPhotoAlbumImage, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Foto não encontrada")
+    with THERAPY_STORAGE_LOCK:
+        image_path = therapy_photo_album_directory() / image.filename
+        if not image_path.is_file():
+            raise HTTPException(status_code=500, detail="Arquivo do álbum não está disponível no armazenamento")
+        content = image_path.read_bytes()
+        image_path.unlink()
+        db.delete(image)
+        try:
+            emit_audit_event(principal, "therapy", "therapy_photo_album_image_deleted", image.id, db=db)
+            db.commit()
+        except Exception:
+            db.rollback()
+            try:
+                image_path.write_bytes(content)
+            except OSError as restore_error:
+                raise RuntimeError("A exclusão falhou e não foi possível restaurar a foto; contate o suporte.") from restore_error
             raise
     return Response(status_code=204)
 

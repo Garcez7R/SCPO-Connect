@@ -357,6 +357,149 @@ def test_therapy_material_image_upload_and_delete_use_configured_storage(
     assert therapy.list_therapy_material_images(therapist, therapy_database)["images"] == []
 
 
+def test_therapy_album_upload_is_independent_and_enforces_its_quota(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    album_directory = tmp_path / "therapy-volume" / "photo-album"
+    monkeypatch.setattr(therapy, "therapy_photo_album_directory", lambda: album_directory)
+    therapist = DemoPrincipal(
+        "therapist-id",
+        "therapist",
+        "Profissional da oficina",
+        "therapy",
+        ["therapy"],
+        {"therapy": ["consultar", "criar", "alterar"]},
+    )
+    superadmin = DemoPrincipal(
+        "root-id",
+        "root",
+        "Superadministrador",
+        "system_admin",
+        ["admin"],
+        {"admin": ["administrar"]},
+        is_superuser=True,
+    )
+    album_folder = therapy.create_therapy_photo_album_folder(
+        therapy.TherapyMaterialImageFolderPayload(name="Pinturas"),
+        therapist,
+        therapy_database,
+    )
+    library_folder = therapy.create_therapy_material_image_folder(
+        therapy.TherapyMaterialImageFolderPayload(name="Pinturas"),
+        therapist,
+        therapy_database,
+    )
+    assert album_folder["id"] != library_folder["id"]
+
+    image_bytes = b"\x89PNG\r\n\x1a\n" + b"album-photo-content"
+
+    def create_upload_request() -> Request:
+        request_sent = False
+
+        async def receive():
+            nonlocal request_sent
+            if request_sent:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            request_sent = True
+            return {"type": "http.request", "body": image_bytes, "more_body": False}
+
+        return Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "headers": [(b"content-type", b"image/png")],
+                "path": "/api/v1/therapy/photo-album",
+                "query_string": b"title=Foto+da+oficina",
+                "server": ("testserver", 80),
+                "client": ("testclient", 50000),
+                "scheme": "http",
+            },
+            receive,
+        )
+
+    uploaded = asyncio.run(
+        therapy.upload_therapy_photo_album_image(
+            create_upload_request(),
+            "Foto da oficina",
+            therapist,
+            therapy_database,
+            album_folder["id"],
+        )
+    )
+    image_path = album_directory / uploaded["filename"]
+    assert image_path.read_bytes() == image_bytes
+    assert therapy.list_therapy_photo_album(therapist, therapy_database)["images"][0]["folder_name"] == "Pinturas"
+    assert therapy.list_therapy_material_images(therapist, therapy_database)["images"] == []
+
+    updated = therapy.update_therapy_media_settings(
+        therapy.TherapyMediaSettingsPayload(album_quota_bytes=len(image_bytes) - 1),
+        superadmin,
+        therapy_database,
+    )
+    assert updated["album"]["used_bytes"] == len(image_bytes)
+    assert updated["album"]["quota_bytes"] == len(image_bytes) - 1
+    assert image_path.exists()
+    with pytest.raises(HTTPException) as quota_exceeded:
+        asyncio.run(
+            therapy.upload_therapy_photo_album_image(
+                create_upload_request(),
+                "Outra foto",
+                therapist,
+                therapy_database,
+            )
+        )
+    assert quota_exceeded.value.status_code == 413
+    assert therapy.list_therapy_photo_album(therapist, therapy_database)["images"][0]["id"] == uploaded["id"]
+
+
+def test_therapy_media_settings_require_superadmin_and_disable_access(
+    therapy_database: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(therapy, "emit_audit_event", lambda *args, **kwargs: None)
+    therapist = DemoPrincipal(
+        "therapist-id",
+        "therapist",
+        "Profissional da oficina",
+        "therapy",
+        ["therapy"],
+        {"therapy": ["consultar"]},
+    )
+    superadmin = DemoPrincipal(
+        "root-id",
+        "root",
+        "Superadministrador",
+        "system_admin",
+        ["admin"],
+        {"admin": ["administrar"]},
+        is_superuser=True,
+    )
+    with pytest.raises(HTTPException) as unauthorized:
+        therapy.update_therapy_media_settings(
+            therapy.TherapyMediaSettingsPayload(album_enabled=False),
+            therapist,
+            therapy_database,
+        )
+    assert unauthorized.value.status_code == 403
+
+    initial = therapy.get_therapy_media_settings(therapist, therapy_database)
+    assert initial["library"]["enabled"] is True
+    assert initial["album"]["enabled"] is True
+    assert initial["library"]["quota_bytes"] is None
+    assert initial["album"]["quota_bytes"] is None
+
+    updated = therapy.update_therapy_media_settings(
+        therapy.TherapyMediaSettingsPayload(album_enabled=False),
+        superadmin,
+        therapy_database,
+    )
+    assert updated["album"]["enabled"] is False
+    with pytest.raises(HTTPException) as disabled:
+        therapy.list_therapy_photo_album(therapist, therapy_database)
+    assert disabled.value.status_code == 404
+    assert therapy.list_therapy_material_images(therapist, therapy_database)["images"] == []
+
+
 def test_superadmin_can_change_image_storage_and_existing_files_are_moved(
     therapy_database: Session,
     monkeypatch: pytest.MonkeyPatch,

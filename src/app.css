@@ -1573,6 +1573,23 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-image-move select { min-height: 34px; padding: 5px 7px; font-size: 11px; }
 .therapy-image-rename { display: grid; gap: 7px; }
 .therapy-image-rename .button { width: fit-content; }
+.therapy-media-resource-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.therapy-media-resource { display: grid; align-content: start; gap: 11px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.therapy-media-resource .system-module-control { margin: 0; }
+.therapy-media-resource .system-module-control strong { display: flex; align-items: center; gap: 7px; }
+.therapy-media-usage { margin: 0; color: var(--muted); font-size: 11px; }
+.therapy-media-usage strong { color: var(--ink); }
+.therapy-media-quota-warning { margin: 0; padding: 8px 10px; border: 1px solid var(--status-warning-border); border-radius: 6px; background: var(--status-warning-background); color: var(--status-warning-ink); font-size: 11px; line-height: 1.45; }
+.therapy-media-quota-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
+.therapy-media-quota-form .field { min-width: 0; }
+.therapy-album-preview-button { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.therapy-album-preview-button img { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--surface); object-fit: contain; }
+.therapy-album-lightbox { position: fixed; z-index: 30100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(15 28 38 / 82%); }
+.therapy-album-lightbox-panel { position: relative; display: grid; width: min(100%, 1100px); max-height: 92dvh; justify-items: center; gap: 10px; overflow: auto; padding: 16px; border-radius: 10px; background: #fff; color: #18324a; }
+.therapy-album-lightbox-panel > img:not(.therapy-album-lightbox-icon) { display: block; max-width: 100%; max-height: calc(92dvh - 90px); object-fit: contain; }
+.therapy-album-lightbox-icon { width: 40px; height: 40px; object-fit: contain; }
+.therapy-album-lightbox-panel > h2 { margin: 0; font-size: 15px; text-align: center; }
+.therapy-album-lightbox-close { position: absolute; z-index: 1; top: 8px; right: 8px; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid #d8e1e8; border-radius: 50%; background: #fff; color: #18324a; cursor: pointer; }
 html[data-theme="dark"] .therapy-material-card,
 html[data-theme="dark"] .therapy-image-card,
 html[data-theme="dark"] .therapy-image-sidebar { background: var(--surface); }
@@ -1601,6 +1618,7 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
   .therapy-material-form, .therapy-material-section { gap: 13px; padding: 15px; }
   .therapy-material-fields, .therapy-material-list, .therapy-image-grid { grid-template-columns: 1fr; }
   .therapy-material-edit, .therapy-image-upload { grid-template-columns: 1fr; }
+  .therapy-media-quota-form { grid-template-columns: 1fr; }
   .therapy-image-manager { grid-template-columns: minmax(0, 1fr); }
   .therapy-image-sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
   .therapy-image-browser { padding: 13px; }
@@ -3313,6 +3331,9 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
 
 .app-dialog-backdrop { position: fixed; z-index: 30000; inset: 0; display: grid; place-items: center; padding: 16px; background: rgb(15 28 38 / 58%); }
 .app-dialog { display: grid; width: min(520px, calc(100vw - 32px)); max-height: min(90dvh, 700px); gap: 16px; overflow: auto; padding: 24px; border: 1px solid #d8e1e8; border-radius: 12px; background: #fff; box-shadow: 0 24px 80px rgb(0 0 0 / 28%); color: #18324a; color-scheme: light; }
+.app-dialog-heading { display: flex; align-items: center; gap: 12px; }
+.app-dialog-heading > img { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 9px; background: #fff; object-fit: contain; }
+.app-dialog-heading .eyebrow { margin: 0 0 3px; }
 .app-dialog h2,.app-dialog p { margin: 0; }
 .app-dialog h2 { font-size: 20px; }
 .app-dialog > p { line-height: 1.55; }
