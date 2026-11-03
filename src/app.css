@@ -3389,3 +3389,64 @@ html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-deta
   .backup-restore-form .field:first-child { grid-column: auto; }
   .backup-restore-form .button { width: 100%; justify-content: center; }
 }
+
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary):has(> article:nth-child(5):last-child) {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.hygiene-summary.maintenance-report-summary:has(> article:nth-child(6):last-child) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.executive-summary-grid:has(> article:nth-child(5):last-child) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .executive-summary-grid):has(> article:nth-child(5):last-child) > article {
+  grid-column: auto;
+  justify-self: stretch;
+  width: auto;
+}
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary, .executive-summary-grid):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] {
+  min-height: 104px;
+  padding: 18px;
+  border-radius: 12px;
+  border-left-width: 5px;
+  box-shadow: 0 6px 18px rgb(18 36 50 / 10%);
+}
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > strong {
+  font-size: clamp(22px, 1.6vw, 26px);
+}
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > span {
+  font-size: 12px;
+  line-height: 1.45;
+}
+.executive-summary-grid:has(> article[class*="status-tone-"]) > article[class*="status-tone-"] {
+  min-height: 132px;
+  align-content: start;
+  gap: 9px;
+}
+.executive-summary-grid:has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+.executive-summary-grid:has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > span {
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 960px) {
+  :is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary):has(> article:nth-child(5):last-child) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  :is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary):has(> article:nth-child(5):last-child),
+  .hygiene-summary.maintenance-report-summary:has(> article:nth-child(6):last-child),
+  .executive-summary-grid:has(> article:nth-child(5):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  :is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary):has(> article:nth-child(5):last-child),
+  .hygiene-summary.maintenance-report-summary:has(> article:nth-child(6):last-child),
+  .executive-summary-grid:has(> article:nth-child(5):last-child) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
