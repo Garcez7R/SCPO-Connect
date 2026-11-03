@@ -151,7 +151,7 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Adicionado registro de atividade somente após interação autenticada explícita, limitado a no máximo um registro por minuto. Não se registram rotas, endereços IP nem conteúdo clínico; não há heartbeat em segundo plano que prolongue artificialmente a atividade.
 - O Superadministrador consulta, com auditoria, as contas ativas na janela móvel de cinco minutos. A nova tabela usa a migração `0063_user_activity`, posterior a `0062_therapy_album`, com índice para a consulta; nenhuma migração foi executada em servidor ou dados reais.
 - README e ajuda interna foram revisados. Validações sequenciais passaram: `backend/tests/test_domain_services.py` (72), `backend/tests/test_migrations.py` (25), `backend/tests/test_therapy_reports.py` (13), Ruff, `npm run typecheck`, `npm run lint`, `npm run build` e `git diff --check`.
-- As alterações continuam locais e ainda precisam de revisão do conjunto de arquivos antes de commit/push.
+- Fase publicada em `b8199d6` (`feat: track recent authenticated activity`) e enviada para `origin/main`.
 
 ### Pendente — ordem sugerida
 
