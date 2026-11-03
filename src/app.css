@@ -297,6 +297,9 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .backup-automatic-status > p.audit-integrity-valid { border-color: var(--status-success-border); background: var(--status-success-background); }
 .backup-automatic-status > p.audit-integrity-invalid { border-color: var(--status-warning-border); background: var(--status-warning-background); }
 .backup-automatic-status > p > code { overflow-wrap: anywhere; }
+.backup-fingerprint-value { display: grid; min-width: 0; gap: 5px; }
+.backup-fingerprint-value > span { color: var(--muted); font-size: 11px; font-weight: 600; }
+.backup-fingerprint-value > code { display: block; min-width: 0; overflow-wrap: anywhere; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 12px; letter-spacing: .04em; line-height: 1.55; }
 .backup-generated-key-panel { display: grid; gap: 10px; margin-block: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .backup-generated-key-panel .section-heading { margin: 0; }
 .backup-generated-key-panel h4 { margin: 2px 0 0; color: var(--ink); font-size: 15px; }
@@ -308,6 +311,8 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .backup-restore-form > .field { align-self: start; }
 .backup-generated-key-panel .backup-generated-key-form > .button { justify-self: start; }
 .backup-automatic-config-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.backup-automatic-config-form > .backup-fingerprint-field { grid-column: 1 / -1; }
+.backup-fingerprint-field input { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; letter-spacing: .06em; }
 .backup-automatic-config-form > .button { grid-column: 1 / -1; justify-self: start; align-self: start; }
 .backup-weekday-field { min-width: 0; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; }
 .backup-weekday-options { display: flex; flex-wrap: wrap; gap: 10px 16px; }

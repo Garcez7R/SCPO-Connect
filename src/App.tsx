@@ -5533,7 +5533,7 @@ function BackupExportPanel() {
         </p>
         {!automaticStatus.base_volume_available && <ToastMessage variant="error">O volume-base não está acessível ou não permite gravação ao serviço de backup.</ToastMessage>}
         {automaticStatus.configured && !automaticStatus.destination_available && <ToastMessage variant="error">A subpasta configurada não está acessível para gravação.</ToastMessage>}
-        {automaticStatus.recipient_fingerprint && <p className="field-hint">Impressão digital GPG: <code>{automaticStatus.recipient_fingerprint}</code></p>}
+        {automaticStatus.recipient_fingerprint && <div className="backup-fingerprint-value"><span>Impressão digital GPG</span><code>{automaticStatus.recipient_fingerprint}</code></div>}
         {automaticStatus.last_success_at && <p>Último backup concluído: {dateTime(automaticStatus.last_success_at)}{automaticStatus.last_backup_name ? ` · ${automaticStatus.last_backup_name}` : ''}</p>}
         {automaticStatus.last_error && <ToastMessage variant="error">{automaticStatus.last_error}</ToastMessage>}
         {automaticStatus.low_space_warning && <ToastMessage variant="error">O volume-base está com menos de 10% de espaço livre. Backups com mais de 30 dias são removidos; os mais recentes não são apagados para liberar espaço.</ToastMessage>}
@@ -5546,7 +5546,7 @@ function BackupExportPanel() {
       </div>}
       {automaticStatus?.private_key_configured ? <section className="backup-generated-key-panel">
         <div className="section-heading"><div><p className="eyebrow">CHAVE PRIVADA GPG</p><h4>Chave gerada no servidor</h4><p className="welcome-copy">A chave permanece protegida por senha no volume do backup. Não redefina a senha: sem ela, os backups cifrados não poderão ser restaurados.</p></div></div>
-        <p className="field-hint">Impressão digital da chave privada: <code>{automaticStatus.private_key_fingerprint}</code></p>
+        <div className="backup-fingerprint-value"><span>Impressão digital da chave privada</span><code>{automaticStatus.private_key_fingerprint}</code></div>
         <form className="backup-export-form" onSubmit={(event) => void exportAutomaticBackupPrivateKey(event)}>
           <label className="field"><span className="field-label">Senha da chave privada</span><input required minLength={16} maxLength={128} type="password" autoComplete="current-password" value={privateKeyExportPassphrase} onChange={(event) => setPrivateKeyExportPassphrase(event.target.value)} /><span className="field-hint">A senha não é armazenada. O arquivo baixado permanece cifrado com essa senha.</span></label>
           <button className="button button-secondary" type="submit" disabled={automaticSaving || automaticLoading || privateKeyExportPassphrase.length < 16}>{automaticSaving ? 'Preparando cópia…' : 'Baixar cópia cifrada da chave privada'}</button>
@@ -5628,7 +5628,7 @@ function BackupExportPanel() {
           <input required type="number" min="1" max="365" value={automaticSchedule.retention_count} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, retention_count: event.target.value }))} />
           <span className="field-hint">Mantém as mais recentes até esse limite; a retenção máxima preexistente de 30 dias continua aplicada.</span>
         </label>
-        <label className="field">
+        <label className="field backup-fingerprint-field">
           <span className="field-label">Confirme a impressão digital fornecida pela TI</span>
           <input required minLength={32} maxLength={64} value={automaticFingerprintConfirmation} onChange={(event) => setAutomaticFingerprintConfirmation(event.target.value.toUpperCase())} placeholder="Impressão digital hexadecimal" autoComplete="off" />
           <span className="field-hint">Compare a impressão digital exibida acima por um canal independente antes de ativar.</span>
