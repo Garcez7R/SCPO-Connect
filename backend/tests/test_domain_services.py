@@ -86,6 +86,23 @@ def test_global_module_settings_are_seeded_enabled(domain_database: dict[str, Se
     assert settings.maintenance_mode is False
 
 
+def test_global_module_settings_tolerate_legacy_oversight_flag(
+    domain_database: dict[str, Session],
+) -> None:
+    db = domain_database["access"]
+    settings = db.get(access.SystemModuleSettings, 1)
+    assert settings is not None
+    settings.module_enabled = {**settings.module_enabled, "oversight": True}
+    db.commit()
+
+    loaded_settings = access._system_module_settings(db)
+    response = access._module_settings_response(loaded_settings)
+
+    assert response["module_enabled"] == {
+        module: True for module in sorted(access.GLOBAL_MODULES)
+    }
+
+
 def test_system_superadmin_can_update_global_module_settings(
     domain_database: dict[str, Session],
     monkeypatch: pytest.MonkeyPatch,

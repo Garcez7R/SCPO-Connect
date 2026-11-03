@@ -110,7 +110,7 @@ def _system_module_settings(db: Session) -> SystemModuleSettings:
     if settings is None:
         raise HTTPException(status_code=503, detail="Configurações globais não foram inicializadas")
     if not isinstance(settings.module_enabled, dict) or any(
-        module not in GLOBAL_MODULES or not isinstance(enabled, bool)
+        module not in MODULES or not isinstance(enabled, bool)
         for module, enabled in settings.module_enabled.items()
     ):
         raise HTTPException(status_code=503, detail="Configurações globais inválidas")
