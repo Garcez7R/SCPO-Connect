@@ -17,6 +17,8 @@ import { printLaboratoryRequest } from '../printClinicalForm'
 import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
 import ModuleTabNavigation from '../components/ModuleTabNavigation'
+import PrintSelectionPanel from '../components/PrintSelectionPanel'
+import type { PrintRow } from '../printReport'
 import ToastMessage from '../components/ToastMessage'
 
 type Patient = {
@@ -107,8 +109,12 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   const [observations, setObservations] = useState('')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'active' | 'all' | XrayStatus>('active')
+  const [reportStatus, setReportStatus] = useState<'active' | 'all' | XrayStatus>('active')
+  const [reportResultFilter, setReportResultFilter] = useState<'all' | 'with_result' | 'without_result'>('all')
+  const [queueView, setQueueView] = useState<'queue' | 'reports'>('queue')
   const [loading, setLoading] = useState(true)
   const [requestsLoadFailed, setRequestsLoadFailed] = useState(false)
+  const [patientsLoadFailed, setPatientsLoadFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [updating, setUpdating] = useState<number | null>(null)
   const [resultDrafts, setResultDrafts] = useState<Record<number, string>>({})
@@ -125,6 +131,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
     ])
     const errors: string[] = []
     setRequestsLoadFailed(requestResult.status === 'rejected')
+    setPatientsLoadFailed(patientResult.status === 'rejected')
     if (patientResult.status === 'fulfilled') setPatients(patientResult.value.patients ?? [])
     else errors.push(`Pacientes: ${patientResult.reason instanceof Error ? patientResult.reason.message : 'não foi possível carregar.'}`)
     if (requestResult.status === 'fulfilled') setRequests(requestResult.value.requests ?? [])
@@ -144,6 +151,7 @@ export default function XrayPage({ user }: { user: AuthUser }) {
       if (!active) return
       const errors: string[] = []
       setRequestsLoadFailed(requestResult.status === 'rejected')
+      setPatientsLoadFailed(patientResult.status === 'rejected')
       if (patientResult.status === 'fulfilled') setPatients(patientResult.value.patients ?? [])
       else errors.push(`Pacientes: ${patientResult.reason instanceof Error ? patientResult.reason.message : 'não foi possível carregar.'}`)
       if (requestResult.status === 'fulfilled') setRequests(requestResult.value.requests ?? [])
@@ -267,18 +275,38 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   const activeCount = sectionRequests.filter((request) => ['requested', 'scheduled', 'in_progress'].includes(request.status)).length
   const selectedPatientLabel = (patient: Patient) => `${patient.name} · ${patientLocationLabel(patient)}`
 
-  const visibleRequests = sectionRequests.filter((request) => {
-    const matchesStatus = filter === 'all' || (filter === 'active'
-      ? ['requested', 'scheduled', 'in_progress'].includes(request.status)
-      : request.status === filter)
+  const matchesRequestStatus = (request: XrayRequest, selectedFilter: typeof filter) => selectedFilter === 'all' || (selectedFilter === 'active'
+    ? ['requested', 'scheduled', 'in_progress'].includes(request.status)
+    : request.status === selectedFilter)
+  const matchesQuickSearch = (request: XrayRequest) => {
     const patient = patients.find((item) => item.reference === request.patient_reference)
-    const searchable = `${patient?.name ?? ''} ${patient?.room ?? ''} ${patient?.bed ?? ''} ${request.exam_label}`.toLocaleLowerCase('pt-BR')
-    return matchesStatus && searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
+    const searchable = `${patient?.name ?? ''} ${patient?.room ?? ''} ${patient?.bed ?? ''} ${request.exam_label} ${xrayStatuses[request.status]}`.toLocaleLowerCase('pt-BR')
+    return searchable.includes(query.trim().toLocaleLowerCase('pt-BR'))
+  }
+  const visibleRequests = sectionRequests.filter((request) => {
+    return matchesRequestStatus(request, filter) && matchesQuickSearch(request)
+  })
+  const reportRequests = sectionRequests.filter((request) => {
+    const hasResult = Boolean(request.result.trim())
+    return matchesRequestStatus(request, reportStatus)
+      && (reportResultFilter === 'all' || (reportResultFilter === 'with_result' ? hasResult : !hasResult))
   })
   const patientName = (reference: string) => {
     const patient = patients.find((item) => item.reference === reference)
     return patient ? `${patient.name} · ${patientLocationLabel(patient)}` : 'Paciente não localizado'
   }
+  const xrayPrintRows: PrintRow[] = reportRequests.map((request) => ({
+    id: String(request.id),
+    date: request.created_at,
+    title: patientName(request.patient_reference),
+    fields: [
+      ['Exame', request.exam_label],
+      ['Modalidade', xraySectionLabels[section]],
+      ['Situação', xrayStatuses[request.status]],
+      ['Resultado', request.result.trim() ? 'Registrado' : 'Pendente'],
+      ['Data do resultado', request.result_recorded_at ? dateTime(request.result_recorded_at) : 'Não informado'],
+    ],
+  }))
 
   return <section className="xray-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">MÓDULO · CENTRAL DE EXAMES</p><h1>Central de Exames</h1><p className="welcome-copy">Solicite Raio X, eletrocardiogramas e exames laboratoriais e acompanhe cada fila.</p></div><span className="module-icon module-icon-xray"><Microscope size={23} /></span></div>
@@ -295,9 +323,20 @@ export default function XrayPage({ user }: { user: AuthUser }) {
           : <><FlaskConical size={16} /> {xraySectionLabels[value]}</>,
       }))}
     />
-    <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`} aria-busy={loading}><article className="status-tone-neutral"><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
+    <ModuleTabNavigation
+      className="xray-view-tabs"
+      ariaLabel="Fila ou relatórios de exames"
+      value={queueView}
+      onChange={setQueueView}
+      options={[
+        { value: 'queue', label: 'Fila', content: <><Activity size={16} /> Fila</> },
+        { value: 'reports', label: 'Relatórios', content: <><Printer size={16} /> Relatórios</> },
+      ]}
+    />
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
+    {queueView === 'queue' && <>
+    <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`} aria-busy={loading}><article className="status-tone-neutral"><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
     <form className="hygiene-panel" onSubmit={(event) => void (section === 'laboratory' ? submitLaboratory(event) : submit(event))}>
       <div className="section-heading"><div><p className="eyebrow">{section === 'laboratory' ? 'REQUISIÇÃO LABORATORIAL' : 'NOVO EXAME'}</p><h2>{section === 'laboratory' ? 'Solicitar exames' : `Adicionar à fila de ${xraySectionLabels[section]}`}</h2></div></div>
       <div className="field-grid field-grid-two">
@@ -322,7 +361,10 @@ export default function XrayPage({ user }: { user: AuthUser }) {
           ...Object.entries(xrayStatuses),
         ] as [typeof filter, string][]).map(([value, label]) => <button className={`button ${filter === value ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={filter === value} key={value} onClick={() => setFilter(value)}>{label}{value === 'active' && <span>{activeCount}</span>}</button>)}
       </div>
-      <label className="field xray-search"><span className="field-label">Buscar por paciente, quarto, leito ou exame</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar um exame" /></span></label>
+      <div className="xray-quick-filters">
+        <label className="field xray-search"><span className="field-label">Buscar por paciente, quarto, leito, exame ou situação</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar um exame" /></span></label>
+        <button className="button button-secondary xray-clear-filters" type="button" onClick={() => { setQuery(''); setFilter('active') }} disabled={!query && filter === 'active'}>Limpar busca</button>
+      </div>
       {loading ? <div className="history-empty">Carregando fila de exames…</div> : requestsLoadFailed ? <div className="history-empty">Não foi possível carregar a fila. Use “Atualizar fila” para tentar novamente.</div> : visibleRequests.length ? <div className="xray-request-list">{visibleRequests.map((request) => <article className="xray-request-card" key={request.id}>
         <div className="xray-request-main"><div><h3>{patientName(request.patient_reference)}</h3><p>{request.exam_label}</p>{request.observations && <small>Observações: {request.observations}</small>}<time>{dateTime(request.created_at)}</time></div><span className={`work-order-status status-${request.status === 'requested' ? 'open' : request.status === 'scheduled' ? 'in_progress' : request.status === 'in_progress' ? 'in_progress' : request.status === 'completed' ? 'completed' : 'cancelled'}`}>{xrayStatuses[request.status]}</span></div>
         {request.result && <div className="xray-result"><strong>Resultado registrado</strong><p>{request.result}</p><small>{request.result_recorded_by}{request.result_recorded_at ? ` · ${dateTime(request.result_recorded_at)}` : ''}</small></div>}
@@ -330,5 +372,15 @@ export default function XrayPage({ user }: { user: AuthUser }) {
         {canUpdate && <label className="field xray-status-control"><span className="field-label">Atualizar situação</span><select value={request.status} disabled={updating === request.id || request.status === 'completed' || request.status === 'cancelled'} onChange={(event) => void updateStatus(request, event.target.value as XrayStatus)}><option value="requested">Solicitado</option><option value="scheduled">Agendado</option><option value="in_progress">Em execução</option><option value="completed">Concluído</option><option value="cancelled">Cancelado</option></select></label>}
       </article>)}</div> : <div className="history-empty"><Activity size={20} /><span>{sectionRequests.length ? 'Nenhum exame nesta fila corresponde aos filtros.' : `Nenhuma solicitação de ${xraySectionLabels[section].toLocaleLowerCase('pt-BR')} foi registrada.`}</span></div>}
     </section>
+    </>}
+    {queueView === 'reports' && <section className="patient-list-panel xray-report-panel">
+      <div className="section-heading"><div><p className="eyebrow">CONSULTA E IMPRESSÃO</p><h2>Relatório de {xraySectionLabels[section]}</h2><p className="welcome-copy">Refine a população por situação e presença de resultado; depois use o painel para período, busca, seleção e impressão.</p></div><span className="module-total">{loading || requestsLoadFailed ? '—' : reportRequests.length} registro(s)</span></div>
+      <div className="xray-report-filters">
+        <label className="field"><span className="field-label">Situação</span><select value={reportStatus} onChange={(event) => setReportStatus(event.target.value as typeof reportStatus)}><option value="active">Ativos</option><option value="all">Todos</option>{Object.entries(xrayStatuses).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label>
+        <label className="field"><span className="field-label">Resultado</span><select value={reportResultFilter} onChange={(event) => setReportResultFilter(event.target.value as typeof reportResultFilter)}><option value="all">Todos</option><option value="with_result">Resultado registrado</option><option value="without_result">Sem resultado</option></select></label>
+        <button className="button button-secondary" type="button" onClick={() => { setReportStatus('active'); setReportResultFilter('all') }} disabled={reportStatus === 'active' && reportResultFilter === 'all'}>Limpar filtros</button>
+      </div>
+      {loading ? <div className="history-empty">Carregando registros para o relatório…</div> : requestsLoadFailed || patientsLoadFailed ? <div className="history-empty">Não foi possível preparar o relatório porque a fila ou o cadastro de pacientes não foi carregado. Atualize os dados e tente novamente.</div> : xrayPrintRows.length ? <PrintSelectionPanel title={`Relatório da fila de ${xraySectionLabels[section]}`} rows={xrayPrintRows} /> : <div className="history-empty">Nenhuma solicitação corresponde aos filtros do relatório.</div>}
+    </section>}
   </section>
 }

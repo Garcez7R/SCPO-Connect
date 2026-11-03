@@ -1112,6 +1112,10 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .xray-field-wide { grid-column: 1 / -1; }
 .xray-queue-panel { display: grid; gap: 14px; }
 .xray-search { max-width: 560px; }
+.xray-quick-filters { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.xray-quick-filters .field, .xray-report-filters .field { min-width: 0; margin: 0; }
+.xray-clear-filters { justify-self: start; }
+.xray-report-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 12px; }
 .xray-request-list { display: grid; gap: 10px; }
 .xray-request-card { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .xray-request-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -1699,6 +1703,7 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
   .about-page .about-product-brand { width: 70px; height: 70px; min-width: 70px; min-height: 70px; flex-basis: 70px;   }
   @media (min-width: 521px) and (max-width: 760px) {
     .social-referral-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .xray-report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   .about-page .about-product-brand .startup-mark { width: 52px; height: 52px; }
 }
@@ -1902,6 +1907,8 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
   .management-operations-grid { grid-template-columns: 1fr; gap: 13px; }
   .system-active-user-row { grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .patient-registry-filters { grid-template-columns: 1fr; }
+  .xray-quick-filters, .xray-report-filters { grid-template-columns: 1fr; }
+  .xray-clear-filters { width: 100%; justify-content: center; }
   .hygiene-panel { gap: 13px; padding: 15px; }
   .hygiene-summary { gap: 7px; }
   .physician-triage-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
