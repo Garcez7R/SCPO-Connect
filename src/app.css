@@ -706,6 +706,7 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .system-dashboard-summary-details article { align-items: flex-start; flex-direction: column; }
 .system-dashboard-summary-details article strong { font-size: 14px; }
 .system-dashboard-summary-details article small { color: var(--muted); overflow-wrap: anywhere; }
+.system-dashboard-summary-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .system-dashboard-services { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); gap: 10px; }
 .system-dashboard-services article { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .system-dashboard-services article > strong { color: var(--ink); font-size: 12px; }
@@ -718,6 +719,8 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .system-module-settings { display: grid; gap: 14px; }
 .system-module-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); gap: 9px; }
 .system-module-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; }
+.system-maintenance-control { cursor: default; }
+.system-maintenance-control input[role="switch"] { cursor: pointer; }
 .system-module-control > span { display: grid; gap: 4px; min-width: 0; }
 .system-module-control strong { color: var(--ink); font-size: 13px; }
 .system-module-control small { color: var(--muted); font-size: 11px; line-height: 1.4; }
@@ -2700,7 +2703,7 @@ html[data-theme="dark"] .account-settings-dialog .field :is(input, select):disab
 }
 .toast-message-icon { width: 28px; height: 28px; flex: 0 0 auto; margin-top: 1px; border-radius: 6px; object-fit: contain; }
 .toast-message-body { display: grid; flex: 1; min-width: 0; gap: 8px; }
-.toast-message-body > div:first-child { min-width: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.toast-message-body > div:first-child { min-width: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; user-select: text; }
 .toast-message button { flex: 0 0 auto; padding: 3px 0; border: 0; background: transparent; color: var(--blue-dark); font-size: 11px; font-weight: 700; cursor: pointer; }
 .toast-message-error { border-color: #d9a9ad; border-left-color: var(--red); }
 .toast-message-error button { color: var(--red); }
@@ -3024,7 +3027,7 @@ html[data-theme="dark"] .task-priority-high { background: #3b321d; color: #f2cf8
   .task-center-card-heading .button { width: 100%; }
   .admin-tabs .button { flex: 1; }
   .system-recovery-summary { grid-template-columns: auto 1fr; }
-  .system-dashboard-summary { grid-template-columns: 1fr; }
+  .system-dashboard-summary, .system-dashboard-summary-overview { grid-template-columns: 1fr; }
   .system-dashboard-services article { align-items: flex-start; flex-direction: column; }
   .system-recovery-summary .button { grid-column: 1 / -1; width: 100%; }
   .temporary-credential-list { grid-template-columns: 1fr; }
@@ -3416,17 +3419,17 @@ html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-deta
   justify-self: stretch;
   width: auto;
 }
-:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary, .executive-summary-grid):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] {
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary, .therapy-summary, .executive-summary-grid):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] {
   min-height: 104px;
   padding: 18px;
   border-radius: 12px;
   border-left-width: 5px;
   box-shadow: 0 6px 18px rgb(18 36 50 / 10%);
 }
-:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > strong {
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary, .therapy-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > strong {
   font-size: clamp(22px, 1.6vw, 26px);
 }
-:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > span {
+:is(.hygiene-summary.reception-appointments-summary, .hygiene-summary.nutrition-kitchen-summary, .hygiene-summary.maintenance-report-summary, .therapy-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > span {
   font-size: 12px;
   line-height: 1.45;
 }

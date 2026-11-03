@@ -6168,10 +6168,10 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
         {activeUsersLoading && !activeUsers && <div className="history-empty" role="status">Consultando atividade recente…</div>}
         {activeUsers && <><p className="field-hint">Consultado em {dateTime(activeUsers.checked_at)} · janela móvel de {activeUsers.window_minutes} minutos · nomes de cada conta são exibidos uma vez.</p>{activeUsers.users.length ? <div className="system-active-user-list">{activeUsers.users.map((activeUser) => <article className="system-active-user-row" key={activeUser.user_id}><strong>{activeUser.name}</strong><span>{roleLabels[activeUser.role as ProfileId] ?? 'Equipe autorizada'}</span><time dateTime={activeUser.last_activity_at}>Última atividade: {dateTime(activeUser.last_activity_at)}</time></article>)}</div> : <div className="history-empty">Nenhuma conta com atividade na janela atual.</div>}</>}
       </section>
-      <div className="system-dashboard-summary">
-        <article><span>Versão do aplicativo</span><strong>{APP_VERSION}</strong></article>
-        <article><span>Contas comuns cadastradas</span><strong>{loading ? '…' : users.length}</strong></article>
-        <article><span>Serviços monitorados</span><strong>{systemAdminServices.length}</strong></article>
+      <div className="hygiene-summary executive-kpis system-dashboard-summary-overview" aria-label="Indicadores do aplicativo" aria-busy={loading}>
+        <article className="status-tone-neutral"><strong>{APP_VERSION}</strong><span>Versão do aplicativo</span></article>
+        <article className="status-tone-neutral"><strong>{loading ? '…' : users.length}</strong><span>Contas comuns cadastradas</span></article>
+        <article className="status-tone-neutral"><strong>{systemAdminServices.length}</strong><span>Serviços monitorados</span></article>
       </div>
       <section className="patient-list-panel system-module-settings">
         <div className="section-heading"><div><p className="eyebrow">CONTROLES GLOBAIS</p><h2>Disponibilidade dos módulos</h2><p className="welcome-copy">Módulos desativados ficam ocultos para contas comuns e têm o acesso às APIs bloqueado. A alteração não apaga dados; o Superadministrador mantém acesso de manutenção. No PWA da Enfermagem, pendências offline não sincronizadas ficam cifradas no aparelho por até 24 horas e podem ser retomadas se o módulo for reativado nesse prazo.</p></div></div>
@@ -6190,10 +6190,10 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
       </section>
       <section className="patient-list-panel system-module-settings">
         <div className="section-heading"><div><p className="eyebrow">JANELA OPERACIONAL</p><h2>Modo de manutenção</h2><p className="welcome-copy">Pausa gravações de contas comuns sem interromper consultas. Login, alterações de segurança da conta, exportação de backup e o acesso do Superadministrador permanecem disponíveis.</p></div></div>
-        {moduleSettings && <label className={`system-module-control ${moduleSettings.maintenance_mode ? 'system-module-control-disabled' : ''}`}>
+        {moduleSettings && <div className={`system-module-control system-maintenance-control ${moduleSettings.maintenance_mode ? 'system-module-control-disabled' : ''}`}>
           <span><strong>{moduleSettings.maintenance_mode ? 'Manutenção ativa' : 'Aplicativo em operação'}</strong><small>{moduleSettings.maintenance_mode ? 'Gravações de contas comuns estão bloqueadas' : 'Gravações permitidas conforme as permissões de cada conta'}</small></span>
           <input type="checkbox" role="switch" checked={moduleSettings.maintenance_mode} disabled={moduleSettingsLoading || Boolean(moduleSettingsBusy)} aria-label={moduleSettings.maintenance_mode ? 'Desativar modo de manutenção' : 'Ativar modo de manutenção'} onChange={(event) => void updateMaintenanceMode(event.target.checked)} />
-        </label>}
+        </div>}
       </section>
       <TherapyMediaSettings />
       <section className="patient-list-panel">
