@@ -12,7 +12,16 @@ import httpx
 from cryptography.exceptions import InvalidTag
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    select,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -83,6 +92,20 @@ class SystemModuleSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_by_id: Mapped[str] = mapped_column(String(36), nullable=False)
     updated_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
+class SystemUserActivity(Base):
+    __tablename__ = "system_user_activity"
+    __table_args__ = (
+        Index("ix_system_user_activity_last_activity_at", "last_activity_at"),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class PhysicianProfileDeletionOutbox(Base):
@@ -770,6 +793,22 @@ def current_session(
     return {"user": _user_response(user), "session_expires_at": claims["exp"]}
 
 
+@app.post("/api/v1/auth/activity", status_code=204)
+def record_user_activity(
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> Response:
+    user, _ = _current_user(request, db, {"active"})
+    activity = db.get(SystemUserActivity, user.id)
+    if activity is None:
+        activity = SystemUserActivity(user_id=user.id, last_activity_at=datetime.now(UTC))
+        db.add(activity)
+    else:
+        activity.last_activity_at = datetime.now(UTC)
+    db.commit()
+    return Response(status_code=204)
+
+
 @app.get("/api/v1/app/module-settings")
 def app_module_settings(
     request: Request,
@@ -815,6 +854,45 @@ def system_admin_module_settings(
         _system_module_settings(db),
         include_audit_metadata=True,
     )
+
+
+@app.get("/api/v1/system-admin/active-users")
+def system_admin_active_users(
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _, principal = _require_system_admin(request, db)
+    checked_at = datetime.now(UTC)
+    cutoff = checked_at - timedelta(minutes=5)
+    active_users = db.execute(
+        select(AppUser, SystemUserActivity)
+        .join(SystemUserActivity, SystemUserActivity.user_id == AppUser.id)
+        .where(
+            AppUser.active.is_(True),
+            SystemUserActivity.last_activity_at >= cutoff,
+        )
+        .order_by(SystemUserActivity.last_activity_at.desc(), AppUser.name)
+    ).all()
+    emit_audit_event(
+        principal,
+        "management",
+        "system_active_users_read",
+        "active_users",
+        service="access",
+    )
+    return {
+        "window_minutes": 5,
+        "checked_at": checked_at.isoformat(),
+        "users": [
+            {
+                "user_id": user.id,
+                "name": user.display_name or user.name,
+                "role": _user_response(user)["role"],
+                "last_activity_at": activity.last_activity_at.isoformat(),
+            }
+            for user, activity in active_users
+        ],
+    }
 
 
 @app.patch("/api/v1/system-admin/module-settings")

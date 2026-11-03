@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect
 
-revision = "0062_therapy_photo_album_and_media_settings"
+revision = "0062_therapy_album"
 down_revision = "0061_system_module_settings"
 branch_labels = None
 depends_on = None

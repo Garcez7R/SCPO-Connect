@@ -709,6 +709,11 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .system-dashboard-services { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); gap: 10px; }
 .system-dashboard-services article { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .system-dashboard-services article > strong { color: var(--ink); font-size: 12px; }
+.system-active-user-list { display: grid; gap: 8px; }
+.system-active-user-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, .7fr) minmax(220px, auto); align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.system-active-user-row > strong { min-width: 0; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.system-active-user-row > span,
+.system-active-user-row > time { color: var(--muted); font-size: 11px; }
 .system-dashboard-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .system-module-settings { display: grid; gap: 14px; }
 .system-module-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); gap: 9px; }
@@ -1582,8 +1587,10 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-media-quota-warning { margin: 0; padding: 8px 10px; border: 1px solid var(--status-warning-border); border-radius: 6px; background: var(--status-warning-background); color: var(--status-warning-ink); font-size: 11px; line-height: 1.45; }
 .therapy-media-quota-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
 .therapy-media-quota-form .field { min-width: 0; }
-.therapy-album-preview-button { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
-.therapy-album-preview-button img { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--surface); object-fit: contain; }
+.therapy-image-preview-button { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.therapy-image-preview-button img { display: block; width: 100%; aspect-ratio: 4 / 3; background: var(--surface); object-fit: contain; }
+.therapy-image-preview-button:hover img { filter: brightness(.94); }
+.therapy-image-preview-button:focus-visible { outline: 3px solid var(--focus-ring, #78b9d1); outline-offset: -3px; }
 .therapy-album-lightbox { position: fixed; z-index: 30100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(15 28 38 / 82%); }
 .therapy-album-lightbox-panel { position: relative; display: grid; width: min(100%, 1100px); max-height: 92dvh; justify-items: center; gap: 10px; overflow: auto; padding: 16px; border-radius: 10px; background: #fff; color: #18324a; }
 .therapy-album-lightbox-panel > img:not(.therapy-album-lightbox-icon) { display: block; max-width: 100%; max-height: calc(92dvh - 90px); object-fit: contain; }
@@ -1873,6 +1880,7 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
 }
 @media (max-width: 520px) {
   .management-operations-grid { grid-template-columns: 1fr; gap: 13px; }
+  .system-active-user-row { grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .hygiene-panel { gap: 13px; padding: 15px; }
   .hygiene-summary { gap: 7px; }
   .physician-triage-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -3316,11 +3324,15 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
   .waiting-room-kiosk-card > b { font-size: clamp(21px, 6vw, 30px); }
 }
 
-.backup-restore-form { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
-.backup-restore-form .field:first-child { grid-column: auto; }
-.backup-restore-form .button { justify-self: start; }
+.backup-restore-form { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.backup-restore-form > .field:first-child,
+.backup-restore-form > .button { grid-column: 1 / -1; }
+.backup-restore-form > .button { justify-self: stretch; }
 .backup-restore-form .field,
 .backup-export-form .field { min-width: 0; }
+.backup-manual-password-row,
+.backup-key-import-row { align-items: end; }
+.backup-key-import-row > .button { justify-content: center; }
 .recovery-confirm-dialog { width: min(560px, calc(100% - 32px)); }
 .recovery-confirm-form { display: grid; gap: 15px; }
 .recovery-confirm-form .form-actions { justify-content: flex-end; }

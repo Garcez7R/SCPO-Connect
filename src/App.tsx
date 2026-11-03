@@ -113,6 +113,8 @@ const systemControlModules = [
   { id: 'admin', label: 'Administração do aplicativo' },
 ] as const
 type SystemModuleSettings = { module_enabled: Record<string, boolean>; maintenance_mode: boolean; updated_at?: string; updated_by_name?: string }
+type SystemAdminActiveUser = { user_id: string; name: string; role: string; last_activity_at: string }
+type SystemAdminActiveUsers = { window_minutes: number; checked_at: string; users: SystemAdminActiveUser[] }
 type TherapyMediaAvailability = { library: { enabled: boolean }; album: { enabled: boolean } }
 const systemAdminServices: { id: ModuleService; label: string }[] = [
   { id: 'access', label: 'Acesso' },
@@ -703,6 +705,41 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [onSessionExpired, onUserUpdated, sessionExpiresAt])
+  useEffect(() => {
+    if (!sessionExpiresAt) return
+    let active = true
+    let lastHeartbeatAt = 0
+    let heartbeatPending = false
+    const sendHeartbeat = async () => {
+      const now = Date.now()
+      if (!active || heartbeatPending || document.visibilityState !== 'visible' || !navigator.onLine || now - lastHeartbeatAt < 60_000) return
+      heartbeatPending = true
+      try {
+        const response = await fetch('/api/v1/auth/activity', { method: 'POST', keepalive: true })
+        lastHeartbeatAt = Date.now()
+        if (!response.ok && response.status !== 401 && response.status !== 403) {
+          console.warn(`Registro de atividade não disponível (HTTP ${response.status}).`)
+        }
+      } catch (heartbeatError) {
+        lastHeartbeatAt = Date.now()
+        console.warn('Não foi possível registrar a atividade recente.', heartbeatError)
+      } finally {
+        heartbeatPending = false
+      }
+    }
+    const noteInteraction = () => {
+      void sendHeartbeat()
+    }
+    document.addEventListener('pointerdown', noteInteraction, { passive: true })
+    document.addEventListener('keydown', noteInteraction)
+    document.addEventListener('touchstart', noteInteraction, { passive: true })
+    return () => {
+      active = false
+      document.removeEventListener('pointerdown', noteInteraction)
+      document.removeEventListener('keydown', noteInteraction)
+      document.removeEventListener('touchstart', noteInteraction)
+    }
+  }, [sessionExpiresAt, user.id])
   useEffect(() => {
     if (window.location.pathname === '/nursing.html'
       || window.location.pathname === '/operations.html'
@@ -5691,6 +5728,7 @@ const auditActionLabels: Record<string, string> = {
   audit_integrity_read: 'Integridade da cadeia consultada',
   audit_outbox_status_read: 'Filas de auditoria consultadas',
   system_module_settings_read: 'Disponibilidade dos módulos consultada',
+  system_active_users_read: 'Atividade recente das contas consultada',
   system_module_enabled: 'Módulo ativado',
   system_module_disabled: 'Módulo desativado',
   system_maintenance_mode_enabled: 'Modo de manutenção ativado',
@@ -5931,6 +5969,9 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
   const [moduleSettingsBusy, setModuleSettingsBusy] = useState('')
   const [moduleSettingsError, setModuleSettingsError] = useState('')
   const [moduleSettingsNotice, setModuleSettingsNotice] = useState('')
+  const [activeUsers, setActiveUsers] = useState<SystemAdminActiveUsers | null>(null)
+  const [activeUsersLoading, setActiveUsersLoading] = useState(true)
+  const [activeUsersError, setActiveUsersError] = useState('')
   const [backupSummary, setBackupSummary] = useState<AutomaticBackupStatus | null>(null)
   const [backupSummaryLoading, setBackupSummaryLoading] = useState(true)
   const [backupSummaryError, setBackupSummaryError] = useState('')
@@ -5972,6 +6013,20 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
       setBackupSummaryLoading(false)
     }
   }, [])
+  const loadActiveUsers = useCallback(async () => {
+    setActiveUsersLoading(true)
+    try {
+      const activity = await readApiResponse<SystemAdminActiveUsers>(
+        await fetch('/api/v1/system-admin/active-users', { cache: 'no-store' }),
+      )
+      setActiveUsers(activity)
+      setActiveUsersError('')
+    } catch (loadError) {
+      setActiveUsersError(loadError instanceof Error ? loadError.message : 'Não foi possível consultar a atividade recente.')
+    } finally {
+      setActiveUsersLoading(false)
+    }
+  }, [])
   const loadUsers = useCallback(async () => {
     setLoading(true)
     try {
@@ -5997,6 +6052,11 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     const timer = window.setTimeout(() => void loadBackupSummary(), 0)
     return () => window.clearTimeout(timer)
   }, [loadBackupSummary])
+  useEffect(() => {
+    if (tab !== 'dashboard') return
+    const timer = window.setTimeout(() => void loadActiveUsers(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadActiveUsers, tab])
   async function updateModuleAvailability(module: string, enabled: boolean, label: string) {
     if (!enabled && !await confirm(`Desativar ${label}? Contas comuns perderão o acesso ao módulo e às APIs correspondentes. Nenhum dado será apagado. O Superadministrador continuará com acesso.`)) return
     setModuleSettingsBusy(module)
@@ -6098,6 +6158,16 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'dashboard' && <section className="system-dashboard">
+      <section className="patient-list-panel system-dashboard-connectivity">
+        <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>
+        <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>
+      </section>
+      <section className="patient-list-panel system-active-users">
+        <div className="section-heading"><div><p className="eyebrow">SESSÕES · ATIVIDADE RECENTE</p><h2>Contas com atividade nos últimos 5 minutos</h2><p className="welcome-copy">A lista registra atividade autenticada recente do aplicativo; não confirma presença física nem acompanha navegação.</p></div><button className="button button-secondary" type="button" onClick={() => void loadActiveUsers()} disabled={activeUsersLoading}><RefreshCw size={15} /> {activeUsersLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
+        {activeUsersError && <ToastMessage variant="error">{activeUsersError}</ToastMessage>}
+        {activeUsersLoading && !activeUsers && <div className="history-empty" role="status">Consultando atividade recente…</div>}
+        {activeUsers && <><p className="field-hint">Consultado em {dateTime(activeUsers.checked_at)} · janela móvel de {activeUsers.window_minutes} minutos · nomes de cada conta são exibidos uma vez.</p>{activeUsers.users.length ? <div className="system-active-user-list">{activeUsers.users.map((activeUser) => <article className="system-active-user-row" key={activeUser.user_id}><strong>{activeUser.name}</strong><span>{roleLabels[activeUser.role as ProfileId] ?? 'Equipe autorizada'}</span><time dateTime={activeUser.last_activity_at}>Última atividade: {dateTime(activeUser.last_activity_at)}</time></article>)}</div> : <div className="history-empty">Nenhuma conta com atividade na janela atual.</div>}</>}
+      </section>
       <div className="system-dashboard-summary">
         <article><span>Versão do aplicativo</span><strong>{APP_VERSION}</strong></article>
         <article><span>Contas comuns cadastradas</span><strong>{loading ? '…' : users.length}</strong></article>
@@ -6126,10 +6196,6 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
         </label>}
       </section>
       <TherapyMediaSettings />
-      <section className="patient-list-panel">
-        <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>
-        <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>
-      </section>
       <section className="patient-list-panel">
         <div className="section-heading"><div><p className="eyebrow">CÓPIAS DE SEGURANÇA</p><h2>Backup automático mais recente</h2><p className="welcome-copy">Resumo do último resultado informado pelo serviço de backup. A conectividade do serviço não confirma a integridade de uma cópia.</p></div><button className="button button-secondary" type="button" onClick={() => void loadBackupSummary()} disabled={backupSummaryLoading}><RefreshCw size={15} /> Atualizar</button></div>
         {backupSummaryError && <ToastMessage variant="error">{backupSummaryError}</ToastMessage>}

@@ -2,7 +2,7 @@ import asyncio
 import base64
 from collections.abc import Generator
 from contextlib import nullcontext
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Self
 
@@ -140,6 +140,71 @@ def test_system_superadmin_can_update_global_module_settings(
     assert result["maintenance_mode"] is True
     assert settings.maintenance_mode is True
     assert settings.updated_by_id == user.id
+
+
+def test_system_superadmin_can_view_recent_user_activity(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    monkeypatch.setattr(access, "emit_audit_event", lambda *_args, **_kwargs: None)
+    admin = access._new_user("root-activity", "Admin Sistema", ["management"], access._all_permissions())
+    admin.is_superuser = True
+    admin.mfa_enabled = True
+    admin.must_change_password = False
+    active_user = access._new_user("nurse-activity", "Enfermagem", ["nursing"], {"nursing": ["consultar"]})
+    active_user.mfa_enabled = True
+    active_user.must_change_password = False
+    stale_user = access._new_user("stale-activity", "Conta antiga", ["nursing"], {"nursing": ["consultar"]})
+    stale_user.mfa_enabled = True
+    stale_user.must_change_password = False
+    db.add_all([admin, active_user, stale_user])
+    db.flush()
+    db.add(
+        access.SystemUserActivity(
+            user_id=stale_user.id,
+            last_activity_at=datetime.now(UTC) - timedelta(minutes=6),
+        )
+    )
+    db.commit()
+    token = issue_session(active_user.id, "active", active_user.session_version)
+    activity_request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/activity",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+
+    heartbeat = access.record_user_activity(activity_request, db)
+    assert heartbeat.status_code == 204
+    assert db.get(access.SystemUserActivity, active_user.id) is not None
+
+    admin_token = issue_session(admin.id, "active", admin.session_version)
+    admin_request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/system-admin/active-users",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={admin_token}".encode())],
+        "query_string": b"",
+    })
+    result = access.system_admin_active_users(admin_request, db)
+
+    assert result["window_minutes"] == 5
+    assert [user["user_id"] for user in result["users"]] == [active_user.id]
+
+    regular_token = issue_session(active_user.id, "active", active_user.session_version)
+    regular_request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/system-admin/active-users",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={regular_token}".encode())],
+        "query_string": b"",
+    })
+    with pytest.raises(HTTPException) as error:
+        access.system_admin_active_users(regular_request, db)
+    assert error.value.status_code == 403
 
 
 def test_disabled_module_api_gate_handles_shared_routes() -> None:

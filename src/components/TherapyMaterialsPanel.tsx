@@ -388,8 +388,8 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   }
 
   return <section className="therapy-materials-panel">
-    {notice && <p className="therapy-material-message" role="status">{notice}</p>}
-    {error && <p className="therapy-material-message therapy-material-error" role="alert">{error}</p>}
+    {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
+    {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {mediaOperation && <ToastMessage variant="info" persistent progress={mediaOperation.progress} progressLabel="Progresso do envio">{mediaOperation.message}</ToastMessage>}
     {view === 'materials' && canEdit && <form className="therapy-material-form" onSubmit={(event) => void createMaterial(event)}>
       <div className="section-heading"><div><p className="eyebrow">NOVO CADASTRO</p><h2>Adicionar material</h2><p className="welcome-copy">Cadastre materiais, ferramentas e tintas. A quantidade inicial também entra no histórico.</p></div></div>
@@ -452,7 +452,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
             <button className="button button-primary" type="submit" disabled={saving || !imageFile}><ImagePlus size={16} /> Enviar imagem</button>
           </form>}
           {loading ? <div className="history-empty">Carregando {view === 'album' ? 'álbum' : 'biblioteca de imagens'}…</div> : loadError ? null : visibleImages.length ? <div className="therapy-image-grid">{visibleImages.map((image) => <article className="therapy-image-card" key={image.id}>
-            {view === 'album' ? <button className="therapy-album-preview-button" type="button" onClick={() => setPreviewImage(image)} aria-label={`Visualizar ${image.title}`}><img src={image.url} alt={image.title} loading="lazy" /></button> : <img src={image.url} alt={image.title} loading="lazy" />}
+            <button className="therapy-image-preview-button" type="button" onClick={() => setPreviewImage(image)} aria-label={`Visualizar ${image.title}`}><img src={image.url} alt={image.title} loading="lazy" /></button>
             <div className="therapy-image-card-details">
               {editingImageId === image.id
                 ? <form className="therapy-image-rename" onSubmit={(event) => { event.preventDefault(); void updateImage(image, { title: editingImageTitle }) }}><label className="field"><span className="field-label">Nome do arquivo</span><input required minLength={2} maxLength={120} value={editingImageTitle} onChange={(event) => setEditingImageTitle(event.target.value)} /></label><button className="button button-primary" type="submit" disabled={saving}><Save size={14} /> Salvar</button><button className="button button-secondary" type="button" onClick={() => setEditingImageId('')}><X size={14} /> Cancelar</button></form>
@@ -466,7 +466,7 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
           </article>)}</div> : <div className="history-empty">{imageSearch ? `Nenhuma ${view === 'album' ? 'foto' : 'imagem'} corresponde à busca.` : `Nenhuma ${view === 'album' ? 'foto' : 'imagem'} disponível nesta pasta.`}</div>}
         </div>
       </div>
-      {previewImage && view === 'album' && <div className="therapy-album-lightbox" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewImage(null) }}>
+      {previewImage && <div className="therapy-album-lightbox" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewImage(null) }}>
         <section className="therapy-album-lightbox-panel" role="dialog" aria-modal="true" aria-label={`Visualização: ${previewImage.title}`}>
           <button className="therapy-album-lightbox-close" type="button" aria-label="Fechar visualização" autoFocus onClick={() => setPreviewImage(null)}><X size={20} /></button>
           <img className="therapy-album-lightbox-icon" src="/scpo-connect-icon.png" alt="" aria-hidden="true" />
