@@ -119,6 +119,59 @@ def test_patient_list_can_filter_inpatients_and_care_track(
     assert registered_patients["patients"][0]["reference"] == registered["reference"]
 
 
+def test_patient_list_can_filter_sex_and_birth_date_range(
+    nursing_db: Session, nurse: DemoPrincipal
+) -> None:
+    matching = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Paciente filtrada",
+            birth_date=date(1985, 6, 12),
+            sex="Feminino",
+        ),
+        nurse,
+        nursing_db,
+    )
+    nursing.create_patient(
+        nursing.PatientPayload(
+            name="Outro perfil",
+            birth_date=date(2005, 3, 10),
+            sex="Masculino",
+        ),
+        nurse,
+        nursing_db,
+    )
+
+    filtered = nursing.list_patients(
+        nurse,
+        nursing_db,
+        sex="Feminino",
+        birth_date_from=date(1980, 1, 1),
+        birth_date_to=date(1990, 12, 31),
+        status="all",
+    )
+
+    assert filtered["total"] == 1
+    assert filtered["patients"][0]["reference"] == matching["reference"]
+    with pytest.raises(HTTPException, match="data inicial de nascimento"):
+        nursing.list_patients(
+            nurse,
+            nursing_db,
+            birth_date_from=date(2000, 1, 1),
+            birth_date_to=date(1990, 1, 1),
+        )
+
+
+def test_patient_demographic_filters_require_full_profile_access(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "can_view_full_patient_profile", lambda _principal: False)
+
+    with pytest.raises(HTTPException, match="Filtros de dados cadastrais completos"):
+        nursing.list_patients(nurse, nursing_db, sex="Feminino")
+
+
 def test_synthetic_vitals_dataset_can_be_seeded_and_removed(
     nursing_db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2243,7 +2296,13 @@ def test_patient_registry_route_accepts_pagination_and_search_parameters(
     monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     create_patient(nursing_db, nurse)
     nursing.create_patient(
-        nursing.PatientPayload(name="Zelda Paciente", room="20", bed="B"),
+        nursing.PatientPayload(
+            name="Zelda Paciente",
+            room="20",
+            bed="B",
+            birth_date=date(1990, 1, 1),
+            sex="Feminino",
+        ),
         nurse,
         nursing_db,
     )
@@ -2253,7 +2312,15 @@ def test_patient_registry_route_accepts_pagination_and_search_parameters(
         with TestClient(nursing.app) as client:
             response = client.get(
                 "/api/v1/nursing/patients",
-                params={"limit": 1, "offset": 0, "search": "Zelda", "status": "all"},
+                params={
+                    "limit": 1,
+                    "offset": 0,
+                    "search": "Zelda",
+                    "status": "all",
+                    "sex": "Feminino",
+                    "birth_date_from": "1980-01-01",
+                    "birth_date_to": "2000-12-31",
+                },
             )
         assert response.status_code == 200
         assert response.json()["total"] == 1

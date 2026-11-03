@@ -2214,11 +2214,18 @@ def list_patients(
     bed: Annotated[str | None, Query(max_length=20)] = None,
     inpatient: bool | None = None,
     treatment_track: Literal["clinical", "psychiatric", "combined", "unclassified"] | None = None,
+    sex: Annotated[str | None, Query(max_length=24)] = None,
+    birth_date_from: date | None = None,
+    birth_date_to: date | None = None,
     status: Literal["all", "active", "inactive"] | None = None,
     sort: Literal["location", "name"] = "location",
 ) -> dict[str, object]:
     if full_profile and not can_view_full_patient_profile(principal):
         raise HTTPException(status_code=403, detail="Acesso aos dados cadastrais completos não autorizado")
+    if (sex or birth_date_from or birth_date_to) and not can_view_full_patient_profile(principal):
+        raise HTTPException(status_code=403, detail="Filtros de dados cadastrais completos não autorizados")
+    if birth_date_from and birth_date_to and birth_date_from > birth_date_to:
+        raise HTTPException(status_code=422, detail="A data inicial de nascimento deve ser anterior à final")
     query = select(Patient).where(
         ~exists(
             select(PatientMergeAlias.source_reference).where(
@@ -2247,6 +2254,14 @@ def list_patients(
         query = query.where(Patient.bed == bed)
     if treatment_track:
         query = query.where(Patient.treatment_track == treatment_track)
+    if sex == "__blank__":
+        query = query.where(Patient.sex == "")
+    elif sex:
+        query = query.where(Patient.sex == sex)
+    if birth_date_from:
+        query = query.where(Patient.birth_date >= birth_date_from)
+    if birth_date_to:
+        query = query.where(Patient.birth_date <= birth_date_to)
 
     query_terms = (search or "").strip().casefold().split()
     searchable_fields = [Patient.name, Patient.room, Patient.bed]

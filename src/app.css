@@ -1130,6 +1130,12 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .patient-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .patient-form-actions .button { min-height: 43px; }
 .patient-search { max-width: 520px; }
+.patient-advanced-filter-panel .patient-search { max-width: none; }
+.patient-registry-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.patient-registry-filters .field { min-width: 0; margin: 0; }
+.patient-group-toggle { display: flex; min-height: 42px; align-items: center; gap: 8px; color: var(--ink); font-size: 13px; }
+.patient-group-toggle input { width: 18px; height: 18px; }
+.patient-filter-clear { justify-self: start; }
 .patient-registry-list { display: grid; gap: 10px; }
 .patient-registry-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
 .patient-registry-card.care-track-clinical { border-left: 5px solid #16764a; }
@@ -1891,6 +1897,7 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
 @media (max-width: 520px) {
   .management-operations-grid { grid-template-columns: 1fr; gap: 13px; }
   .system-active-user-row { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  .patient-registry-filters { grid-template-columns: 1fr; }
   .hygiene-panel { gap: 13px; padding: 15px; }
   .hygiene-summary { gap: 7px; }
   .physician-triage-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1937,6 +1944,8 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
   .pharmacy-form-actions { flex-direction: column-reverse; }
   .pharmacy-form-actions .button { width: 100%; justify-content: center; }
   .patient-registry-form, .patient-list-panel, .patient-history-summary, .therapy-form, .therapy-calendar-panel, .therapy-birthday-panel, .therapy-activity-list { gap: 13px; padding: 15px; }
+  .patient-registry-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .patient-filter-clear { width: 100%; justify-content: center; }
   .patient-form-grid, .patient-address-group .patient-form-grid { grid-template-columns: 1fr; }
   .patient-form-actions { flex-direction: column-reverse; }
   .patient-form-actions .button { width: 100%; justify-content: center; }

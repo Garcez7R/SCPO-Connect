@@ -20,7 +20,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 
 ## Recursos
 
-- Cadastro central de pacientes com quarto, leito, data de nascimento, foto, contatos e endereços do paciente e do responsável pela internação; pessoas sem cadastro ou leito podem ser registradas na fila própria da emergência.
+- Cadastro central de pacientes com quarto, leito, data de nascimento, foto, contatos e endereços do paciente e do responsável pela internação; lista paginada com filtros combináveis por situação, internação, quarto/leito, perfil de tratamento, sexo e faixa de nascimento. O relatório de pacientes reutiliza esses filtros e oferece busca, intervalo de datas, seleção e impressão dos resultados conforme as permissões cadastrais do perfil.
 - Seletores de pacientes nos módulos assistenciais, administrativos e de recepção incluem busca por nome e identificadores/localização, mantendo a lista suspensa para seleção manual.
 - Histórico individual de sinais vitais, com consulta separada e controle de acesso por perfil.
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
