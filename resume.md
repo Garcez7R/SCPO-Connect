@@ -159,7 +159,7 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O controle de modo de manutenção agora alterna somente pelo switch; clicar no texto ou no restante do cartão não altera o modo.
 - Toasts de sucesso/informação fecham automaticamente; erros ficam abertos até ação explícita e o texto pode ser selecionado/copíado. Progresso persistente continua sem timeout.
 - README e ajuda interna foram revisados. Typecheck, lint e build passaram; a inspeção visual autenticada continua indisponível neste ambiente.
-- A fase continua local até revisão e publicação.
+- Fase publicada em `bc27834` (`fix: align technical and therapy summary cards`); a atualização do checkpoint será enviada junto ao próximo commit.
 
 ### Pendente — ordem sugerida
 
