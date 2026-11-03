@@ -172,7 +172,7 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Controles de disponibilidade dos módulos agora alteram o estado somente pelo switch; clicar no texto/restante do cartão não aciona a mudança. O modo de manutenção mantém o mesmo comportamento.
 - Ajustado o contraste dos switches e do cartão de manutenção no tema escuro, assim como dos botões móveis para abrir/fechar o menu lateral.
 - README atualizado com a forma de acionar os controles. A ajuda interna não possui uma seção específica de Administração do Sistema; a ajuda da Oficina já descreve toasts e foi revisada.
-- Validar typecheck, lint e build antes da publicação desta fase.
+- Typecheck, lint e build passaram; fase publicada em `cf496b8` (`fix: limit module toggles to switches`).
 
 ### Pendente — ordem sugerida
 
