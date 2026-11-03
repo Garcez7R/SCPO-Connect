@@ -4,7 +4,7 @@ import os
 import uuid
 from collections.abc import Generator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict
@@ -64,6 +64,7 @@ class DemoPrincipal:
     modules: list[str]
     permissions: dict[str, list[str]]
     is_superuser: bool = False
+    module_enabled: dict[str, bool] = field(default_factory=dict)
 
 
 class VerifiedPatientReference(TypedDict):
@@ -305,6 +306,67 @@ def _action_for_method(method: str) -> str:
     return {"GET": "consultar", "HEAD": "consultar", "POST": "criar", "PUT": "alterar", "PATCH": "alterar", "DELETE": "excluir"}.get(method.upper(), "consultar")
 
 
+def maintenance_mode_blocks_request(
+    method: str,
+    path: str,
+    maintenance_mode: bool,
+    is_superuser: bool,
+) -> bool:
+    if (
+        not maintenance_mode
+        or is_superuser
+        or method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}
+    ):
+        return False
+    return path not in {
+        "/api/v1/auth/bootstrap",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/mfa/confirm",
+        "/api/v1/auth/password",
+        "/api/v1/auth/refresh",
+        "/api/v1/backup/export",
+        "/api/v1/backup/automatic/private-key/export",
+    }
+
+
+def _app_modules_for_path(path: str) -> tuple[str, ...]:
+    if path.startswith("/api/v1/nursing/patients/") and path.endswith("/nutrition-plan"):
+        return ("nutrition",)
+
+    prefixes: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("/api/v1/nursing/management/audit", ("admin",)),
+        ("/api/v1/nursing/patients", ("patients", "nursing", "physician")),
+        ("/api/v1/nursing/nutrition", ("nutrition",)),
+        ("/api/v1/nursing/management", ("management",)),
+        ("/api/v1/management/audit", ("admin",)),
+        ("/api/v1/nursing", ("nursing",)),
+        ("/api/v1/management", ("management",)),
+        ("/api/v1/reception", ("reception",)),
+        ("/api/v1/physicians", ("physician",)),
+        ("/api/v1/pharmacy", ("pharmacy",)),
+        ("/api/v1/xray", ("xray",)),
+        ("/api/v1/social", ("social",)),
+        ("/api/v1/psychology", ("psychology",)),
+        ("/api/v1/interprofessional", ("social",)),
+        ("/api/v1/therapy", ("therapy",)),
+        ("/api/v1/hygiene", ("hygiene",)),
+        ("/api/v1/laundry", ("laundry",)),
+        ("/api/v1/maintenance", ("maintenance",)),
+        ("/api/v1/audit", ("admin",)),
+        ("/api/v1/backup", ("admin",)),
+    )
+    for prefix, modules in prefixes:
+        if path == prefix or path.startswith(f"{prefix}/"):
+            return modules
+    return ()
+
+
+def _module_is_available_for_path(path: str, module_enabled: dict[str, bool]) -> bool:
+    modules = _app_modules_for_path(path)
+    return not modules or any(module_enabled.get(module) is True for module in modules)
+
+
 async def authenticated_principal(request: Request) -> DemoPrincipal:
     """Resolve any active app session without requiring a particular module."""
     token = request.cookies.get(SESSION_COOKIE)
@@ -322,14 +384,60 @@ async def authenticated_principal(request: Request) -> DemoPrincipal:
         if response.status_code != 200:
             raise HTTPException(status_code=401, detail="Sessão inválida ou expirada")
         data = response.json()
+        is_superuser = bool(data.get("is_superuser", False))
+        maintenance_mode = data.get("maintenance_mode")
+        if not isinstance(maintenance_mode, bool):
+            raise HTTPException(status_code=503, detail="Configuração de manutenção inválida")
+        raw_module_enabled = data.get("module_enabled")
+        if not isinstance(raw_module_enabled, dict) or any(
+            not isinstance(module, str) or not isinstance(enabled, bool)
+            for module, enabled in raw_module_enabled.items()
+        ):
+            raise HTTPException(status_code=503, detail="Configurações globais inválidas")
+        module_enabled = {
+            module: enabled for module, enabled in raw_module_enabled.items()
+        }
+        if maintenance_mode_blocks_request(
+            request.method,
+            request.url.path,
+            maintenance_mode,
+            is_superuser,
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="O aplicativo está em modo de manutenção; alterações estão temporariamente bloqueadas",
+            )
+        feature_modules = _app_modules_for_path(request.url.path)
+        if not is_superuser and any(module not in module_enabled for module in feature_modules):
+            raise HTTPException(status_code=503, detail="Configurações globais incompletas")
+        if (
+            not is_superuser
+            and not _module_is_available_for_path(request.url.path, module_enabled)
+        ):
+            raise HTTPException(status_code=403, detail="Este módulo está temporariamente desativado")
+        modules = list(data["modules"])
+        permissions = {
+            str(module): list(actions)
+            for module, actions in data["permissions"].items()
+        }
+        if not is_superuser:
+            modules = [
+                module for module in modules if module_enabled.get(module, True)
+            ]
+            permissions = {
+                module: actions
+                for module, actions in permissions.items()
+                if module_enabled.get(module, True)
+            }
         return DemoPrincipal(
             user_id=str(data["id"]),
             username=str(data["username"]),
             actor_name=str(data.get("display_name") or data["name"]),
             role="system_admin" if data.get("is_superuser") else str(data["role"]),
-            modules=list(data["modules"]),
-            permissions={str(k): list(v) for k, v in data["permissions"].items()},
-            is_superuser=bool(data.get("is_superuser", False)),
+            modules=modules,
+            permissions=permissions,
+            is_superuser=is_superuser,
+            module_enabled=module_enabled,
         )
     except HTTPException:
         raise

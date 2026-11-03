@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { Activity, AlertTriangle, Check, ChevronLeft, Clock3, HeartPulse, LogOut, RefreshCw, ShieldCheck, UsersRound, Wifi, WifiOff } from 'lucide-react'
 import { ApiResponseError, readApiResponse, readableApiError } from '../api'
 import { glucoseInMgDl } from '../glucose'
-import { readOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
+import { readOfflineVault, removeOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
 import NursingTriagePanel from '../components/NursingTriagePanel'
 
 type NursingMobileUser = {
@@ -12,6 +12,7 @@ type NursingMobileUser = {
   display_name?: string
   modules: string[]
   permissions: Record<string, string[]>
+  is_superuser?: boolean
 }
 
 type MobilePatient = {
@@ -232,6 +233,12 @@ function isTemporaryConnectionError(error: unknown) {
     || (error instanceof Error && /HTTP 5\d\d|serviço está indisponível/i.test(error.message))
 }
 
+function isMaintenanceModeError(error: unknown): error is ApiResponseError {
+  return error instanceof ApiResponseError
+    && error.status === 503
+    && /modo de manutenção/i.test(error.message)
+}
+
 export default function NursingMobilePage({
   user,
   onLogout,
@@ -261,6 +268,8 @@ export default function NursingMobilePage({
   const [saved, setSaved] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [vaultError, setVaultError] = useState('')
+  const [moduleDisabled, setModuleDisabled] = useState(false)
+  const [maintenanceMode, setMaintenanceMode] = useState(false)
   const syncLock = useRef(false)
   const offlineDataRef = useRef(offlineData)
 
@@ -418,6 +427,59 @@ export default function NursingMobilePage({
     setDataReady(false)
     setError('')
     try {
+      if (navigator.onLine && !user.is_superuser) {
+        try {
+          const settings = await readApiResponse<{ module_enabled: Record<string, boolean>; maintenance_mode: boolean }>(
+            await fetch('/api/v1/app/module-settings', { cache: 'no-store' }),
+          )
+          if (!settings.module_enabled || typeof settings.module_enabled !== 'object' || typeof settings.maintenance_mode !== 'boolean') {
+            throw new Error('Resposta inválida das configurações de módulos.')
+          }
+          setMaintenanceMode(settings.maintenance_mode)
+          if (settings.module_enabled.nursing === false) {
+            setModuleDisabled(true)
+            setPatients([])
+            setSelectedPatient('')
+            setRound(null)
+            setServerAvailable(false)
+            const cached = await readOfflineVault<NursingOfflineData>(vaultId)
+            const previous = cached?.payload ?? emptyOfflineData()
+            const now = Date.now()
+            const pendingVitals = previous.pending_vitals.filter((action) => Date.parse(action.expires_at) > now)
+            const pendingRoundActions = previous.pending_round_actions.filter((action) => Date.parse(action.expires_at) > now)
+            const expired = previous.pending_vitals.length + previous.pending_round_actions.length
+              - pendingVitals.length - pendingRoundActions.length
+            const retainedQueue: NursingOfflineData = {
+              ...emptyOfflineData(),
+              pending_vitals: pendingVitals,
+              pending_round_actions: pendingRoundActions,
+              expired_count: previous.expired_count + expired,
+            }
+            if (pendingVitals.length || pendingRoundActions.length) {
+              await persistOfflineData(retainedQueue)
+            } else {
+              await removeOfflineVault(vaultId)
+              offlineDataRef.current = retainedQueue
+              setOfflineData(retainedQueue)
+            }
+            return
+          }
+          setModuleDisabled(false)
+        } catch (settingsError) {
+          if (settingsError instanceof ApiResponseError && settingsError.status === 401) {
+            onLogout()
+            throw settingsError
+          }
+          if (!isTemporaryConnectionError(settingsError)) {
+            setModuleDisabled(true)
+            setPatients([])
+            setSelectedPatient('')
+            setRound(null)
+            setServerAvailable(false)
+            throw settingsError
+          }
+        }
+      }
       const [patientData, roundData] = await Promise.all([
         fetch('/api/v1/nursing/patients?inpatient=true&sort=location&limit=200').then((response) =>
           readApiResponse<{ patients: MobilePatient[]; total: number }>(response),
@@ -466,6 +528,9 @@ export default function NursingMobilePage({
       if (loadError instanceof ApiResponseError && loadError.status === 403) {
         setDataReady(false)
         setServerAvailable(false)
+        setPatients([])
+        setSelectedPatient('')
+        setRound(null)
         setError('Seu perfil não tem mais permissão para consultar os registros da Enfermagem.')
         return
       }
@@ -517,7 +582,7 @@ export default function NursingMobilePage({
     } finally {
       setLoading(false)
     }
-  }, [onLogout, persistOfflineData, vaultId])
+  }, [onLogout, persistOfflineData, user.is_superuser, vaultId])
 
   useEffect(() => {
     if (!hasNursingAccess) return
@@ -543,13 +608,41 @@ export default function NursingMobilePage({
   }, [loadData])
 
   useEffect(() => {
-    if (!online || !serverAvailable) return
+    const checkModuleAvailability = async () => {
+      if (!navigator.onLine) return
+      let settings: { module_enabled: Record<string, boolean>; maintenance_mode: boolean }
+      try {
+        settings = await readApiResponse<{ module_enabled: Record<string, boolean>; maintenance_mode: boolean }>(
+          await fetch('/api/v1/app/module-settings', { cache: 'no-store' }),
+        )
+        if (!settings.module_enabled || typeof settings.module_enabled !== 'object' || typeof settings.maintenance_mode !== 'boolean') {
+          throw new Error('Resposta inválida das configurações de módulos.')
+        }
+      } catch (availabilityError) {
+        if (isTemporaryConnectionError(availabilityError)) {
+          setServerAvailable(false)
+          return
+        }
+        await loadData()
+        return
+      }
+      const shouldBeDisabled = !user.is_superuser && settings.module_enabled.nursing === false
+      if (shouldBeDisabled !== moduleDisabled || settings.maintenance_mode !== maintenanceMode) {
+        await loadData()
+      }
+    }
+    const timer = window.setInterval(() => void checkModuleAvailability(), 30_000)
+    return () => window.clearInterval(timer)
+  }, [loadData, maintenanceMode, moduleDisabled, user.is_superuser])
+
+  useEffect(() => {
+    if (!online || !serverAvailable || maintenanceMode) return
     const hasPending = offlineData.pending_vitals.some((action) => !action.sync_error)
       || offlineData.pending_round_actions.some((action) => !action.sync_error)
     if (!hasPending) return
     const timer = window.setTimeout(() => void syncPendingActions(), 0)
     return () => window.clearTimeout(timer)
-  }, [offlineData.pending_round_actions, offlineData.pending_vitals, online, serverAvailable, syncPendingActions])
+  }, [maintenanceMode, offlineData.pending_round_actions, offlineData.pending_vitals, online, serverAvailable, syncPendingActions])
 
   function setVital(key: VitalKey, value: string) {
     setVitals((current) => ({ ...current, [key]: maskVitalValue(key, value) }))
@@ -593,6 +686,10 @@ export default function NursingMobilePage({
 
   async function saveVitals(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (maintenanceMode && !user.is_superuser) {
+      setError('Modo de manutenção ativo. Não é possível registrar ou enfileirar uma coleta agora.')
+      return
+    }
     if (!selectedPatient) {
       setError('Selecione um paciente antes de salvar a coleta.')
       return
@@ -639,6 +736,15 @@ export default function NursingMobilePage({
         return
       }
       if (response.status >= 500) {
+        try {
+          await readApiResponse(response)
+        } catch (responseError) {
+          if (isMaintenanceModeError(responseError)) {
+            setMaintenanceMode(true)
+            setError(responseError.message)
+            return
+          }
+        }
         setServerAvailable(false)
         await queueVitalAction(body, patients.find((patient) => patient.reference === selectedPatient)?.name ?? 'Paciente')
         return
@@ -664,6 +770,10 @@ export default function NursingMobilePage({
   }
 
   async function startRound() {
+    if (maintenanceMode && !user.is_superuser) {
+      setError('Modo de manutenção ativo. Não é possível iniciar uma verificação horária agora.')
+      return
+    }
     if (!serverAvailable) {
       setError('É necessário conectar ao servidor para iniciar uma nova verificação horária.')
       return
@@ -688,6 +798,10 @@ export default function NursingMobilePage({
     patient: RoundPatient,
     result: { status: 'checked' } | { status: 'exception'; exception_type: string; note: string },
   ) {
+    if (maintenanceMode && !user.is_superuser) {
+      setError('Modo de manutenção ativo. Não é possível registrar verificações agora.')
+      return
+    }
     if (!round) return
     setBusy(true)
     setError('')
@@ -724,6 +838,15 @@ export default function NursingMobilePage({
         return
       }
       if (response.status >= 500) {
+        try {
+          await readApiResponse(response)
+        } catch (responseError) {
+          if (isMaintenanceModeError(responseError)) {
+            setMaintenanceMode(true)
+            setError(responseError.message)
+            return
+          }
+        }
         setServerAvailable(false)
         await queueRoundAction(patient, round.id, body)
         return
@@ -796,6 +919,10 @@ export default function NursingMobilePage({
   }
 
   async function completeRound() {
+    if (maintenanceMode && !user.is_superuser) {
+      setError('Modo de manutenção ativo. Não é possível encerrar a verificação horária agora.')
+      return
+    }
     if (!round) return
     if (!serverAvailable) {
       setError('É necessário conectar ao servidor para encerrar a verificação horária.')
@@ -828,6 +955,18 @@ export default function NursingMobilePage({
     </main>
   }
 
+  if (moduleDisabled) {
+    const pendingOfflineTotal = offlineData.pending_vitals.length + offlineData.pending_round_actions.length
+    return <main className="nursing-mobile-page nursing-mobile-denied">
+      <img src="/scpo-connect-icon.png" alt="" />
+      <h1>Enfermagem temporariamente desativada</h1>
+      <p>O acesso online foi bloqueado pelo Superadministrador. A cópia de leitura foi removida após a reconexão.</p>
+      {pendingOfflineTotal > 0 && <p>{pendingOfflineTotal} registro(s) ainda não sincronizado(s) permanecem cifrados neste aparelho por até 24 horas. A sincronização será retomada se o módulo for reativado dentro desse prazo.</p>}
+      <a className="button button-secondary" href="/">Voltar ao SCPO Connect</a>
+      <button className="button button-secondary" type="button" onClick={onLogout}>Sair</button>
+    </main>
+  }
+
   const pendingCount = round?.patients.filter((patient) => patient.status === 'pending').length ?? 0
   const pendingTotal = offlineData.pending_vitals.length + offlineData.pending_round_actions.length
   const serverLabel = serverAvailable ? 'Servidor conectado' : online ? 'Servidor indisponível' : 'Sem conexão'
@@ -846,10 +985,11 @@ export default function NursingMobilePage({
       <div><p className="eyebrow">COLETA ASSISTENCIAL</p><h1>Olá, {(user.display_name || user.name).split(/\s+/)[0]}</h1></div>
       <span className={`nursing-mobile-connection ${serverAvailable ? 'is-online' : 'is-offline'}`}><i />{serverAvailable ? <><Wifi size={14} /> {serverLabel}</> : <><WifiOff size={14} /> {serverLabel}</>}</span>
     </section>
-    {!serverAvailable && tab !== 'triage' && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Sem comunicação com o servidor. Você pode registrar sinais vitais e verificações usando a lista cifrada salva neste aparelho; os registros só entram no histórico após a sincronização confirmada. Triagem exige conexão e não fica salva offline.</span></div>}
+    {maintenanceMode && !user.is_superuser && <div className="nursing-mobile-connectivity-warning" role="status"><AlertTriangle size={17} /><span>Modo de manutenção ativo. Consultas permanecem disponíveis; novos registros e sincronizações estão pausados. As pendências offline continuam cifradas no aparelho.</span></div>}
+    {!serverAvailable && !maintenanceMode && tab !== 'triage' && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Sem comunicação com o servidor. Você pode registrar sinais vitais e verificações usando a lista cifrada salva neste aparelho; os registros só entram no histórico após a sincronização confirmada. Triagem exige conexão e não fica salva offline.</span></div>}
     {offlineData.expired_count > 0 && <div className="nursing-mobile-message nursing-mobile-error" role="alert"><AlertTriangle size={17} /><span>{offlineData.expired_count} registro(s) offline expiraram após 24 horas e foram removidos conforme a política de retenção. Confirme e registre novamente conforme o procedimento da equipe.</span></div>}
     {pendingTotal > 0 && <section className="nursing-mobile-pending" aria-label="Registros pendentes de sincronização">
-    <div className="nursing-mobile-pending-heading"><strong>{syncing ? 'Sincronizando registros…' : `${pendingTotal} registro(s) pendente(s)`}</strong>{serverAvailable && !syncing && <button className="button button-secondary" type="button" onClick={() => void syncPendingActions(true)}><RefreshCw size={15} /> Sincronizar agora</button>}</div>
+    <div className="nursing-mobile-pending-heading"><strong>{syncing ? 'Sincronizando registros…' : `${pendingTotal} registro(s) pendente(s)`}</strong>{serverAvailable && !syncing && !maintenanceMode && <button className="button button-secondary" type="button" onClick={() => void syncPendingActions(true)}><RefreshCw size={15} /> Sincronizar agora</button>}</div>
       {[...offlineData.pending_vitals.map((action) => ({ id: action.client_action_id, kind: 'Sinais vitais', patient: action.patient_name, createdAt: action.created_at, error: action.sync_error })), ...offlineData.pending_round_actions.map((action) => ({ id: action.client_action_id, kind: 'Verificação horária', patient: action.patient_name, createdAt: action.created_at, error: action.sync_error }))].map((action) => <div className="nursing-mobile-pending-item" key={action.id}><span><strong>{action.kind}</strong> · {action.patient} · {formatTime(action.createdAt)}</span><small>{action.error ? `Conflito: ${action.error}` : 'Aguardando confirmação do servidor'}</small></div>)}
       <p>As pendências ficam cifradas neste aparelho por até 24 horas. Mantenha esta sessão autenticada e conecte-se à rede local para sincronizar.</p>
     </section>}
@@ -864,7 +1004,7 @@ export default function NursingMobilePage({
     </nav>
 
     {tab === 'triage' && <section className="nursing-mobile-panel">
-      <NursingTriagePanel canUpdate={canCreateVitals && serverAvailable && online} isOnline={serverAvailable && online} />
+      <NursingTriagePanel canUpdate={canCreateVitals && serverAvailable && online && !maintenanceMode} isOnline={serverAvailable && online} />
     </section>}
 
     {tab === 'vitals' && <section className="nursing-mobile-panel">
@@ -910,22 +1050,22 @@ export default function NursingMobilePage({
           </div>
         </details>
         {!canCreateVitals && <p className="nursing-mobile-empty"><ShieldCheck size={17} /> Seu perfil pode consultar, mas não registrar sinais vitais.</p>}
-        <button className="button button-primary nursing-mobile-submit" type="submit" disabled={busy || syncing || loading || !dataReady || !canCreateVitals || !selectedPatient || saved || (!serverAvailable && !offlineSnapshotIsFresh(offlineData.last_server_contact_at))}>{busy ? serverAvailable ? 'Enviando ao servidor…' : 'Protegendo no aparelho…' : saved ? 'Registro preparado' : serverAvailable ? 'Salvar coleta' : 'Registrar sem conexão'}</button>
+        <button className="button button-primary nursing-mobile-submit" type="submit" disabled={busy || syncing || loading || !dataReady || !canCreateVitals || !selectedPatient || saved || maintenanceMode || (!serverAvailable && !offlineSnapshotIsFresh(offlineData.last_server_contact_at))}>{busy ? serverAvailable ? 'Enviando ao servidor…' : 'Protegendo no aparelho…' : maintenanceMode ? 'Manutenção ativa' : saved ? 'Registro preparado' : serverAvailable ? 'Salvar coleta' : 'Registrar sem conexão'}</button>
         <p className="nursing-mobile-footnote">Com conexão, o horário e a autoria são registrados pelo servidor. Sem conexão, o horário do aparelho é preservado e a autoria será confirmada ao sincronizar.</p>
       </form>}
     </section>}
 
     {tab === 'rounds' && <section className="nursing-mobile-panel">
       <div className="nursing-mobile-section-title"><div><p className="eyebrow">ACOMPANHAMENTO DE INTERNADOS</p><h2><Clock3 size={19} /> Verificação horária</h2></div><button className="nursing-mobile-refresh" type="button" onClick={() => void loadData()} disabled={loading || busy} aria-label="Atualizar verificação"><RefreshCw size={17} /></button></div>
-      <p className="nursing-mobile-footnote">Toque em <strong>Registrar verificação</strong> para enviar imediatamente ao servidor. Sem comunicação, a ação fica cifrada no aparelho e é sincronizada quando o servidor voltar a ficar acessível.</p>
-      {loading ? <div className="nursing-mobile-loading" role="status"><span className="spinner" /> Atualizando verificação…</div> : !round ? <div className="nursing-mobile-round-empty"><span className="nursing-mobile-empty-icon"><Clock3 size={21} /></span><strong>Nenhuma verificação em andamento</strong><p>A nova verificação inclui pacientes ativos com quarto e leito.</p><button className="button button-primary nursing-mobile-submit" type="button" onClick={() => void startRound()} disabled={busy || !dataReady || !online || !canStartRounds || !inpatientPatients.length}>{busy ? 'Iniciando…' : 'Iniciar verificação horária'}</button>{!canStartRounds && <small>Seu perfil não pode iniciar uma verificação.</small>}{inpatientPatients.length === 0 && <small>Não há pacientes com quarto e leito cadastrados.</small>}</div> : <div className="nursing-mobile-round">
+      <p className="nursing-mobile-footnote">{maintenanceMode ? 'Durante a manutenção, novas verificações e sincronizações ficam pausadas.' : <>Toque em <strong>Registrar verificação</strong> para enviar imediatamente ao servidor. Sem comunicação, a ação fica cifrada no aparelho e é sincronizada quando o servidor voltar a ficar acessível.</>}</p>
+      {loading ? <div className="nursing-mobile-loading" role="status"><span className="spinner" /> Atualizando verificação…</div> : !round ? <div className="nursing-mobile-round-empty"><span className="nursing-mobile-empty-icon"><Clock3 size={21} /></span><strong>Nenhuma verificação em andamento</strong><p>A nova verificação inclui pacientes ativos com quarto e leito.</p><button className="button button-primary nursing-mobile-submit" type="button" onClick={() => void startRound()} disabled={busy || !dataReady || !online || maintenanceMode || !canStartRounds || !inpatientPatients.length}>{maintenanceMode ? 'Manutenção ativa' : busy ? 'Iniciando…' : 'Iniciar verificação horária'}</button>{!canStartRounds && <small>Seu perfil não pode iniciar uma verificação.</small>}{inpatientPatients.length === 0 && <small>Não há pacientes com quarto e leito cadastrados.</small>}</div> : <div className="nursing-mobile-round">
         <div className="nursing-mobile-round-summary"><span><strong>{syncedRoundCount}</strong> confirmados pelo servidor · <strong>{pendingCount}</strong> ainda não verificados</span><span>Iniciada às {formatTime(round.started_at)} · {round.started_by_name}</span></div>
         <div className="nursing-mobile-round-list">{round.patients.map((patient) => <article className={`nursing-mobile-round-patient nursing-round-${patient.status}`} key={patient.patient_reference}>
           <div className="nursing-mobile-round-patient-heading"><div><strong>{patient.patient_name}</strong><span>{patientLocation(patient)}</span></div>{patient.elopement_risk && <span className="nursing-mobile-risk"><AlertTriangle size={13} /> Risco de evasão</span>}</div>
           {patient.status === 'checked' && <p className="nursing-mobile-round-result"><Check size={15} /> Verificado por {patient.checked_by_name} · {formatTime(patient.checked_at)}</p>}
           {patient.status === 'exception' && <p className="nursing-mobile-round-result nursing-mobile-exception"><AlertTriangle size={15} /> {exceptionTypes[patient.exception_type] ?? 'Ocorrência'}{patient.note ? ` · ${patient.note}` : ''}{patient.checked_by_name ? ` · ${patient.checked_by_name}` : ''}</p>}
           {queuedRoundAction(patient.patient_reference) && <p className="nursing-mobile-round-result nursing-mobile-sync-pending"><RefreshCw size={14} /> {queuedRoundAction(patient.patient_reference)?.sync_error ? `Conflito de sincronização: ${queuedRoundAction(patient.patient_reference)?.sync_error}` : 'Verificação registrada neste aparelho; aguardando servidor.'}</p>}
-          {patient.status === 'pending' && canUpdateRounds && dataReady && <div className="nursing-mobile-round-actions">
+          {patient.status === 'pending' && canUpdateRounds && dataReady && !maintenanceMode && <div className="nursing-mobile-round-actions">
             {exceptionPatient === patient.patient_reference ? <form onSubmit={(event) => { event.preventDefault(); void updateRoundPatient(patient, { status: 'exception', exception_type: exceptionType, note: exceptionNote }) }}>
               <label className="field"><span className="field-label">Ocorrência</span><select value={exceptionType} onChange={(event) => setExceptionType(event.target.value)}>{Object.entries(exceptionTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label className="field"><span className="field-label">Descrição breve</span><input required minLength={3} maxLength={500} value={exceptionNote} onChange={(event) => setExceptionNote(event.target.value)} /></label>
@@ -933,8 +1073,9 @@ export default function NursingMobilePage({
             </form> : <><button className="button button-primary" type="button" onClick={() => void updateRoundPatient(patient, { status: 'checked' })} disabled={busy}><Check size={16} /> {serverAvailable ? 'Registrar verificação' : 'Guardar verificação'}</button><button className="button button-secondary" type="button" onClick={() => { setExceptionPatient(patient.patient_reference); setExceptionType('away'); setExceptionNote('') }} disabled={busy}><AlertTriangle size={16} /> Ocorrência</button></>}
           </div>}
           {patient.status === 'pending' && !canUpdateRounds && <p className="nursing-mobile-empty">Seu perfil não pode registrar verificações.</p>}
+          {patient.status === 'pending' && maintenanceMode && <p className="nursing-mobile-empty">Registro temporariamente pausado durante a manutenção.</p>}
         </article>)}</div>
-        {pendingCount === 0 && <button className="button button-primary nursing-mobile-submit" type="button" onClick={() => void completeRound()} disabled={busy || syncing || !dataReady || !serverAvailable || offlineData.pending_round_actions.length > 0 || !canUpdateRounds}>{busy ? 'Encerrando…' : 'Encerrar verificação'}</button>}
+        {pendingCount === 0 && <button className="button button-primary nursing-mobile-submit" type="button" onClick={() => void completeRound()} disabled={busy || syncing || !dataReady || !serverAvailable || maintenanceMode || offlineData.pending_round_actions.length > 0 || !canUpdateRounds}>{maintenanceMode ? 'Manutenção ativa' : busy ? 'Encerrando…' : 'Encerrar verificação'}</button>}
         <button className="button button-secondary nursing-mobile-submit" type="button" onClick={() => void loadData()} disabled={busy || loading}><RefreshCw size={16} /> Atualizar lista</button>
       </div>}
     </section>}

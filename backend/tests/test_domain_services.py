@@ -4,6 +4,7 @@ from collections.abc import Generator
 from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Self
 
 import pytest
 from alembic import command
@@ -23,8 +24,11 @@ from scpo_services import (
 )
 from scpo_services.common import (
     DemoPrincipal,
+    _module_is_available_for_path,
+    authenticated_principal,
     clear_engine_cache,
     get_engine,
+    maintenance_mode_blocks_request,
     require_demo_role,
 )
 from scpo_services.security import (
@@ -72,6 +76,218 @@ def test_superadmin_is_explicit_and_reserved() -> None:
         access._prevent_superuser_changes(user)
     assert error.value.status_code == 403
     assert "super" not in str(error.value.detail).lower()
+
+
+def test_global_module_settings_are_seeded_enabled(domain_database: dict[str, Session]) -> None:
+    settings = domain_database["access"].get(access.SystemModuleSettings, 1)
+    assert settings is not None
+    assert set(settings.module_enabled) == access.GLOBAL_MODULES
+    assert all(settings.module_enabled.values())
+    assert settings.maintenance_mode is False
+
+
+def test_system_superadmin_can_update_global_module_settings(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    user = access._new_user("root-settings", "Admin Sistema", ["management"], access._all_permissions())
+    user.is_superuser = True
+    user.mfa_enabled = True
+    user.must_change_password = False
+    db.add(user)
+    db.commit()
+    token = access.issue_session(user.id, "active", user.session_version)
+    request = Request({
+        "type": "http",
+        "method": "PATCH",
+        "path": "/api/v1/system-admin/module-settings",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+
+    result = access.update_system_admin_module_settings(
+        access.SystemModuleSettingsPayload(
+            module_enabled={"pharmacy": False},
+            maintenance_mode=True,
+        ),
+        request,
+        db,
+    )
+
+    settings = db.get(access.SystemModuleSettings, 1)
+    assert result["module_enabled"]["pharmacy"] is False
+    assert settings is not None
+    assert settings.module_enabled["pharmacy"] is False
+    assert result["maintenance_mode"] is True
+    assert settings.maintenance_mode is True
+    assert settings.updated_by_id == user.id
+
+
+def test_disabled_module_api_gate_handles_shared_routes() -> None:
+    assert not _module_is_available_for_path(
+        "/api/v1/pharmacy/items",
+        {"pharmacy": False},
+    )
+    assert _module_is_available_for_path(
+        "/api/v1/nursing/patients",
+        {"patients": False, "nursing": True, "physician": False},
+    )
+    assert not _module_is_available_for_path(
+        "/api/v1/nursing/patients/123/nutrition-plan",
+        {"nutrition": False},
+    )
+    assert _module_is_available_for_path("/health", {})
+
+
+def test_maintenance_mode_blocks_writes_but_preserves_reads_and_recovery() -> None:
+    assert maintenance_mode_blocks_request(
+        "PATCH", "/api/v1/nursing/vitals/1", True, False
+    )
+    assert not maintenance_mode_blocks_request(
+        "GET", "/api/v1/nursing/patients", True, False
+    )
+    assert not maintenance_mode_blocks_request(
+        "POST", "/api/v1/auth/logout", True, False
+    )
+    assert maintenance_mode_blocks_request(
+        "PATCH", "/api/v1/auth/profile", True, False
+    )
+    assert not maintenance_mode_blocks_request(
+        "POST", "/api/v1/backup/export", True, False
+    )
+    assert not maintenance_mode_blocks_request(
+        "POST", "/api/v1/nursing/vitals", True, True
+    )
+    assert not maintenance_mode_blocks_request(
+        "POST", "/api/v1/nursing/vitals", False, False
+    )
+
+
+def test_authenticated_api_gate_blocks_disabled_module_and_preserves_superadmin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SCPO_SERVICE_TOKEN", "service-token")
+    monkeypatch.setenv("SCPO_ACCESS_API_URL", "http://access")
+    module_enabled = {module: True for module in access.GLOBAL_MODULES}
+    module_enabled["pharmacy"] = False
+    maintenance_mode = False
+
+    class MockResponse:
+        status_code = 200
+
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    class MockClient:
+        def __init__(self, *_: object, **__: object) -> None:
+            pass
+
+        async def __aenter__(self) -> Self:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        async def post(self, *_: object, **__: object) -> MockResponse:
+            return MockResponse({
+                "id": "pharmacy-user",
+                "username": "pharmacy",
+                "name": "Farmacêutica",
+                "display_name": "Farmacêutica",
+                "role": "pharmacy",
+                "modules": ["pharmacy"],
+                "permissions": {"pharmacy": ["consultar"]},
+                "is_superuser": False,
+                "module_enabled": module_enabled,
+                "maintenance_mode": maintenance_mode,
+            })
+
+    monkeypatch.setattr("scpo_services.common.httpx.AsyncClient", MockClient)
+    def make_request(method: str, path: str) -> Request:
+        return Request({
+            "type": "http",
+            "method": method,
+            "path": path,
+            "headers": [(b"cookie", f"{SESSION_COOKIE}=signed-token".encode())],
+            "query_string": b"",
+        })
+
+    request = make_request("GET", "/api/v1/pharmacy/items")
+    with pytest.raises(HTTPException) as denied:
+        asyncio.run(authenticated_principal(request))
+    assert denied.value.status_code == 403
+    module_enabled["pharmacy"] = True
+    maintenance_mode = True
+    request = make_request("POST", "/api/v1/pharmacy/items")
+    with pytest.raises(HTTPException) as maintenance_denied:
+        asyncio.run(authenticated_principal(request))
+    assert maintenance_denied.value.status_code == 503
+    export_request = make_request("POST", "/api/v1/backup/export")
+    principal = asyncio.run(authenticated_principal(export_request))
+    assert not principal.is_superuser
+
+    async def resolve_superadmin(*_: object, **__: object) -> MockResponse:
+        return MockResponse({
+            "id": "system-admin",
+            "username": "root",
+            "name": "Superadministrador",
+            "display_name": "Superadministrador",
+            "role": "management",
+            "modules": sorted(access.MODULES),
+            "permissions": access._all_permissions(),
+            "is_superuser": True,
+            "module_enabled": module_enabled,
+            "maintenance_mode": maintenance_mode,
+        })
+
+    MockClient.post = resolve_superadmin
+    request = make_request("POST", "/api/v1/pharmacy/items")
+    principal = asyncio.run(authenticated_principal(request))
+    assert principal.is_superuser
+    assert "pharmacy" in principal.modules
+
+
+def test_access_service_enforces_maintenance_mode_for_common_account(
+    domain_database: dict[str, Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "a" * 43)
+    user = access._new_user("maintenance-user", "Usuário", ["nursing"], access._all_permissions())
+    user.mfa_enabled = True
+    user.must_change_password = False
+    db.add(user)
+    settings = db.get(access.SystemModuleSettings, 1)
+    assert settings is not None
+    settings.maintenance_mode = True
+    db.commit()
+    token = access.issue_session(user.id, "active", user.session_version)
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/access/users",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+
+    with pytest.raises(HTTPException) as denied:
+        access._current_user(request, db)
+    assert denied.value.status_code == 503
+
+    logout_request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/auth/logout",
+        "headers": [(b"cookie", f"{SESSION_COOKIE}={token}".encode())],
+        "query_string": b"",
+    })
+    resolved, _ = access._current_user(logout_request, db)
+    assert resolved.id == user.id
 
 
 def test_bootstrap_uses_user_chosen_password_and_requires_mfa_setup(
@@ -2054,7 +2270,11 @@ def test_psychology_queue_is_persisted_separately_from_social_referrals(
 ) -> None:
     reference = "123e4567-e89b-12d3-a456-426614174000"
     audit_events = []
-    monkeypatch.setattr(social, "verify_patient_reference", lambda value: {"reference": value})
+    monkeypatch.setattr(
+        social,
+        "verify_patient_reference",
+        lambda value: {"reference": value, "references": [value]},
+    )
     monkeypatch.setattr(social, "emit_audit_event", lambda *args, **kwargs: audit_events.append(args))
     psychologist = DemoPrincipal("psych-1", "psych", "Psicóloga", "psychology", ["psychology"], {"psychology": ["consultar", "criar"]})
     social_worker = DemoPrincipal("social-1", "social", "Assistente social", "social", ["social"], {"social": ["consultar", "criar"]})

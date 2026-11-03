@@ -10,6 +10,7 @@ type OperationsMobileUser = {
   role: string
   modules: string[]
   permissions: Record<string, string[]>
+  is_superuser?: boolean
 }
 
 type WorkOrder = {
@@ -84,6 +85,12 @@ function isTemporaryConnectionError(error: unknown) {
     || (error instanceof Error && /HTTP 5\d\d|serviço está indisponível/i.test(error.message))
 }
 
+function isMaintenanceModeError(error: unknown) {
+  return error instanceof ApiResponseError
+    && error.status === 503
+    && /modo de manutenção/i.test(error.message)
+}
+
 function freshCache(cache?: ServiceCache<unknown>) {
   if (!cache) return false
   const cachedAt = Date.parse(cache.cached_at)
@@ -111,6 +118,8 @@ export default function OperationsMobilePage({
     && (user.permissions.maintenance?.includes('consultar') ?? false)
   const canSeeHygiene = user.modules.includes('hygiene')
     && (user.permissions.hygiene?.includes('consultar') ?? false)
+  const [disabledModules, setDisabledModules] = useState<string[]>([])
+  const [maintenanceMode, setMaintenanceMode] = useState(false)
   const canUpdateMaintenance = user.role === 'maintenance'
     && (user.permissions.maintenance?.includes('alterar') ?? false)
   const canUpdateHygiene = user.role === 'hygiene'
@@ -120,10 +129,11 @@ export default function OperationsMobilePage({
   const showHygiene = (user.role === 'hygiene' || user.role === 'management' || user.role === 'admin')
     && canSeeHygiene
   const availableTabs = useMemo<ServiceTab[]>(() => [
-    ...(showMaintenance ? ['maintenance' as const] : []),
-    ...(showHygiene ? ['hygiene' as const] : []),
-  ], [showHygiene, showMaintenance])
+    ...(showMaintenance && !disabledModules.includes('maintenance') ? ['maintenance' as const] : []),
+    ...(showHygiene && !disabledModules.includes('hygiene') ? ['hygiene' as const] : []),
+  ], [disabledModules, showHygiene, showMaintenance])
   const [tab, setTab] = useState<ServiceTab>(availableTabs[0] ?? 'maintenance')
+  const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'maintenance'
   const [maintenanceOrders, setMaintenanceOrders] = useState<WorkOrder[]>([])
   const [hygieneRequests, setHygieneRequests] = useState<HygieneRequest[]>([])
   const [maintenanceCacheAt, setMaintenanceCacheAt] = useState('')
@@ -143,6 +153,64 @@ export default function OperationsMobilePage({
   const loadData = useCallback(async () => {
     setRefreshing(true)
     setError('')
+    let disabledForRun = disabledModules
+    if (navigator.onLine && !user.is_superuser) {
+      try {
+        const settings = await readApiResponse<{ module_enabled: Record<string, boolean>; maintenance_mode: boolean }>(
+          await fetch('/api/v1/app/module-settings', { cache: 'no-store' }),
+        )
+        if (!settings.module_enabled || typeof settings.module_enabled !== 'object' || typeof settings.maintenance_mode !== 'boolean') {
+          throw new Error('Resposta inválida das configurações de módulos.')
+        }
+        setMaintenanceMode(settings.maintenance_mode)
+        disabledForRun = ['maintenance', 'hygiene'].filter(
+          (module) => settings.module_enabled[module] === false,
+        )
+        setDisabledModules((current) =>
+          current.length === disabledForRun.length
+            && current.every((module, index) => module === disabledForRun[index])
+            ? current
+            : disabledForRun,
+        )
+      } catch (settingsError) {
+        if (settingsError instanceof ApiResponseError && settingsError.status === 401) {
+          setError('Sua sessão expirou. Entre novamente para consultar a fila.')
+          setServerAvailable(false)
+          try {
+            await removeOfflineVault(vaultId)
+          } catch (cacheError) {
+            setError(`Sua sessão expirou, mas o cache cifrado não pôde ser apagado. ${readableApiError(cacheError)}`)
+          }
+          onLogout()
+          setRefreshing(false)
+          setLoading(false)
+          return
+        }
+        if (!isTemporaryConnectionError(settingsError)) {
+          setDisabledModules((current) =>
+            current.length === 2
+              && current.includes('maintenance')
+              && current.includes('hygiene')
+              ? current
+              : ['maintenance', 'hygiene'],
+          )
+          setMaintenanceOrders([])
+          setHygieneRequests([])
+          setMaintenanceCacheAt('')
+          setHygieneCacheAt('')
+          try {
+            await removeOfflineVault(vaultId)
+            setError(`Não foi possível verificar a disponibilidade dos módulos. O acesso offline foi bloqueado por segurança. ${readableApiError(settingsError)}`)
+          } catch (cacheError) {
+            setError(`Não foi possível verificar a disponibilidade dos módulos nem apagar o cache cifrado. O conteúdo não será exibido. ${readableApiError(cacheError)}`)
+          }
+          setServerAvailable(false)
+          setRefreshing(false)
+          setLoading(false)
+          return
+        }
+      }
+    }
     let cached: OperationsVault | null = null
     let cacheReadError: unknown = null
     try {
@@ -151,13 +219,34 @@ export default function OperationsMobilePage({
       cacheReadError = readError
     }
     let nextVault = cached ?? { version: 1 as const }
-    if (!showMaintenance) {
+    const maintenanceEnabled = user.is_superuser || !disabledForRun.includes('maintenance')
+    const hygieneEnabled = user.is_superuser || !disabledForRun.includes('hygiene')
+    if (!showMaintenance || !maintenanceEnabled) {
       delete nextVault.maintenance
       setMaintenanceOrders([])
+      setMaintenanceCacheAt('')
     }
-    if (!showHygiene) {
+    if (!showHygiene || !hygieneEnabled) {
       delete nextVault.hygiene
       setHygieneRequests([])
+      setHygieneCacheAt('')
+    }
+    if (!user.is_superuser && disabledForRun.length) {
+      try {
+        if (nextVault.maintenance || nextVault.hygiene) {
+          await writeOfflineVault(vaultId, nextVault)
+        } else {
+          await removeOfflineVault(vaultId)
+        }
+      } catch (cacheError) {
+        setError(`Um módulo foi desativado, mas o cache local não pôde ser atualizado. O conteúdo não será exibido. ${readableApiError(cacheError)}`)
+        setMaintenanceOrders([])
+        setHygieneRequests([])
+        setServerAvailable(false)
+        setRefreshing(false)
+        setLoading(false)
+        return
+      }
     }
     const failures: { service: ServiceTab; error: unknown }[] = []
     let serverSuccess = false
@@ -206,8 +295,8 @@ export default function OperationsMobilePage({
 
     try {
       await Promise.all([
-        ...(showMaintenance ? [loadMaintenance()] : []),
-        ...(showHygiene ? [loadHygiene()] : []),
+        ...(showMaintenance && maintenanceEnabled ? [loadMaintenance()] : []),
+        ...(showHygiene && hygieneEnabled ? [loadHygiene()] : []),
       ])
       const unauthorized = failures.find((failure) =>
         failure.error instanceof ApiResponseError && failure.error.status === 401,
@@ -279,7 +368,7 @@ export default function OperationsMobilePage({
       setLoading(false)
       setRefreshing(false)
     }
-  }, [onLogout, showHygiene, showMaintenance, vaultId])
+  }, [disabledModules, onLogout, showHygiene, showMaintenance, user.is_superuser, vaultId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0)
@@ -302,6 +391,39 @@ export default function OperationsMobilePage({
       window.removeEventListener('offline', handleOffline)
     }
   }, [loadData])
+
+  useEffect(() => {
+    if (user.is_superuser) return
+    const checkModuleAvailability = async () => {
+      if (!navigator.onLine) return
+      let settings: { module_enabled: Record<string, boolean>; maintenance_mode: boolean }
+      try {
+        settings = await readApiResponse<{ module_enabled: Record<string, boolean>; maintenance_mode: boolean }>(
+          await fetch('/api/v1/app/module-settings', { cache: 'no-store' }),
+        )
+        if (!settings.module_enabled || typeof settings.module_enabled !== 'object' || typeof settings.maintenance_mode !== 'boolean') {
+          throw new Error('Resposta inválida das configurações de módulos.')
+        }
+      } catch (availabilityError) {
+        if (isTemporaryConnectionError(availabilityError)) {
+          setServerAvailable(false)
+          return
+        }
+        await loadData()
+        return
+      }
+      const maintenanceChanged = settings.maintenance_mode !== maintenanceMode
+      const currentlyDisabled = ['maintenance', 'hygiene'].filter(
+        (module) => settings.module_enabled[module] === false,
+      )
+      if (maintenanceChanged || currentlyDisabled.length !== disabledModules.length
+        || currentlyDisabled.some((module, index) => module !== disabledModules[index])) {
+        await loadData()
+      }
+    }
+    const timer = window.setInterval(() => void checkModuleAvailability(), 30_000)
+    return () => window.clearInterval(timer)
+  }, [disabledModules, loadData, maintenanceMode, user.is_superuser])
 
   const visibleWorkOrders = maintenanceOrders.filter((order) => {
     const isActive = order.status === 'open' || order.status === 'in_progress'
@@ -345,7 +467,7 @@ export default function OperationsMobilePage({
 
   async function updateMaintenanceStatus(order: WorkOrder) {
     const status = statusDrafts[order.id] ?? order.status
-    if (!canUpdateMaintenance || !serverAvailable || status === order.status) return
+    if (!canUpdateMaintenance || maintenanceMode || !serverAvailable || status === order.status) return
     setUpdatingId(order.id)
     setError('')
     setNotice('')
@@ -367,6 +489,7 @@ export default function OperationsMobilePage({
       setNotice(`OS ${updated.order_number ?? updated.id} atualizada para ${statusLabels[updated.status]}.`)
       await cacheUpdatedRecords('maintenance', records)
     } catch (updateError) {
+      if (isMaintenanceModeError(updateError)) setMaintenanceMode(true)
       setError(`Não foi possível atualizar a ordem. ${readableApiError(updateError)}`)
     } finally {
       setUpdatingId('')
@@ -374,7 +497,7 @@ export default function OperationsMobilePage({
   }
 
   async function updateHygieneStatus(request: HygieneRequest, status: HygieneRequest['status']) {
-    if (!canUpdateHygiene || !serverAvailable || status === request.status) return
+    if (!canUpdateHygiene || maintenanceMode || !serverAvailable || status === request.status) return
     setUpdatingId(request.id)
     setError('')
     setNotice('')
@@ -403,6 +526,7 @@ export default function OperationsMobilePage({
           : `Solicitação atualizada para ${statusLabels[updated.status]}.`)
       await cacheUpdatedRecords('hygiene', records)
     } catch (updateError) {
+      if (isMaintenanceModeError(updateError)) setMaintenanceMode(true)
       setError(`Não foi possível atualizar a solicitação. ${readableApiError(updateError)}`)
     } finally {
       setUpdatingId('')
@@ -410,7 +534,7 @@ export default function OperationsMobilePage({
   }
 
   async function retryHygieneBedRelease(request: HygieneRequest) {
-    if (!canUpdateHygiene || !serverAvailable) return
+    if (!canUpdateHygiene || maintenanceMode || !serverAvailable) return
     setUpdatingId(request.id)
     setError('')
     setNotice('')
@@ -423,6 +547,7 @@ export default function OperationsMobilePage({
       setNotice('Liberação do leito confirmada pelo servidor.')
       await cacheUpdatedRecords('hygiene', records)
     } catch (releaseError) {
+      if (isMaintenanceModeError(releaseError)) setMaintenanceMode(true)
       setError(`A solicitação está concluída, mas o leito continua bloqueado. ${readableApiError(releaseError)}`)
     } finally {
       setUpdatingId('')
@@ -432,8 +557,11 @@ export default function OperationsMobilePage({
   if (!availableTabs.length) {
     return <main className="nursing-mobile-page nursing-mobile-denied">
       <img src="/scpo-connect-icon.png" alt="" />
-      <h1>Acesso operacional necessário</h1>
-      <p>Esta interface exige permissão de consulta na fila operacional correspondente ao seu perfil.</p>
+      <h1>{disabledModules.some((module) => user.modules.includes(module)) ? 'Módulo operacional temporariamente desativado' : 'Acesso operacional necessário'}</h1>
+      <p>{disabledModules.some((module) => user.modules.includes(module))
+        ? 'O acesso online foi bloqueado e o cache de leitura do módulo foi removido após a reconexão.'
+        : 'Esta interface exige permissão de consulta na fila operacional correspondente ao seu perfil.'}</p>
+      {error && <div className="nursing-mobile-message nursing-mobile-error" role="alert"><AlertTriangle size={17} /><span>{error}</span></div>}
       <a className="button button-secondary" href="/">Voltar ao SCPO Connect</a>
       <button className="button button-secondary" type="button" onClick={() => void logout()}>Sair</button>
     </main>
@@ -448,26 +576,27 @@ export default function OperationsMobilePage({
       <div><p className="eyebrow">CONSULTA DE ORDENS</p><h1>Olá, {(user.display_name || user.name).split(/\s+/)[0]}</h1></div>
       <span className={`nursing-mobile-connection ${serverAvailable ? 'is-online' : 'is-offline'}`}><i />{serverAvailable ? <><Wifi size={14} /> Servidor conectado</> : <><WifiOff size={14} /> {online ? 'Servidor indisponível' : 'Sem conexão'}</>}</span>
     </section>
-    {!serverAvailable && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Consulta offline somente leitura com dados salvos em cache. Para alterar status ou concluir uma ordem, conecte ao servidor.</span></div>}
+    {maintenanceMode && !user.is_superuser && <div className="nursing-mobile-connectivity-warning" role="status"><AlertTriangle size={17} /><span>Modo de manutenção ativo. As consultas permanecem disponíveis, mas alterações e liberações de leito estão pausadas.</span></div>}
+    {!serverAvailable && !maintenanceMode && <div className="nursing-mobile-connectivity-warning" role="status"><WifiOff size={17} /><span>Consulta offline somente leitura com dados salvos em cache. Para alterar status ou concluir uma ordem, conecte ao servidor.</span></div>}
     {error && <div className="nursing-mobile-message nursing-mobile-error" role="alert"><AlertTriangle size={17} /><span>{error}</span></div>}
     {notice && <div className="nursing-mobile-message nursing-mobile-success" role="status">{notice}</div>}
     <nav className="nursing-mobile-tabs" aria-label="Filas operacionais">
-      {availableTabs.map((service) => <button key={service} type="button" aria-pressed={tab === service} className={tab === service ? 'is-active' : ''} onClick={() => { setTab(service); setFilter('active'); setSearch('') }}>
+      {availableTabs.map((service) => <button key={service} type="button" aria-pressed={activeTab === service} className={activeTab === service ? 'is-active' : ''} onClick={() => { setTab(service); setFilter('active'); setSearch('') }}>
         {service === 'maintenance' ? <Wrench size={17} /> : <SprayCan size={17} />}
         {service === 'maintenance' ? 'Manutenção' : 'Higienização'}
       </button>)}
     </nav>
     <section className="nursing-mobile-panel operations-mobile-panel">
-      <div className="nursing-mobile-section-title"><div><p className="eyebrow">{serverAvailable ? 'ATUALIZADA DO SERVIDOR' : 'CÓPIA SOMENTE PARA CONSULTA'}</p><h2>{tab === 'maintenance' ? <><Wrench size={19} /> Ordens de serviço</> : <><SprayCan size={19} /> Higienização</>}</h2><small>Atualizada: {formatTime(tab === 'maintenance' ? maintenanceCacheAt : hygieneCacheAt) || 'sem cache'}</small></div><button className="nursing-mobile-refresh" type="button" onClick={() => void loadData()} disabled={refreshing} aria-label="Atualizar ordens"><RefreshCw size={17} /></button></div>
+      <div className="nursing-mobile-section-title"><div><p className="eyebrow">{serverAvailable ? 'ATUALIZADA DO SERVIDOR' : 'CÓPIA SOMENTE PARA CONSULTA'}</p><h2>{activeTab === 'maintenance' ? <><Wrench size={19} /> Ordens de serviço</> : <><SprayCan size={19} /> Higienização</>}</h2><small>Atualizada: {formatTime(activeTab === 'maintenance' ? maintenanceCacheAt : hygieneCacheAt) || 'sem cache'}</small></div><button className="nursing-mobile-refresh" type="button" onClick={() => void loadData()} disabled={refreshing} aria-label="Atualizar ordens"><RefreshCw size={17} /></button></div>
       <label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option><option value="open">Abertas</option><option value="in_progress">Em andamento</option><option value="completed">Concluídas</option><option value="cancelled">Canceladas</option></select></label>
       <label className="field"><span className="field-label">Buscar</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Local, tipo ou descrição" /></label>
-      {loading ? <div className="nursing-mobile-loading" role="status"><span className="spinner" /> Carregando ordens…</div> : tab === 'maintenance' ? visibleWorkOrders.length ? <div className="operations-mobile-list">{visibleWorkOrders.map((order) => <article className="operations-mobile-card" key={order.id}>
+      {loading ? <div className="nursing-mobile-loading" role="status"><span className="spinner" /> Carregando ordens…</div> : activeTab === 'maintenance' ? visibleWorkOrders.length ? <div className="operations-mobile-list">{visibleWorkOrders.map((order) => <article className="operations-mobile-card" key={order.id}>
         <div className="operations-mobile-card-heading"><span className={`work-order-status status-${order.status}`}>{statusLabel(order.status)}</span><span className={`work-order-priority priority-${order.priority}`}>{priorityLabels[order.priority]}</span></div>
         <strong>{order.order_number ? `OS ${order.order_number} · ` : ''}{order.title}</strong>
         <span>{order.service_type} · {order.department}</span>
         <span><ClipboardList size={14} /> {order.location || 'Local não informado'}</span>
         {order.description && <p>{order.description}</p>}
-        {canUpdateMaintenance && order.status !== 'completed' && order.status !== 'cancelled' && <div className="operations-mobile-update">
+        {canUpdateMaintenance && !maintenanceMode && order.status !== 'completed' && order.status !== 'cancelled' && <div className="operations-mobile-update">
           <label className="field"><span className="field-label">Atualizar situação</span><select value={statusDrafts[order.id] ?? order.status} disabled={!serverAvailable || updatingId === order.id} onChange={(event) => setStatusDrafts((current) => ({ ...current, [order.id]: event.target.value as WorkOrder['status'] }))}><option value="open">Aberta</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select></label>
           <button className="button button-primary" type="button" disabled={!serverAvailable || updatingId === order.id || (statusDrafts[order.id] ?? order.status) === order.status} onClick={() => void updateMaintenanceStatus(order)}>{updatingId === order.id ? 'Salvando…' : (statusDrafts[order.id] ?? order.status) === 'completed' ? 'Concluir OS' : 'Salvar situação'}</button>
         </div>}
@@ -480,11 +609,11 @@ export default function OperationsMobilePage({
         {request.description && <p>{request.description}</p>}
         {request.assignee && <span>Responsável: {request.assignee}</span>}
         {request.bed_id && <span className={`operations-mobile-bed-state status-${request.bed_status}`}>{request.bed_status === 'available' ? 'Leito liberado pelo servidor' : request.bed_status === 'release_pending' ? 'Conclusão registrada; liberação do leito pendente' : request.bed_status === 'cleaning' ? 'Leito em higienização' : 'Sem vínculo com leito'}</span>}
-        {canUpdateHygiene && request.status !== 'completed' && request.status !== 'cancelled' && <div className="operations-mobile-update">
+        {canUpdateHygiene && !maintenanceMode && request.status !== 'completed' && request.status !== 'cancelled' && <div className="operations-mobile-update">
           <label className="field"><span className="field-label">Atualizar situação</span><select value={statusDrafts[request.id] ?? request.status} disabled={!serverAvailable || updatingId === request.id} onChange={(event) => setStatusDrafts((current) => ({ ...current, [request.id]: event.target.value as WorkOrder['status'] }))}><option value="open">Aguardando atendimento</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option><option value="cancelled" disabled={Boolean(request.bed_id)}>Cancelada</option></select></label>
           <button className="button button-primary" type="button" disabled={!serverAvailable || updatingId === request.id || (statusDrafts[request.id] ?? request.status) === request.status} onClick={() => void updateHygieneStatus(request, statusDrafts[request.id] ?? request.status)}>{updatingId === request.id ? 'Salvando…' : (statusDrafts[request.id] ?? request.status) === 'completed' ? 'Concluir serviço' : 'Salvar situação'}</button>
         </div>}
-        {canUpdateHygiene && request.status === 'completed' && request.bed_id && request.bed_status === 'release_pending' && <button className="button button-secondary operations-mobile-release" type="button" disabled={!serverAvailable || updatingId === request.id} onClick={() => void retryHygieneBedRelease(request)}>{updatingId === request.id ? 'Verificando…' : 'Tentar liberar leito'}</button>}
+        {canUpdateHygiene && !maintenanceMode && request.status === 'completed' && request.bed_id && request.bed_status === 'release_pending' && <button className="button button-secondary operations-mobile-release" type="button" disabled={!serverAvailable || updatingId === request.id} onClick={() => void retryHygieneBedRelease(request)}>{updatingId === request.id ? 'Verificando…' : 'Tentar liberar leito'}</button>}
         <time>{formatTime(request.created_at)}</time>
       </article>)}</div> : <p className="nursing-mobile-empty"><ClipboardList size={18} /> Nenhuma solicitação corresponde aos filtros.</p>}
       <p className="nursing-mobile-footnote">Alterações e encerramentos exigem conexão e confirmação do servidor. A Higienização só libera o leito após essa confirmação.</p>

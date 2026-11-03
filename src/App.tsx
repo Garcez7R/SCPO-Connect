@@ -46,6 +46,7 @@ import {
   Pill,
   Pencil,
   Printer,
+  RefreshCw,
   SprayCan,
   ShieldCheck,
   Shirt,
@@ -92,6 +93,24 @@ const therapyTabValues = ['calendar', 'attendance', 'images', 'materials', 'repo
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', materials: 'Materiais', reports: 'Relatórios' }
 const systemAdminTabValues = ['dashboard', 'accounts', 'backup', 'recovery'] as const
 const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemControlModules = [
+  { id: 'patients', label: 'Pacientes' },
+  { id: 'nursing', label: 'Enfermagem' },
+  { id: 'pharmacy', label: 'Farmácia' },
+  { id: 'xray', label: 'Central de Exames' },
+  { id: 'physician', label: 'Médico' },
+  { id: 'social', label: 'Serviço Social' },
+  { id: 'nutrition', label: 'Nutrição' },
+  { id: 'hygiene', label: 'Higienização' },
+  { id: 'reception', label: 'Recepção' },
+  { id: 'therapy', label: 'Oficina Terapêutica' },
+  { id: 'psychology', label: 'Psicologia / Psiquiatria' },
+  { id: 'maintenance', label: 'Manutenção e ordens de serviço' },
+  { id: 'laundry', label: 'Lavanderia/Rouparia' },
+  { id: 'management', label: 'Gestão Hospitalar' },
+  { id: 'admin', label: 'Administração do aplicativo' },
+] as const
+type SystemModuleSettings = { module_enabled: Record<string, boolean>; maintenance_mode: boolean; updated_at?: string; updated_by_name?: string }
 const systemAdminServices: { id: ModuleService; label: string }[] = [
   { id: 'access', label: 'Acesso' },
   { id: 'audit', label: 'Auditoria' },
@@ -262,6 +281,18 @@ type Profile = {
 }
 
 type AuthUser = { id: string; username: string; name: string; display_name: string; role: ProfileId; modules: ModuleId[]; permissions: Record<string, string[]>; mfa_enabled: boolean; is_superuser: boolean }
+
+function isModuleDisabledForUser(id: ModuleId, settings: SystemModuleSettings, user: AuthUser) {
+  if (user.is_superuser || id === 'home' || id === 'about' || id === 'system-admin') return false
+  if (id === 'work-orders') return settings.module_enabled.maintenance !== true
+  if (id === 'nursing-history') return settings.module_enabled.nursing !== true
+  if (id === 'patient-history') {
+    return !['patients', 'nursing', 'physician', 'psychology', 'management', 'admin']
+      .some((module) => user.modules.includes(module as ModuleId) && settings.module_enabled[module] === true)
+  }
+  const module = id === 'oversight' ? 'admin' : id
+  return settings.module_enabled[module] !== true
+}
 
 const roleLabels: Record<ProfileId, string> = {
   patients: 'Cadastro de pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
@@ -585,6 +616,8 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   const [showBetaPopup, setShowBetaPopup] = useState(false)
   const [betaIconError, setBetaIconError] = useState(false)
   const [sessionRefreshError, setSessionRefreshError] = useState('')
+  const [moduleSettings, setModuleSettings] = useState<SystemModuleSettings | null>(null)
+  const [moduleSettingsError, setModuleSettingsError] = useState('')
   const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem('scpo-theme') === 'dark')
   const [fontZoom, setFontZoom] = useState(() => Number(window.localStorage.getItem('scpo-font-zoom') || '1'))
   const [mobileFeedback, setMobileFeedback] = useState(() => window.localStorage.getItem(MOBILE_FEEDBACK_STORAGE_KEY) === 'enabled')
@@ -667,6 +700,42 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [onSessionExpired, onUserUpdated, sessionExpiresAt])
+  useEffect(() => {
+    if (window.location.pathname === '/nursing.html' || window.location.pathname === '/operations.html') return
+    let active = true
+    const refreshModuleSettings = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const settings = await readApiResponse<SystemModuleSettings>(
+          await fetch('/api/v1/app/module-settings'),
+        )
+        if (!active) return
+        if (!settings.module_enabled || typeof settings.module_enabled !== 'object') {
+          throw new Error('Resposta inválida das configurações de módulos.')
+        }
+        setModuleSettings(settings)
+        setModuleSettingsError('')
+        if (isModuleDisabledForUser(activeModule, settings, user)) {
+          setActiveModule('home')
+          window.sessionStorage.setItem(`scpo-active-module:${user.id}`, 'home')
+        }
+      } catch (settingsError) {
+        if (!active) return
+        setModuleSettingsError(settingsError instanceof Error
+          ? `Não foi possível atualizar a disponibilidade dos módulos: ${settingsError.message}`
+          : 'Não foi possível atualizar a disponibilidade dos módulos.')
+      }
+    }
+    void refreshModuleSettings()
+    const timer = window.setInterval(() => void refreshModuleSettings(), 30_000)
+    document.addEventListener('visibilitychange', refreshModuleSettings)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshModuleSettings)
+    }
+  }, [activeModule, user])
+  const isModuleEnabled = (module: string) => user.is_superuser || moduleSettings?.module_enabled[module === 'oversight' ? 'admin' : module] === true
   const role = user.role
   const profile: Profile = {
     id: role,
@@ -675,14 +744,16 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     initials: (user.display_name || user.name).split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join(''),
     modules: ['home', ...user.modules, 'about'],
   }
-  const canReviewTherapyReports = profile.modules.includes('management')
+  const canReviewTherapyReports = isModuleEnabled('therapy') && profile.modules.includes('management')
   const hasAppAdmin = user.is_superuser || (
+    isModuleEnabled('admin')
+    &&
     user.role !== 'management'
     && profile.modules.includes('admin')
     && Boolean(user.permissions.admin?.includes('administrar'))
   )
-  const hasOversight = profile.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar'))
-  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'work-orders' || (item.id === 'system-admin' && user.is_superuser) || (item.id === 'admin' && (hasAppAdmin || hasOversight)) || profile.modules.includes(item.id) || (item.id === 'therapy' && canReviewTherapyReports)).sort((left, right) => {
+  const hasOversight = isModuleEnabled('oversight') && profile.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar'))
+  const visibleNavigation = navigation.filter((item) => item.id === 'about' || item.id === 'home' || (item.id === 'work-orders' && isModuleEnabled('maintenance')) || (item.id === 'system-admin' && user.is_superuser) || (item.id === 'admin' && (hasAppAdmin || hasOversight)) || (isModuleEnabled(item.id) && profile.modules.includes(item.id)) || (item.id === 'therapy' && canReviewTherapyReports)).sort((left, right) => {
     const order = (id: ModuleId) => id === 'home' ? 0 : id === 'admin' ? 2 : id === 'system-admin' ? 3 : 1
     const orderDifference = order(left.id) - order(right.id)
     return orderDifference || left.label.localeCompare(right.label, 'pt-BR')
@@ -691,11 +762,12 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   function canAccessModule(id: ModuleId) {
     if (id === 'system-admin') return user.is_superuser
     if (id === 'admin') return hasAppAdmin || hasOversight
-    if (id === 'nursing-history') return profile.modules.includes('nursing')
-    if (id === 'patient-history') return user.is_superuser || ['patients', 'nursing', 'physician', 'psychology', 'management', 'admin'].some((module) => profile.modules.includes(module as ModuleId))
-    if (id === 'therapy') return profile.modules.includes('therapy') || canReviewTherapyReports
-    if (id === 'about' || id === 'work-orders') return true
-    return profile.modules.includes(id)
+    if (id === 'nursing-history') return isModuleEnabled('nursing') && profile.modules.includes('nursing')
+    if (id === 'patient-history') return user.is_superuser || ['patients', 'nursing', 'physician', 'psychology', 'management', 'admin'].some((module) => isModuleEnabled(module) && profile.modules.includes(module as ModuleId))
+    if (id === 'therapy') return isModuleEnabled('therapy') && (profile.modules.includes('therapy') || canReviewTherapyReports)
+    if (id === 'about' || id === 'home') return true
+    if (id === 'work-orders') return isModuleEnabled('maintenance')
+    return isModuleEnabled(id) && profile.modules.includes(id)
   }
 
   function navigate(id: ModuleId) {
@@ -820,6 +892,8 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
 
         <div className="page-content">
           {sessionRefreshError && <ToastMessage variant="error">{`${sessionRefreshError}. O aplicativo tentará novamente enquanto a sessão ainda estiver válida.`}</ToastMessage>}
+          {moduleSettingsError && <ToastMessage variant="error">{moduleSettingsError}</ToastMessage>}
+          {moduleSettings?.maintenance_mode && !user.is_superuser && <div className="system-maintenance-banner" role="status"><AlertTriangle size={18} /><span>Modo de manutenção ativo: consultas permanecem disponíveis, mas gravações de contas comuns estão temporariamente bloqueadas.</span></div>}
           {deniedModule && <ModuleAccessDenied moduleId={deniedModule} onReturnHome={() => { setDeniedModule(null); navigate('home') }} />}
           {!deniedModule && <>
           <ModuleErrorBoundary key={activeModule} moduleLabel={activeLabel} onReturnHome={() => navigate('home')}>
@@ -5419,17 +5493,12 @@ function BackupExportPanel() {
     && restorePassword.length >= 12
     && restorePassword.length <= 128
     && restoreConfirmation === 'SUBSTITUIR TODOS OS DADOS'
-  function focusManualBackup() {
-    document.getElementById('backup-manual-export')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    document.getElementById('backup-manual-password')?.focus({ preventScroll: true })
-  }
   return <section className="patient-list-panel backup-panel">
     <div className="section-heading">
       <div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos protegidos por senha.</p></div>
-      <button className="button button-primary" type="button" onClick={focusManualBackup}><Download size={16} /> Ir para backup manual</button>
       <span className="module-icon module-icon-admin"><ShieldCheck size={20} /></span>
     </div>
-    <section className="backup-manual-section" id="backup-manual-export">
+    <section className="backup-manual-section">
       <div className="section-heading"><div><p className="eyebrow">EXPORTAÇÃO IMEDIATA</p><h3>Backup manual</h3><p className="welcome-copy">Informe a senha de criptografia para gerar e baixar o arquivo `.rgs`. Não é necessário configurar a rotina automática.</p></div></div>
       <form className="backup-export-form" onSubmit={(event) => void exportBackup(event)}>
         <label className="field"><span className="field-label">Senha de criptografia</span><span className="auth-password-control"><input id="backup-manual-password" required minLength={12} maxLength={128} type={showBackupPassword ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Use uma senha exclusiva com 12 ou mais caracteres" /><button className="auth-password-toggle" type="button" aria-label={showBackupPassword ? 'Ocultar senha de criptografia' : 'Mostrar senha de criptografia'} aria-pressed={showBackupPassword} onClick={() => setShowBackupPassword((visible) => !visible)}>{showBackupPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></span><span className="field-hint">A senha não é enviada para auditoria nem armazenada. Sem ela, o arquivo não pode ser aberto.</span></label>
@@ -5485,7 +5554,11 @@ function BackupExportPanel() {
       <form className="backup-export-form" onSubmit={(event) => void importAutomaticBackupKey(event)}>
         <label className="field">
           <span className="field-label">Chave pública GPG autorizada</span>
-          <input id="automatic-backup-public-key" required type="file" accept=".asc,.pgp,.gpg,application/pgp-keys" onChange={(event) => setAutomaticPublicKey(event.target.files?.[0] ?? null)} />
+          <div className="therapy-image-file-picker">
+            <input className="therapy-image-file-input" id="automatic-backup-public-key" required type="file" accept=".asc,.pgp,.gpg,application/pgp-keys" onChange={(event) => setAutomaticPublicKey(event.target.files?.[0] ?? null)} />
+            <label className="button button-secondary" htmlFor="automatic-backup-public-key"><Upload size={16} /> Escolher arquivo</label>
+            <span title={automaticPublicKey?.name}>{automaticPublicKey?.name ?? 'Nenhum arquivo selecionado'}</span>
+          </div>
           <span className="field-hint">Somente chave pública ASCII-armored, até 64 KB. A chave privada não deve ser enviada.</span>
         </label>
         <button className="button button-secondary" type="submit" disabled={automaticSaving || automaticLoading || !automaticPublicKey}>
@@ -5587,6 +5660,11 @@ const auditActionLabels: Record<string, string> = {
   audit_events_read: 'Eventos de auditoria consultados',
   audit_integrity_read: 'Integridade da cadeia consultada',
   audit_outbox_status_read: 'Filas de auditoria consultadas',
+  system_module_settings_read: 'Disponibilidade dos módulos consultada',
+  system_module_enabled: 'Módulo ativado',
+  system_module_disabled: 'Módulo desativado',
+  system_maintenance_mode_enabled: 'Modo de manutenção ativado',
+  system_maintenance_mode_disabled: 'Modo de manutenção desativado',
   automatic_backup_status_read: 'Estado do backup automático consultado',
   automatic_backup_public_key_imported: 'Chave pública de backup importada',
   automatic_backup_key_generated: 'Par de chaves GPG gerado para backup',
@@ -5818,6 +5896,14 @@ function AuditLogPanel() {
 function SystemAdminPage({ user }: { user: AuthUser }) {
   const { confirm } = useAppDialogs()
   const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-v2-${user.id}`, 'dashboard', systemAdminTabValues, systemAdminTabLabels)
+  const [moduleSettings, setModuleSettings] = useState<SystemModuleSettings | null>(null)
+  const [moduleSettingsLoading, setModuleSettingsLoading] = useState(true)
+  const [moduleSettingsBusy, setModuleSettingsBusy] = useState('')
+  const [moduleSettingsError, setModuleSettingsError] = useState('')
+  const [moduleSettingsNotice, setModuleSettingsNotice] = useState('')
+  const [backupSummary, setBackupSummary] = useState<AutomaticBackupStatus | null>(null)
+  const [backupSummaryLoading, setBackupSummaryLoading] = useState(true)
+  const [backupSummaryError, setBackupSummaryError] = useState('')
   const [users, setUsers] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -5828,6 +5914,34 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
   const [resetAllPassword, setResetAllPassword] = useState('')
   const [resetAllPhrase, setResetAllPhrase] = useState('')
   const [showResetAllPassword, setShowResetAllPassword] = useState(false)
+  const loadModuleSettings = useCallback(async () => {
+    setModuleSettingsLoading(true)
+    try {
+      const settings = await readApiResponse<SystemModuleSettings>(
+        await fetch('/api/v1/system-admin/module-settings', { cache: 'no-store' }),
+      )
+      setModuleSettings(settings)
+      setModuleSettingsError('')
+    } catch (loadError) {
+      setModuleSettingsError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar as configurações globais.')
+    } finally {
+      setModuleSettingsLoading(false)
+    }
+  }, [])
+  const loadBackupSummary = useCallback(async () => {
+    setBackupSummaryLoading(true)
+    try {
+      const status = await readApiResponse<AutomaticBackupStatus>(
+        await fetch('/api/v1/backup/automatic/status', { cache: 'no-store' }),
+      )
+      setBackupSummary(status)
+      setBackupSummaryError('')
+    } catch (loadError) {
+      setBackupSummaryError(loadError instanceof Error ? loadError.message : 'Não foi possível consultar os backups recentes.')
+    } finally {
+      setBackupSummaryLoading(false)
+    }
+  }, [])
   const loadUsers = useCallback(async () => {
     setLoading(true)
     try {
@@ -5845,6 +5959,56 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     const timer = window.setTimeout(() => void loadUsers(), 0)
     return () => window.clearTimeout(timer)
   }, [loadUsers])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadModuleSettings(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadModuleSettings])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadBackupSummary(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadBackupSummary])
+  async function updateModuleAvailability(module: string, enabled: boolean, label: string) {
+    if (!enabled && !await confirm(`Desativar ${label}? Contas comuns perderão o acesso ao módulo e às APIs correspondentes. Nenhum dado será apagado. O Superadministrador continuará com acesso.`)) return
+    setModuleSettingsBusy(module)
+    setModuleSettingsError('')
+    setModuleSettingsNotice('')
+    try {
+      const settings = await readApiResponse<SystemModuleSettings>(
+        await fetch('/api/v1/system-admin/module-settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ module_enabled: { [module]: enabled } }),
+        }),
+      )
+      setModuleSettings(settings)
+      setModuleSettingsNotice(`${label}: ${enabled ? 'módulo ativado' : 'módulo desativado'}.`)
+    } catch (updateError) {
+      setModuleSettingsError(updateError instanceof Error ? updateError.message : 'Não foi possível atualizar o módulo.')
+    } finally {
+      setModuleSettingsBusy('')
+    }
+  }
+  async function updateMaintenanceMode(enabled: boolean) {
+    if (enabled && !await confirm('Ativar o modo de manutenção? Contas comuns poderão consultar dados, mas as alterações serão bloqueadas. O Superadministrador continuará com acesso; login, segurança da conta e exportação de backup permanecem disponíveis.')) return
+    setModuleSettingsBusy('maintenance-mode')
+    setModuleSettingsError('')
+    setModuleSettingsNotice('')
+    try {
+      const settings = await readApiResponse<SystemModuleSettings>(
+        await fetch('/api/v1/system-admin/module-settings', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ maintenance_mode: enabled }),
+        }),
+      )
+      setModuleSettings(settings)
+      setModuleSettingsNotice(`Modo de manutenção ${enabled ? 'ativado' : 'desativado'}.`)
+    } catch (updateError) {
+      setModuleSettingsError(updateError instanceof Error ? updateError.message : 'Não foi possível atualizar o modo de manutenção.')
+    } finally {
+      setModuleSettingsBusy('')
+    }
+  }
   async function resetAllCredentials(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
@@ -5909,13 +6073,45 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
         <article><span>Contas comuns cadastradas</span><strong>{loading ? '…' : users.length}</strong></article>
         <article><span>Serviços monitorados</span><strong>{systemAdminServices.length}</strong></article>
       </div>
+      <section className="patient-list-panel system-module-settings">
+        <div className="section-heading"><div><p className="eyebrow">CONTROLES GLOBAIS</p><h2>Disponibilidade dos módulos</h2><p className="welcome-copy">Módulos desativados ficam ocultos para contas comuns e têm o acesso às APIs bloqueado. A alteração não apaga dados; o Superadministrador mantém acesso de manutenção. No PWA da Enfermagem, pendências offline não sincronizadas ficam cifradas no aparelho por até 24 horas e podem ser retomadas se o módulo for reativado nesse prazo.</p></div></div>
+        {moduleSettingsError && <ToastMessage variant="error">{moduleSettingsError}</ToastMessage>}
+        {moduleSettingsNotice && <ToastMessage variant="success">{moduleSettingsNotice}</ToastMessage>}
+        {moduleSettingsLoading && !moduleSettings && <div className="history-empty" role="status">Carregando configurações globais…</div>}
+        {moduleSettingsError && !moduleSettings && <button className="button button-secondary" type="button" onClick={() => void loadModuleSettings()} disabled={moduleSettingsLoading}><RefreshCw size={15} /> Tentar carregar os controles novamente</button>}
+        {moduleSettings && <div className="system-module-control-grid">{systemControlModules.map(({ id, label }) => {
+          const enabled = moduleSettings.module_enabled[id] === true
+          return <label className={`system-module-control ${enabled ? '' : 'system-module-control-disabled'}`} key={id}>
+            <span><strong>{label}</strong><small>{enabled ? 'Disponível para contas autorizadas' : 'Desativado para contas comuns'}</small></span>
+            <input type="checkbox" role="switch" checked={enabled} disabled={moduleSettingsLoading || Boolean(moduleSettingsBusy)} aria-label={`${enabled ? 'Desativar' : 'Ativar'} ${label}`} onChange={(event) => void updateModuleAvailability(id, event.target.checked, label)} />
+          </label>
+        })}</div>}
+        {moduleSettings?.updated_at && <p className="field-hint">Última alteração: {dateTime(moduleSettings.updated_at)} · {moduleSettings.updated_by_name}</p>}
+      </section>
+      <section className="patient-list-panel system-module-settings">
+        <div className="section-heading"><div><p className="eyebrow">JANELA OPERACIONAL</p><h2>Modo de manutenção</h2><p className="welcome-copy">Pausa gravações de contas comuns sem interromper consultas. Login, alterações de segurança da conta, exportação de backup e o acesso do Superadministrador permanecem disponíveis.</p></div></div>
+        {moduleSettings && <label className={`system-module-control ${moduleSettings.maintenance_mode ? 'system-module-control-disabled' : ''}`}>
+          <span><strong>{moduleSettings.maintenance_mode ? 'Manutenção ativa' : 'Aplicativo em operação'}</strong><small>{moduleSettings.maintenance_mode ? 'Gravações de contas comuns estão bloqueadas' : 'Gravações permitidas conforme as permissões de cada conta'}</small></span>
+          <input type="checkbox" role="switch" checked={moduleSettings.maintenance_mode} disabled={moduleSettingsLoading || Boolean(moduleSettingsBusy)} aria-label={moduleSettings.maintenance_mode ? 'Desativar modo de manutenção' : 'Ativar modo de manutenção'} onChange={(event) => void updateMaintenanceMode(event.target.checked)} />
+        </label>}
+      </section>
       <section className="patient-list-panel">
         <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>
         <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>
       </section>
       <section className="patient-list-panel">
-        <div className="section-heading"><div><p className="eyebrow">ATALHOS DE MANUTENÇÃO</p><h2>Operações do Superusuário</h2></div></div>
-        <div className="system-dashboard-actions"><button className="button button-secondary" type="button" onClick={() => setTab('accounts')}>Usuários e permissões</button><button className="button button-secondary" type="button" onClick={() => setTab('backup')}>Cópias de segurança</button><button className="button button-secondary" type="button" onClick={() => setTab('recovery')}>Recuperação de acesso</button></div>
+        <div className="section-heading"><div><p className="eyebrow">CÓPIAS DE SEGURANÇA</p><h2>Backup automático mais recente</h2><p className="welcome-copy">Resumo do último resultado informado pelo serviço de backup. A conectividade do serviço não confirma a integridade de uma cópia.</p></div><button className="button button-secondary" type="button" onClick={() => void loadBackupSummary()} disabled={backupSummaryLoading}><RefreshCw size={15} /> Atualizar</button></div>
+        {backupSummaryError && <ToastMessage variant="error">{backupSummaryError}</ToastMessage>}
+        {backupSummaryLoading && !backupSummary && <div className="history-empty" role="status">Consultando estado do backup…</div>}
+        {backupSummary && <>
+          <div className="system-dashboard-summary system-dashboard-summary-details">
+            <article><span>Estado da rotina</span><strong>{!backupSummary.configured ? 'Não configurada' : backupSummary.enabled ? 'Ativa' : 'Precisa de atenção'}</strong></article>
+            <article><span>Último backup concluído</span><strong>{backupSummary.last_success_at ? dateTime(backupSummary.last_success_at) : 'Nenhum informado'}</strong>{backupSummary.last_backup_name && <small>{backupSummary.last_backup_name}</small>}</article>
+            <article><span>Próxima execução prevista</span><strong>{backupSummary.configured ? dateTime(backupSummary.next_run_at) : 'Não configurada'}</strong></article>
+          </div>
+          {backupSummary.last_error && <div className="nursing-mobile-message nursing-mobile-error" role="alert"><AlertTriangle size={17} /><span>Última falha: {backupSummary.last_error}</span></div>}
+          <div className="system-dashboard-actions"><button className="button button-secondary" type="button" onClick={() => setTab('backup')}>Abrir backups e exportar agora</button></div>
+        </>}
       </section>
     </section>}
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}

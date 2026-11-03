@@ -11,7 +11,7 @@ from typing import Annotated
 import httpx
 from cryptography.exceptions import InvalidTag
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -22,6 +22,7 @@ from .common import (
     database_session,
     emit_audit_event,
     get_engine,
+    maintenance_mode_blocks_request,
     register_audit_outbox_status_route,
     require_service_token,
     verify_database_migrated,
@@ -45,6 +46,7 @@ MODULES = {
     "reception", "therapy", "psychology", "maintenance", "management", "admin", "oversight",
     "laundry",
 }
+GLOBAL_MODULES = MODULES - {"oversight"}
 ACTIONS = {"consultar", "criar", "alterar", "excluir", "administrar"}
 INITIAL_PASSWORD = "0000"
 SYSTEM_SUPERADMIN_USERNAME = os.getenv("SCPO_SUPERADMIN_USERNAME", "rgarcez").strip().lower()
@@ -72,6 +74,17 @@ class AppUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class SystemModuleSettings(Base):
+    __tablename__ = "system_module_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    module_enabled: Mapped[dict[str, bool]] = mapped_column(JSON, nullable=False)
+    maintenance_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_by_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    updated_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+
 class PhysicianProfileDeletionOutbox(Base):
     __tablename__ = "physician_profile_deletion_outbox"
     __table_args__ = (
@@ -90,6 +103,38 @@ class PhysicianProfileDeletionOutbox(Base):
 
 def get_access_db():
     yield from database_session("access")
+
+
+def _system_module_settings(db: Session) -> SystemModuleSettings:
+    settings = db.get(SystemModuleSettings, 1)
+    if settings is None:
+        raise HTTPException(status_code=503, detail="Configurações globais não foram inicializadas")
+    if not isinstance(settings.module_enabled, dict) or any(
+        module not in GLOBAL_MODULES or not isinstance(enabled, bool)
+        for module, enabled in settings.module_enabled.items()
+    ):
+        raise HTTPException(status_code=503, detail="Configurações globais inválidas")
+    return settings
+
+
+def _module_settings_response(
+    settings: SystemModuleSettings,
+    *,
+    include_audit_metadata: bool = False,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "module_enabled": {
+            module: settings.module_enabled.get(module, True)
+            for module in sorted(GLOBAL_MODULES)
+        },
+        "maintenance_mode": settings.maintenance_mode,
+    }
+    if include_audit_metadata:
+        result.update(
+            updated_at=settings.updated_at.isoformat(),
+            updated_by_name=settings.updated_by_name,
+        )
+    return result
 
 
 @asynccontextmanager
@@ -254,6 +299,25 @@ class UserUpdatePayload(BaseModel):
     active: bool | None = None
 
 
+class SystemModuleSettingsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    module_enabled: dict[str, bool] = Field(default_factory=dict)
+    maintenance_mode: bool | None = None
+
+    @field_validator("module_enabled")
+    @classmethod
+    def validate_module_names(cls, values: dict[str, bool]) -> dict[str, bool]:
+        if set(values) - GLOBAL_MODULES:
+            raise ValueError("Módulo inválido")
+        return values
+
+    @model_validator(mode="after")
+    def validate_settings_present(self) -> "SystemModuleSettingsPayload":
+        if not self.module_enabled and self.maintenance_mode is None:
+            raise ValueError("Informe ao menos uma configuração")
+        return self
+
+
 class AuthEventPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: str = Field(min_length=20, max_length=2048)
@@ -332,11 +396,25 @@ def _current_user(
         locked_until = locked_until.replace(tzinfo=UTC)
     if locked_until and locked_until > datetime.now(UTC):
         raise HTTPException(status_code=429, detail="Acesso temporariamente bloqueado")
+    if not user.is_superuser and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        settings = _system_module_settings(db)
+        if maintenance_mode_blocks_request(
+            request.method,
+            request.url.path,
+            settings.maintenance_mode,
+            user.is_superuser,
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="O aplicativo está em modo de manutenção; alterações estão temporariamente bloqueadas",
+            )
     return user, claims
 
 
 def _require_account_admin(request: Request, db: Session) -> tuple[AppUser, DemoPrincipal]:
     user, _ = _current_user(request, db)
+    if not user.is_superuser and not _system_module_settings(db).module_enabled.get("admin", True):
+        raise HTTPException(status_code=403, detail="O módulo Administração está temporariamente desativado")
     is_app_admin = "admin" in user.modules and "administrar" in user.permissions.get("admin", [])
     if not user.is_superuser and not is_app_admin:
         raise HTTPException(status_code=403, detail="Acesso restrito à Administração do aplicativo")
@@ -692,6 +770,16 @@ def current_session(
     return {"user": _user_response(user), "session_expires_at": claims["exp"]}
 
 
+@app.get("/api/v1/app/module-settings")
+def app_module_settings(
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _current_user(request, db)
+    settings = _system_module_settings(db)
+    return _module_settings_response(settings)
+
+
 @app.post("/internal/v1/auth/introspect")
 def introspect(
     payload: AuthEventPayload,
@@ -707,7 +795,68 @@ def introspect(
         locked_until = locked_until.replace(tzinfo=UTC)
     if user is None or not user.active or not user.mfa_enabled or user.must_change_password or claims.get("sv") != user.session_version or (locked_until and locked_until > datetime.now(UTC)):
         raise HTTPException(status_code=401, detail="Sessão revogada")
-    return _user_response(user)
+    settings = _system_module_settings(db)
+    return {
+        **_user_response(user),
+        **_module_settings_response(settings),
+    }
+
+
+@app.get("/api/v1/system-admin/module-settings")
+def system_admin_module_settings(
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _, principal = _require_system_admin(request, db)
+    emit_audit_event(
+        principal, "management", "system_module_settings_read", "all", service="access"
+    )
+    return _module_settings_response(
+        _system_module_settings(db),
+        include_audit_metadata=True,
+    )
+
+
+@app.patch("/api/v1/system-admin/module-settings")
+def update_system_admin_module_settings(
+    payload: SystemModuleSettingsPayload,
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _, principal = _require_system_admin(request, db)
+    settings = _system_module_settings(db)
+    module_enabled = {
+        module: settings.module_enabled.get(module, True)
+        for module in GLOBAL_MODULES
+    }
+    for module, enabled in payload.module_enabled.items():
+        if module_enabled[module] == enabled:
+            continue
+        module_enabled[module] = enabled
+        emit_audit_event(
+            principal,
+            "management",
+            "system_module_enabled" if enabled else "system_module_disabled",
+            module,
+            db=db,
+            service="access",
+        )
+    settings.module_enabled = module_enabled
+    if payload.maintenance_mode is not None and payload.maintenance_mode != settings.maintenance_mode:
+        settings.maintenance_mode = payload.maintenance_mode
+        emit_audit_event(
+            principal,
+            "management",
+            "system_maintenance_mode_enabled" if payload.maintenance_mode else "system_maintenance_mode_disabled",
+            "all",
+            db=db,
+            service="access",
+        )
+    settings.updated_at = datetime.now(UTC)
+    settings.updated_by_id = principal.user_id
+    settings.updated_by_name = principal.actor_name[:120]
+    db.commit()
+    return _module_settings_response(settings, include_audit_metadata=True)
 
 
 @app.get("/api/v1/access/users")

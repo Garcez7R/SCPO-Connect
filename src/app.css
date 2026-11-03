@@ -688,14 +688,32 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .pharmacy-dispensation-submit { justify-self: start; min-height: 44px; }
 .management-page, .system-admin-page { display: grid; max-width: 1440px; gap: 18px; margin-inline: auto; }
 .system-dashboard { display: grid; gap: 18px; }
+.system-maintenance-banner { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--status-warning-border); border-radius: 8px; background: var(--amber-pale); color: var(--ink); font-size: 13px; line-height: 1.5; }
+.system-maintenance-banner svg { flex: 0 0 auto; color: var(--amber); }
 .system-dashboard-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .system-dashboard-summary article { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .system-dashboard-summary article span { color: var(--muted); font-size: 12px; }
 .system-dashboard-summary article strong { color: var(--ink); font-size: 18px; }
+.system-dashboard-summary-details article { align-items: flex-start; flex-direction: column; }
+.system-dashboard-summary-details article strong { font-size: 14px; }
+.system-dashboard-summary-details article small { color: var(--muted); overflow-wrap: anywhere; }
 .system-dashboard-services { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); gap: 10px; }
 .system-dashboard-services article { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .system-dashboard-services article > strong { color: var(--ink); font-size: 12px; }
 .system-dashboard-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.system-module-settings { display: grid; gap: 14px; }
+.system-module-control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); gap: 9px; }
+.system-module-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; }
+.system-module-control > span { display: grid; gap: 4px; min-width: 0; }
+.system-module-control strong { color: var(--ink); font-size: 13px; }
+.system-module-control small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.system-module-control input[role="switch"] { position: relative; flex: 0 0 auto; appearance: none; width: 48px; height: 28px; margin: 0; border: 1px solid var(--line); border-radius: 999px; background: var(--line); cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
+.system-module-control input[role="switch"]::before { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); content: ""; transition: transform 160ms ease; }
+.system-module-control input[role="switch"]:checked { border-color: var(--blue); background: var(--blue); }
+.system-module-control input[role="switch"]:checked::before { transform: translateX(20px); }
+.system-module-control input[role="switch"]:focus-visible { outline: 3px solid var(--status-progress-border); outline-offset: 2px; }
+.system-module-control input[role="switch"]:disabled { cursor: wait; opacity: 0.65; }
+.system-module-control-disabled { border-color: var(--status-warning-border); background: var(--amber-pale); }
 .management-operations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .asset-maintenance-grid { grid-template-columns: minmax(0, 1fr); }
 .asset-maintenance-grid > .admin-tabs { grid-column: 1 / -1; }
