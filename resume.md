@@ -15,8 +15,9 @@ Atualizado em 02/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 - **Concluído/publicado:** revisão visual dos quadros da Farmácia (`8b045db`); avaliação de escalas graduais sem inventar limites (`9bd9e2b`); revisão do README e do Sobre (`501aff4`).
 - **Tentativa bloqueada/publicada:** inspeção da Lavanderia em viewport móvel chegou somente à tela de login porque a API local não estava disponível (`1a0cf38`); repetir após preparar autenticação local.
-- **Fase pronta para publicação:** dashboard do Superadministrador com disponibilidade global por módulo, modo de manutenção, resumo/atalho de backup, switches on/off e recuperação de erro ao carregar configurações. A suíte backend completa, testes frontend e build passaram; a tela autenticada não pôde ser conferida manualmente porque a API local de Acesso em `localhost:8002` não está em execução.
-- **Dashboard pronto para publicação:** revisão de erros, switches on/off visíveis, layout da área de backups e retirada dos atalhos de abas redundantes concluídos; o seletor de chave pública usa o botão padrão da aplicação.
+- **Dashboard concluído e publicado:** disponibilidade global por módulo, modo de manutenção, resumo/atalho de backup, switches on/off e recuperação de erro ao carregar configurações. Commit `47b2b30`; suíte backend, typecheck, lint e build passaram. A inspeção autenticada manual ficou pendente porque a API local de Acesso em `localhost:8002` não está em execução.
+- **Dashboard publicado** (`47b2b30`): revisão de erros, switches on/off, modo de manutenção, disponibilidade global e resumo/atalhos de backup.
+- **Em andamento — tela de backups:** mantidos os grids, a ordem e a quebra responsiva existentes; alinhados ao topo os campos de configuração condicional, chave e restauração para evitar diferenças verticais quando opções são exibidas. O botão de backup manual duplicado foi removido, e o seletor da chave pública segue o padrão visual do app.
 - **Próxima fase:** separar os PWAs e acessos de Manutenção e Higienização. Depois, simplificar a tela de sinais vitais da Enfermagem, balancear os quadros informativos e avaliar gráficos úteis por módulo. Inspeção autenticada da Lavanderia, investigação de falha no Chrome/Windows 11 e piloto do servidor continuam sujeitos aos pré-requisitos listados abaixo.
 
 ### Concluído e publicado

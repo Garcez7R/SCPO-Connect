@@ -302,6 +302,10 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .backup-generated-key-panel h4 { margin: 2px 0 0; color: var(--ink); font-size: 15px; }
 .backup-generated-key-panel .welcome-copy { margin: 6px 0 0; }
 .backup-generated-key-panel .backup-generated-key-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.backup-generated-key-form > .field,
+.backup-automatic-config-form > .field,
+.backup-automatic-config-form > .backup-weekday-field,
+.backup-restore-form > .field { align-self: start; }
 .backup-generated-key-panel .backup-generated-key-form > .button { justify-self: start; }
 .backup-automatic-config-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .backup-automatic-config-form > .button { grid-column: 1 / -1; justify-self: start; align-self: start; }
