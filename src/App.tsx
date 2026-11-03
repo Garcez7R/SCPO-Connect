@@ -5127,32 +5127,6 @@ type AutomaticBackupStatus = {
   immutability_validated: boolean
 }
 
-function BackupOperationDialog({ operation }: { operation: BackupOperationProgress }) {
-  return <div className="backup-operation-overlay" role="presentation">
-    <div className="backup-operation-backdrop" />
-    <section className="backup-operation-dialog" role="dialog" aria-modal="true" aria-labelledby="backup-operation-title">
-      <span className="backup-operation-icon"><ShieldCheck size={28} /></span>
-      <p className="eyebrow">{operation.kind === 'backup' ? 'PROTEÇÃO DE DADOS' : 'RESTAURAÇÃO DE BACKUP'}</p>
-      <h2 id="backup-operation-title">{operation.title}</h2>
-      <p className="backup-operation-message" role="status" aria-live="polite">{operation.message}</p>
-      <div
-        className={`backup-operation-progress ${operation.progress === null ? 'is-indeterminate' : ''}`}
-        role="progressbar"
-        aria-label={operation.kind === 'backup' ? 'Progresso da operação de backup' : 'Progresso do envio e restauração do backup'}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={operation.progress ?? undefined}
-        aria-valuetext={operation.progress === null
-          ? operation.message
-          : `${operation.progress}% ${operation.kind === 'backup' ? 'do arquivo recebido' : 'do arquivo enviado'}`}
-      >
-        <span style={operation.progress === null ? undefined : { width: `${operation.progress}%` }} />
-      </div>
-      {operation.kind === 'restore' && <small>Não feche esta página. A restauração só termina após validar e substituir os bancos.</small>}
-    </section>
-  </div>
-}
-
 function BackupExportPanel() {
   const [automaticStatus, setAutomaticStatus] = useState<AutomaticBackupStatus | null>(null)
   const [automaticDirectory, setAutomaticDirectory] = useState('')
@@ -5650,13 +5624,14 @@ function BackupExportPanel() {
       {restoreMessage && <ToastMessage variant="success">{restoreMessage}</ToastMessage>}
       {restoreError && <ToastMessage variant="error">{restoreError}</ToastMessage>}
     </section>
-    {operation?.kind === 'restore' && <BackupOperationDialog operation={operation} />}
-    {operation?.kind === 'backup' && <ToastMessage
+    {operation && <ToastMessage
       variant="info"
       persistent
       progress={operation.progress}
-      progressLabel="Progresso da geração e do download do backup"
-    >{`${operation.title}. ${operation.message}`}</ToastMessage>}
+      progressLabel={operation.kind === 'backup'
+        ? 'Progresso da geração e do download do backup'
+        : 'Progresso do envio e restauração do backup'}
+    >{`${operation.title}. ${operation.message}${operation.kind === 'restore' ? ' Não feche esta página até a conclusão.' : ''}`}</ToastMessage>}
   </section>
 }
 

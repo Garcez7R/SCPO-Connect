@@ -158,6 +158,7 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 - **Atualização do `.216` concluída pelo usuário:** o checkout de código `7a24b41` está no servidor e `web`/`proxy` foram reconstruídos sem reiniciar APIs; a Rouparia já havia sido confirmada, e o toast de progresso foi validado. Não houve migração.
 - **Próxima etapa do piloto:** validar a restauração do backup em bancos com prefixo novo e diretórios de trabalho/anexos novos, sem substituir os bancos ativos. O usuário autorizou usar o mesmo disco provisoriamente para avaliações, mas dados reais não devem ser usados. E2E ainda exige autorização explícita.
+- **Ajuste de usabilidade da restauração:** o usuário reportou que o diálogo de progresso ficava fora da área visível até rolar ao topo. O progresso da exportação e da restauração agora usa a notificação persistente fixa na tela; o alerta de risco e a confirmação destrutiva permanecem no formulário. Aguardando atualização e validação visual no `.216`.
 - Depois da restauração isolada, validar serviços/healthchecks, persistência após reboot, HTTPS e os fluxos aprovados; registrar necessidades identificadas e ajustes neste resume antes de qualquer decisão de substituir o sistema atual.
 
 ## Validações conhecidas
