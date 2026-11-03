@@ -78,7 +78,7 @@ export default function TherapyStorageSettings() {
     }
   }
 
-  return <section className="backup-generated-key-panel therapy-storage-settings">
+  return <section className="patient-list-panel therapy-storage-settings">
     <div className="section-heading">
       <div>
         <p className="eyebrow">ARMAZENAMENTO DA OFICINA</p>

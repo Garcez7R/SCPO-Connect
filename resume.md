@@ -196,6 +196,13 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Typecheck, lint e build passaram para os controles e para o fundo branco dos ícones de toast.
 - Implementação publicada em `cf496b8` (controles), `02c7e48` (ícones de toast) e `28eb531` (checkpoint).
 
+### Concluído nesta retomada — configurações de armazenamento da Oficina Terapêutica
+
+- A configuração da subpasta da Biblioteca de imagens foi movida da guia Cópias de segurança para a seção Biblioteca e Álbum de fotos no Dashboard técnico, junto dos controles de ativação e cotas. O backup continua sem uma opção isolada de armazenamento da Biblioteca.
+- O caminho configurável se aplica à Biblioteca; o Álbum permanece em sua pasta reservada no mesmo volume. A confirmação de alteração continua informando a movimentação das imagens cadastradas.
+- README e ajuda interna foram atualizados. A próxima implementação transversal a planejar é uma experiência avançada e consistente de filtros e relatórios nas áreas em que fizer sentido, incluindo a guia Pacientes.
+- `npm run typecheck`, `npm run lint`, `npm run build` e `git diff --check` passaram. Nenhuma migração, alteração de backend ou operação em servidor foi necessária.
+
 ### Pendente — ordem sugerida
 
 - Retomar a revisão da Lavanderia/Rouparia em viewport móvel quando a API local de autenticação e uma sessão de teste estiverem disponíveis.
@@ -207,6 +214,7 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - **Ícones de toast no tema escuro (03/11/2026):** manter o fundo branco do ícone, como nos demais ícones do app. Corrigido localmente; validar e publicar.
 - **Dashboard — métricas automáticas (30 dias):** coletar séries a cada 5 minutos (cadência inicial) somente de containers/volumes do SCPO; apresentar gráficos de CPU/memória dos serviços instrumentados, disponibilidade/latência das verificações, tamanho dos bancos e uso/capacidade de volumes que o próprio app controla, além de tabelas com valor atual, pico/limite e horário da amostra. Exibir estados de “coletando dados”, “indisponível” e lacunas sem fabricar valores. Sem acesso ao Docker socket, ao host inteiro ou métricas de infraestrutura fora do escopo de confiança do app. A implementação aguarda a escolha de uma fonte confiável de CPU/memória por container; consultas de banco e armazenamento conhecido, por si sós, não atendem ao escopo completo.
 - **Auditoria e notificações de mutação:** aprimorar o resumo/visualização dos eventos administrativos para perfis Administrador e Superusuário, com filtros, autoria, ação, módulo, destino e data/hora legíveis, sem logs brutos de serviços. Emitir toast com o ícone do app para cada mutação concluída; operações em andamento usam progresso apenas quando houver percentual real e estado persistente quando a duração for indeterminada.
+- **Filtros e relatórios avançados (solicitado em 03/11/2026):** avaliar e implementar filtros e relatórios mais completos de forma consistente nas telas que comportam essas consultas, incluindo a guia Pacientes. Antes de ampliar cada área, mapear filtros existentes, dados disponíveis, permissões e saídas úteis; não expor dados clínicos fora das permissões nem acrescentar relatórios sem benefício operacional.
 - **Administração do host:** não incorporar terminal web com comandos livres, pois isso exporia execução arbitrária no servidor e aumentaria o risco de comprometimento. Como alternativa futura, avaliar um console operacional restrito e auditado (por exemplo, healthchecks, logs limitados e ações predefinidas de serviço), com autorização institucional e privilégio mínimo. Manter SSH para administração geral do sistema operacional.
 - **Funções específicas:** catalogar funções e suas rotas autorizadas antes de criar interruptores granulares; validar o bloqueio no backend, além de ocultar controles na interface. Não confundir esses interruptores com permissões individuais.
 - **Chrome/Windows 11 — observação encerrada sem reprodução:** o usuário relata que não houve novas falhas e suspeita de problema momentâneo do PC ao executar uma VM de desenvolvimento em paralelo. Não foi possível confirmar a causa; reabrir a investigação apenas se o problema voltar, registrando versão do navegador/SO, etapa, frequência, mensagem/console e passos seguros para reproduzir.

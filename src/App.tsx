@@ -78,7 +78,6 @@ import { BehavioralStatusBadge, type BehavioralStatus } from './components/Behav
 import HelpGuide from './components/HelpGuide'
 import { AppDialogProvider } from './components/AppDialogs'
 import { useAppDialogs } from './components/appDialogContext'
-import TherapyStorageSettings from './components/TherapyStorageSettings'
 import TherapyMediaSettings from './components/TherapyMediaSettings'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
@@ -6212,7 +6211,7 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
       </section>
     </section>}
     {tab === 'accounts' && <AdminPage user={user} view="accounts" />}
-    {tab === 'backup' && <><BackupExportPanel /><TherapyStorageSettings /></>}
+    {tab === 'backup' && <BackupExportPanel />}
     {tab === 'recovery' && <section className="patient-list-panel system-recovery-panel">
       <div className="section-heading"><div><p className="eyebrow">AÇÃO DE EMERGÊNCIA</p><h2>Redefinir credenciais de usuários</h2><p className="welcome-copy">A senha das contas comuns será redefinida para 0000 e as sessões serão encerradas. O MFA já cadastrado será mantido; no próximo acesso, quem já tem MFA deverá informar o código atual e criar uma nova senha. Contas sem MFA serão orientadas a configurá-lo.</p></div></div>
       <div className="system-recovery-summary"><strong>{loading ? '…' : users.length}</strong><span>contas comuns elegíveis · sua própria conta não será alterada</span><button className="button button-danger" type="button" onClick={() => { setError(''); setResetAllPassword(''); setResetAllPhrase(''); setResetAllConfirmationOpen(true) }} disabled={busy || loading || users.length === 0}>{busy ? 'Redefinindo…' : 'Redefinir credenciais de todas as contas'}</button><button className="button button-secondary" type="button" onClick={() => void loadUsers()} disabled={loading}>Atualizar lista</button></div>
