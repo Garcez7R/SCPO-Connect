@@ -3301,6 +3301,13 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
   const activePatientCount = patients.filter((patient) => patient.active !== false).length
   const allergyReviewCount = patients.filter((patient) => patient.active !== false && (!patient.allergies_status || patient.allergies_status === 'unknown')).length
   const pendingMedicationCount = dispensations.filter((dispensation) => dispensation.status === 'dispensed' && remainingDispensedQuantity(dispensation, administrations) > 0).length
+  const selectedAdministrationDispensation = dispensations.find((item) => item.id === selectedDispensation)
+  const selectedAdministrationPrescription = selectedAdministrationDispensation
+    ? physicianPrescriptions.find((prescription) =>
+      prescription.id === selectedAdministrationDispensation.prescription_reference
+      && prescription.patient_reference === patientRef,
+    )
+    : undefined
 
   return (
     <section className="nursing-page page-enter">
@@ -3329,6 +3336,21 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
         <div className="section-heading"><div><p className="eyebrow">FARMÁCIA → ENFERMAGEM</p><h2>Dispensações deste paciente</h2><p className="welcome-copy">A Farmácia registra lote, prescrição e baixa de estoque; a Enfermagem registra administração, recusa ou suspensão.</p></div></div>
         {medicationLoading ? <p className="history-empty">Carregando dispensações…</p> : medicationError.includes('Administrações da Enfermagem:') ? <p className="history-empty">Não é seguro calcular o saldo sem carregar as administrações já registradas. Corrija a conexão antes de registrar outra ação.</p> : medicationError.includes('Dispensações da Farmácia:') ? <p className="history-empty">O serviço de dispensações da Farmácia não respondeu; não é possível confirmar os itens disponíveis.</p> : dispensations.filter((item) => item.patient_reference === patientRef && remainingDispensedQuantity(item, administrations) > 0).length > 0 ? <form className="field-grid field-grid-two" onSubmit={(event) => void saveMedicationAdministration(event)}>
           <label className="field"><span className="field-label">Dispensação pendente</span><select required value={selectedDispensation} onChange={(event) => { setSelectedDispensation(event.target.value); setMedicationDose('') }}><option value="">Selecione</option>{dispensations.filter((item) => item.patient_reference === patientRef && remainingDispensedQuantity(item, administrations) > 0).map((item) => <option key={item.id} value={item.id}>{item.medication_name} · saldo {remainingDispensedQuantity(item, administrations)} de {item.quantity} {item.unit} · {dateTime(item.created_at)}</option>)}</select></label>
+          {selectedAdministrationDispensation && <article className="nursing-medication-prescription-reference" aria-label="Conferência da dispensação e prescrição">
+            <p className="eyebrow">CONFERÊNCIA ANTES DE REGISTRAR</p>
+            <strong>{selectedAdministrationDispensation.medication_name} · dispensado {selectedAdministrationDispensation.quantity} {selectedAdministrationDispensation.unit}</strong>
+            {selectedAdministrationPrescription
+              ? <>
+                <span>Prescrição: {selectedAdministrationPrescription.dose} · via {selectedAdministrationPrescription.route} · {selectedAdministrationPrescription.frequency} · {selectedAdministrationPrescription.duration}</span>
+                <span>Quantidade prescrita: {selectedAdministrationPrescription.quantity} {selectedAdministrationPrescription.unit} · prescritor: {selectedAdministrationPrescription.prescriber_name} · CRM {selectedAdministrationPrescription.crm}/{selectedAdministrationPrescription.crm_state}</span>
+                {selectedAdministrationPrescription.administration_times.length
+                  ? <span>Horários definidos pelo prescritor: {selectedAdministrationPrescription.administration_times.join(' · ')}</span>
+                  : <span>Sem horários específicos registrados; confira a frequência e as orientações prescritas.</span>}
+                {selectedAdministrationPrescription.instructions && <small>{selectedAdministrationPrescription.instructions}</small>}
+              </>
+              : <span>Prescrição vinculada não carregada para conferência. Consulte as prescrições deste paciente antes de registrar.</span>}
+            <small>A quantidade do campo abaixo usa a unidade do lote dispensado; confira a equivalência com a dose prescrita e o protocolo institucional.</small>
+          </article>}
           {selectedDispensation && (() => {
             const item = dispensations.find((dispensation) => dispensation.id === selectedDispensation)
             if (!item) return null

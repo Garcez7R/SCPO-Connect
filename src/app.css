@@ -1326,6 +1326,11 @@ html[data-theme="dark"] .nursing-triage-pending { color: #efc16e !important; }
 .nursing-medication-history { display: grid; gap: 9px; }
 .nursing-medication-history > article { display: grid; min-width: 0; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); color: var(--ink); }
 .nursing-medication-history > article > span, .nursing-medication-history > article > small { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.nursing-medication-prescription-reference { display: grid; grid-column: 1 / -1; gap: 6px; padding: 12px 14px; border: 1px solid var(--status-progress-border); border-left: 4px solid var(--status-progress-ink); border-radius: 7px; background: var(--status-progress-background); color: var(--ink); }
+.nursing-medication-prescription-reference > .eyebrow { margin: 0; color: var(--status-progress-ink); }
+.nursing-medication-prescription-reference > strong { font-size: 13px; line-height: 1.4; }
+.nursing-medication-prescription-reference > span,
+.nursing-medication-prescription-reference > small { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .hourly-round-details { margin-top: 4px; }
 .hourly-round-details summary { color: var(--blue-dark); cursor: pointer; font-size: 11px; font-weight: 600; }
 .hourly-round-details > div { display: grid; gap: 7px; margin-top: 9px; }
