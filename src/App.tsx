@@ -1296,6 +1296,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
   useBreadcrumb('patient-follow-up', showPatientFollowUp ? 'Acompanhamento' : null, 2)
   useBreadcrumb('patient-follow-up-selected', showPatientFollowUp ? viewingPatient?.name ?? null : null, 3)
   const [query, setQuery] = useState('')
+  const [reportQuery, setReportQuery] = useState('')
   const [roomFilter, setRoomFilter] = useState('')
   const [bedFilter, setBedFilter] = useState('')
   const [treatmentTrackFilter, setTreatmentTrackFilter] = useState<Patient['treatment_track'] | ''>('')
@@ -1366,6 +1367,8 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
   useEffect(() => {
     let active = true
     const controller = new AbortController()
+    const includeAdvancedFilters = !receptionMode && registryTab === 'reports'
+    const searchQuery = includeAdvancedFilters ? reportQuery : query
     const loadPatients = async () => {
       try {
         setLoading(true)
@@ -1377,14 +1380,14 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
           status: patientStatusFilter,
           sort: patientSort,
         })
-        if (query.trim()) params.set('search', query.trim())
+        if (searchQuery.trim()) params.set('search', searchQuery.trim())
         if (roomFilter) params.set('room', roomFilter)
         if (bedFilter) params.set('bed', bedFilter)
-        if (treatmentTrackFilter) params.set('treatment_track', treatmentTrackFilter)
         if (patientTypeFilter !== 'all') params.set('inpatient', String(patientTypeFilter === 'inpatient'))
-        if (sexFilter) params.set('sex', sexFilter)
-        if (birthDateFrom) params.set('birth_date_from', birthDateFrom)
-        if (birthDateTo) params.set('birth_date_to', birthDateTo)
+        if (includeAdvancedFilters && treatmentTrackFilter) params.set('treatment_track', treatmentTrackFilter)
+        if (includeAdvancedFilters && sexFilter) params.set('sex', sexFilter)
+        if (includeAdvancedFilters && birthDateFrom) params.set('birth_date_from', birthDateFrom)
+        if (includeAdvancedFilters && birthDateTo) params.set('birth_date_to', birthDateTo)
         const response = await fetch(`/api/v1/nursing/patients?${params.toString()}`, { signal: controller.signal })
         const data = await response.json() as {
           patients?: Patient[]
@@ -1422,13 +1425,13 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       }
     }
 
-    const timer = window.setTimeout(() => void loadPatients(), query.trim() ? 250 : 0)
+    const timer = window.setTimeout(() => void loadPatients(), searchQuery.trim() ? 250 : 0)
     return () => {
       active = false
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [patientPage, patientPageSize, patientReload, patientSort, patientStatusFilter, query, roomFilter, bedFilter, treatmentTrackFilter, patientTypeFilter, sexFilter, birthDateFrom, birthDateTo])
+  }, [patientPage, patientPageSize, patientReload, patientSort, patientStatusFilter, query, reportQuery, roomFilter, bedFilter, treatmentTrackFilter, patientTypeFilter, sexFilter, birthDateFrom, birthDateTo, receptionMode, registryTab])
 
   useEffect(() => {
     if (registryTab !== 'reports') return
@@ -1451,7 +1454,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
             status: patientStatusFilter,
             sort: patientSort,
           })
-          if (query.trim()) params.set('search', query.trim())
+          if (reportQuery.trim()) params.set('search', reportQuery.trim())
           if (roomFilter) params.set('room', roomFilter)
           if (bedFilter) params.set('bed', bedFilter)
           if (treatmentTrackFilter) params.set('treatment_track', treatmentTrackFilter)
@@ -1484,7 +1487,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       active = false
       controller.abort()
     }
-  }, [registryTab, patientReload, patientSort, patientStatusFilter, query, roomFilter, bedFilter, treatmentTrackFilter, patientTypeFilter, sexFilter, birthDateFrom, birthDateTo])
+  }, [registryTab, patientReload, patientSort, patientStatusFilter, reportQuery, roomFilter, bedFilter, treatmentTrackFilter, patientTypeFilter, sexFilter, birthDateFrom, birthDateTo])
 
   useEffect(() => {
     if (!viewingPatient) return
@@ -1672,10 +1675,16 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       .map((room) => [room === 'Sem quarto' ? room : `Quarto ${room}`, visiblePatients.filter((patient) => (patient.room.trim() || 'Sem quarto') === room)])
     : [['Pacientes', visiblePatients]]
   const patientPrintRows: PrintRow[] = reportPatients.map((patient) => ({ id: patient.reference, date: patient.created_at || '', title: patient.name, fields: [['Cadastro em', patient.created_at ? dateTime(patient.created_at) : 'Não informado'], ['Nascimento', patient.birth_date ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`)) : 'Não informado'], ['Sexo', patient.sex || 'Não informado'], ['Quarto e leito', patient.room && patient.bed ? `${patient.room} · ${patient.bed}` : 'Sem acomodação atribuída'], ['Situação', patient.active === false ? 'Alta / inativo' : 'Ativo'], ['Tratamento', treatmentTrackLabel(patient.treatment_track ?? 'unclassified')], ['Alergias e alertas', patient.allergies_status === 'known' ? patient.allergies || 'Detalhes não informados' : patient.allergies_status === 'none_known' ? 'Sem alergias conhecidas' : 'Não verificadas'], ['Responsável', patient.responsible_status === 'not_applicable' ? 'Não se aplica' : patient.responsible_name || 'Não informado']] }))
-  const patientFiltersActive = Boolean(
-    query.trim() || roomFilter || bedFilter || treatmentTrackFilter || patientTypeFilter !== 'all'
-    || sexFilter || birthDateFrom || birthDateTo || patientStatusFilter !== 'all',
+  const isPatientReportsTab = !receptionMode && registryTab === 'reports'
+  const patientQuickFiltersActive = Boolean(
+    (isPatientReportsTab ? reportQuery : query).trim()
+      || roomFilter || bedFilter || patientTypeFilter !== 'all' || patientStatusFilter !== 'all',
   )
+  const patientFiltersActive = Boolean(
+    patientQuickFiltersActive || treatmentTrackFilter || sexFilter || birthDateFrom || birthDateTo,
+  )
+  const visiblePatientFiltersActive = patientQuickFiltersActive || (isPatientReportsTab
+    && Boolean(treatmentTrackFilter || sexFilter || birthDateFrom || birthDateTo))
   const patientAddress = (patient: Patient) => [patient.address, patient.address_number, patient.address_complement, patient.neighborhood, patient.city, patient.state, patient.postal_code].filter(Boolean).join(', ')
   const responsibleAddress = (patient: Patient) => [patient.responsible_address, patient.responsible_address_number, patient.responsible_address_complement, patient.responsible_neighborhood, patient.responsible_city, patient.responsible_state, patient.responsible_postal_code].filter(Boolean).join(', ')
 
@@ -1775,20 +1784,22 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       <div className="patient-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setEditingReference(''); setForm({ ...emptyPatientForm }); setCameraOpen(false); if (!receptionMode) setRegistryTab('list') }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : editingReference ? 'Salvar alterações' : 'Cadastrar paciente'} <ArrowRight size={16} /></button></div>
     </form>}
     {(receptionMode || registryTab === 'list' || registryTab === 'reports') && <section className="patient-list-panel patient-advanced-filter-panel">
-      <div className="section-heading"><div><p className="eyebrow">PESQUISA E FILTROS</p><h2>{receptionMode ? 'Localizar pacientes e admissões' : registryTab === 'reports' ? 'Definir população do relatório' : 'Localizar pacientes'}</h2><p className="welcome-copy">Combine pesquisa, situação, acomodação e dados cadastrais. Os filtros também definem os registros incluídos no relatório.</p></div><span className="module-total">{patientTotal} resultado(s)</span></div>
-      <label className="field patient-search"><span className="field-label">Buscar por nome, filiação, CPF, SUS, SAME, contato, responsável ou endereço</span><span className="search-input-wrap"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPatientPage(0) }} placeholder="Digite um ou mais termos" /></span></label>
+      <div className="section-heading"><div><p className="eyebrow">PESQUISA E FILTROS</p><h2>{receptionMode ? 'Localizar pacientes e admissões' : isPatientReportsTab ? 'Definir população do relatório' : 'Localizar pacientes'}</h2><p className="welcome-copy">{receptionMode ? 'Pesquise por nome e use a situação ou acomodação para localizar pacientes e admissões.' : isPatientReportsTab ? 'Combine busca e filtros cadastrais avançados para definir a população do relatório.' : 'Use os filtros rápidos para localizar pacientes; perfil de tratamento, sexo e nascimento ficam em Relatórios.'}</p></div><span className="module-total">{patientTotal} resultado(s)</span></div>
+      <label className="field patient-search"><span className="field-label">{isPatientReportsTab ? 'Buscar por nome e dados cadastrais autorizados' : 'Buscar paciente por nome ou dado autorizado'}</span><span className="search-input-wrap"><Search size={17} /><input value={isPatientReportsTab ? reportQuery : query} onChange={(event) => { (isPatientReportsTab ? setReportQuery : setQuery)(event.target.value); setPatientPage(0) }} placeholder={isPatientReportsTab ? 'Nome, filiação, CPF, SUS, SAME, contato ou endereço' : 'Nome ou dado cadastral autorizado'} /></span></label>
       <div className="patient-registry-filters" aria-label="Filtros de pacientes">
         <label className="field"><span className="field-label">Quarto</span><select value={roomFilter} onChange={(event) => { setRoomFilter(event.target.value); setBedFilter(''); setPatientPage(0) }}><option value="">Todos os quartos</option>{roomOptions.map((room) => <option key={room} value={room}>{room}</option>)}</select></label>
         <label className="field"><span className="field-label">Leito</span><select value={bedFilter} onChange={(event) => { setBedFilter(event.target.value); setPatientPage(0) }} disabled={!bedOptions.length}><option value="">Todos os leitos</option>{bedOptions.map((bed) => <option key={bed} value={bed}>{bed}</option>)}</select></label>
         <label className="field"><span className="field-label">Situação</span><select value={patientStatusFilter} onChange={(event) => { setPatientStatusFilter(event.target.value as typeof patientStatusFilter); setPatientPage(0) }}><option value="all">Todos</option><option value="active">Ativos</option><option value="inactive">Alta / inativos</option></select></label>
         <label className="field"><span className="field-label">Vínculo de acomodação</span><select value={patientTypeFilter} onChange={(event) => { setPatientTypeFilter(event.target.value as typeof patientTypeFilter); setPatientPage(0) }}><option value="all">Todos</option><option value="inpatient">Com internação</option><option value="outpatient">Sem internação</option></select></label>
-        <label className="field"><span className="field-label">Perfil de tratamento</span><select value={treatmentTrackFilter} onChange={(event) => { setTreatmentTrackFilter(event.target.value as typeof treatmentTrackFilter); setPatientPage(0) }}><option value="">Todos os perfis</option><option value="clinical">Clínico</option><option value="psychiatric">Psiquiátrico</option><option value="combined">Clínico e psiquiátrico</option><option value="unclassified">Não classificado</option></select></label>
-        <label className="field"><span className="field-label">Sexo</span><select value={sexFilter} onChange={(event) => { setSexFilter(event.target.value); setPatientPage(0) }}><option value="">Todos</option><option value="__blank__">Sem informação</option><option value="Feminino">Feminino</option><option value="Masculino">Masculino</option><option value="Outro">Outro</option><option value="Não informado">Prefere não informar</option></select></label>
-        <label className="field"><span className="field-label">Nascimento a partir de</span><input type="date" value={birthDateFrom} max={birthDateTo || undefined} onChange={(event) => { setBirthDateFrom(event.target.value); setPatientPage(0) }} /></label>
-        <label className="field"><span className="field-label">Nascimento até</span><input type="date" value={birthDateTo} min={birthDateFrom || undefined} onChange={(event) => { setBirthDateTo(event.target.value); setPatientPage(0) }} /></label>
+        {isPatientReportsTab && <>
+          <label className="field"><span className="field-label">Perfil de tratamento</span><select value={treatmentTrackFilter} onChange={(event) => { setTreatmentTrackFilter(event.target.value as typeof treatmentTrackFilter); setPatientPage(0) }}><option value="">Todos os perfis</option><option value="clinical">Clínico</option><option value="psychiatric">Psiquiátrico</option><option value="combined">Clínico e psiquiátrico</option><option value="unclassified">Não classificado</option></select></label>
+          <label className="field"><span className="field-label">Sexo</span><select value={sexFilter} onChange={(event) => { setSexFilter(event.target.value); setPatientPage(0) }}><option value="">Todos</option><option value="__blank__">Sem informação</option><option value="Feminino">Feminino</option><option value="Masculino">Masculino</option><option value="Outro">Outro</option><option value="Não informado">Prefere não informar</option></select></label>
+          <label className="field"><span className="field-label">Nascimento a partir de</span><input type="date" value={birthDateFrom} max={birthDateTo || undefined} onChange={(event) => { setBirthDateFrom(event.target.value); setPatientPage(0) }} /></label>
+          <label className="field"><span className="field-label">Nascimento até</span><input type="date" value={birthDateTo} min={birthDateFrom || undefined} onChange={(event) => { setBirthDateTo(event.target.value); setPatientPage(0) }} /></label>
+        </>}
         <label className="field"><span className="field-label">Ordenar por</span><select value={patientSort} onChange={(event) => { setPatientSort(event.target.value as typeof patientSort); setPatientPage(0) }}><option value="location">Quarto e leito</option><option value="name">Nome (A–Z)</option></select></label>
-        {registryTab !== 'reports' && <label className="patient-group-toggle"><input type="checkbox" checked={groupPatientsByRoom} onChange={(event) => setGroupPatientsByRoom(event.target.checked)} /><span>Agrupar por quarto</span></label>}
-        <button className="button button-secondary patient-filter-clear" type="button" onClick={() => { setQuery(''); setRoomFilter(''); setBedFilter(''); setTreatmentTrackFilter(''); setPatientTypeFilter('all'); setSexFilter(''); setBirthDateFrom(''); setBirthDateTo(''); setPatientStatusFilter('all'); setPatientSort('location'); setGroupPatientsByRoom(false); setPatientPage(0) }} disabled={!patientFiltersActive && patientSort === 'location' && !groupPatientsByRoom}>Limpar filtros</button>
+        {!isPatientReportsTab && <label className="patient-group-toggle"><input type="checkbox" checked={groupPatientsByRoom} onChange={(event) => setGroupPatientsByRoom(event.target.checked)} /><span>Agrupar por quarto</span></label>}
+        <button className="button button-secondary patient-filter-clear" type="button" onClick={() => { setQuery(''); setReportQuery(''); setRoomFilter(''); setBedFilter(''); setTreatmentTrackFilter(''); setPatientTypeFilter('all'); setSexFilter(''); setBirthDateFrom(''); setBirthDateTo(''); setPatientStatusFilter('all'); setPatientSort('location'); setGroupPatientsByRoom(false); setPatientPage(0) }} disabled={!visiblePatientFiltersActive && patientSort === 'location' && !groupPatientsByRoom}>Limpar filtros</button>
       </div>
     </section>}
     {(receptionMode || registryTab === 'list') && <section className="patient-list-panel">
@@ -1796,7 +1807,7 @@ function PatientRegistryPage({ onHistory, receptionMode = false, canDeletePatien
       {loading ? <div className="history-empty">Carregando pacientes…</div> : filteredPatients.length ? patientGroups.map(([groupLabel, groupPatients]) => <section className="patient-registry-group" key={groupLabel}>
         {groupPatientsByRoom && <h3>{groupLabel}<span>{groupPatients.length}</span></h3>}
         <div className="patient-registry-list">{groupPatients.map((patient) => <article className={`patient-registry-card ${patientCareTrackClass(patient.treatment_track)}`} key={patient.reference}><div className="patient-registry-identity">{patient.photo_data ? <img src={patient.photo_data} alt="" /> : <span className="patient-registry-avatar"><UserRound size={19} /></span>}<div><h3>{patient.name}</h3><span className={`entry-status ${patient.active === false ? 'entry-status-draft' : 'entry-status-saved'}`}>{patient.is_provisional && patient.active !== false ? 'Cadastro provisório' : patient.active === false ? 'Alta / inativo' : 'Ativo'}</span><PatientCareTrackBadge track={patient.treatment_track} /><p>{patient.room && patient.bed ? `Quarto ${patient.room} · Leito ${patient.bed}` : 'Sem acomodação atribuída'}{patient.birth_date ? ` · Nascimento ${new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}` : ''}</p><small className="patient-card-identifiers">CPF: {patient.cpf || 'Não informado'} · Cartão SUS: {patient.sus_card || 'Não informado'}</small><PatientAllergyAlert patient={patient} />{patient.responsible_status === 'not_applicable' ? <small>Responsável: não se aplica</small> : patient.responsible_name && <small>{patient.responsible_relationship === 'Próprio paciente (autorreferência)' ? 'Autorreferência do paciente' : `Responsável: ${patient.responsible_name}`}{patient.responsible_phone ? ` · ${patient.responsible_phone}` : ''}</small>}{patientAddress(patient) && <small>{patientAddress(patient)}</small>}</div></div><div className="patient-registry-actions"><button className="button button-secondary" type="button" onClick={() => { setShowPatientFollowUp(false); setViewingPatient(patient) }}><Eye size={15} /> Ver ficha</button><button className="button button-secondary" type="button" onClick={() => openPatientFollowUp(patient)}><ClipboardList size={15} /> Acompanhamento</button>{onHistory && <button className="button button-secondary" type="button" onClick={() => { onHistory(patient.reference); setViewingPatient(null); setShowPatientFollowUp(false) }}>Histórico clínico</button>}<button className="button button-secondary" type="button" onClick={() => startEdit(patient)}><Pencil size={15} /> Editar</button>{canDeletePatients && <button className="button button-danger" type="button" onClick={() => void archivePatient(patient)}>Arquivar</button>}</div>{receptionMode && canMergeProvisional && patient.is_provisional && patient.active !== false && <div className="provisional-patient-merge"><p className="field-hint">O cadastro provisório pode ser vinculado ao registro definitivo; os históricos serão preservados.</p><div className="field-grid field-grid-two"><PatientSelect label="Cadastro definitivo correspondente" patients={patients.filter((candidate) => candidate.active !== false && !candidate.is_provisional && candidate.reference !== patient.reference)} value={mergeTargets[patient.reference] ?? ''} onChange={(reference) => setMergeTargets((current) => ({ ...current, [patient.reference]: reference }))} emptyLabel="Selecione o cadastro definitivo" placeholder="Buscar por nome ou identificador" optionLabel={(candidate) => `${candidate.name} · ${candidate.room && candidate.bed ? `Quarto ${candidate.room}, leito ${candidate.bed}` : 'sem acomodação'}`} /><button className="button button-primary" type="button" onClick={() => void mergeProvisionalPatient(patient)} disabled={!mergeTargets[patient.reference] || mergingReference === patient.reference}>{mergingReference === patient.reference ? 'Vinculando…' : 'Vincular cadastro'}</button></div></div>}</article>)}</div>
-      </section>) : <div className="history-empty"><UsersRound size={20} /><span>{patientFiltersActive ? 'Nenhum paciente corresponde aos filtros selecionados.' : 'Nenhum paciente cadastrado.'}</span></div>}
+      </section>) : <div className="history-empty"><UsersRound size={20} /><span>{visiblePatientFiltersActive ? 'Nenhum paciente corresponde aos filtros selecionados.' : 'Nenhum paciente cadastrado.'}</span></div>}
       {!loading && patientTotal > 0 && <nav className="history-pagination" aria-label="Paginação da lista de pacientes"><span>Exibindo {currentPatientPage * patientPageSize + 1}–{Math.min((currentPatientPage + 1) * patientPageSize, patientTotal)} de {patientTotal}</span><div><button className="button button-secondary" type="button" disabled={currentPatientPage === 0} onClick={() => setPatientPage((page) => Math.max(0, page - 1))}><ArrowLeft size={15} /> Anterior</button><button className="button button-secondary" type="button" disabled={currentPatientPage + 1 >= patientPageCount} onClick={() => setPatientPage((page) => Math.min(patientPageCount - 1, page + 1))}>Próxima <ArrowRight size={15} /></button></div></nav>}
     </section>}
     {viewingPatient && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewingPatient(null) }}>
