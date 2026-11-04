@@ -37,6 +37,19 @@ export function formatDecimalInput(value: string): string {
   return `${sign}${whole || '0'},${fraction}`
 }
 
+export function formatBloodPressureInput(value: string): string {
+  const input = value.replace(/[^\d/]/g, '')
+  const separatorIndex = input.indexOf('/')
+  if (separatorIndex >= 0) {
+    const systolic = input.slice(0, separatorIndex).replace(/\D/g, '').slice(0, 4)
+    const diastolic = input.slice(separatorIndex + 1).replace(/\D/g, '').slice(0, 4)
+    return `${systolic}/${diastolic}`
+  }
+
+  const digits = input.replace(/\D/g, '').slice(0, 7)
+  return digits.length > 3 ? `${digits.slice(0, 3)}/${digits.slice(3)}` : digits
+}
+
 export function formatHeightCentimeters(value: string): string {
   const digits = value.replace(/\D/g, '').slice(-3)
   if (!digits) return ''

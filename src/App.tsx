@@ -6,6 +6,7 @@ import { PatientCareTrackBadge } from './components/PatientCareTrackBadge'
 import { patientCareTrackClass } from './patientCareTrack'
 import PatientSelect from './components/PatientSelect'
 import {
+  formatBloodPressureInput,
   formatCpf,
   formatDecimalInput,
   formatHeightCentimeters,
@@ -3397,7 +3398,7 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
           <FormSection number="01" title="Sinais vitais" detail="Unidades indicadas em cada campo. Campos sem preenchimento permanecem em branco.">
             <div className="field-grid field-grid-four">
               <ValueField label="Saturação" unit="%" value={record.saturation} disabled={notApplicable.includes('saturation')} onChange={(value) => updateField('saturation', value)} onNA={() => toggleNotApplicable('saturation')} isNA={notApplicable.includes('saturation')} inputMode="decimal" />
-              <ValueField label="Pressão arterial" unit="mmHg" value={record.pressure} disabled={notApplicable.includes('pressure')} onChange={(value) => updateField('pressure', value)} onNA={() => toggleNotApplicable('pressure')} isNA={notApplicable.includes('pressure')} placeholder="Ex.: 120/80" pattern="\\d{1,4}/\\d{1,4}" hint="Informe sistólica/diastólica; o gráfico separa os dois valores em séries distintas." />
+              <ValueField label="Pressão arterial" unit="mmHg" value={record.pressure} disabled={notApplicable.includes('pressure')} onChange={(value) => updateField('pressure', value)} onNA={() => toggleNotApplicable('pressure')} isNA={notApplicable.includes('pressure')} placeholder="Digite 12080 ou 120/80" pattern="\\d{1,4}/\\d{1,4}" formatPressure hint="Digite 12080 para formatar 120/80. Para sistólica abaixo de 100, use zero à esquerda, como 08570 → 085/70." />
               <ValueField label="Frequência cardíaca" unit="bpm" value={record.heartRate} disabled={notApplicable.includes('heartRate')} onChange={(value) => updateField('heartRate', value)} onNA={() => toggleNotApplicable('heartRate')} isNA={notApplicable.includes('heartRate')} inputMode="numeric" />
               <ValueField label="Frequência respiratória" unit="rpm" value={record.respiratoryRate} disabled={notApplicable.includes('respiratoryRate')} onChange={(value) => updateField('respiratoryRate', value)} onNA={() => toggleNotApplicable('respiratoryRate')} isNA={notApplicable.includes('respiratoryRate')} inputMode="numeric" />
             </div>
@@ -3792,10 +3793,10 @@ function FormSection({ number, title, detail, children }: { number: string; titl
   return <section className="form-section"><div className="form-section-heading"><span className="section-number">{number}</span><div><h2>{title}</h2><p>{detail}</p></div></div>{children}</section>
 }
 
-function ValueField({ label, unit, value, disabled, onChange, onNA, isNA, placeholder, inputMode, pattern, hint }: { label: string; unit: string; value: string; disabled: boolean; onChange: (value: string) => void; onNA: () => void; isNA: boolean; placeholder?: string; inputMode?: 'numeric' | 'decimal'; pattern?: string; hint?: string }) {
+function ValueField({ label, unit, value, disabled, onChange, onNA, isNA, placeholder, inputMode, pattern, hint, formatPressure = false }: { label: string; unit: string; value: string; disabled: boolean; onChange: (value: string) => void; onNA: () => void; isNA: boolean; placeholder?: string; inputMode?: 'numeric' | 'decimal'; pattern?: string; hint?: string; formatPressure?: boolean }) {
   const id = `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   return (
-    <div className="field value-field"><label className="field-label" htmlFor={id}>{label}</label><div className={`input-with-unit ${isNA ? 'input-na' : ''}`}><input id={id} type="text" inputMode={inputMode} pattern={pattern} value={value} onChange={(event) => onChange(inputMode === 'decimal' ? formatDecimalInput(event.target.value) : event.target.value)} placeholder={isNA ? 'Não se aplica' : placeholder ?? 'Não preenchido'} disabled={disabled} /><span className="unit-label">{unit}</span></div>{hint && <span className="field-hint">{hint}</span>}<label className="checkbox-label"><input type="checkbox" checked={isNA} onChange={onNA} /><span>Não se aplica</span></label></div>
+    <div className="field value-field"><label className="field-label" htmlFor={id}>{label}</label><div className={`input-with-unit ${isNA ? 'input-na' : ''}`}><input id={id} type="text" inputMode={inputMode} pattern={pattern} value={value} onChange={(event) => onChange(formatPressure ? formatBloodPressureInput(event.target.value) : inputMode === 'decimal' ? formatDecimalInput(event.target.value) : event.target.value)} placeholder={isNA ? 'Não se aplica' : placeholder ?? 'Não preenchido'} disabled={disabled} /><span className="unit-label">{unit}</span></div>{hint && <span className="field-hint">{hint}</span>}<label className="checkbox-label"><input type="checkbox" checked={isNA} onChange={onNA} /><span>Não se aplica</span></label></div>
   )
 }
 

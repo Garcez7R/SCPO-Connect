@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { RefreshCw, Save, UserRound } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { glucoseInMgDl } from '../glucose'
+import { formatBloodPressureInput } from '../inputFormatting'
 import ToastMessage from './ToastMessage'
 import type { TriageArrival } from '../triageTypes'
 
@@ -30,7 +31,7 @@ const emptyTriageForm = (): TriageForm => ({
 })
 
 const vitalFields: Array<[string, string, string]> = [
-  ['pressure', 'Pressão arterial', 'Ex.: 120/80'],
+  ['pressure', 'Pressão arterial', 'Digite 12080 ou 120/80'],
   ['heartRate', 'Frequência cardíaca (bpm)', 'bpm'],
   ['respiratoryRate', 'Frequência respiratória (rpm)', 'rpm'],
   ['saturation', 'Saturação (%)', '%'],
@@ -206,7 +207,7 @@ export default function NursingTriagePanel({ canUpdate, isOnline = true }: { can
             maxLength={key === 'pressure' ? 9 : 16}
             placeholder={placeholder}
             value={form.vital_values[key] ?? ''}
-            onChange={(event) => setForm((current) => ({ ...current, vital_values: { ...current.vital_values, [key]: event.target.value } }))}
+            onChange={(event) => setForm((current) => ({ ...current, vital_values: { ...current.vital_values, [key]: key === 'pressure' ? formatBloodPressureInput(event.target.value) : event.target.value } }))}
           /></label>)}
           </div><p className="field-hint">Glicemia em mg/dL. Informe somente valores efetivamente aferidos. Não são geradas interpretações automáticas.</p></fieldset>
           {canUpdate && <button className="button button-primary" type="submit" disabled={saving || (form.allergies_status === 'known' && !form.allergies.trim())}><Save size={16} />{saving ? 'Salvando triagem…' : selectedArrival.triage ? 'Salvar nova revisão' : 'Registrar triagem'}</button>}

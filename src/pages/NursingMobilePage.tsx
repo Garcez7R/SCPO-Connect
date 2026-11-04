@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Activity, AlertTriangle, Check, ChevronLeft, Clock3, HeartPulse, LogOut, RefreshCw, ShieldCheck, UsersRound, Wifi, WifiOff } from 'lucide-react'
 import { ApiResponseError, readApiResponse, readableApiError } from '../api'
 import { glucoseInMgDl } from '../glucose'
+import { formatBloodPressureInput } from '../inputFormatting'
 import { readOfflineVault, removeOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
 import NursingTriagePanel from '../components/NursingTriagePanel'
 
@@ -168,7 +169,7 @@ const additionalVitalLabels: Record<AdditionalVitalKey, string> = {
 
 const vitalFields: { key: VitalKey; label: string; unit: string; inputMode: 'decimal' | 'numeric' | 'text'; placeholder?: string }[] = [
   { key: 'saturation', label: 'Saturação', unit: '%', inputMode: 'decimal', placeholder: 'Ex.: 98' },
-  { key: 'pressure', label: 'Pressão arterial', unit: 'mmHg', inputMode: 'text', placeholder: 'Ex.: 120/80 ou 12/8' },
+  { key: 'pressure', label: 'Pressão arterial', unit: 'mmHg', inputMode: 'text', placeholder: 'Digite 12080 ou 120/80' },
   { key: 'heartRate', label: 'Frequência cardíaca', unit: 'bpm', inputMode: 'numeric', placeholder: 'Ex.: 78' },
   { key: 'respiratoryRate', label: 'Frequência respiratória', unit: 'rpm', inputMode: 'numeric', placeholder: 'Ex.: 18' },
   { key: 'temperature', label: 'Temperatura', unit: '°C', inputMode: 'decimal', placeholder: 'Ex.: 36,5' },
@@ -188,10 +189,7 @@ function patientLocation(patient: Pick<MobilePatient, 'room' | 'bed'>) {
 
 function maskVitalValue(key: VitalKey, value: string) {
   if (key === 'pressure') {
-    const [systolic = '', diastolic = ''] = value.split('/')
-    const cleanSystolic = systolic.replace(/\D/g, '').slice(0, 4)
-    const cleanDiastolic = diastolic.replace(/\D/g, '').slice(0, 4)
-    return value.includes('/') ? `${cleanSystolic}/${cleanDiastolic}` : cleanSystolic
+    return formatBloodPressureInput(value)
   }
   if (key === 'heartRate' || key === 'respiratoryRate') return value.replace(/\D/g, '').slice(0, 4)
 

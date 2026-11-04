@@ -25,6 +25,7 @@ O sistema foi desenvolvido para a Santa Casa de Pedro Osório. Os módulos e as 
 - Histórico individual de sinais vitais, com consulta separada e controle de acesso por perfil.
 - Coleta de sinais vitais com autoria, histórico e gráficos de evolução por indicador.
 - Enfermagem: registro de transferências e altas de pacientes com acomodação, com histórico; central de alergias e contraindicações com autoria, justificativa e resolução rastreável.
+- Enfermagem: no campo de pressão, digite os números em sequência (12080 é formatado como 120/80); para sistólica abaixo de 100, use zero à esquerda, como 08570 → 085/70. Também é possível informar a barra manualmente.
 - Enfermagem: ao registrar administração, exibe junto da dispensação selecionada a dose, via, frequência, duração e horários da prescrição vinculada para conferência; a quantidade lançada continua na unidade do lote e não há cálculo automático de dose/horário.
 - Enfermagem: a impressão de etiquetas para copos com paciente, medicamento e horário está em avaliação e ainda não está disponível. O conteúdo, o momento de impressão e as conferências de segurança precisam ser validados com a equipe assistencial.
 - Recepção: classificação manual da prioridade de chegadas à emergência; não substitui protocolo institucional de triagem.
