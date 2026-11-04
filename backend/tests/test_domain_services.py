@@ -1240,6 +1240,10 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     )
     assert updated["minimum_balance"] == "4"
     assert updated["average_balance"] == "10"
+    with pytest.raises(ValidationError, match="meta média"):
+        pharmacy.StockThresholdPayload(minimum_balance="10", average_balance="10")
+    with pytest.raises(ValidationError, match="meta média"):
+        pharmacy.StockThresholdPayload(minimum_balance="10", average_balance="4")
     listed = pharmacy.list_items(pharmacist, domain_database["pharmacy"])
     assert listed["items"][0]["lot"] == "L-01"
     assert listed["items"][0]["average_balance"] == "10"

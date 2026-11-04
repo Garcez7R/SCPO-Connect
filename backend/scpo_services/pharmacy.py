@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from email.utils import parsedate_to_datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -297,6 +297,12 @@ class StockThresholdPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     minimum_balance: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
     average_balance: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> Self:
+        if parse_stock_quantity(self.average_balance) <= parse_stock_quantity(self.minimum_balance):
+            raise ValueError("A meta média deve ser maior que o saldo mínimo")
+        return self
 
 
 class StockMovementPayload(BaseModel):

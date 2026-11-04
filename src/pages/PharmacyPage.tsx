@@ -52,8 +52,8 @@ function matchesStockFilter(item: PharmacyItem, filter: StockFilter, today: stri
 function stockLevel(balance: number, minimumValue: string, averageValue: string): StockLevel {
   const minimum = Number(minimumValue.replace(',', '.'))
   const average = Number((averageValue || '0').replace(',', '.'))
-  if (Number.isFinite(minimum) && balance <= minimum) return 'critical'
-  if (!Number.isFinite(average) || average <= 0) return 'unconfigured'
+  if (!Number.isFinite(minimum) || !Number.isFinite(average) || average <= 0) return 'unconfigured'
+  if (balance <= minimum) return 'critical'
   if (balance <= average) return 'attention'
   return 'healthy'
 }
@@ -616,12 +616,15 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     product.product_id,
     stockLevel(product.available_balance, product.minimum_balance, product.average_balance),
   ]))
-  const criticalCount = productStocks.filter((product) =>
-    productLevelById.get(product.product_id) === 'critical',
-  ).length
-  const attentionCount = productStocks.filter((product) =>
-    productLevelById.get(product.product_id) === 'attention',
-  ).length
+  const stockLevelCounts = productStocks.reduce<Record<StockLevel, number>>((counts, product) => {
+    const level = productLevelById.get(product.product_id) ?? 'unconfigured'
+    counts[level] += 1
+    return counts
+  }, { critical: 0, attention: 0, healthy: 0, unconfigured: 0 })
+  const criticalCount = stockLevelCounts.critical
+  const attentionCount = stockLevelCounts.attention
+  const normalCount = stockLevelCounts.healthy
+  const unconfiguredCount = stockLevelCounts.unconfigured
   const eligibleMedicationLots = items
     .filter((item) => item.category.toLocaleLowerCase('pt-BR') === 'medicamento' && item.expiry_date >= today && Number(item.balance.replace(',', '.')) > 0)
     .sort((a, b) => a.product_id - b.product_id || a.expiry_date.localeCompare(b.expiry_date) || a.id - b.id)
@@ -707,11 +710,16 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     />
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
     {pharmacyTab === 'stock' && <>
-    <div className={`pharmacy-summary${loading ? ' is-loading' : ''}`} role="group" aria-label="Resumo do estoque" aria-busy={loading}>
+    <div className={`hygiene-summary${loading ? ' is-loading' : ''}`} role="group" aria-label="Resumo de lotes e validade" aria-busy={loading}>
       <article className="status-tone-neutral"><span>Itens e lotes</span><strong>{items.length}</strong><small>Registros cadastrados</small></article>
       <article className={expiringCount ? 'status-tone-warning' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Vencem em até 30 dias</span><strong>{expiringCount}</strong><small>Acompanhe as datas</small></article>
       <article className={expiredCount ? 'status-tone-critical' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Vencidos</span><strong>{expiredCount}</strong><small>Verifique o lote</small></article>
-      <article className={criticalCount ? 'status-tone-critical' : items.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No limite mínimo ou abaixo</small></article>
+    </div>
+    <div className="hygiene-summary" role="group" aria-label="Níveis de estoque por produto">
+      <article className={normalCount ? 'status-tone-success' : 'status-tone-neutral'}><span>Normal</span><strong>{normalCount}</strong><small>Acima da meta média</small></article>
+      <article className={attentionCount ? 'status-tone-warning' : productStocks.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Atenção</span><strong>{attentionCount}</strong><small>Acima do mínimo até a meta média</small></article>
+      <article className={criticalCount ? 'status-tone-critical' : productStocks.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Estoque crítico</span><strong>{criticalCount}</strong><small>No mínimo ou abaixo</small></article>
+      <article className={unconfiguredCount ? 'status-tone-neutral' : productStocks.length ? 'status-tone-success' : 'status-tone-neutral'}><span>Metas pendentes</span><strong>{unconfiguredCount}</strong><small>Configure mínimo e meta média</small></article>
     </div>
     <div className="pharmacy-quick-filters" role="group" aria-label="Filtrar estoque">
       {([
@@ -1063,15 +1071,24 @@ function PharmacyProductThresholds({
   const [average, setAverageState] = useState('')
   const setMinimum = (value: string) => setMinimumState(formatDecimalInput(value))
   const setAverage = (value: string) => setAverageState(formatDecimalInput(value))
+  const validThresholds = average.trim() !== ''
+    && Number.isFinite(Number(minimum.replace(',', '.')))
+    && Number.isFinite(Number(average.replace(',', '.')))
+    && Number(average.replace(',', '.')) > Number(minimum.replace(',', '.'))
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [messageVariant, setMessageVariant] = useState<'success' | 'error'>('success')
-  const label: Record<StockLevel, string> = { critical: 'Crítico', attention: 'Atenção', healthy: 'Adequado', unconfigured: 'Defina a meta' }
+  const label: Record<StockLevel, string> = { critical: 'Crítico', attention: 'Atenção', healthy: 'Normal', unconfigured: 'Defina as metas' }
   const rows = [...products].sort((a, b) => {
     const order: Record<StockLevel, number> = { critical: 0, attention: 1, unconfigured: 2, healthy: 3 }
     return order[stockLevel(a.available_balance, a.minimum_balance, a.average_balance)] - order[stockLevel(b.available_balance, b.minimum_balance, b.average_balance)] || a.item_name.localeCompare(b.item_name, 'pt-BR')
   })
   async function save(product: PharmacyProductStock) {
+    if (!validThresholds) {
+      setMessageVariant('error')
+      setMessage('A meta média deve ser maior que o saldo mínimo.')
+      return
+    }
     setSaving(true); setMessage('')
     try {
       const response = await fetch(`/api/v1/pharmacy/products/${product.product_id}/stock-thresholds`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minimum_balance: minimum.replace(',', '.'), average_balance: average.replace(',', '.') }) })
@@ -1084,7 +1101,7 @@ function PharmacyProductThresholds({
     <div className="section-heading"><div><p className="eyebrow">NÍVEIS DE ESTOQUE</p><h3>Metas por medicamento</h3><p className="welcome-copy">O saldo considera a soma dos lotes dentro da validade. Configure as metas uma vez por medicamento.</p></div></div>
     <details className="pharmacy-stock-details">
       <summary>Ver níveis e configurar metas por medicamento</summary>
-      <p>Crítico: saldo disponível no mínimo ou abaixo. Atenção: saldo entre o mínimo e a meta média. Adequado: acima da meta média. Lotes vencidos não entram no saldo acompanhado.</p>
+      <p>Configure o mínimo e a meta média por produto. Verde, Normal: saldo acima da meta média. Amarelo, Atenção: acima do mínimo e até a meta média. Vermelho, Crítico: no mínimo ou abaixo. Produtos sem metas válidas ficam pendentes de configuração; lotes vencidos não entram no saldo acompanhado.</p>
       {message && <ToastMessage variant={messageVariant}>{message}</ToastMessage>}
       {rows.length ? <div className="pharmacy-stock-level-list">{rows.map((product) => {
         const level = stockLevel(product.available_balance, product.minimum_balance, product.average_balance)
@@ -1092,7 +1109,7 @@ function PharmacyProductThresholds({
         return <article className="pharmacy-stock-level-row" key={product.product_id}>
           <div className="pharmacy-stock-level-name"><span className={`pharmacy-level-dot level-${level}`} /><div><strong>{product.item_name}</strong><small>Saldo válido {product.available_balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {product.unit} · mínimo {product.minimum_balance} · meta média {product.average_balance}</small></div></div>
           <span className={`pharmacy-stock-badge level-${level}`}>{label[level]}</span>
-          {isEditing ? <div className="pharmacy-threshold-editor"><label className="field"><span className="field-label">Mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label className="field"><span className="field-label">Meta média</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={average} onChange={(event) => setAverage(event.target.value)} /></label><button className="button button-primary" type="button" disabled={saving || !average} onClick={() => void save(product)}>{saving ? 'Salvando…' : 'Salvar metas'}</button><button className="button button-secondary" type="button" disabled={saving} onClick={() => setEditing(null)}>Cancelar</button></div> : <button className="button button-secondary pharmacy-threshold-button" type="button" onClick={() => { setEditing(product.product_id); setMinimum(product.minimum_balance || '0'); setAverage(product.average_balance && Number(product.average_balance) > 0 ? product.average_balance : '') }}>Configurar metas</button>}
+          {isEditing ? <div className="pharmacy-threshold-editor"><label className="field"><span className="field-label">Mínimo</span><input inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label><label className="field"><span className="field-label">Meta média</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={average} onChange={(event) => setAverage(event.target.value)} /><span className="field-hint">Deve ser maior que o mínimo.</span></label><button className="button button-primary" type="button" disabled={saving || !validThresholds} onClick={() => void save(product)}>{saving ? 'Salvando…' : 'Salvar metas'}</button><button className="button button-secondary" type="button" disabled={saving} onClick={() => setEditing(null)}>Cancelar</button></div> : <button className="button button-secondary pharmacy-threshold-button" type="button" onClick={() => { setEditing(product.product_id); setMinimum(product.minimum_balance || '0'); setAverage(product.average_balance && Number(product.average_balance) > 0 ? product.average_balance : '') }}>Configurar metas</button>}
         </article>
       })}</div> : <div className="history-empty">Nenhum produto encontrado.</div>}
     </details>
