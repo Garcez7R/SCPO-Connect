@@ -6,7 +6,7 @@ import os
 import re
 import uuid
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from email.utils import parsedate_to_datetime
 from typing import Annotated, Literal
@@ -1073,13 +1073,36 @@ def list_stock_movements(
     db: Annotated[Session, Depends(get_pharmacy_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
-    item_id: int | None = None,
+    item_id: Annotated[int | None, Query(ge=1)] = None,
+    movement_type: Literal["opening_balance", "entry", "issue", "adjustment"] | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
 ) -> dict[str, object]:
-    query = select(PharmacyStockMovement)
-    count_query = select(func.count(PharmacyStockMovement.id))
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(
+            status_code=422,
+            detail="A data inicial não pode ser posterior à data final",
+        )
+
+    filters = []
     if item_id is not None:
-        query = query.where(PharmacyStockMovement.item_id == item_id)
-        count_query = count_query.where(PharmacyStockMovement.item_id == item_id)
+        filters.append(PharmacyStockMovement.item_id == item_id)
+    if movement_type is not None:
+        filters.append(PharmacyStockMovement.movement_type == movement_type)
+    local_timezone = ZoneInfo("America/Sao_Paulo")
+    if from_date is not None:
+        starts_at = datetime.combine(
+            from_date, time.min, tzinfo=local_timezone
+        ).astimezone(UTC)
+        filters.append(PharmacyStockMovement.created_at >= starts_at)
+    if to_date is not None:
+        ends_at = datetime.combine(
+            to_date + timedelta(days=1), time.min, tzinfo=local_timezone
+        ).astimezone(UTC)
+        filters.append(PharmacyStockMovement.created_at < ends_at)
+
+    query = select(PharmacyStockMovement).where(*filters)
+    count_query = select(func.count(PharmacyStockMovement.id)).where(*filters)
     movements = db.scalars(
         query.order_by(
             PharmacyStockMovement.created_at.desc(),

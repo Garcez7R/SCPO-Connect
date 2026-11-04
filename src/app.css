@@ -803,6 +803,14 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-quick-filters .button span { display: inline-grid; min-width: 20px; height: 20px; place-items: center; border-radius: 12px; background: rgb(255 255 255 / 22%); font-size: 10px; }
 .pharmacy-quick-filters .button-secondary span { background: var(--blue-pale); color: var(--blue-dark); }
 .pharmacy-search { max-width: 480px; }
+.pharmacy-reports { display: grid; gap: 18px; }
+.pharmacy-report-group { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.pharmacy-report-group .section-heading { margin: 0; }
+.pharmacy-report-group h3 { margin: 2px 0 4px; color: var(--ink); font-size: 17px; }
+.pharmacy-report-group .welcome-copy { margin: 0; }
+.pharmacy-report-filters { display: grid; grid-template-columns: minmax(220px, 1.4fr) minmax(160px, .7fr) minmax(180px, .8fr); align-items: end; gap: 11px; }
+.pharmacy-movement-report-filters { grid-template-columns: repeat(4, minmax(140px, 1fr)); }
+.pharmacy-report-actions { display: flex; flex-wrap: wrap; grid-column: 1 / -1; gap: 8px; }
 .pharmacy-stock-overview { display: grid; gap: 10px; }
 .pharmacy-stock-levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .pharmacy-level-count { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 2px 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
@@ -2815,6 +2823,9 @@ html[data-theme="dark"] .work-order-status[class*="status-tone-"] { border-color
   .nursing-overview-actions .button { flex: 1 1 100%; justify-content: center; min-height: 44px; }
   .pharmacy-tabs { display: grid; grid-template-columns: 1fr 1fr; }
   .pharmacy-tabs .button { justify-content: center; padding-inline: 8px; }
+  .pharmacy-report-filters, .pharmacy-movement-report-filters { grid-template-columns: 1fr; }
+  .pharmacy-report-actions { grid-column: auto; }
+  .pharmacy-report-actions .button { flex: 1 1 100%; justify-content: center; }
   .pharmacy-scanner-backdrop { padding: 10px; }
   .pharmacy-scanner-dialog { width: 100%; max-height: 96dvh; gap: 12px; padding: 14px; border-radius: 11px; }
   .pharmacy-scanner-video { height: 60dvh; min-height: 220px; }

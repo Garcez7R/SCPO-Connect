@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, Camera, CalendarDays, Package, Pill, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Camera, CalendarDays, ClipboardList, Package, Pill, Search, X } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
@@ -21,6 +21,13 @@ type MedicationDispensation = { id: string; patient_reference: string; item_id: 
 type InternalPrescription = { id: string; patient_reference: string; medication_name: string; active_ingredient: string; presentation: string; dose: string; route: string; frequency: string; administration_times: string[]; duration: string; quantity: string; unit: string; instructions: string; is_controlled: boolean; prescriber_name: string; crm: string; crm_state: string; status: 'pending' | 'fulfilled' | 'cancelled'; created_at: string }
 type PurchaseRequest = { id: string; product_id: number | null; item_name: string; category: string; active_ingredient: string; presentation: string; base_unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; received_quantity: string; supplier: string; quoted_unit_price: string; justification: string; status: 'requested' | 'quoted' | 'approved' | 'ordered' | 'received' | 'rejected'; requested_by: string; approved_by: string; received_by: string; created_at: string; updated_at: string }
 type StockLevel = 'critical' | 'attention' | 'healthy' | 'unconfigured'
+type StockFilter = 'all' | 'expired' | 'expiring' | 'critical' | 'attention'
+type MovementReportFilters = {
+  from_date: string
+  to_date: string
+  item_id: string
+  movement_type: '' | PharmacyMovement['movement_type']
+}
 type PharmacyProductStock = {
   product_id: number
   item_name: string
@@ -32,6 +39,14 @@ type PharmacyProductStock = {
   minimum_balance: string
   average_balance: string
   lots: PharmacyItem[]
+}
+
+function matchesStockFilter(item: PharmacyItem, filter: StockFilter, today: string, soon: string, level: StockLevel) {
+  return filter === 'all'
+    || (filter === 'expired' && item.expiry_date < today)
+    || (filter === 'expiring' && item.expiry_date >= today && item.expiry_date <= soon)
+    || (filter === 'critical' && level === 'critical')
+    || (filter === 'attention' && level === 'attention')
 }
 
 function stockLevel(balance: number, minimumValue: string, averageValue: string): StockLevel {
@@ -47,15 +62,21 @@ function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
   return patient.room.trim() && patient.bed.trim() ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem quarto/leito atribuído'
 }
 
-const pharmacyTabs = ['stock', 'inventory', 'dispensation', 'prescriptions', 'purchases'] as const
+const pharmacyTabs = ['stock', 'inventory', 'dispensation', 'prescriptions', 'reports', 'purchases'] as const
 const pharmacyTabLabels: Record<(typeof pharmacyTabs)[number], string> = {
   stock: 'Movimentações',
   inventory: 'Estoque geral A–Z',
   dispensation: 'Dispensação',
   prescriptions: 'Prescrições médicas',
+  reports: 'Relatórios',
   purchases: 'Compras e suprimentos',
 }
-const pharmacyTabsWithoutPurchases = ['stock', 'inventory', 'dispensation', 'prescriptions'] as const
+const movementTypeLabels: Record<PharmacyMovement['movement_type'], string> = {
+  opening_balance: 'Saldo inicial legado',
+  entry: 'Entrada',
+  issue: 'Saída',
+  adjustment: 'Ajuste',
+}
 
 function dateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
@@ -85,7 +106,11 @@ function playBarcodeTone(audioContext: AudioContext | null) {
 
 function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode?: boolean }) {
   const canManagePurchases = (user.modules.includes('pharmacy') && Boolean(user.permissions.pharmacy?.includes('criar') || user.permissions.pharmacy?.includes('alterar'))) || (user.modules.includes('management') && Boolean(user.permissions.management?.includes('consultar')))
-  const availablePharmacyTabs = !mobileMode && canManagePurchases ? pharmacyTabs : pharmacyTabsWithoutPurchases
+  const canReadMovementReports = !mobileMode && user.modules.includes('pharmacy')
+  const availablePharmacyTabs = pharmacyTabs.filter((tab) =>
+    (tab !== 'purchases' || (!mobileMode && canManagePurchases))
+      && (tab !== 'reports' || canReadMovementReports),
+  )
   const [pharmacyTab, setPharmacyTab] = usePersistentTab(`scpo-tab-pharmacy${mobileMode ? '-mobile' : ''}-${user.id}`, 'stock', availablePharmacyTabs, pharmacyTabLabels)
   const [items, setItems] = useState<PharmacyItem[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
@@ -97,6 +122,26 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [movementTotal, setMovementTotal] = useState(0)
   const [movementOffset, setMovementOffset] = useState(0)
   const [movementItemId, setMovementItemId] = useState<number | null>(null)
+  const [reportStockQuery, setReportStockQuery] = useState('')
+  const [reportCategory, setReportCategory] = useState('all')
+  const [reportStockFilter, setReportStockFilter] = useState<StockFilter>('all')
+  const [movementReportFilters, setMovementReportFilters] = useState<MovementReportFilters>({
+    from_date: '',
+    to_date: '',
+    item_id: '',
+    movement_type: '',
+  })
+  const [appliedMovementReportFilters, setAppliedMovementReportFilters] = useState<MovementReportFilters>({
+    from_date: '',
+    to_date: '',
+    item_id: '',
+    movement_type: '',
+  })
+  const [reportMovements, setReportMovements] = useState<PharmacyMovement[]>([])
+  const [movementReportTotal, setMovementReportTotal] = useState(0)
+  const [movementReportOffset, setMovementReportOffset] = useState(0)
+  const [movementReportLoading, setMovementReportLoading] = useState(true)
+  const [movementReportError, setMovementReportError] = useState('')
   const [movementForm, setMovementFormState] = useState({ movement_type: 'entry' as 'entry' | 'issue' | 'adjustment', quantity: '', reason: '' })
   const setMovementForm = (value: { movement_type: 'entry' | 'issue' | 'adjustment'; quantity: string; reason: string }) =>
     setMovementFormState({ ...value, quantity: formatDecimalInput(value.quantity) })
@@ -406,6 +451,35 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   }, [movementOffset])
 
   useEffect(() => {
+    if (!canReadMovementReports || pharmacyTab !== 'reports') return
+    let active = true
+    const params = new URLSearchParams({ limit: '100', offset: String(movementReportOffset) })
+    if (appliedMovementReportFilters.from_date) params.set('from_date', appliedMovementReportFilters.from_date)
+    if (appliedMovementReportFilters.to_date) params.set('to_date', appliedMovementReportFilters.to_date)
+    if (appliedMovementReportFilters.item_id) params.set('item_id', appliedMovementReportFilters.item_id)
+    if (appliedMovementReportFilters.movement_type) params.set('movement_type', appliedMovementReportFilters.movement_type)
+    const loadMovementReport = async () => {
+      try {
+        const result = await readApiResponse<{ movements?: PharmacyMovement[]; total?: number }>(
+          await fetch(`/api/v1/pharmacy/movements?${params.toString()}`),
+        )
+        if (!active) return
+        setReportMovements(result.movements ?? [])
+        setMovementReportTotal(result.total ?? 0)
+      } catch (loadError) {
+        if (!active) return
+        setReportMovements([])
+        setMovementReportTotal(0)
+        setMovementReportError(loadError instanceof Error ? loadError.message : 'Falha ao carregar o relatório de movimentações.')
+      } finally {
+        if (active) setMovementReportLoading(false)
+      }
+    }
+    void loadMovementReport()
+    return () => { active = false }
+  }, [appliedMovementReportFilters, canReadMovementReports, movementReportOffset, pharmacyTab])
+
+  useEffect(() => {
     let current = true
     const loadRelatedData = async () => {
       try {
@@ -547,12 +621,16 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const filteredItems = items.filter((item) => {
     const matchesSearch = `${item.item_name} ${item.lot} ${item.barcode} ${item.category} ${item.active_ingredient} ${item.presentation} ${item.storage_location}`.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR'))
     const level = productLevelById.get(item.product_id) ?? 'unconfigured'
-    const matchesFilter = stockFilter === 'all'
-      || (stockFilter === 'expired' && item.expiry_date < today)
-      || (stockFilter === 'expiring' && item.expiry_date >= today && item.expiry_date <= soon)
-      || (stockFilter === 'critical' && level === 'critical')
-      || (stockFilter === 'attention' && level === 'attention')
+    const matchesFilter = matchesStockFilter(item, stockFilter, today, soon, level)
     return matchesSearch && matchesFilter
+  }).sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.item_name.localeCompare(b.item_name, 'pt-BR'))
+  const reportCategories = [...new Set(items.map((item) => item.category))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  const reportStockItems = items.filter((item) => {
+    const searchText = `${item.item_name} ${item.lot} ${item.barcode} ${item.category} ${item.active_ingredient} ${item.presentation} ${item.storage_location} ${item.supplier}`.toLocaleLowerCase('pt-BR')
+    const matchesSearch = searchText.includes(reportStockQuery.trim().toLocaleLowerCase('pt-BR'))
+    const matchesCategory = reportCategory === 'all' || item.category === reportCategory
+    const level = productLevelById.get(item.product_id) ?? 'unconfigured'
+    return matchesSearch && matchesCategory && matchesStockFilter(item, reportStockFilter, today, soon, level)
   }).sort((a, b) => a.expiry_date.localeCompare(b.expiry_date) || a.item_name.localeCompare(b.item_name, 'pt-BR'))
   const alphabeticMedicationStock = productStocks.filter((item) =>
     item.category.toLocaleLowerCase('pt-BR') === 'medicamento',
@@ -565,18 +643,39 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     `${product.item_name} ${product.active_ingredient} ${product.presentation} ${product.category} ${product.lots.map((lot) => `${lot.lot} ${lot.storage_location}`).join(' ')}`
       .toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')),
   )
-  const pharmacyPrintRows: PrintRow[] = filteredItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Entrada original', `${item.purchase_quantity} ${item.purchase_unit} × ${item.units_per_purchase_unit} ${item.unit}`], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
+  const pharmacyPrintRows: PrintRow[] = reportStockItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Entrada original', `${item.purchase_quantity} ${item.purchase_unit} × ${item.units_per_purchase_unit} ${item.unit}`], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
+  const movementReportPrintRows: PrintRow[] = reportMovements.map((movement) => {
+    const item = items.find((candidate) => candidate.id === movement.item_id)
+    return {
+      id: String(movement.id),
+      date: movement.created_at,
+      title: item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`,
+      fields: [
+        ['Tipo', movementTypeLabels[movement.movement_type]],
+        ['Quantidade', `${movement.quantity} ${item?.unit ?? ''}`],
+        ['Saldo após a operação', `${movement.balance_after} ${item?.unit ?? ''}`],
+        ['Motivo', movement.reason],
+        ['Responsável', movement.actor_name],
+      ],
+    }
+  })
   const requestedPackages = Number(form.purchase_quantity.replace(',', '.'))
   const unitsPerPackage = Number(form.units_per_purchase_unit.replace(',', '.'))
   const convertedBalance = requestedPackages * unitsPerPackage
 
   return <section className={`pharmacy-page page-enter${mobileMode ? ' pharmacy-page-mobile' : ''}`}>
-    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
+    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
     <ModuleTabNavigation
       className="pharmacy-tabs"
       ariaLabel="Seções da Farmácia"
       value={pharmacyTab}
-      onChange={setPharmacyTab}
+      onChange={(tab) => {
+        setPharmacyTab(tab)
+        if (tab === 'reports') {
+          setMovementReportLoading(true)
+          setMovementReportError('')
+        }
+      }}
       options={availablePharmacyTabs.map((value) => ({
         value,
         label: pharmacyTabLabels[value],
@@ -584,6 +683,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
           : value === 'prescriptions'
             ? <><ArrowRight size={16} /> {pharmacyTabLabels[value]} <span>{prescriptions.length}</span></>
+            : value === 'reports'
+              ? <><ClipboardList size={16} /> {pharmacyTabLabels[value]}</>
             : value === 'purchases'
               ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
               : <><ArrowRight size={16} /> {pharmacyTabLabels[value]}</>,
@@ -623,6 +724,47 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
             : item,
         ))}
       />
+    </section>}
+    {pharmacyTab === 'reports' && <section className="patient-list-panel pharmacy-reports">
+      <div className="section-heading"><div><p className="eyebrow">CONSULTA E IMPRESSÃO</p><h2>Relatórios operacionais</h2><p className="welcome-copy">Os relatórios usam dados de estoque e movimentações já registrados; não incluem prescrições nem informações clínicas.</p></div></div>
+      <section className="pharmacy-report-group">
+        <div className="section-heading"><div><p className="eyebrow">POSIÇÃO ATUAL</p><h3>Estoque por lote</h3><p className="welcome-copy">Filtre por categoria, situação do saldo ou validade. As datas do painel de impressão se referem ao cadastro do lote.</p></div><span className="module-total">{reportStockItems.length} lote(s)</span></div>
+        <div className="pharmacy-report-filters">
+          <label className="field"><span className="field-label">Buscar produto, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={reportStockQuery} onChange={(event) => setReportStockQuery(event.target.value)} placeholder="Digite para filtrar" /></span></label>
+          <label className="field"><span className="field-label">Categoria</span><select value={reportCategory} onChange={(event) => setReportCategory(event.target.value)}><option value="all">Todas as categorias</option>{reportCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+          <label className="field"><span className="field-label">Estoque e validade</span><select value={reportStockFilter} onChange={(event) => setReportStockFilter(event.target.value as StockFilter)}><option value="all">Todos</option><option value="critical">Estoque crítico</option><option value="attention">Atenção</option><option value="expired">Vencidos</option><option value="expiring">Vencem em até 30 dias</option></select></label>
+        </div>
+        {loading ? <div className="history-empty">Carregando estoque…</div> : reportStockItems.length
+          ? <PrintSelectionPanel title="Relatório de estoque por lote" rows={pharmacyPrintRows} />
+          : <div className="history-empty">Nenhum lote corresponde aos filtros selecionados.</div>}
+      </section>
+      <section className="pharmacy-report-group">
+        <div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE</p><h3>Histórico de movimentações</h3><p className="welcome-copy">Filtre por período, operação ou lote. A impressão inclui somente os registros da página carregada (até 100 por página).</p></div><span className="module-total">{movementReportTotal} registro(s)</span></div>
+        <form className="pharmacy-report-filters pharmacy-movement-report-filters" onSubmit={(event) => { event.preventDefault(); setMovementReportLoading(true); setMovementReportError(''); setMovementReportOffset(0); setAppliedMovementReportFilters({ ...movementReportFilters }) }}>
+          <label className="field"><span className="field-label">De</span><input type="date" value={movementReportFilters.from_date} max={movementReportFilters.to_date || undefined} onChange={(event) => setMovementReportFilters((current) => ({ ...current, from_date: event.target.value }))} /></label>
+          <label className="field"><span className="field-label">Até</span><input type="date" value={movementReportFilters.to_date} min={movementReportFilters.from_date || undefined} onChange={(event) => setMovementReportFilters((current) => ({ ...current, to_date: event.target.value }))} /></label>
+          <label className="field"><span className="field-label">Produto e lote</span><select value={movementReportFilters.item_id} onChange={(event) => setMovementReportFilters((current) => ({ ...current, item_id: event.target.value }))}><option value="">Todos os lotes</option>{items.map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot}</option>)}</select></label>
+          <label className="field"><span className="field-label">Operação</span><select value={movementReportFilters.movement_type} onChange={(event) => setMovementReportFilters((current) => ({ ...current, movement_type: event.target.value as MovementReportFilters['movement_type'] }))}><option value="">Todas</option>{Object.entries(movementTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <div className="pharmacy-report-actions"><button className="button button-primary" type="submit">Aplicar filtros</button><button className="button button-secondary" type="button" onClick={() => { const emptyFilters: MovementReportFilters = { from_date: '', to_date: '', item_id: '', movement_type: '' }; setMovementReportLoading(true); setMovementReportError(''); setMovementReportFilters(emptyFilters); setMovementReportOffset(0); setAppliedMovementReportFilters(emptyFilters) }}>Limpar filtros</button></div>
+        </form>
+        {movementReportError && <ToastMessage variant="error">{movementReportError}</ToastMessage>}
+        {movementReportLoading ? <div className="history-empty">Carregando movimentações…</div> : movementReportError
+          ? null
+          : movementReportTotal === 0
+          ? <div className="history-empty">Nenhuma movimentação corresponde aos filtros selecionados.</div>
+          : <>
+            <div className="pharmacy-movement-list">{reportMovements.map((movement) => {
+              const item = items.find((candidate) => candidate.id === movement.item_id)
+              return <article className="pharmacy-movement-row" key={movement.id}>
+                <div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{movementTypeLabels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div>
+                <div className="pharmacy-movement-values"><span>{movement.quantity} {item?.unit ?? ''}</span><small>Saldo: {movement.balance_after} {item?.unit ?? ''}</small></div>
+                <small className="pharmacy-movement-author">{movement.actor_name}</small>
+              </article>
+            })}</div>
+            <div className="pharmacy-ledger-pagination"><span>{movementReportOffset + 1}–{Math.min(movementReportOffset + reportMovements.length, movementReportTotal)} de {movementReportTotal} registros</span><div><button className="button button-secondary" type="button" disabled={movementReportLoading || movementReportOffset === 0} onClick={() => { setMovementReportLoading(true); setMovementReportOffset(Math.max(0, movementReportOffset - 100)) }}>Anterior</button><button className="button button-secondary" type="button" disabled={movementReportLoading || movementReportOffset + reportMovements.length >= movementReportTotal} onClick={() => { setMovementReportLoading(true); setMovementReportOffset(movementReportOffset + 100) }}>Próxima</button></div></div>
+            <PrintSelectionPanel title="Relatório de movimentações de estoque — página exibida" rows={movementReportPrintRows} />
+          </>}
+      </section>
     </section>}
     {pharmacyTab === 'prescriptions' && <section className="patient-list-panel">
       <div className="section-heading"><div><p className="eyebrow">FILA DA FARMÁCIA</p><h2>Prescrições internas pendentes</h2><p className="welcome-copy">A prescrição só é marcada como atendida após registrar a dispensação e debitar o lote.</p></div><span className="module-total">{prescriptions.length} pendente(s)</span></div>
@@ -740,7 +882,6 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
       <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade na unidade do lote, saldo após a operação, responsável e motivo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item?.unit ?? ''}</span><small>Saldo: {movement.balance_after} {item?.unit ?? ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 25)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>
     </section>
-    <PrintSelectionPanel title="Relatório de estoque por lote" rows={pharmacyPrintRows} />
     </>}
     {cameraScannerOpen && <div className="pharmacy-scanner-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setCameraScannerOpen(false) }}>
       <section className="pharmacy-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="pharmacy-scanner-title">

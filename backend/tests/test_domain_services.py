@@ -1260,6 +1260,34 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     assert issued["balance_after"] == "17.5"
     assert issued["actor_id"] == pharmacist.user_id
     assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "17.5"
+    issue_report = pharmacy.list_stock_movements(
+        pharmacist,
+        domain_database["pharmacy"],
+        item_id=item["id"],
+        movement_type="issue",
+    )
+    assert issue_report["total"] == 1
+    assert issue_report["movements"][0]["id"] == issued["id"]
+    period_report = pharmacy.list_stock_movements(
+        pharmacist,
+        domain_database["pharmacy"],
+        from_date=date(2000, 1, 1),
+        to_date=date(2100, 1, 1),
+    )
+    assert period_report["total"] == 2
+    outside_period_report = pharmacy.list_stock_movements(
+        pharmacist,
+        domain_database["pharmacy"],
+        to_date=date(2000, 1, 1),
+    )
+    assert outside_period_report["total"] == 0
+    with pytest.raises(HTTPException, match="data inicial"):
+        pharmacy.list_stock_movements(
+            pharmacist,
+            domain_database["pharmacy"],
+            from_date=date(2027, 1, 2),
+            to_date=date(2027, 1, 1),
+        )
     nurse = DemoPrincipal("nurse-1", "nurse", "Enfermeira", "nursing", ["nursing"], {"nursing": ["consultar", "criar"]})
     patient = nursing.create_patient(
         nursing.PatientPayload(
