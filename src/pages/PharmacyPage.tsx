@@ -309,6 +309,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     let scanning = false
     let detectedCode = ''
     const Detector = (window as Window & { BarcodeDetector?: { new (options?: { formats: string[] }): { detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]> }; getSupportedFormats?: () => Promise<string[]> } }).BarcodeDetector
+    const getSupportedFormats = Detector?.getSupportedFormats?.bind(Detector)
     if (!navigator.mediaDevices?.getUserMedia) {
       return () => { cancelled = true }
     }
@@ -324,58 +325,71 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       setCameraScannerOpen(false)
     }
 
-    if (!Detector) {
-      let activeControls: { stop: () => void } | undefined
+    function startZXingScanner() {
       void import('@zxing/browser').then(({ BrowserMultiFormatReader }) => {
         if (cancelled) return
         const reader = new BrowserMultiFormatReader()
-        return reader.decodeFromVideoDevice(undefined, videoElement, (result) => {
+        return reader.decodeFromVideoDevice(undefined, videoElement ?? undefined, (result) => {
           const code = result?.getText().trim()
           if (code) acceptBarcode(code)
         })
       }).then((scannerControls) => {
         if (!scannerControls) return
-        activeControls = scannerControls
         controls = scannerControls
         if (cancelled) scannerControls.stop()
       }).catch(() => {
-        if (!cancelled) setCameraScannerMessage('Não foi possível iniciar a câmera. Verifique a permissão ou use o leitor USB.')
+        if (!cancelled) setCameraScannerMessage('Não foi possível iniciar a leitura por câmera. Verifique a permissão ou use o leitor USB.')
       })
+    }
+
+    if (!Detector || !getSupportedFormats) {
+      startZXingScanner()
       return () => {
         cancelled = true
-        activeControls?.stop()
         controls?.stop()
         videoElement.srcObject = null
       }
     }
 
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(async (mediaStream) => {
-      stream = mediaStream
-      if (cancelled) { mediaStream.getTracks().forEach((track) => track.stop()); return }
-      videoElement.srcObject = mediaStream
-      await videoElement.play()
-      const requestedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'data_matrix']
-      const supportedFormats = Detector.getSupportedFormats ? await Detector.getSupportedFormats() : requestedFormats
+    const requestedFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'data_matrix', 'qr_code']
+    void getSupportedFormats().then((supportedFormats) => {
+      if (cancelled) return
       const formats = requestedFormats.filter((format) => supportedFormats.includes(format))
-      if (!formats.length) { setCameraScannerMessage('Este aparelho não oferece formatos de código compatíveis pela câmera. Use o leitor USB ou digite o código.'); return }
+      if (!formats.includes('qr_code')) {
+        startZXingScanner()
+        return
+      }
       const detector = new Detector({ formats })
-      timer = window.setInterval(async () => {
-        if (scanning || cancelled || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
-        scanning = true
-        try {
-          const results = await detector.detect(videoElement)
-          const code = results[0]?.rawValue?.trim()
-          if (code) acceptBarcode(code)
-        } catch { setCameraScannerMessage('Não foi possível ler esse código. Ajuste a distância ou digite o número.') }
-        finally { scanning = false }
-      }, 300)
+      return navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(async (mediaStream) => {
+        stream = mediaStream
+        if (cancelled) { mediaStream.getTracks().forEach((track) => track.stop()); return }
+        videoElement.srcObject = mediaStream
+        await videoElement.play()
+        timer = window.setInterval(async () => {
+          if (scanning || cancelled || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+          scanning = true
+          try {
+            const results = await detector.detect(videoElement)
+            const code = results[0]?.rawValue?.trim()
+            if (code) acceptBarcode(code)
+          } catch {
+            if (!cancelled) setCameraScannerMessage('Não foi possível ler esse código. Ajuste a distância ou digite o identificador.')
+          }
+          finally { scanning = false }
+        }, 300)
+      })
     }).catch(() => {
-      if (!cancelled) setCameraScannerMessage('Não foi possível acessar a câmera. Verifique a permissão ou use o leitor USB.')
+      if (cancelled) return
+      stream?.getTracks().forEach((track) => track.stop())
+      stream = undefined
+      videoElement.srcObject = null
+      startZXingScanner()
     })
     return () => {
       cancelled = true
       window.clearInterval(timer)
       stream?.getTracks().forEach((track) => track.stop())
+      controls?.stop()
       if (videoElement) videoElement.srcObject = null
     }
   }, [cameraScannerOpen, lookupBarcode])
@@ -831,13 +845,13 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       </div>
       <div className="field-grid field-grid-two">
         <label className="field">
-          <span className="field-label">Código de barras / GTIN</span>
+          <span className="field-label">Código de barras ou QR · GTIN/GS1</span>
           <input inputMode="numeric" autoComplete="off" maxLength={200} value={form.barcode} onChange={(event) => changeBarcode(event.target.value)} onFocus={prepareBarcodeAudio} onKeyDown={(event) => { if (event.key === 'Enter' && form.barcode.trim()) { event.preventDefault(); prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) } }} placeholder="Leia com o leitor USB ou digite" />
-          <span className="field-hint">A leitura USB consulta o cadastro após a leitura; Enter consulta imediatamente. A câmera também funciona em celulares com HTTPS.</span>
+          <span className="field-hint">O leitor USB consulta após a leitura; Enter consulta imediatamente. A câmera lê códigos de barras e QR com GTIN/GS1 reconhecido em celulares com HTTPS.</span>
         </label>
         <div className="field pharmacy-scan-field">
-          <span className="field-label">Leitura e consulta do código</span>
-          <button className="button button-secondary" type="button" onClick={() => { prepareBarcodeAudio(); setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código pela câmera'}</button>
+            <span className="field-label">Leitura e consulta do identificador</span>
+            <button className="button button-secondary" type="button" onClick={() => { prepareBarcodeAudio(); setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código ou QR pela câmera'}</button>
           <button className="button button-secondary" type="button" disabled={!form.barcode.trim()} onClick={() => { prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) }}><Search size={16} /> Consultar código</button>
         </div>
         {!!catalogSuggestions.length && <section className="pharmacy-catalog-suggestions" aria-label="Sugestões do catálogo Anvisa">
@@ -886,9 +900,9 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     </>}
     {cameraScannerOpen && <div className="pharmacy-scanner-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setCameraScannerOpen(false) }}>
       <section className="pharmacy-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="pharmacy-scanner-title">
-        <header><div><p className="eyebrow">LEITURA DE CÓDIGO DE BARRAS</p><h2 id="pharmacy-scanner-title">Enquadre o código na câmera</h2></div><button className="pharmacy-scanner-close" type="button" autoFocus aria-label="Fechar câmera" onClick={() => setCameraScannerOpen(false)}><X size={20} /></button></header>
-        <video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Visualização da câmera para leitura do código de barras" />
-        <span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para o código de barras.'}</span>
+        <header><div><p className="eyebrow">LEITURA DE CÓDIGO OU QR</p><h2 id="pharmacy-scanner-title">Enquadre o identificador na câmera</h2></div><button className="pharmacy-scanner-close" type="button" autoFocus aria-label="Fechar câmera" onClick={() => setCameraScannerOpen(false)}><X size={20} /></button></header>
+        <video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Visualização da câmera para leitura de código de barras ou QR" />
+        <span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Aponte a câmera para um código de barras ou QR com GTIN/GS1.'}</span>
       </section>
     </div>}
   </section>
