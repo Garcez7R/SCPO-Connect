@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Archive, Download, Folder, FolderOpen, FolderPlus, History, ImagePlus, Package, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react'
+import { Archive, ChevronLeft, ChevronRight, Download, Folder, FolderOpen, FolderPlus, History, ImagePlus, Package, Pencil, Plus, Printer, Save, Search, Trash2, X } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import ToastMessage from './ToastMessage'
 
@@ -106,13 +106,16 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [mediaOperation, setMediaOperation] = useState<{ message: string; progress?: number | null } | null>(null)
-  const [previewImage, setPreviewImage] = useState<MaterialImage | null>(null)
+  const [previewImageId, setPreviewImageId] = useState<string | null>(null)
+  const [printingImages, setPrintingImages] = useState(false)
   const mediaCollection = view === 'album' ? 'photo-album' : 'material-images'
   const visibleImages = images.filter((image) =>
     (activeFolderId === 'all'
       || (activeFolderId === 'root' ? !image.folder_id : image.folder_id === activeFolderId))
     && (!imageSearch.trim() || `${image.title} ${image.folder_name}`.toLocaleLowerCase('pt-BR').includes(imageSearch.trim().toLocaleLowerCase('pt-BR'))),
   )
+  const previewIndex = visibleImages.findIndex((image) => image.id === previewImageId)
+  const previewImage = previewIndex >= 0 ? visibleImages[previewIndex] : null
 
   const loadData = useCallback(async () => {
     if (view === 'materials') {
@@ -134,13 +137,31 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
   }, [mediaCollection, view])
 
   useEffect(() => {
-    if (!previewImage) return
+    if (!previewImageId || previewIndex < 0) return
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setPreviewImage(null)
+      if (event.key === 'Escape') setPreviewImageId(null)
+      if (event.key === 'ArrowLeft' && previewIndex > 0) setPreviewImageId(visibleImages[previewIndex - 1].id)
+      if (event.key === 'ArrowRight' && previewIndex < visibleImages.length - 1) setPreviewImageId(visibleImages[previewIndex + 1].id)
     }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [previewImage])
+  }, [previewImageId, previewIndex, visibleImages])
+
+  useEffect(() => {
+    if (!printingImages) return
+    const resetPrinting = () => {
+      document.body.classList.remove('print-therapy-images')
+      setPrintingImages(false)
+    }
+    document.body.classList.add('print-therapy-images')
+    window.addEventListener('afterprint', resetPrinting, { once: true })
+    const printTimer = window.setTimeout(() => window.print(), 0)
+    return () => {
+      window.clearTimeout(printTimer)
+      window.removeEventListener('afterprint', resetPrinting)
+      document.body.classList.remove('print-therapy-images')
+    }
+  }, [printingImages])
 
   useEffect(() => {
     let active = true
@@ -433,26 +454,26 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
       <div className="therapy-image-manager">
         <aside className="therapy-image-sidebar" aria-label={`Pastas ${view === 'album' ? 'do álbum' : 'da biblioteca'}`}>
           <div className="therapy-image-sidebar-heading"><strong>Pastas</strong><span>{folders.length}</span></div>
-          <button className={`therapy-image-folder ${activeFolderId === 'all' ? 'is-selected' : ''}`} type="button" onClick={() => setActiveFolderId('all')}><FolderOpen size={16} /><span>Todas as {view === 'album' ? 'fotos' : 'imagens'}</span><b>{images.length}</b></button>
-          <button className={`therapy-image-folder ${activeFolderId === 'root' ? 'is-selected' : ''}`} type="button" onClick={() => setActiveFolderId('root')}><ImagePlus size={16} /><span>Sem pasta</span><b>{images.filter((image) => !image.folder_id).length}</b></button>
+          <button className={`therapy-image-folder ${activeFolderId === 'all' ? 'is-selected' : ''}`} type="button" onClick={() => { setActiveFolderId('all'); setPreviewImageId(null) }}><FolderOpen size={16} /><span>Todas as {view === 'album' ? 'fotos' : 'imagens'}</span><b>{images.length}</b></button>
+          <button className={`therapy-image-folder ${activeFolderId === 'root' ? 'is-selected' : ''}`} type="button" onClick={() => { setActiveFolderId('root'); setPreviewImageId(null) }}><ImagePlus size={16} /><span>Sem pasta</span><b>{images.filter((image) => !image.folder_id).length}</b></button>
           {folders.map((folder) => <div className={`therapy-image-folder-row ${activeFolderId === folder.id ? 'is-selected' : ''}`} key={folder.id}>
             {editingFolderId === folder.id
               ? <form className="therapy-image-folder-rename" onSubmit={(event) => { event.preventDefault(); void renameImageFolder(folder) }}><input aria-label="Novo nome da pasta" required maxLength={80} value={editingFolderName} onChange={(event) => setEditingFolderName(event.target.value)} /><button className="button button-secondary" type="submit" disabled={saving} aria-label="Salvar nome da pasta"><Save size={14} /></button><button className="button button-secondary" type="button" onClick={() => setEditingFolderId('')} aria-label="Cancelar renomeação"><X size={14} /></button></form>
-              : <button className={`therapy-image-folder ${activeFolderId === folder.id ? 'is-selected' : ''}`} type="button" onClick={() => setActiveFolderId(folder.id)}><Folder size={16} /><span>{folder.name}</span><b>{folder.image_count}</b></button>}
+              : <button className={`therapy-image-folder ${activeFolderId === folder.id ? 'is-selected' : ''}`} type="button" onClick={() => { setActiveFolderId(folder.id); setPreviewImageId(null) }}><Folder size={16} /><span>{folder.name}</span><b>{folder.image_count}</b></button>}
             {canEdit && editingFolderId !== folder.id && <div className="therapy-image-folder-actions">{deleteFolderId === folder.id ? <><button className="therapy-image-icon-button" type="button" aria-label={`Confirmar exclusão da pasta ${folder.name}`} disabled={saving || folder.image_count > 0} onClick={() => void deleteImageFolder(folder)}><Save size={14} /></button><button className="therapy-image-icon-button" type="button" aria-label="Cancelar exclusão da pasta" onClick={() => setDeleteFolderId('')}><X size={14} /></button></> : <><button className="therapy-image-icon-button" type="button" aria-label={`Renomear pasta ${folder.name}`} onClick={() => { setEditingFolderId(folder.id); setEditingFolderName(folder.name) }}><Pencil size={14} /></button><button className="therapy-image-icon-button" type="button" aria-label={`Excluir pasta ${folder.name}`} title={folder.image_count ? 'Mova ou exclua as imagens antes de excluir a pasta' : 'Excluir pasta vazia'} disabled={saving || folder.image_count > 0} onClick={() => setDeleteFolderId(folder.id)}><Trash2 size={14} /></button></>}</div>}
           </div>)}
           {canEdit && <form className="therapy-image-new-folder" onSubmit={(event) => void createImageFolder(event)}><label className="field"><span className="field-label">Criar pasta</span><input required maxLength={80} value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="Nome da pasta" /></label><button className="button button-secondary" type="submit" disabled={saving || !folderName.trim()}><FolderPlus size={15} /> Nova pasta</button></form>}
         </aside>
         <div className="therapy-image-browser">
           <div className="therapy-image-browser-header"><div><p className="eyebrow">ACERVO DA OFICINA</p><h2><ImagePlus size={19} /> {view === 'album' ? 'Álbum de fotos' : 'Biblioteca de imagens'}</h2><p className="welcome-copy">{view === 'album' ? 'Organize e visualize fotos do álbum sem misturá-las com a Biblioteca de imagens.' : 'Organize, renomeie, mova, baixe ou exclua arquivos. Imagens ficam no armazenamento próprio da Oficina Terapêutica.'}</p></div><span className="module-total">{visibleImages.length} {view === 'album' ? visibleImages.length === 1 ? 'foto' : 'fotos' : visibleImages.length === 1 ? 'imagem' : 'imagens'}</span></div>
-          <div className="therapy-image-toolbar"><label className="therapy-image-search"><Search size={16} /><input type="search" value={imageSearch} onChange={(event) => setImageSearch(event.target.value)} placeholder={`Buscar ${view === 'album' ? 'foto' : 'imagem'} nesta pasta`} aria-label={`Buscar ${view === 'album' ? 'fotos' : 'imagens'}`} /></label><span>{activeFolderId === 'all' ? 'Todas as pastas' : activeFolderId === 'root' ? 'Sem pasta' : folders.find((folder) => folder.id === activeFolderId)?.name}</span></div>
+          <div className="therapy-image-toolbar"><label className="therapy-image-search"><Search size={16} /><input type="search" value={imageSearch} onChange={(event) => { setImageSearch(event.target.value); setPreviewImageId(null) }} placeholder={`Buscar ${view === 'album' ? 'foto' : 'imagem'} nesta pasta`} aria-label={`Buscar ${view === 'album' ? 'fotos' : 'imagens'}`} /></label><span>{activeFolderId === 'all' ? 'Todas as pastas' : activeFolderId === 'root' ? 'Sem pasta' : folders.find((folder) => folder.id === activeFolderId)?.name}</span><button className="button button-secondary" type="button" disabled={!visibleImages.length || printingImages} onClick={() => setPrintingImages(true)}><Printer size={15} /> Imprimir imagens ({visibleImages.length})</button></div>
           {canEdit && <form className="therapy-material-form therapy-image-upload" onSubmit={(event) => void uploadImage(event)}>
             <label className="field"><span className="field-label">Título da {view === 'album' ? 'foto' : 'imagem'}</span><input required minLength={2} maxLength={120} value={imageTitle} onChange={(event) => setImageTitle(event.target.value)} placeholder={view === 'album' ? 'Ex.: atividade de pintura' : 'Ex.: formas geométricas para pintura'} /></label>
             <div className="field"><span className="field-label">Arquivo (JPG, PNG ou WebP, até 12 MB)</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id={`therapy-${mediaCollection}-file`} type="file" accept="image/jpeg,image/png,image/webp" required aria-label={`Escolher imagem para ${view === 'album' ? 'o álbum' : 'a Biblioteca de imagens'}`} onChange={(event) => setImageFile(event.target.files?.[0] ?? null)} /><label className="button button-secondary" htmlFor={`therapy-${mediaCollection}-file`}><ImagePlus size={15} /> Escolher arquivo</label><span title={imageFile?.name}>{imageFile?.name ?? 'Nenhum arquivo selecionado'}</span></div></div>
             <button className="button button-primary" type="submit" disabled={saving || !imageFile}><ImagePlus size={16} /> Enviar imagem</button>
           </form>}
           {loading ? <div className="history-empty">Carregando {view === 'album' ? 'álbum' : 'biblioteca de imagens'}…</div> : loadError ? null : visibleImages.length ? <div className="therapy-image-grid">{visibleImages.map((image) => <article className="therapy-image-card" key={image.id}>
-            <button className="therapy-image-preview-button" type="button" onClick={() => setPreviewImage(image)} aria-label={`Visualizar ${image.title}`}><img src={image.url} alt={image.title} loading="lazy" /></button>
+            <button className="therapy-image-preview-button" type="button" onClick={() => setPreviewImageId(image.id)} aria-label={`Visualizar ${image.title}`}><img src={image.url} alt={image.title} loading="lazy" /></button>
             <div className="therapy-image-card-details">
               {editingImageId === image.id
                 ? <form className="therapy-image-rename" onSubmit={(event) => { event.preventDefault(); void updateImage(image, { title: editingImageTitle }) }}><label className="field"><span className="field-label">Nome do arquivo</span><input required minLength={2} maxLength={120} value={editingImageTitle} onChange={(event) => setEditingImageTitle(event.target.value)} /></label><button className="button button-primary" type="submit" disabled={saving}><Save size={14} /> Salvar</button><button className="button button-secondary" type="button" onClick={() => setEditingImageId('')}><X size={14} /> Cancelar</button></form>
@@ -466,12 +487,21 @@ export default function TherapyMaterialsPanel({ canEdit, view }: { canEdit: bool
           </article>)}</div> : <div className="history-empty">{imageSearch ? `Nenhuma ${view === 'album' ? 'foto' : 'imagem'} corresponde à busca.` : `Nenhuma ${view === 'album' ? 'foto' : 'imagem'} disponível nesta pasta.`}</div>}
         </div>
       </div>
-      {previewImage && <div className="therapy-album-lightbox" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewImage(null) }}>
+      <div className="therapy-image-print-sheet" aria-hidden="true">
+        <h1>{view === 'album' ? 'Álbum de fotos' : 'Biblioteca de imagens'}</h1>
+        <div>{visibleImages.map((image) => <article className="therapy-image-print-item" key={image.id}><img src={image.url} alt="" /><h2>{image.title}</h2></article>)}</div>
+      </div>
+      {previewImage && <div className="therapy-album-lightbox" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewImageId(null) }}>
         <section className="therapy-album-lightbox-panel" role="dialog" aria-modal="true" aria-label={`Visualização: ${previewImage.title}`}>
-          <button className="therapy-album-lightbox-close" type="button" aria-label="Fechar visualização" autoFocus onClick={() => setPreviewImage(null)}><X size={20} /></button>
+          <button className="therapy-album-lightbox-close" type="button" aria-label="Fechar visualização" autoFocus onClick={() => setPreviewImageId(null)}><X size={20} /></button>
           <img className="therapy-album-lightbox-icon" src="/scpo-connect-icon.png" alt="" aria-hidden="true" />
           <img src={previewImage.url} alt={previewImage.title} />
           <h2>{previewImage.title}</h2>
+          <div className="therapy-album-lightbox-navigation" aria-label="Navegação entre imagens">
+            <button className="button button-secondary" type="button" disabled={previewIndex <= 0} onClick={() => setPreviewImageId(visibleImages[previewIndex - 1]?.id ?? null)}><ChevronLeft size={16} /> Anterior</button>
+            <span aria-live="polite">{previewIndex + 1} de {visibleImages.length}</span>
+            <button className="button button-secondary" type="button" disabled={previewIndex >= visibleImages.length - 1} onClick={() => setPreviewImageId(visibleImages[previewIndex + 1]?.id ?? null)}>Próxima <ChevronRight size={16} /></button>
+          </div>
         </section>
       </div>}
     </section>}

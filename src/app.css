@@ -1620,7 +1620,10 @@ html[data-theme="dark"] .admin-report-row { border-color: var(--line); }
 .therapy-album-lightbox-panel > img:not(.therapy-album-lightbox-icon) { display: block; max-width: 100%; max-height: calc(92dvh - 90px); object-fit: contain; }
 .therapy-album-lightbox-icon { width: 40px; height: 40px; object-fit: contain; }
 .therapy-album-lightbox-panel > h2 { margin: 0; font-size: 15px; text-align: center; }
+.therapy-album-lightbox-navigation { display: flex; width: min(100%, 520px); align-items: center; justify-content: space-between; gap: 12px; }
+.therapy-album-lightbox-navigation > span { color: #526575; font-size: 12px; white-space: nowrap; }
 .therapy-album-lightbox-close { position: absolute; z-index: 1; top: 8px; right: 8px; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid #d8e1e8; border-radius: 50%; background: #fff; color: #18324a; cursor: pointer; }
+.therapy-image-print-sheet { display: none; }
 html[data-theme="dark"] .therapy-material-card,
 html[data-theme="dark"] .therapy-image-card,
 html[data-theme="dark"] .therapy-image-sidebar { background: var(--surface); }
@@ -1655,6 +1658,9 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
   .therapy-image-browser { padding: 13px; }
   .therapy-image-browser-header { align-items: flex-start; }
   .therapy-image-folder { min-height: 42px; }
+  .therapy-image-toolbar { align-items: stretch; flex-wrap: wrap; }
+  .therapy-image-toolbar .button { justify-content: center; }
+  .therapy-album-lightbox-navigation .button { min-height: 42px; padding-inline: 9px; }
 }
 .beta-celebration { position: fixed; z-index: 1800; inset: 0; display: grid; place-items: center; overflow: hidden; padding: 20px; }
 .beta-celebration-backdrop { position: absolute; inset: 0; background: rgba(18, 37, 49, .54); animation: beta-backdrop-in .2s ease-out both; }
@@ -3306,6 +3312,18 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
 }
 @media (max-width: 420px) {
   .vital-trends-meta { flex-direction: column; }
+}
+@media print {
+  @page { margin: 10mm; }
+  body.print-therapy-images * { visibility: hidden !important; }
+  body.print-therapy-images .therapy-image-print-sheet,
+  body.print-therapy-images .therapy-image-print-sheet * { visibility: visible !important; }
+  body.print-therapy-images .therapy-image-print-sheet { position: absolute; inset: 0; display: block !important; width: 100%; padding: 0; color: #111; background: #fff; font-family: Arial, sans-serif; }
+  .therapy-image-print-sheet > h1 { margin: 0 0 8mm; font-size: 18pt; }
+  .therapy-image-print-sheet > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8mm; }
+  .therapy-image-print-item { display: grid; justify-items: center; gap: 3mm; break-inside: avoid; page-break-inside: avoid; }
+  .therapy-image-print-item > img { display: block; width: 100%; max-height: 115mm; object-fit: contain; }
+  .therapy-image-print-item > h2 { margin: 0; font-size: 10pt; font-weight: 400; text-align: center; overflow-wrap: anywhere; }
 }
 
 :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(4):last-child) {
