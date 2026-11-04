@@ -252,9 +252,13 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Na Gestão Hospitalar, transferência e alta não são oferecidas para pacientes ativos sem quarto/leito. A Recepção continua criando cadastros ambulatoriais sem internação e internações pelo fluxo que seleciona leito físico.
 - README e ajuda interna atualizados. Testes direcionados de cadastro/admissão, transferência/alta passaram; Ruff, typecheck, lint, build e `git diff --check` também passaram em sequência. Não houve migração, E2E ou acesso a dados reais.
 
+### Concluído nesta retomada — guias da Farmácia com botões visíveis
+
+- A Farmácia passa a manter as guias como botões mesmo quando há mais de cinco áreas ou em telas estreitas; no celular, a faixa pode ser deslizada horizontalmente. As permissões e a persistência da guia selecionada permanecem inalteradas.
+- README e ajuda interna atualizados. Typecheck, lint, build e `git diff --check` passaram em sequência; build mantém o aviso já conhecido de chunk maior que 500 kB. Não houve alterações de API, migração ou dados.
+
 ### Pendente — ordem sugerida
 
-- **Navegação da Farmácia:** voltar a apresentar as áreas do módulo como guias/botões visíveis, em vez de uma lista suspensa para abrir uma área. Conferir os fluxos desktop e móvel e preservar os nomes, permissões e estado das seções existentes.
 - **Leitura de QR Code na Farmácia:** ampliar a leitura de identificadores para medicamentos cujo rótulo tenha QR Code em vez de código de barras tradicional. Antes de implementar, verificar formatos usados nos produtos e a biblioteca atual; identificar com segurança somente dados reconhecidos (por exemplo, GTIN/lote/validade, quando presentes), mantendo conferência manual, rastreabilidade e confirmação do usuário. Não inferir medicamento nem dispensar automaticamente a partir de conteúdo QR desconhecido.
 - **Avaliar reinicialização dos dados pelo Superusuário:** estudar uma ação restrita para restaurar as configurações originais e limpar os dados operacionais de todos os bancos, preservando somente a conta do Superusuário necessária para acesso posterior. Antes de implementar, mapear dependências entre bancos, arquivos/anexos, auditoria, backups e dados de configuração; definir explicitamente o que será preservado. Por ser uma operação irreversível e de alto impacto, exigir backup verificável, confirmação reforçada, prevenção de execução acidental, auditoria e validação em ambiente isolado. Não executar em produção ou em dados reais sem autorização explícita.
 - Retomar a revisão da Lavanderia/Rouparia em viewport móvel quando a API local de autenticação e uma sessão de teste estiverem disponíveis.

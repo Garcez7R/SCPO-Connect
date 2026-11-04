@@ -2830,7 +2830,8 @@ html[data-theme="dark"] .work-order-status[class*="status-tone-"] { border-color
   .nursing-overview-summary { grid-template-columns: 1fr; }
   .nursing-overview-patient { align-items: stretch; flex-direction: column; }
   .nursing-overview-actions .button { flex: 1 1 100%; justify-content: center; min-height: 44px; }
-  .pharmacy-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+  .pharmacy-tabs { display: flex; }
+  .pharmacy-tabs .module-tab-buttons { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
   .pharmacy-tabs .button { justify-content: center; padding-inline: 8px; }
   .pharmacy-report-filters, .pharmacy-movement-report-filters { grid-template-columns: 1fr; }
   .pharmacy-report-actions { grid-column: auto; }

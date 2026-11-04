@@ -668,6 +668,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     <ModuleTabNavigation
       className="pharmacy-tabs"
       ariaLabel="Seções da Farmácia"
+      alwaysShowButtons
       value={pharmacyTab}
       onChange={(tab) => {
         setPharmacyTab(tab)
