@@ -5145,12 +5145,21 @@ type ManagementBehavioralStatus = {
   patient_name: string
   room: string
   bed: string
+  active: boolean
   status: BehavioralStatus | null
   updated_at: string | null
 }
 
 function ManagementBehavioralStatusBoard() {
   const [statuses, setStatuses] = useState<ManagementBehavioralStatus[]>([])
+  const [patientQuery, setPatientQuery] = useState('')
+  const [registrationFilter, setRegistrationFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [behaviorFilter, setBehaviorFilter] = useState<'all' | 'unassigned' | BehavioralStatus>('all')
+  const [locationFilter, setLocationFilter] = useState<'all' | 'inpatient' | 'without-bed'>('all')
+  const [statusDrafts, setStatusDrafts] = useState<Record<string, BehavioralStatus | ''>>({})
+  const [savingPatientReference, setSavingPatientReference] = useState('')
+  const [assignmentNotice, setAssignmentNotice] = useState('')
+  const [assignmentError, setAssignmentError] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshVersion, setRefreshVersion] = useState(0)
@@ -5169,13 +5178,75 @@ function ManagementBehavioralStatusBoard() {
     return () => { active = false }
   }, [refreshVersion])
 
+  const normalizedPatientQuery = patientQuery.trim().toLocaleLowerCase('pt-BR')
+  const visibleStatuses = statuses.filter((item) => {
+    const matchesQuery = `${item.patient_name} ${item.room} ${item.bed}`
+      .toLocaleLowerCase('pt-BR').includes(normalizedPatientQuery)
+    const matchesRegistration = registrationFilter === 'all'
+      || (registrationFilter === 'active' && item.active)
+      || (registrationFilter === 'inactive' && !item.active)
+    const matchesBehavior = behaviorFilter === 'all'
+      || (behaviorFilter === 'unassigned' && item.status === null)
+      || item.status === behaviorFilter
+    const hasBed = Boolean(item.room.trim() && item.bed.trim())
+    const matchesLocation = locationFilter === 'all'
+      || (locationFilter === 'inpatient' && hasBed)
+      || (locationFilter === 'without-bed' && !hasBed)
+    return matchesQuery && matchesRegistration && matchesBehavior && matchesLocation
+  })
+
+  async function assignBehavioralStatus(item: ManagementBehavioralStatus) {
+    const status = statusDrafts[item.patient_reference] ?? item.status ?? ''
+    if (!status || status === item.status) return
+    setSavingPatientReference(item.patient_reference)
+    setAssignmentNotice('')
+    setAssignmentError('')
+    try {
+      const result = await readApiResponse<{ patient_reference: string; status: BehavioralStatus; updated_at: string }>(
+        await fetch(`/api/v1/management/patients/${encodeURIComponent(item.patient_reference)}/behavioral-status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        }),
+      )
+      setStatuses((current) => current.map((patient) => patient.patient_reference === result.patient_reference
+        ? { ...patient, status: result.status, updated_at: result.updated_at }
+        : patient))
+      setStatusDrafts((current) => {
+        const next = { ...current }
+        delete next[item.patient_reference]
+        return next
+      })
+      setAssignmentNotice(`Classificação de ${item.patient_name} atualizada.`)
+    } catch (saveError) {
+      setAssignmentError(saveError instanceof Error ? saveError.message : 'Não foi possível atualizar a classificação.')
+    } finally {
+      setSavingPatientReference('')
+    }
+  }
+
   return <section className="patient-list-panel behavioral-status-board-panel">
-    <div className="section-heading"><div><p className="eyebrow">ACOMPANHAMENTO DE INTERNADOS</p><h2>Sinalização comportamental</h2><p className="welcome-copy">Exibe somente a cor de atenção e a data da última revisão. Observações e detalhes clínicos permanecem restritos à equipe assistencial.</p></div><button className="button button-secondary" type="button" onClick={() => { setLoading(true); setError(''); setRefreshVersion((version) => version + 1) }}>Atualizar</button></div>
+    <div className="section-heading"><div><p className="eyebrow">PACIENTES CADASTRADOS</p><h2>Sinalização comportamental</h2><p className="welcome-copy">Localize pacientes internados, com alta ou atendidos sem leito. Semáforo sem classificação aparece como “Sem sinalização”. Gestão pode atribuir a classificação conforme o protocolo institucional; observações e detalhes clínicos permanecem restritos à equipe assistencial.</p></div><button className="button button-secondary" type="button" onClick={() => { setLoading(true); setError(''); setRefreshVersion((version) => version + 1) }}>Atualizar</button></div>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
-    {loading ? <div className="history-empty" role="status">Carregando sinalizações…</div> : statuses.length ? <div className="behavioral-status-board">{statuses.map((item) => <article className="behavioral-status-row" key={item.patient_reference}>
-      <div><strong>{item.patient_name}</strong><small>Quarto {item.room} · leito {item.bed}</small><small>{item.updated_at ? `Última revisão: ${dateTime(item.updated_at)}` : 'Ainda sem revisão do semáforo'}</small></div>
-      <BehavioralStatusBadge status={item.status} />
-    </article>)}</div> : <div className="history-empty">Nenhum paciente internado está disponível para acompanhamento.</div>}
+    {assignmentError && <ToastMessage variant="error">{assignmentError}</ToastMessage>}
+    {assignmentNotice && <ToastMessage variant="success">{assignmentNotice}</ToastMessage>}
+    <div className="behavioral-status-filters">
+      <label className="field"><span className="field-label">Buscar paciente, quarto ou leito</span><input type="search" value={patientQuery} onChange={(event) => setPatientQuery(event.target.value)} placeholder="Digite o nome ou a acomodação" /></label>
+      <label className="field"><span className="field-label">Cadastro</span><select value={registrationFilter} onChange={(event) => setRegistrationFilter(event.target.value as typeof registrationFilter)}><option value="all">Todos</option><option value="active">Ativos</option><option value="inactive">Inativos / alta</option></select></label>
+      <label className="field"><span className="field-label">Classificação</span><select value={behaviorFilter} onChange={(event) => setBehaviorFilter(event.target.value as typeof behaviorFilter)}><option value="all">Todas</option><option value="unassigned">Sem sinalização</option><option value="green">Verde</option><option value="yellow">Amarelo</option><option value="red">Vermelho</option></select></label>
+      <label className="field"><span className="field-label">Acomodação</span><select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value as typeof locationFilter)}><option value="all">Todas</option><option value="inpatient">Com quarto e leito</option><option value="without-bed">Sem quarto/leito</option></select></label>
+    </div>
+    {loading ? <div className="history-empty" role="status">Carregando sinalizações…</div> : statuses.length ? visibleStatuses.length ? <>
+      <p className="behavioral-status-result-count">{visibleStatuses.length} de {statuses.length} paciente(s)</p>
+      <div className="behavioral-status-board">{visibleStatuses.map((item) => <article className="behavioral-status-row" key={item.patient_reference}>
+        <div><strong>{item.patient_name}</strong><small>{item.room.trim() && item.bed.trim() ? `Quarto ${item.room} · leito ${item.bed}` : 'Sem quarto/leito atribuído'}</small><small>{item.active ? 'Cadastro ativo' : 'Cadastro inativo'}</small><small>{item.updated_at ? `Última revisão: ${dateTime(item.updated_at)}` : 'Ainda sem classificação do semáforo'}</small></div>
+        <div className="behavioral-status-actions">
+          <BehavioralStatusBadge status={item.status} />
+          <label className="field"><span className="field-label">Classificação de {item.patient_name}</span><select value={statusDrafts[item.patient_reference] ?? item.status ?? ''} disabled={savingPatientReference !== ''} onChange={(event) => setStatusDrafts((current) => ({ ...current, [item.patient_reference]: event.target.value as BehavioralStatus | '' }))}><option value="">Selecione</option><option value="green">Verde</option><option value="yellow">Amarelo</option><option value="red">Vermelho</option></select></label>
+          <button className="button button-secondary" type="button" disabled={savingPatientReference !== '' || !(statusDrafts[item.patient_reference] ?? item.status) || (statusDrafts[item.patient_reference] ?? item.status) === item.status} onClick={() => void assignBehavioralStatus(item)}>{savingPatientReference === item.patient_reference ? 'Salvando…' : 'Atribuir classificação'}</button>
+        </div>
+      </article>)}</div>
+    </> : <div className="history-empty">Nenhum paciente corresponde aos filtros selecionados.</div> : <div className="history-empty">Nenhum paciente cadastrado disponível para acompanhamento.</div>}
   </section>
 }
 

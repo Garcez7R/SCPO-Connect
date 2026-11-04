@@ -124,6 +124,12 @@ class BehavioralObservationPayload(BaseModel):
         return value.strip()
 
 
+class ManagementBehavioralStatusPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["green", "yellow", "red"]
+
+
 class PatientObservation(Base):
     __tablename__ = "patient_observations"
 
@@ -5986,17 +5992,19 @@ def list_management_behavioral_status(
         select(Patient)
         .where(
             Patient.deleted_at.is_(None),
-            Patient.active.is_(True),
-            Patient.room != "",
-            Patient.bed != "",
+            ~exists(
+                select(PatientMergeAlias.source_reference).where(
+                    PatientMergeAlias.source_reference == Patient.reference
+                )
+            ),
         )
-        .order_by(Patient.room, Patient.bed, Patient.name)
+        .order_by(Patient.active.desc(), Patient.room, Patient.bed, Patient.name)
     ).all()
     latest = latest_behavioral_statuses(
         db, [patient.reference for patient in patients]
     )
     emit_audit_event(
-        principal, "management", "behavioral_status_board_read", "inpatients"
+        principal, "management", "behavioral_status_board_read", "patients"
     )
     return {
         "statuses": [
@@ -6005,6 +6013,7 @@ def list_management_behavioral_status(
                 "patient_name": patient.name,
                 "room": patient.room,
                 "bed": patient.bed,
+                "active": patient.active,
                 "status": latest[patient.reference].status
                 if patient.reference in latest
                 else None,
@@ -6014,6 +6023,54 @@ def list_management_behavioral_status(
             }
             for patient in patients
         ]
+    }
+
+
+@app.post(
+    "/api/v1/management/patients/{patient_reference}/behavioral-status",
+    status_code=201,
+)
+def set_management_behavioral_status(
+    patient_reference: str,
+    payload: ManagementBehavioralStatusPayload,
+    principal: Annotated[
+        DemoPrincipal,
+        Depends(require_demo_role_or_superuser("management", "admin")),
+    ],
+    db: Annotated[Session, Depends(get_nursing_db)],
+) -> dict[str, object]:
+    patient = db.get(Patient, patient_reference)
+    if (
+        patient is None
+        or patient.deleted_at is not None
+        or db.scalar(
+            select(PatientMergeAlias.source_reference).where(
+                PatientMergeAlias.source_reference == patient_reference
+            )
+        )
+    ):
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+
+    now = datetime.now(UTC)
+    row = BehavioralObservation(
+        patient_reference=patient_reference,
+        observation="Classificação registrada pela Gestão Hospitalar.",
+        context="",
+        response="",
+        status=payload.status,
+        actor_id=principal.user_id,
+        actor_name=principal.actor_name,
+        created_at=now,
+    )
+    db.add(row)
+    emit_audit_event(
+        principal, "management", "behavioral_status_updated", patient_reference, db=db
+    )
+    db.commit()
+    return {
+        "patient_reference": patient_reference,
+        "status": row.status,
+        "updated_at": now.isoformat(),
     }
 
 

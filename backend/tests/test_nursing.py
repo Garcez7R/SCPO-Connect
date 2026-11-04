@@ -2056,6 +2056,13 @@ def test_behavioral_observations_are_descriptive_append_only_and_role_restricted
             physician,
             nursing_db,
         )
+        ambulatory = create_patient(nursing_db, nurse, room="", bed="")
+        discharged = create_patient(nursing_db, nurse, room="", bed="")
+        nursing_db.get(nursing.Patient, discharged["reference"]).active = False
+        archived = create_patient(nursing_db, nurse, room="", bed="")
+        archived_patient = nursing_db.get(nursing.Patient, archived["reference"])
+        archived_patient.deleted_at = datetime.now(UTC)
+        nursing_db.commit()
 
         manager = DemoPrincipal(
             "manager-id",
@@ -2081,18 +2088,45 @@ def test_behavioral_observations_are_descriptive_append_only_and_role_restricted
         management_status = nursing.list_management_behavioral_status(
             manager, nursing_db
         )
-        assert management_status["statuses"] == [
-            {
-                "patient_reference": reference,
-                "patient_name": "Paciente de teste",
-                "room": "3",
-                "bed": "B",
-                "status": "red",
-                "updated_at": management_status["statuses"][0]["updated_at"],
-            }
-        ]
-        assert "observation" not in management_status["statuses"][0]
-        assert "actor_name" not in management_status["statuses"][0]
+        statuses = {
+            item["patient_reference"]: item
+            for item in management_status["statuses"]
+        }
+        assert set(statuses) == {reference, ambulatory["reference"], discharged["reference"]}
+        assert statuses[reference] == {
+            "patient_reference": reference,
+            "patient_name": "Paciente de teste",
+            "room": "3",
+            "bed": "B",
+            "active": True,
+            "status": "red",
+            "updated_at": statuses[reference]["updated_at"],
+        }
+        for patient_reference in (ambulatory["reference"], discharged["reference"]):
+            assert statuses[patient_reference]["status"] is None
+            assert statuses[patient_reference]["updated_at"] is None
+        assert statuses[ambulatory["reference"]]["active"] is True
+        assert statuses[discharged["reference"]]["active"] is False
+        assert all("observation" not in item and "actor_name" not in item for item in statuses.values())
+
+        assignment = nursing.set_management_behavioral_status(
+            ambulatory["reference"],
+            nursing.ManagementBehavioralStatusPayload(status="yellow"),
+            manager,
+            nursing_db,
+        )
+        assert assignment["status"] == "yellow"
+        assert assignment["updated_at"]
+        assigned_observation = nursing_db.scalar(
+            select(nursing.BehavioralObservation).where(
+                nursing.BehavioralObservation.patient_reference
+                == ambulatory["reference"]
+            )
+        )
+        assert assigned_observation.actor_name == manager.actor_name
+        assert assigned_observation.observation == (
+            "Classificação registrada pela Gestão Hospitalar."
+        )
     finally:
         nursing.app.dependency_overrides.clear()
 

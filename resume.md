@@ -1,6 +1,6 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
 ## Quadro de acompanhamento
 
@@ -14,6 +14,7 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Situação resumida das fases
 
+- **Retomada 04/11/2026:** relatórios operacionais da Farmácia publicados em `5261c96`; filtros e atribuição de classificação no Semáforo comportamental foram implementados e validados nesta retomada.
 - **Concluído/publicado:** revisão visual dos quadros da Farmácia (`8b045db`); avaliação de escalas graduais sem inventar limites (`9bd9e2b`); revisão do README e do Sobre (`501aff4`).
 - **Tentativa bloqueada/publicada:** inspeção da Lavanderia em viewport móvel chegou somente à tela de login porque a API local não estava disponível (`1a0cf38`); repetir após preparar autenticação local.
 - **Dashboard concluído e publicado:** disponibilidade global por módulo, modo de manutenção, resumo/atalho de backup, switches on/off e recuperação de erro ao carregar configurações. Commit `47b2b30`; suíte backend, typecheck, lint e build passaram. A inspeção autenticada manual ficou pendente porque a API local de Acesso em `localhost:8002` não está em execução.
@@ -230,7 +231,14 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Adicionada uma guia Relatórios no computador, separada do fluxo operacional, com filtros de estoque por busca, categoria, situação e validade; a impressão de lotes usa os resultados filtrados.
 - O histórico de movimentações agora permite filtrar por período local de São Paulo, lote e tipo de operação. A API valida intervalo de datas, mantém paginação, limite máximo de 100 registros e auditoria existente; a impressão identifica claramente que abrange somente a página exibida. Nenhum dado de paciente ou prescrição é incluído.
 - README e ajuda interna foram revisados. `backend/tests/test_domain_services.py` (72 testes), Ruff direcionado, teste de limite de identificador Alembic, `npm run typecheck`, `npm run lint`, `npm run build` e `git diff --check` passaram; testes e build foram executados sequencialmente. Nenhuma migração ou alteração de dados reais foi necessária; E2E e deploy permanecem pausados.
-- Próxima fase sugerida: filtros para localizar pacientes cadastrados em Gestão Hospitalar → Semáforo comportamental; avaliar os campos e permissões disponíveis antes de implementar.
+- A demanda seguinte do Semáforo comportamental foi tratada na fase documentada abaixo.
+
+### Concluído nesta retomada — filtros e classificação no Semáforo comportamental (04/11/2026)
+
+- Gestão Hospitalar localiza todos os cadastros não excluídos, incluindo internados, pacientes com cadastro inativo/alta e atendimentos sem acomodação. Os registros consolidados por mesclagem não são duplicados. Filtros combináveis incluem nome/quarto/leito, cadastro ativo/inativo, presença de acomodação e classificação; sem classificação aparece explicitamente como “Sem sinalização”.
+- Por autorização do usuário, Gestão também pode atribuir uma cor no próprio quadro. A API grava autoria e auditoria e registra somente a classificação administrativa; não retorna nem habilita consulta a observações comportamentais ou outros dados clínicos. Não foi necessária migração.
+- README e ajuda interna foram atualizados. O teste direcionado de Enfermagem (1), Ruff direcionado, `npm run typecheck`, `npm run lint` e `npm run build` passaram em sequência. Não houve E2E, deploy ou acesso a dados reais.
+- Próxima fase sugerida: revisar a separação entre operação e relatórios em Pacientes e Serviço Social e mapear outras áreas que se beneficiem de filtros/relatórios sem expor dados clínicos desnecessários.
 
 ### Pendente — ordem sugerida
 
@@ -243,8 +251,7 @@ Atualizado em 03/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - **Ícones de toast no tema escuro (03/11/2026):** manter o fundo branco do ícone, como nos demais ícones do app. Corrigido localmente; validar e publicar.
 - **Dashboard — métricas automáticas (30 dias):** coletar séries a cada 5 minutos (cadência inicial) somente de containers/volumes do SCPO; apresentar gráficos de CPU/memória dos serviços instrumentados, disponibilidade/latência das verificações, tamanho dos bancos e uso/capacidade de volumes que o próprio app controla, além de tabelas com valor atual, pico/limite e horário da amostra. Exibir estados de “coletando dados”, “indisponível” e lacunas sem fabricar valores. Sem acesso ao Docker socket, ao host inteiro ou métricas de infraestrutura fora do escopo de confiança do app. A implementação aguarda a escolha de uma fonte confiável de CPU/memória por container; consultas de banco e armazenamento conhecido, por si sós, não atendem ao escopo completo.
 - **Auditoria e notificações de mutação:** aprimorar o resumo/visualização dos eventos administrativos para perfis Administrador e Superusuário, com filtros, autoria, ação, módulo, destino e data/hora legíveis, sem logs brutos de serviços. Emitir toast com o ícone do app para cada mutação concluída; operações em andamento usam progresso apenas quando houver percentual real e estado persistente quando a duração for indeterminada.
-- **Filtros e relatórios avançados (solicitado em 03/11/2026):** em andamento por fases. Pacientes, Serviço Social e Central de Exames já têm relatórios; a Central separa a operação diária dos filtros/relatório avançados. Aplicar preferencialmente uma guia Relatórios própria e manter na fila apenas controles rápidos; avaliar/refinar essa separação também em Pacientes e Serviço Social. Seguir pela Farmácia e mapear as demais áreas, permissões e benefícios antes de implementar. Não expor dados clínicos fora das permissões.
-- **Gestão Hospitalar — Semáforo comportamental:** adicionar filtros para localizar pacientes cadastrados; definir os critérios de busca conforme os dados disponíveis e as permissões do perfil antes de implementar.
+- **Filtros e relatórios avançados (solicitado em 03/11/2026):** em andamento por fases. Pacientes, Serviço Social e Central de Exames já têm relatórios; a Central separa a operação diária dos filtros/relatório avançados. A Farmácia agora também separa a operação da guia Relatórios; o Semáforo comportamental de Gestão Hospitalar permite localizar cadastros sem revelar observações clínicas. Avaliar/refinar a separação de filtros/relatórios em Pacientes e Serviço Social e mapear outras áreas, permissões e benefícios antes de implementar. Não expor dados clínicos fora das permissões.
 - **Administração do host:** não incorporar terminal web com comandos livres, pois isso exporia execução arbitrária no servidor e aumentaria o risco de comprometimento. Como alternativa futura, avaliar um console operacional restrito e auditado (por exemplo, healthchecks, logs limitados e ações predefinidas de serviço), com autorização institucional e privilégio mínimo. Manter SSH para administração geral do sistema operacional.
 - **Funções específicas:** catalogar funções e suas rotas autorizadas antes de criar interruptores granulares; validar o bloqueio no backend, além de ocultar controles na interface. Não confundir esses interruptores com permissões individuais.
 - **Chrome/Windows 11 — observação encerrada sem reprodução:** o usuário relata que não houve novas falhas e suspeita de problema momentâneo do PC ao executar uma VM de desenvolvimento em paralelo. Não foi possível confirmar a causa; reabrir a investigação apenas se o problema voltar, registrando versão do navegador/SO, etapa, frequência, mensagem/console e passos seguros para reproduzir.
