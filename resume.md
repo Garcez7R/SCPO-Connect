@@ -246,9 +246,15 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - README e ajuda interna atualizados. Typecheck, lint, build e `git diff --check` passaram em sequência. Nenhuma API, migração ou dado real foi alterado; E2E e deploy permanecem pausados.
 - Próxima fase sugerida: mapear outras áreas que se beneficiem de filtros/relatórios separados, validando utilidade, permissões e ausência de exposição clínica desnecessária antes de implementar.
 
+### Concluído nesta retomada — ciclo de internação e movimentação do paciente
+
+- A revisão identificou que o cadastro central com leito físico selecionado atualizava quarto/leito, mas não criava a ocupação do leito nem o evento de admissão. Agora a atribuição do leito, evento de fluxo e auditoria são registrados junto ao cadastro; conflito de concorrência na ocupação retorna HTTP 409.
+- Na Gestão Hospitalar, transferência e alta não são oferecidas para pacientes ativos sem quarto/leito. A Recepção continua criando cadastros ambulatoriais sem internação e internações pelo fluxo que seleciona leito físico.
+- README e ajuda interna atualizados. Testes direcionados de cadastro/admissão, transferência/alta passaram; Ruff, typecheck, lint, build e `git diff --check` também passaram em sequência. Não houve migração, E2E ou acesso a dados reais.
+
 ### Pendente — ordem sugerida
 
-- **Revisar o ciclo de vida do paciente:** analisar de ponta a ponta o cadastro, a internação, as transferências e a alta, incluindo regras, permissões, consistência dos dados e reflexos nos módulos relacionados. Identificar falhas ou redundâncias e otimizar somente onde a análise demonstrar benefício, preservando históricos e auditoria.
+- **Navegação da Farmácia:** voltar a apresentar as áreas do módulo como guias/botões visíveis, em vez de uma lista suspensa para abrir uma área. Conferir os fluxos desktop e móvel e preservar os nomes, permissões e estado das seções existentes.
 - **Leitura de QR Code na Farmácia:** ampliar a leitura de identificadores para medicamentos cujo rótulo tenha QR Code em vez de código de barras tradicional. Antes de implementar, verificar formatos usados nos produtos e a biblioteca atual; identificar com segurança somente dados reconhecidos (por exemplo, GTIN/lote/validade, quando presentes), mantendo conferência manual, rastreabilidade e confirmação do usuário. Não inferir medicamento nem dispensar automaticamente a partir de conteúdo QR desconhecido.
 - **Avaliar reinicialização dos dados pelo Superusuário:** estudar uma ação restrita para restaurar as configurações originais e limpar os dados operacionais de todos os bancos, preservando somente a conta do Superusuário necessária para acesso posterior. Antes de implementar, mapear dependências entre bancos, arquivos/anexos, auditoria, backups e dados de configuração; definir explicitamente o que será preservado. Por ser uma operação irreversível e de alto impacto, exigir backup verificável, confirmação reforçada, prevenção de execução acidental, auditoria e validação em ambiente isolado. Não executar em produção ou em dados reais sem autorização explícita.
 - Retomar a revisão da Lavanderia/Rouparia em viewport móvel quando a API local de autenticação e uma sessão de teste estiverem disponíveis.

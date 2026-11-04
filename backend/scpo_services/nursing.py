@@ -5549,6 +5549,24 @@ def create_patient_record(
     )
     db.add(patient)
     db.flush()
+    if selected_bed:
+        bed, _ = selected_bed
+        _assign_patient_to_bed(db, patient, bed, principal, now)
+        db.add(
+            PatientFlowEvent(
+                patient_reference=patient.reference,
+                event_type="admission",
+                next_room=bed.room,
+                next_bed=bed.label,
+                reason="Internação pelo cadastro central",
+                actor_id=principal.user_id,
+                actor_name=principal.actor_name,
+                occurred_at=now,
+            )
+        )
+        emit_audit_event(
+            principal, "patients", "patient_admitted", patient.reference, db=db
+        )
     if patient.allergies_status != "unknown":
         record_patient_allergy_change(
             db,
@@ -5571,7 +5589,16 @@ def create_patient(
     db: Annotated[Session, Depends(get_nursing_db)],
 ) -> dict[str, object]:
     patient = create_patient_record(db, principal, payload)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if payload.bed_id:
+            raise HTTPException(
+                status_code=409,
+                detail="O leito foi ocupado por outra operação; atualize o mapa",
+            ) from exc
+        raise
     db.refresh(patient)
     return serialize_patient(patient, principal=principal, full_profile=can_view_full_patient_profile(principal))
 

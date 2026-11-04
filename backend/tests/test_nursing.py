@@ -1393,6 +1393,36 @@ def test_transfer_and_discharge_release_beds_and_preserve_audit_history(
     assert already_discharged.value.status_code == 404
 
 
+def test_patient_registration_with_bed_creates_assignment_and_admission_history(
+    nursing_db: Session,
+    nurse: DemoPrincipal,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
+    bed = create_physical_bed(nursing_db, "12", "A")
+
+    patient = nursing.create_patient(
+        nursing.PatientPayload(
+            name="Paciente admitido no cadastro",
+            bed_id=str(bed["id"]),
+        ),
+        nurse,
+        nursing_db,
+    )
+
+    assert patient["room"] == "12"
+    assert patient["bed"] == "A"
+    assignment = nursing._active_assignment_for_bed(nursing_db, str(bed["id"]))
+    assert assignment is not None
+    assert assignment.patient_reference == patient["reference"]
+    events = nursing.list_patient_flow_events(
+        nurse, nursing_db, str(patient["reference"])
+    )
+    assert len(events["events"]) == 1
+    assert events["events"][0]["event_type"] == "admission"
+    assert events["events"][0]["next_bed"] == "A"
+
+
 def test_capacity_percent_waits_for_legacy_reconciliation(
     nursing_db: Session,
     nurse: DemoPrincipal,

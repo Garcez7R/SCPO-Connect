@@ -3574,6 +3574,7 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
   const [notice, setNotice] = useState('')
   const activePatients = patients.filter((item) => item.active !== false)
   const selectedPatient = activePatients.find((item) => item.reference === selectedReference) ?? activePatients[0]
+  const patientHasInpatientLocation = Boolean(selectedPatient?.room.trim() && selectedPatient.bed.trim())
   useBreadcrumb('management-patient-flow', flowType === 'transfer' ? 'Transferência' : 'Alta', 2)
   useBreadcrumb('management-patient-flow-patient', selectedPatient?.name ?? null, 3)
   const patient = selectedPatient
@@ -3700,13 +3701,14 @@ function PatientFlowRiskPanel({ patients, canUpdate, onPatientUpdated }: { patie
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
     {activePatients.length === 0 ? <div className="history-empty">Não há pacientes ativos para transferência, alta ou avaliação de riscos.</div> : <>
-      <PatientSelect label="Paciente internado" patients={activePatients} value={patient?.reference ?? ''} onChange={setSelectedReference} required optionLabel={patientLocationLabel} />
+      <PatientSelect label="Paciente ativo" patients={activePatients} value={patient?.reference ?? ''} onChange={setSelectedReference} required optionLabel={patientLocationLabel} />
       {patient && <PatientAllergyAlert patient={patient} />}
       <div className="admin-tabs module-tabs" role="tablist" aria-label="Ações de fluxo do paciente">
         <button className={`button ${flowType === 'transfer' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={flowType === 'transfer'} onClick={() => setFlowType('transfer')}>Transferência</button>
         <button className={`button ${flowType === 'discharge' ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={flowType === 'discharge'} onClick={() => setFlowType('discharge')}>Alta</button>
       </div>
-      {canUpdate && <form className="account-create-panel" onSubmit={(event) => void savePatientFlow(event)}>
+      {patient && !patientHasInpatientLocation && <div className="history-empty">Transferência e alta estão disponíveis somente para pacientes com quarto e leito registrados. Para internar, use o fluxo de Admissões e leitos da Recepção.</div>}
+      {canUpdate && patientHasInpatientLocation && <form className="account-create-panel" onSubmit={(event) => void savePatientFlow(event)}>
         {flowType === 'transfer' ? <div className="field-grid field-grid-two">
           <label className="field"><span className="field-label">Leito físico de destino</span><select required value={destinationBedId} onChange={(event) => setDestinationBedId(event.target.value)}><option value="">Selecione unidade, quarto e leito disponível</option>{beds.filter((bed) => bed.status === 'available' && !bed.occupied).map((bed) => <option key={bed.id} value={bed.id}>{bed.unit_name} · Quarto {bed.room} · Leito {bed.label}</option>)}</select>{!beds.some((bed) => bed.status === 'available' && !bed.occupied) && <span className="field-hint">Não há leitos físicos liberados. Solicite cadastro ou liberação em Gestão Hospitalar.</span>}</label>
           <label className="field"><span className="field-label">Motivo da transferência</span><input required minLength={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
