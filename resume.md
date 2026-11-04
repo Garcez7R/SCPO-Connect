@@ -294,6 +294,12 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O comportamento foi aplicado à coleta assistencial, à triagem e à tela móvel. A máscara apenas apresenta o valor digitado; não interpreta nem modifica a medida.
 - README e ajuda interna atualizados; typecheck, lint e build passaram.
 
+### Concluído nesta retomada — movimento dos cartões da Visão geral
+
+- Corrigida a sobreposição de `transform` pela animação de entrada com preenchimento permanente, que impedia a elevação no hover. A animação de entrada agora usa a propriedade independente `translate`, preservando o movimento interativo.
+- Dispositivos configurados para reduzir movimento mantêm os cartões estáticos no hover.
+- README e ajuda interna atualizados; typecheck, lint e build passaram. A verificação visual autenticada aguarda a disponibilidade do servidor novo.
+
 ### Pendente — ordem sugerida
 
 - **Unificação do fluxo de administração de medicamentos — após validação clínica:** decidir o papel da API/tabela de administrações agendadas e integrá-la com os registros de doses efetivamente administradas, ou descontinuá-la com compatibilidade histórica segura. Definir explicitamente relação entre dose prescrita e unidade dispensada, horários não definidos e tratamento de recusa/suspensão. Não calcular esquemas, sugerir doses ou alterar condutas clínicas automaticamente.
