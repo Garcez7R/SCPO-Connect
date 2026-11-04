@@ -178,6 +178,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .accessibility-controls { display: flex; align-items: center; gap: 5px; }
 .appearance-button { display: inline-flex; min-width: 38px; min-height: 38px; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
 .appearance-button > span { font-size: 13px; font-weight: 700; }
+.pwa-appearance-button { width: 42px; min-width: 42px; min-height: 42px; flex: 0 0 auto; justify-content: center; padding: 8px; }
 .profile-switch-label { color: var(--subtle); font-size: 11px; }
 .profile-switch { width: 190px; min-height: 34px; padding: 0 27px 0 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink); font-size: 11px; }
 .page-content { width: min(100%, 1560px); min-height: calc(100vh - 105px); margin: 0 auto; padding: 33px clamp(22px, 2.5vw, 38px) 30px; }
@@ -2455,6 +2456,7 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 .nursing-mobile-footer > a { color: var(--blue); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .nursing-mobile-denied { align-content: center; justify-items: center; text-align: center; }
 .nursing-mobile-denied > img { width: 82px; height: 82px; object-fit: contain; }
+.nursing-mobile-denied > .pwa-appearance-button, .kitchen-mobile-denied > .pwa-appearance-button { width: 42px; min-height: 42px; justify-self: end; }
 .nursing-mobile-denied > h1 { margin: 0; font-size: 22px; }
 .nursing-mobile-denied > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .nursing-mobile-denied > .button { width: min(100%, 300px); justify-content: center; }
@@ -2488,6 +2490,14 @@ html[data-theme="dark"] .nursing-mobile-vital-field { background: #172a35; }
 html[data-theme="dark"] .nursing-mobile-tabs button.is-active, html[data-theme="dark"] .nursing-mobile-round-summary { background: #203d4b; color: #b7dcea; }
 html[data-theme="dark"] .operations-mobile-card { background: #172a35; }
 html[data-theme="dark"] .operations-mobile-update { border-color: var(--line); }
+html[data-theme="dark"] :is(.nursing-mobile-panel, .nursing-mobile-tabs, .nursing-mobile-round-patient, .nursing-mobile-pending, .operations-mobile-panel, .pharmacy-inventory, .pharmacy-dispensation-panel, .pharmacy-alphabetic-inventory, .kitchen-mobile-title-row, .kitchen-mobile-summary > article, .kitchen-mobile-card) {
+  border-color: var(--line);
+  background-color: var(--surface);
+  color: var(--ink);
+}
+html[data-theme="dark"] :is(.nursing-mobile-panel, .operations-mobile-panel, .pharmacy-inventory, .pharmacy-dispensation-panel, .pharmacy-alphabetic-inventory) :is(h2, h3, strong, legend) { color: var(--ink); }
+html[data-theme="dark"] .kitchen-mobile-search { border-color: var(--line); background: var(--surface); }
+html[data-theme="dark"] .laundry-page-mobile :is(.laundry-form-panel, .laundry-request-panel, .laundry-catalog-panel, .laundry-reports-panel) { border-color: var(--line); background: var(--surface); color: var(--ink); }
 .system-guide { display: grid; gap: 24px; }
 .system-guide-intro { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; margin: 0; }
 .system-guide-intro h2 { margin: 2px 0 6px; color: var(--ink); font-size: 19px; }

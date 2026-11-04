@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Clock3, LogOut, RefreshCw, Search, UtensilsCrossed } from 'lucide-react'
 import { readApiResponse } from '../api'
+import AppearanceModeButton from '../components/AppearanceModeButton'
 import ModuleConnectionStatus from '../components/ModuleConnectionStatus'
 
 type KitchenPatient = {
@@ -35,9 +36,11 @@ function formatAssessmentDate(value: string | null) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`))
 }
 
-export default function KitchenMobilePage({ user, onLogout }: {
+export default function KitchenMobilePage({ user, onLogout, darkMode, onToggleTheme }: {
   user: KitchenUser
   onLogout: () => void
+  darkMode: boolean
+  onToggleTheme: () => void
 }) {
   const canAccess = user.is_superuser || ['nutrition', 'management', 'admin', 'oversight'].some((module) =>
     user.modules.includes(module) && (
@@ -117,6 +120,7 @@ export default function KitchenMobilePage({ user, onLogout }: {
 
   if (!canAccess) {
     return <main className="kitchen-mobile-shell kitchen-mobile-denied">
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <img src="/scpo-connect-icon.png" alt="" />
       <h1>Acesso não autorizado</h1>
       <p>Seu perfil não tem permissão para consultar as dietas e os alertas alimentares. Solicite a liberação ao administrador.</p>
@@ -130,6 +134,7 @@ export default function KitchenMobilePage({ user, onLogout }: {
         <img src="/scpo-connect-icon.png" alt="" />
         <div><p className="eyebrow">SCPO CONNECT</p><h1><UtensilsCrossed size={19} /> Painel da cozinha</h1></div>
       </div>
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <button className="button button-secondary kitchen-mobile-logout" type="button" onClick={onLogout}><LogOut size={16} /><span>Sair</span></button>
     </header>
 

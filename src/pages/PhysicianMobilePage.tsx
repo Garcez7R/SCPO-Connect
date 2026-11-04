@@ -1,4 +1,5 @@
 import { LogOut, Stethoscope } from 'lucide-react'
+import AppearanceModeButton from '../components/AppearanceModeButton'
 import PhysicianPage from './PhysicianPage'
 import ModuleConnectionStatus from '../components/ModuleConnectionStatus'
 
@@ -10,9 +11,11 @@ type PhysicianMobileUser = {
   permissions: Record<string, string[]>
 }
 
-export default function PhysicianMobilePage({ user, onLogout }: {
+export default function PhysicianMobilePage({ user, onLogout, darkMode, onToggleTheme }: {
   user: PhysicianMobileUser
   onLogout: () => void
+  darkMode: boolean
+  onToggleTheme: () => void
 }) {
   const canAccess = user.modules.includes('physician')
 
@@ -21,6 +24,7 @@ export default function PhysicianMobilePage({ user, onLogout }: {
       <header className="physician-mobile-header">
         <img src="/scpo-connect-icon.png" alt="" />
         <div><p className="eyebrow">SCPO CONNECT</p><h1>Médico móvel</h1></div>
+        <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
         <button className="button button-secondary" type="button" onClick={onLogout}><LogOut size={16} /> Sair</button>
       </header>
       <section className="patient-list-panel">
@@ -38,6 +42,7 @@ export default function PhysicianMobilePage({ user, onLogout }: {
         <div><p className="eyebrow">SCPO CONNECT</p><h1><Stethoscope size={20} /> Médico</h1><span>{user.display_name || user.name}</span></div>
       </div>
       <ModuleConnectionStatus service="nursing" />
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <button className="button button-secondary physician-mobile-logout" type="button" onClick={onLogout}><LogOut size={16} /> Sair</button>
     </header>
     <PhysicianPage userId={user.id} onOpenPatientHistory={() => undefined} mobileMode />

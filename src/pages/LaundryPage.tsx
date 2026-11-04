@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight, ClipboardList, ExternalLink, Plus, Shirt, Trash2, WashingMachine } from 'lucide-react'
 import { readApiResponse } from '../api'
+import AppearanceModeButton from '../components/AppearanceModeButton'
 import ToastMessage from '../components/ToastMessage'
 import ModuleConnectionStatus from '../components/ModuleConnectionStatus'
 import { useAppDialogs } from '../components/appDialogContext'
@@ -107,10 +108,14 @@ export default function LaundryPage({
   user,
   mobileMode = false,
   onLogout,
+  darkMode,
+  onToggleTheme,
 }: {
   user: LaundryUser
   mobileMode?: boolean
   onLogout?: () => void
+  darkMode?: boolean
+  onToggleTheme?: () => void
 }) {
   const { confirm } = useAppDialogs()
   const [tab, setTab] = useState<LaundryTab>('requests')
@@ -266,7 +271,7 @@ export default function LaundryPage({
     <header className="laundry-header">
       <span className="module-icon module-icon-laundry"><Shirt size={23} /></span>
       <div><p className="eyebrow">{mobileMode ? 'PAINEL DE TRABALHO · LAVANDERIA' : 'MÓDULO · LAVANDERIA/ROUPARIA'}</p><h1>Lavanderia/Rouparia</h1><p className="welcome-copy">{mobileMode ? 'Acompanhe solicitações e atualize cada etapa do enxoval.' : 'Organize o enxoval, acompanhe coleta, lavagem e devolução e consulte o estoque limpo e sujo.'}</p></div>
-      {mobileMode ? <div className="laundry-header-actions"><ModuleConnectionStatus service="maintenance" /><a className="button button-secondary" href="/">Sistema completo</a>{onLogout && <button className="button button-secondary" type="button" onClick={onLogout}>Sair</button>}</div> : <a className="button button-secondary" href="/laundry.html" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Abrir Lavanderia no celular</a>}
+      {mobileMode ? <div className="laundry-header-actions"><ModuleConnectionStatus service="maintenance" />{onToggleTheme && <AppearanceModeButton darkMode={darkMode ?? false} onToggle={onToggleTheme} />}<a className="button button-secondary" href="/">Sistema completo</a>{onLogout && <button className="button button-secondary" type="button" onClick={onLogout}>Sair</button>}</div> : <a className="button button-secondary" href="/laundry.html" target="_blank" rel="noreferrer"><ExternalLink size={16} /> Abrir Lavanderia no celular</a>}
     </header>
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}

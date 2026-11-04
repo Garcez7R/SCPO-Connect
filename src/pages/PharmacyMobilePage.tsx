@@ -1,4 +1,5 @@
 import { LogOut, Pill } from 'lucide-react'
+import AppearanceModeButton from '../components/AppearanceModeButton'
 import PharmacyPage from './PharmacyPage'
 import ModuleConnectionStatus from '../components/ModuleConnectionStatus'
 
@@ -12,9 +13,11 @@ type PharmacyMobileUser = {
   permissions: Record<string, string[]>
 }
 
-export default function PharmacyMobilePage({ user, onLogout }: {
+export default function PharmacyMobilePage({ user, onLogout, darkMode, onToggleTheme }: {
   user: PharmacyMobileUser
   onLogout: () => void
+  darkMode: boolean
+  onToggleTheme: () => void
 }) {
   const canAccess = user.modules.includes('pharmacy')
 
@@ -23,6 +26,7 @@ export default function PharmacyMobilePage({ user, onLogout }: {
       <header className="pharmacy-mobile-header">
         <img src="/scpo-connect-icon.png" alt="" />
         <div><p className="eyebrow">SCPO CONNECT</p><h1>Farmácia móvel</h1></div>
+        <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
         <button className="button button-secondary" type="button" onClick={onLogout}><LogOut size={16} /> Sair</button>
       </header>
       <section className="patient-list-panel">
@@ -40,6 +44,7 @@ export default function PharmacyMobilePage({ user, onLogout }: {
         <div><p className="eyebrow">SCPO CONNECT</p><h1><Pill size={20} /> Farmácia</h1><span>{user.display_name || user.name}</span></div>
       </div>
       <ModuleConnectionStatus service="pharmacy" />
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <button className="button button-secondary pharmacy-mobile-logout" type="button" onClick={onLogout}><LogOut size={16} /> Sair</button>
     </header>
     <PharmacyPage user={user} mobileMode />

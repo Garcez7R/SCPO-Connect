@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Activity, AlertTriangle, Check, ChevronLeft, Clock3, HeartPulse, LogOut, RefreshCw, ShieldCheck, UsersRound, Wifi, WifiOff } from 'lucide-react'
 import { ApiResponseError, readApiResponse, readableApiError } from '../api'
+import AppearanceModeButton from '../components/AppearanceModeButton'
 import { glucoseInMgDl } from '../glucose'
 import { formatBloodPressureInput } from '../inputFormatting'
 import { readOfflineVault, removeOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
@@ -240,9 +241,13 @@ function isMaintenanceModeError(error: unknown): error is ApiResponseError {
 export default function NursingMobilePage({
   user,
   onLogout,
+  darkMode,
+  onToggleTheme,
 }: {
   user: NursingMobileUser
   onLogout: () => void
+  darkMode: boolean
+  onToggleTheme: () => void
 }) {
   const [tab, setTab] = useState<Tab>('vitals')
   const [patients, setPatients] = useState<MobilePatient[]>([])
@@ -945,6 +950,7 @@ export default function NursingMobilePage({
 
   if (!hasNursingAccess) {
     return <main className="nursing-mobile-page nursing-mobile-denied">
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <img src="/scpo-connect-icon.png" alt="" />
       <h1>Acesso à Enfermagem necessário</h1>
       <p>Esta interface exige uma conta com acesso ao módulo Enfermagem.</p>
@@ -956,6 +962,7 @@ export default function NursingMobilePage({
   if (moduleDisabled) {
     const pendingOfflineTotal = offlineData.pending_vitals.length + offlineData.pending_round_actions.length
     return <main className="nursing-mobile-page nursing-mobile-denied">
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <img src="/scpo-connect-icon.png" alt="" />
       <h1>Enfermagem temporariamente desativada</h1>
       <p>O acesso online foi bloqueado pelo Superadministrador. A cópia de leitura foi removida após a reconexão.</p>
@@ -977,6 +984,7 @@ export default function NursingMobilePage({
   return <main className="nursing-mobile-page">
     <header className="nursing-mobile-header">
       <div className="nursing-mobile-brand"><img src="/scpo-connect-icon.png" alt="" /><div><span>SCPO CONNECT</span><strong>Enfermagem</strong></div></div>
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <button className="nursing-mobile-logout" type="button" onClick={() => { void fetch('/api/v1/auth/logout', { method: 'POST' }); onLogout() }} aria-label="Sair"><LogOut size={18} /></button>
     </header>
     <section className="nursing-mobile-identity">

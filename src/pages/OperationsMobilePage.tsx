@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ClipboardList, LogOut, RefreshCw, SprayCan, Wifi, WifiOff, Wrench } from 'lucide-react'
 import { ApiResponseError, readApiResponse, readableApiError } from '../api'
+import AppearanceModeButton from '../components/AppearanceModeButton'
 import { readOfflineVault, removeOfflineVault, writeOfflineVault } from '../offline/encryptedVault'
 
 type OperationsMobileUser = {
@@ -111,10 +112,14 @@ export default function OperationsMobilePage({
   user,
   onLogout,
   serviceScope,
+  darkMode,
+  onToggleTheme,
 }: {
   user: OperationsMobileUser
   onLogout: () => void
   serviceScope: ServiceTab
+  darkMode: boolean
+  onToggleTheme: () => void
 }) {
   const canSeeMaintenance = serviceScope === 'maintenance'
     && (user.is_superuser || (user.modules.includes('maintenance')
@@ -560,6 +565,7 @@ export default function OperationsMobilePage({
 
   if (!availableTabs.length) {
     return <main className="nursing-mobile-page nursing-mobile-denied">
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <img src="/scpo-connect-icon.png" alt="" />
       <h1>{disabledModules.includes(serviceScope) ? `${serviceLabel} temporariamente desativada` : `Acesso à ${serviceLabel} necessário`}</h1>
       <p>{disabledModules.some((module) => user.modules.includes(module))
@@ -574,6 +580,7 @@ export default function OperationsMobilePage({
   return <main className="nursing-mobile-page operations-mobile-page">
     <header className="nursing-mobile-header">
       <div className="nursing-mobile-brand"><img src="/scpo-connect-icon.png" alt="" /><div><span>SCPO CONNECT</span><strong>{serviceLabel}</strong></div></div>
+      <AppearanceModeButton darkMode={darkMode} onToggle={onToggleTheme} />
       <button className="nursing-mobile-logout" type="button" onClick={() => void logout()} aria-label="Sair"><LogOut size={18} /></button>
     </header>
     <section className="nursing-mobile-identity">

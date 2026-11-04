@@ -300,6 +300,12 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Dispositivos configurados para reduzir movimento mantêm os cartões estáticos no hover.
 - README e ajuda interna atualizados; typecheck, lint e build passaram. A verificação visual autenticada aguarda a disponibilidade do servidor novo.
 
+### Concluído nesta retomada — tema escuro nos PWAs
+
+- Incluído botão de alternância claro/escuro nos cabeçalhos dos PWAs de Enfermagem, Manutenção, Higienização, Farmácia, Médico, Cozinha e Lavanderia/Rouparia, inclusive nas telas de acesso negado ou módulo desativado.
+- Reutiliza a preferência `scpo-theme` do aplicativo; alterações entre abas da mesma origem sincronizam via evento `storage`, e a cor do navegador acompanha o tema.
+- README e ajuda interna atualizados; validação visual autenticada permanece para quando o servidor novo estiver disponível.
+
 ### Pendente — ordem sugerida
 
 - **Unificação do fluxo de administração de medicamentos — após validação clínica:** decidir o papel da API/tabela de administrações agendadas e integrá-la com os registros de doses efetivamente administradas, ou descontinuá-la com compatibilidade histórica segura. Definir explicitamente relação entre dose prescrita e unidade dispensada, horários não definidos e tratamento de recusa/suspensão. Não calcular esquemas, sugerir doses ou alterar condutas clínicas automaticamente.

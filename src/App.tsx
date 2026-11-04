@@ -637,7 +637,16 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
     window.localStorage.setItem('scpo-theme', darkMode ? 'dark' : 'light')
+    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    if (themeColor) themeColor.content = darkMode ? '#101820' : '#f4f7fa'
   }, [darkMode])
+  useEffect(() => {
+    const syncTheme = (event: StorageEvent) => {
+      if (event.key === 'scpo-theme') setDarkMode(event.newValue === 'dark')
+    }
+    window.addEventListener('storage', syncTheme)
+    return () => window.removeEventListener('storage', syncTheme)
+  }, [])
   useEffect(() => {
     window.localStorage.setItem('scpo-sidebar-collapsed', sidebarCollapsed ? '1' : '0')
   }, [sidebarCollapsed])
@@ -858,7 +867,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   const activeService = serviceModule === 'admin' && !hasAppAdmin ? 'audit' : moduleServices[serviceModule]
 
   if (window.location.pathname === '/nursing.html') {
-    return <Suspense fallback={<StartupScreen />}><NursingMobilePage user={user} onLogout={onLogout} /></Suspense>
+    return <Suspense fallback={<StartupScreen />}><NursingMobilePage user={user} onLogout={onLogout} darkMode={darkMode} onToggleTheme={() => setDarkMode((current) => !current)} /></Suspense>
   }
   const operationsPage = window.location.pathname === '/operations.html'
     || window.location.pathname === '/maintenance.html'
@@ -870,19 +879,19 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     const serviceScope = window.location.pathname === '/hygiene.html'
       ? 'hygiene'
       : window.location.pathname === '/maintenance.html' ? 'maintenance' : legacyScope
-    return <Suspense fallback={<StartupScreen />}><OperationsMobilePage user={user} onLogout={onLogout} serviceScope={serviceScope} /></Suspense>
+    return <Suspense fallback={<StartupScreen />}><OperationsMobilePage user={user} onLogout={onLogout} serviceScope={serviceScope} darkMode={darkMode} onToggleTheme={() => setDarkMode((current) => !current)} /></Suspense>
   }
   if (window.location.pathname === '/pharmacy.html') {
-    return <Suspense fallback={<StartupScreen />}><PharmacyMobilePage user={user} onLogout={onLogout} /></Suspense>
+    return <Suspense fallback={<StartupScreen />}><PharmacyMobilePage user={user} onLogout={onLogout} darkMode={darkMode} onToggleTheme={() => setDarkMode((current) => !current)} /></Suspense>
   }
   if (window.location.pathname === '/physician.html') {
-    return <Suspense fallback={<StartupScreen />}><PhysicianMobilePage user={user} onLogout={onLogout} /></Suspense>
+    return <Suspense fallback={<StartupScreen />}><PhysicianMobilePage user={user} onLogout={onLogout} darkMode={darkMode} onToggleTheme={() => setDarkMode((current) => !current)} /></Suspense>
   }
   if (window.location.pathname === '/kitchen.html') {
-    return <Suspense fallback={<StartupScreen />}><KitchenMobilePage user={user} onLogout={onLogout} /></Suspense>
+    return <Suspense fallback={<StartupScreen />}><KitchenMobilePage user={user} onLogout={onLogout} darkMode={darkMode} onToggleTheme={() => setDarkMode((current) => !current)} /></Suspense>
   }
   if (window.location.pathname === '/laundry.html') {
-    return <Suspense fallback={<StartupScreen />}><LaundryPage user={user} mobileMode onLogout={onLogout} /></Suspense>
+    return <Suspense fallback={<StartupScreen />}><LaundryPage user={user} mobileMode onLogout={onLogout} darkMode={darkMode} onToggleTheme={() => setDarkMode((current) => !current)} /></Suspense>
   }
 
   return (
