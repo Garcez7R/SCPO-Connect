@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, Camera, CalendarDays, ClipboardList, Package, Pill, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Camera, CalendarDays, ClipboardList, Package, Pill, Printer, Search, X } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
@@ -147,6 +147,10 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     setMovementFormState({ ...value, quantity: formatDecimalInput(value.quantity) })
   const [movementSaving, setMovementSaving] = useState(false)
   const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+  const [labelItem, setLabelItem] = useState<PharmacyItem | null>(null)
+  const [labelWidth, setLabelWidth] = useState('50')
+  const [labelHeight, setLabelHeight] = useState('30')
+  const [labelCount, setLabelCount] = useState('1')
   const [query, setQuery] = useState('')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
@@ -679,6 +683,30 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const requestedPackages = Number(form.purchase_quantity.replace(',', '.'))
   const unitsPerPackage = Number(form.units_per_purchase_unit.replace(',', '.'))
   const convertedBalance = requestedPackages * unitsPerPackage
+  const labelWidthValue = Number(labelWidth)
+  const labelHeightValue = Number(labelHeight)
+  const labelCountValue = Number(labelCount)
+  const canPrintLabels = Number.isFinite(labelWidthValue) && labelWidthValue >= 10 && labelWidthValue <= 200
+    && Number.isFinite(labelHeightValue) && labelHeightValue >= 10 && labelHeightValue <= 200
+    && Number.isInteger(labelCountValue) && labelCountValue >= 1 && labelCountValue <= 500
+
+  function printLabels() {
+    if (!labelItem || !canPrintLabels) return
+    const printStyle = document.createElement('style')
+    printStyle.textContent = `@page { size: ${labelWidthValue}mm ${labelHeightValue}mm; margin: 0; }`
+    document.head.append(printStyle)
+    document.body.classList.add('print-pharmacy-labels')
+    let fallbackTimer = 0
+    const finishPrint = () => {
+      window.clearTimeout(fallbackTimer)
+      document.body.classList.remove('print-pharmacy-labels')
+      printStyle.remove()
+      window.removeEventListener('afterprint', finishPrint)
+    }
+    window.addEventListener('afterprint', finishPrint)
+    fallbackTimer = window.setTimeout(finishPrint, 60_000)
+    window.print()
+  }
 
   return <section className={`pharmacy-page page-enter${mobileMode ? ' pharmacy-page-mobile' : ''}`}>
     <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
@@ -899,12 +927,42 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           <p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p>
           <div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low && product ? ` · disponível no produto: ${product.available_balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${item.unit} (mínimo ${product.minimum_balance})` : ''}</span></div>
           <div className="pharmacy-item-meta"><span><small>Entrada</small><strong>{item.purchase_quantity} {item.purchase_unit} × {item.units_per_purchase_unit} {item.unit}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div>
+          {!mobileMode && <button className="button button-secondary pharmacy-label-button" type="button" onClick={() => setLabelItem(item)}><Printer size={16} /> Imprimir etiquetas</button>}
           <button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>
           {movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada</option><option value="issue">Saída / dispensação</option><option value="adjustment">Ajuste de inventário</option></select></label><label className="field"><span className="field-label">Quantidade ({item.unit}) {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /><span className="field-hint">Use a mesma unidade do saldo deste lote: {item.unit}.</span></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: dispensação, recebimento da nota fiscal" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : 'Registrar movimentação'}</button></form>}
         </article>
       })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
       <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade na unidade do lote, saldo após a operação, responsável e motivo.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item?.unit ?? ''}</span><small>Saldo: {movement.balance_after} {item?.unit ?? ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 25))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 25)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>
     </section>
+    </>}
+    {labelItem && <>
+      <div className="pharmacy-label-print-root" aria-hidden="true">
+        {canPrintLabels && Array.from({ length: labelCountValue }, (_, index) => (
+          <article
+            className={`pharmacy-label-print${index === labelCountValue - 1 ? ' pharmacy-label-print-last' : ''}`}
+            key={index}
+            style={{ width: `${labelWidthValue}mm`, height: `${labelHeightValue}mm` }}
+          >
+            <strong className="pharmacy-label-name">{labelItem.item_name}</strong>
+            {(labelItem.active_ingredient || labelItem.presentation) && <span className="pharmacy-label-description">{[labelItem.active_ingredient, labelItem.presentation].filter(Boolean).join(' · ')}</span>}
+            <span className="pharmacy-label-lot"><small>Lote</small><strong>{labelItem.lot}</strong></span>
+            <span className="pharmacy-label-expiry"><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${labelItem.expiry_date}T00:00:00Z`))}</strong></span>
+          </article>
+        ))}
+      </div>
+      <div className="pharmacy-label-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setLabelItem(null) }}>
+        <section className="pharmacy-label-dialog" role="dialog" aria-modal="true" aria-labelledby="pharmacy-label-title">
+          <header><div><p className="eyebrow">ETIQUETA DE LOTE</p><h2 id="pharmacy-label-title">Imprimir etiqueta</h2><p>{labelItem.item_name} · Lote {labelItem.lot}</p></div><button className="pharmacy-scanner-close" type="button" aria-label="Fechar impressão de etiquetas" onClick={() => setLabelItem(null)}><X size={20} /></button></header>
+          <div className="pharmacy-label-fields">
+            <label className="field"><span className="field-label">Largura (mm)</span><input type="number" min="10" max="200" step="0.1" required value={labelWidth} onChange={(event) => setLabelWidth(event.target.value)} /></label>
+            <label className="field"><span className="field-label">Altura (mm)</span><input type="number" min="10" max="200" step="0.1" required value={labelHeight} onChange={(event) => setLabelHeight(event.target.value)} /></label>
+            <label className="field pharmacy-label-count"><span className="field-label">Quantidade de etiquetas</span><input type="number" min="1" max="500" step="1" required value={labelCount} onChange={(event) => setLabelCount(event.target.value)} /><span className="field-hint">Escolha a quantidade conforme o uso deste lote (de 1 a 500).</span></label>
+          </div>
+          <p className="field-hint">Ajuste largura e altura para o rolo instalado. No diálogo de impressão, escolha a Zebra ZD220 e o tamanho correspondente; desative cabeçalhos e rodapés e use escala de 100%. Confira uma etiqueta antes de imprimir o restante.</p>
+          {!canPrintLabels && <p className="pharmacy-label-error" role="alert">Informe dimensões entre 10 e 200 mm e uma quantidade inteira de 1 a 500.</p>}
+          <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={printLabels}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
+        </section>
+      </div>
     </>}
     {cameraScannerOpen && <div className="pharmacy-scanner-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setCameraScannerOpen(false) }}>
       <section className="pharmacy-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="pharmacy-scanner-title">

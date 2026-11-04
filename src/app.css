@@ -865,6 +865,34 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-scanner-close:hover { background: var(--page); }
 .pharmacy-scanner-video { display: block; width: 100%; height: min(66dvh, 620px); min-height: 260px; border-radius: 10px; background: #101820; object-fit: contain; }
 .pharmacy-scanner-dialog > .field-hint { margin: 0; font-size: 13px; }
+.pharmacy-label-button { width: 100%; justify-content: center; }
+.pharmacy-label-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(15 28 38 / 72%); }
+.pharmacy-label-dialog { display: grid; width: min(620px, 96vw); max-height: 94dvh; gap: 16px; padding: clamp(16px, 3vw, 26px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 36%); }
+.pharmacy-label-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pharmacy-label-dialog > header h2 { margin: 3px 0 0; color: var(--ink); font-size: clamp(18px, 2.4vw, 23px); }
+.pharmacy-label-dialog > header p:not(.eyebrow) { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.pharmacy-label-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pharmacy-label-count { grid-column: 1 / -1; }
+.pharmacy-label-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.pharmacy-label-error { margin: 0; color: #a4232e; font-size: 12px; }
+.pharmacy-label-print-root { display: none; }
+.pharmacy-label-print { display: grid; box-sizing: border-box; grid-template-rows: auto auto 1fr 1fr; gap: 1.2mm; padding: 2mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; }
+.pharmacy-label-name { align-self: start; font-size: 9pt; line-height: 1.1; overflow-wrap: anywhere; }
+.pharmacy-label-description { font-size: 6.5pt; line-height: 1.1; overflow-wrap: anywhere; }
+.pharmacy-label-lot, .pharmacy-label-expiry { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; border-top: .2mm solid #444; padding-top: 1mm; }
+.pharmacy-label-lot small, .pharmacy-label-expiry small { font-size: 6pt; text-transform: uppercase; }
+.pharmacy-label-lot strong, .pharmacy-label-expiry strong { font-size: 8pt; text-align: right; overflow-wrap: anywhere; }
+.pharmacy-label-print-last { break-after: auto !important; page-break-after: auto !important; }
+@media print {
+  body.print-pharmacy-labels,
+  body.print-pharmacy-labels #root { width: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  body.print-pharmacy-labels .pharmacy-page { animation: none !important; transform: none !important; }
+  body.print-pharmacy-labels * { visibility: hidden !important; }
+  body.print-pharmacy-labels .pharmacy-label-print-root,
+  body.print-pharmacy-labels .pharmacy-label-print-root * { visibility: visible !important; }
+  body.print-pharmacy-labels .pharmacy-label-print-root { position: absolute !important; top: 0 !important; left: 0 !important; display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
+  body.print-pharmacy-labels .pharmacy-label-print { break-after: page; page-break-after: always; }
+}
 .pharmacy-item-description { margin: -7px 0 0; color: var(--muted); font-size: 12px; }
 .search-input-wrap { position: relative; display: block; }
 .search-input-wrap > svg { position: absolute; top: 50%; left: 12px; color: var(--subtle); transform: translateY(-50%); }
@@ -2838,6 +2866,9 @@ html[data-theme="dark"] .work-order-status[class*="status-tone-"] { border-color
   .pharmacy-scanner-backdrop { padding: 10px; }
   .pharmacy-scanner-dialog { width: 100%; max-height: 96dvh; gap: 12px; padding: 14px; border-radius: 11px; }
   .pharmacy-scanner-video { height: 60dvh; min-height: 220px; }
+  .pharmacy-label-backdrop { padding: 10px; }
+  .pharmacy-label-dialog { width: 100%; max-height: 96dvh; gap: 12px; padding: 14px; border-radius: 11px; }
+  .pharmacy-label-actions .button { flex: 1 1 100%; justify-content: center; }
 }
 html[data-theme="dark"] .status-routine { background: #21372d; color: #a2dfbb; }
 html[data-theme="dark"] .status-unassigned { background: #27323a; color: #c0c9cf; }
