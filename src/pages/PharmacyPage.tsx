@@ -114,9 +114,9 @@ function packagingDisplayValue(balance: string, item: PharmacyItem, displayUnit:
   }
   if (levels.length >= 2) {
     const internalLevel = levels[levels.length - 2]
-    const internalFactor = Number(internalLevel.units_per_parent.replace(',', '.')) || 1
+    const baseUnitsPerInternal = Number(levels[levels.length - 1].units_per_parent.replace(',', '.')) || 1
     return {
-      value: new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(baseBalance / internalFactor),
+      value: new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(baseBalance / baseUnitsPerInternal),
       unit: internalLevel.unit,
     }
   }

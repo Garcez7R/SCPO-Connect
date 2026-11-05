@@ -14,6 +14,7 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Situação resumida das fases
 
+- **Retomada atual — correções da Farmácia, participantes da Oficina Terapêutica e informativos:** informativos passam a ocupar a barra superior global, fora da Visão geral, e ficam como última aba de Administração e Superadministrador. Participantes da Oficina agora são validados antes do envio e apresentam orientação explícita quando um paciente não está mais disponível. A conversão interna da Farmácia usa o fator da unidade interna correta ao mostrar caixas internas; pendente validar visualmente esta apresentação.
 - **Pré-condição operacional concluída em 05/11/2026:** relógio sincronizado, timezone de aplicação/servidor validado e MFA confirmado como operacional. A migração sintética foi revisada; os testes de esquema agora incluem as tabelas de informativos e estado automático da Anvisa/CMED adicionadas nas fases recentes.
 
 - **Atualização controlada do aplicativo — implementada nesta fase:** o service worker deixou de ativar uma nova versão automaticamente. A aplicação verifica atualizações e mostra um toast persistente com o botão “Atualizar agora”; até a confirmação, o usuário continua na sessão atual. Ao confirmar, o novo worker é ativado, o cache antigo é removido e a página é recarregada uma vez. README, guia interno e informações da versão foram revisados nesta fase.

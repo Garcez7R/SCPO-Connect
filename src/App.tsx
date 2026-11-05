@@ -88,13 +88,13 @@ type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 const sessionDurationMs = 12 * 60 * 60 * 1000
 const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds', 'triage'] as const
 const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária', triage: 'Triagem' }
-const adminTabValues = ['users', 'announcements', 'reports', 'audit'] as const
+const adminTabValues = ['users', 'reports', 'audit', 'announcements'] as const
 const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Usuários e permissões', announcements: 'Informativos', reports: 'Relatórios', audit: 'Auditoria de ações' }
 const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior', 'governance', 'shortcuts'] as const
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'images', 'album', 'materials', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', album: 'Álbum', materials: 'Materiais', reports: 'Relatórios' }
-const systemAdminTabValues = ['dashboard', 'announcements', 'accounts', 'backup', 'recovery'] as const
+const systemAdminTabValues = ['dashboard', 'accounts', 'backup', 'recovery', 'announcements'] as const
 const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', announcements: 'Informativos', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const systemControlModules = [
   { id: 'patients', label: 'Pacientes' },
@@ -969,6 +969,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
             <button className="icon-button menu-trigger" type="button" aria-label="Abrir menu" onClick={() => setMenuOpen(true)}><Menu size={21} /></button>
             <nav className="breadcrumbs" aria-label="Caminho da página"><span>SCPO Connect</span><span className="crumb-divider">/</span><strong>{activeLabel}</strong>{breadcrumbItems.map((item) => <span className="breadcrumb-entry" key={item.id}><span className="crumb-divider">/</span><strong>{item.label}</strong></span>)}</nav>
           </div>
+          <AppAnnouncementsFeed compact />
           <div className="topbar-right">
             <ModuleConnectionStatus service={activeService} />
             <span className="session-role">{getGreeting()}, {profile.name.split(/\s+/)[0]}</span>
@@ -2395,12 +2396,26 @@ function TherapyAttendanceEditor({ activity, patients, canEdit, onSaved }: {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const patientReferences = new Set(patients.map((patient) => patient.reference))
 
   async function saveAttendance() {
     setSaving(true)
     setError('')
     setNotice('')
     try {
+      if (!activity?.id) throw new Error('Selecione uma atividade antes de salvar os participantes.')
+      const missingParticipants = participants.filter((participant) =>
+        !patientReferences.has(participant.patient_reference)
+      )
+      if (missingParticipants.length) {
+        throw new Error('Um participante não está mais disponível nesta lista. Remova-o da presença, atualize a página e selecione novamente um paciente cadastrado.')
+      }
+      const invalidParticipant = participants.some((participant) =>
+        !participant.patient_reference.trim() || !['pending', 'attended', 'absent'].includes(participant.attendance)
+      )
+      if (invalidParticipant) {
+        throw new Error('Há um participante incompleto ou com situação de presença inválida. Atualize os dados antes de salvar.')
+      }
       const response = await fetch(`/api/v1/therapy/activities/${encodeURIComponent(activity.id)}/participants`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -2806,7 +2821,6 @@ function Dashboard({ profile, onNavigate, canAccessModule }: { profile: Profile;
     <section className="dashboard-page page-enter">
       <div className="welcome-row">
         <div><p className="eyebrow">{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase()}</p><h1>{getGreeting()}, {firstName}.</h1><p className="welcome-copy">Acesse os espaços de trabalho disponíveis para o seu perfil.</p></div>
-        <AppAnnouncementsFeed compact />
         <div className="date-chip"><Clock3 size={16} /><span>{allowedModules.length} módulos disponíveis</span></div>
         <span className="module-icon module-icon-home" aria-hidden="true"><Home size={23} /></span>
       </div>

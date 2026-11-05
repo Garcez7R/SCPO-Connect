@@ -169,6 +169,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .topbar::before { position: absolute; z-index: 0; inset: 0; background: url("/sidebar-health-watermark.svg") 12px 8px / 116px 116px repeat; content: ""; opacity: .1; pointer-events: none; }
 .topbar > * { position: relative; z-index: 1; }
 .topbar-left, .topbar-right, .breadcrumbs { display: flex; align-items: center; }
+.topbar-left { flex: 1 1 320px; }
+.topbar > .app-announcements-compact { flex: 0 1 360px; min-width: 220px; margin-left: auto; }
+.topbar > .app-announcements-compact .app-announcement-link { min-height: 38px; padding: 7px 10px; }
+.topbar > .app-announcements-compact .app-announcement-link small { max-height: 1.45em; }
 .breadcrumbs { min-width: 0; gap: 10px; overflow-x: auto; color: var(--muted); font-size: 12px; white-space: nowrap; scrollbar-width: none; }
 .breadcrumbs::-webkit-scrollbar { display: none; }
 .breadcrumb-entry { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 10px; }
@@ -3530,6 +3534,8 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
 @media (max-width: 760px) {
   .dashboard-page .welcome-row { align-items: flex-start; flex-wrap: wrap; }
   .app-announcements-compact { width: 100%; order: 3; }
+  .topbar > .app-announcements-compact { flex: 0 1 180px; min-width: 140px; width: 180px; }
+  .topbar > .app-announcements-compact .app-announcement-link small { display: none; }
   .app-announcement-list, .app-announcement-form { grid-template-columns: 1fr; }
   .app-announcement-admin-list article { grid-template-columns: 1fr; }
   .app-announcement-admin-list article .button { width: 100%; justify-content: center; }
