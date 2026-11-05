@@ -90,7 +90,7 @@ O instalador usa `docker compose up -d --build`; ele não apaga os dados da inst
 - certificados/autoridade local do Caddy: volume `caddy_data`;
 - segredos e endereço do servidor: `/home/connect/apps/SCPO-Connect/.env`;
 - token inicial, se criado: `data/local/bootstrap-admin.token`;
-- arquivos da biblioteca da Oficina Terapêutica: diretório host definido por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão `data/therapy-materials`).
+- arquivos da Oficina Terapêutica: diretórios host definidos por `SCPO_THERAPY_LIBRARY_HOST_DIR` e `SCPO_THERAPY_ALBUM_HOST_DIR`. Por compatibilidade, o diretório legado único continua disponível como fallback da Biblioteca.
 - unidade systemd `scpo-connect.service`, que inicia o Compose no boot e para os containers sem remover volumes ao encerrar.
 
 Se aparecer `docker: command not found`, o Docker CLI/Engine está ausente ou fora do `PATH`. O comando válido de inicialização é `docker compose up -d --build`; não acrescente `--compose`. Não use `cp .env.example .env` para iniciar a stack: o modelo tem segredos vazios. Em Debian 13 suportado, execute o instalador da raiz do app para instalar Docker/Compose e gerar qualquer variável obrigatória ausente, preservando segredos preenchidos, `.env` e volumes:

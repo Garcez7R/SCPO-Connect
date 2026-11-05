@@ -17,11 +17,13 @@ SCPO_BACKUP_TIMEZONE=America/Sao_Paulo
 
 ### Diretórios locais provisórios para testes
 
-Para validar a funcionalidade com dados sintéticos, a instalação pode manter o estágio de backup e as imagens da Oficina dentro do diretório do app:
+Para validar a funcionalidade com dados sintéticos, a instalação pode manter o estágio de backup dentro do diretório do app e usar os discos da Biblioteca/Álbum como volumes externos:
 
 ```dotenv
 SCPO_BACKUP_HOST_DIR=./data/backup-staging
-SCPO_THERAPY_MATERIALS_HOST_DIR=./data/therapy-materials
+SCPO_THERAPY_LIBRARY_HOST_DIR=/biblio
+SCPO_THERAPY_ALBUM_HOST_DIR=/album
+SCPO_THERAPY_SEPARATE_STORAGE=true
 ```
 
 Esses já são os caminhos padrão do Compose e estão excluídos do Git por `data/`. Se necessário, crie-os no host antes de subir os serviços: `mkdir -p data/backup-staging data/therapy-materials`. A rotina automática grava no volume de estágio; a exportação manual continua sendo baixada pelo navegador. São diretórios no mesmo disco do app, não uma cópia externa, imutável ou adequada para produção. Use somente dados sintéticos/desidentificados durante a avaliação; monitore o espaço disponível e confirme as permissões de gravação do container. Para operação institucional, migre para volumes persistentes autorizados e teste a recuperação isolada antes de guardar dados reais.
@@ -61,15 +63,17 @@ Na exportação manual, uma notificação persistente fixa na tela com o ícone 
 
 ## Biblioteca de imagens e Álbum da Oficina Terapêutica
 
-Os metadados dos dois acervos são armazenados no banco Nursing; os arquivos ficam no volume indicado por `SCPO_THERAPY_MATERIALS_HOST_DIR` (padrão: `./data/therapy-materials`). Na guia **Dashboard técnico**, o Superadministrador pode escolher subpastas independentes para Biblioteca e Álbum, ativar/desativar cada acervo e definir cotas separadas. O sistema começa com a Biblioteca na raiz do volume e o Álbum em `photo-album`; mudar uma subpasta exige confirmação e move somente os arquivos cadastrados daquele acervo. As duas pastas não podem ser iguais. Reduzir cotas preserva arquivos e bloqueia novos envios até liberar espaço. A rotina automática inclui o volume completo; pacotes manuais de banco e a exportação AES-GCM da interface não incluem imagens.
+Os metadados dos dois acervos são armazenados no banco Nursing; os arquivos ficam nos volumes definidos por `SCPO_THERAPY_LIBRARY_HOST_DIR` e `SCPO_THERAPY_ALBUM_HOST_DIR`. Na guia **Dashboard técnico**, o Superadministrador pode escolher subpastas independentes para Biblioteca, ativar/desativar cada acervo e definir cotas separadas. O sistema começa com a Biblioteca na raiz do disco configurado e o Álbum em `photo-album`. Alterar uma subpasta exige confirmação e move somente os arquivos cadastrados daquele acervo. As duas pastas não podem ser iguais. Reduzir cotas preserva arquivos e bloqueia novos envios até liberar espaço. A rotina automática inclui os dois volumes; pacotes manuais de banco e a exportação AES-GCM da interface não incluem imagens.
 
-O caminho-base é definido pela TI no host e montado nos containers; o campo da aplicação aceita somente subpastas relativas a esse volume, não caminhos absolutos do host. Portanto, uma pasta `/biblio` criada na raiz do servidor pode ser usada como volume-base configurando no `.env` desse servidor:
+O caminho-base pode ser definido pela TI no host e montado nos containers; o campo da aplicação aceita somente subpastas relativas ao volume da Biblioteca, não caminhos absolutos do host. Para usar dois discos físicos distintos, configure os volumes separados no `.env` deste servidor:
 
 ```sh
-SCPO_THERAPY_MATERIALS_HOST_DIR=/biblio
+SCPO_THERAPY_LIBRARY_HOST_DIR=/biblio
+SCPO_THERAPY_ALBUM_HOST_DIR=/album
+SCPO_THERAPY_SEPARATE_STORAGE=true
 ```
 
-Depois disso, a interface permite escolher, por exemplo, `biblioteca` e `album`, que correspondem a `/biblio/biblioteca` e `/biblio/album` no host. Também é possível alterar essas subpastas sem alterar o caminho-base; se for necessário usar volumes físicos diferentes, a TI precisa montar ambos e ajustar os mounts do Compose antes de selecioná-los na aplicação. A pasta deve existir, estar realmente montada antes de iniciar os containers e permitir leitura/gravação ao UID/GID `10001` usado pelo serviço da Oficina. A configuração de volume para backup usa a mesma variável em modo somente leitura e inclui ambos os acervos.
+Nesta configuração, `/biblio` é usado pela Biblioteca e `/album` é usado pelo Álbum. O contêiner mantém o Álbum em `photo-album`, correspondendo a `/album` no host. Na interface, a Biblioteca pode usar a raiz ou uma subpasta relativa, como `biblioteca`; já o Álbum permanece em `photo-album` enquanto os discos estiverem separados. As pastas devem existir, estar montadas antes de iniciar os containers e permitir leitura/gravação ao UID/GID `10001` usado pelo serviço da Oficina. O backup automático também monta os dois discos em modo somente leitura. O Compose aceita `SCPO_THERAPY_MATERIALS_HOST_DIR` como fallback legado somente para o volume da Biblioteca; instalações novas devem usar as duas novas variáveis.
 
 Os dois acervos aceitam imagens JPG, PNG e WebP de até 12 MB por arquivo. O acesso é autenticado e não é servido como conteúdo público. Use somente imagens aprovadas institucionalmente; não envie fotos identificáveis de pacientes sem as autorizações e o consentimento exigidos pela instituição.
 

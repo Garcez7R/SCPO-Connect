@@ -140,7 +140,8 @@ services:
       - ${SCPO_BACKUP_HOST_DIR:-./data/backup-staging}:/var/lib/scpo-backup
       - ./.env:/run/secrets/scpo-env:ro
       - caddy_data:/mnt/caddy-data:ro
-      - ${SCPO_THERAPY_MATERIALS_HOST_DIR:-./data/therapy-materials}:/mnt/therapy-materials:ro
+      - ${SCPO_THERAPY_LIBRARY_HOST_DIR:-${SCPO_THERAPY_MATERIALS_HOST_DIR:-/biblio}}:/mnt/therapy-materials:ro
+      - ${SCPO_THERAPY_ALBUM_HOST_DIR:-/album}:/mnt/therapy-materials/photo-album:ro
     networks: [backend]
 
   therapy:
@@ -151,8 +152,10 @@ services:
       SCPO_SERVICE: therapy
       SCPO_NURSING_DATABASE_URL: postgresql+psycopg://${SCPO_NURSING_DB_USER}:${SCPO_NURSING_DB_PASSWORD}@db:5432/scpo_nursing
       SCPO_THERAPY_MATERIALS_DIR: /var/lib/scpo/therapy-materials
+      SCPO_THERAPY_SEPARATE_STORAGE: ${SCPO_THERAPY_SEPARATE_STORAGE:-true}
     volumes:
-      - ${SCPO_THERAPY_MATERIALS_HOST_DIR:-./data/therapy-materials}:/var/lib/scpo/therapy-materials
+      - ${SCPO_THERAPY_LIBRARY_HOST_DIR:-${SCPO_THERAPY_MATERIALS_HOST_DIR:-/biblio}}:/var/lib/scpo/therapy-materials
+      - ${SCPO_THERAPY_ALBUM_HOST_DIR:-/album}:/var/lib/scpo/therapy-materials/photo-album
     depends_on:
       nursing:
         condition: service_healthy

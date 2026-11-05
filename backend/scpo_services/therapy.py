@@ -264,6 +264,10 @@ def _therapy_materials_root() -> Path:
     return (Path(__file__).resolve().parents[2] / "data" / "therapy-materials").resolve()
 
 
+def _uses_separate_therapy_storage() -> bool:
+    return os.getenv("SCPO_THERAPY_SEPARATE_STORAGE", "").strip().lower() == "true"
+
+
 def _validate_therapy_storage_directory(directory: str) -> Path:
     if (
         directory != directory.strip()
@@ -314,6 +318,10 @@ def _configured_therapy_storage_directories() -> dict[str, str]:
         raise RuntimeError("Um destino salvo para os acervos está inválido") from exc
     if not album_directory:
         raise RuntimeError("O destino salvo para o Álbum não pode ser a raiz do volume")
+    if _uses_separate_therapy_storage() and album_directory != "photo-album":
+        raise RuntimeError(
+            "O armazenamento separado exige que o Álbum use a subpasta photo-album"
+        )
     if library_path == album_path:
         raise RuntimeError("Biblioteca e Álbum não podem usar a mesma pasta")
     return {"library": library_directory, "album": album_directory}
@@ -506,6 +514,11 @@ def set_therapy_storage_location(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if not updated["album"]:
             raise HTTPException(status_code=422, detail="O Álbum precisa ficar em uma subpasta do volume")
+        if _uses_separate_therapy_storage() and updated["album"] != "photo-album":
+            raise HTTPException(
+                status_code=422,
+                detail="Com discos separados, o Álbum deve usar a pasta photo-album",
+            )
         if destinations["library"] == destinations["album"]:
             raise HTTPException(
                 status_code=422,
