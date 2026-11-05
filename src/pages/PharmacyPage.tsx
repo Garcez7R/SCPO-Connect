@@ -113,6 +113,9 @@ function PackagingConversionEditor({
   const resolvedLevels = packagingLevelsForBase(levels, baseUnit)
   return <section className="pharmacy-packaging-editor" aria-label="Conversão das embalagens para a unidade base">
     <div><strong>Como as embalagens viram saldo de estoque</strong><span>Informe cada embalagem interna e quantas unidades dela cabem na embalagem anterior. A última etapa sempre termina na unidade base.</span></div>
+    <details>
+      <summary>Configurar embalagens (opcional para unidades únicas)</summary>
+      <div className="pharmacy-packaging-steps">
     {resolvedLevels.map((level, index) => {
       const isBaseUnit = index === resolvedLevels.length - 1
       const parentUnit = index === 0 ? purchaseUnit : resolvedLevels[index - 1].unit
@@ -124,6 +127,8 @@ function PackagingConversionEditor({
       </div>
     })}
     {resolvedLevels.length < 5 && <button className="button button-secondary" type="button" onClick={() => onChange([...resolvedLevels.slice(0, -1), { unit: '', units_per_parent: '1' }, resolvedLevels[resolvedLevels.length - 1]])}>Adicionar nível de embalagem</button>}
+      </div>
+    </details>
     <div className="pharmacy-packaging-formula" aria-live="polite"><span>Conferência da conta</span><strong>{packagingFormula(receivedQuantity, purchaseUnit, resolvedLevels, baseUnit)}</strong></div>
   </section>
 }
@@ -213,7 +218,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const setMovementForm = (value: { movement_type: 'entry' | 'issue' | 'adjustment'; quantity: string; reason: string }) =>
     setMovementFormState({ ...value, quantity: formatDecimalInput(value.quantity) })
   const [movementSaving, setMovementSaving] = useState(false)
-  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: '', packaging_levels: [] as PackagingLevel[], unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: 'unidade', packaging_levels: [] as PackagingLevel[], unit: 'unidade', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [labelItem, setLabelItem] = useState<PharmacyItem | null>(null)
   const [labelWidth, setLabelWidth] = useState('50')
   const [labelHeight, setLabelHeight] = useState('30')
@@ -610,7 +615,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: null, purchase_quantity: form.purchase_quantity.replace(',', '.'), purchase_unit: form.purchase_unit.trim(), packaging_levels: levels.map((level) => ({ ...level, units_per_parent: level.units_per_parent.replace(',', '.') })), units_per_purchase_unit: String(conversion), unit: form.unit.trim(), lot: form.lot.trim() }) })
       const data = await readApiResponse<PharmacyItem>(response)
       setItems((current) => [...current, data].sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR')))
-      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: '', packaging_levels: [], unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: 'unidade', packaging_levels: [], unit: 'unidade', lot: '', expiry_date: '', supplier: '', storage_location: '' })
       lastBarcodeLookupRef.current = ''
       barcodeProductAutofillRef.current = false
       setShowForm(false)
@@ -977,10 +982,12 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     </section>}
     {pharmacyTab === 'purchases' && canManagePurchases && <PurchaseRequestsPanel user={user} items={items} onReceived={() => void loadItems(0)} />}
     {pharmacyTab === 'guide' && <section className="patient-list-panel pharmacy-explanation" aria-labelledby="pharmacy-explanation-title">
-      <div className="section-heading"><div><p className="eyebrow">GUIA DE REFERÊNCIA</p><h2 id="pharmacy-explanation-title">Embalagens, estoque e cuidado com medicamentos</h2><p className="welcome-copy">A embalagem ajuda a contar o estoque. Ela não define a dose do paciente.</p></div></div>
-      <article><h3>1. Como a embalagem vira saldo</h3><p>Escolha uma unidade para controlar e informe cada nível de embalagem, do maior para o menor. Em cada etapa, diga quantas unidades menores cabem em uma unidade maior. O sistema multiplica os fatores e mostra a conta antes de salvar.</p><div className="pharmacy-packaging-example"><strong>Exemplo</strong><span>3 caixas externas × 4 caixas internas por caixa externa × 10 comprimidos por caixa interna = 120 comprimidos em estoque.</span><small>O saldo fica em comprimidos; a fórmula usada também fica registrada no lote para explicar a entrada mais tarde.</small></div><p>Para frascos, ampolas, materiais ou itens sem embalagens internas, use apenas os níveis necessários. Confira a apresentação recebida; o código de barras, o QR e a descrição do catálogo não preenchem quantidades automaticamente.</p></article>
-      <article><h3>2. O que cada etapa registra</h3><ul><li><strong>Recebimento:</strong> número de embalagens e lote/validade; a conversão calcula apenas o saldo na unidade base.</li><li><strong>Dispensação:</strong> produto e lote são conferidos e a quantidade fica na unidade de estoque mostrada no sistema.</li><li><strong>Prescrição:</strong> dose, via, frequência e horários vêm do prescritor; embalagem não pode inferi-los nem alterá-los.</li><li><strong>Administração:</strong> a Enfermagem consulta a prescrição vinculada e registra a quantidade efetivamente administrada na unidade apresentada. Conversão clínica e tratamento informatizado de recusa, suspensão ou dose parcial dependem de fluxo institucional validado e não são deduzidos pela embalagem.</li></ul></article>
-      <article><h3>3. Conversão clínica não é conversão de embalagem</h3><p>Uma caixa com 20 comprimidos permite calcular o estoque de comprimidos, mas não permite concluir quantos miligramas foram prescritos ou qual dose deve ser administrada. Converter entre mg, mL, comprimido ou outra unidade clínica exige apresentação/concentração exata e regra aprovada pela instituição. O sistema não calcula doses, não cria horários e não substitui conferência clínica.</p></article>
+      <div className="section-heading"><div><p className="eyebrow">GUIA DE REFERÊNCIA</p><h2 id="pharmacy-explanation-title">Como registrar o estoque da Farmácia</h2><p className="welcome-copy">A sequência funciona como uma planilha: produto, entrada, lote, validade e localização.</p></div></div>
+      <article><h3>1. Cadastre o produto uma vez</h3><p>Informe o nome, categoria e apresentação/concentração. Use o princípio ativo como busca complementar. GTIN, QR e sugestão Anvisa ajudam a identificar, mas não completam automaticamente a quantidade recebida ou a validade.</p></article>
+      <article><h3>2. Registre a entrada do lote</h3><p>Informe quantas embalagens chegaram e em qual unidade. Para itens sem embalagem interna, mantenha <strong>unidade</strong> na compra e na unidade base. O padrão já deixa esses dois campos prontos para uso.</p><div className="pharmacy-packaging-example"><strong>Exemplo com caixa de medicamentos</strong><span>10 caixas × 20 comprimidos por caixa = 200 comprimidos em estoque.</span><small>Saldo, lote, validade, movimentações e dispensações usam comprimidos.</small></div></article>
+      <article><h3>3. Embalagem é um detalhe opcional</h3><p>Abra “Configurar embalagens” somente quando houver caixas, frascos ou níveis internos. O sistema multiplica os fatores na tela antes de salvar e preserva a conta no lote. Para unidades iguais, não é necessário adicionar nível.</p></article>
+      <article><h3>4. Lote, validade e localização ficam separados do produto</h3><p>O mesmo produto pode ter vários lotes, validades e locais. O estoque geral consolida o produto; os lotes continuam individualizados. FEFO orienta visualmente para o vencimento mais próximo, sem escolher ou baixar estoque automaticamente.</p></article>
+      <article><h3>5. Dispense e administre sem confundir unidade e dose</h3><ul><li><strong>Movimentação:</strong> lance entrada, saída ou ajuste na unidade base do lote.</li><li><strong>Prescrição:</strong> dose, via, frequência e horários são definidos pelo prescritor.</li><li><strong>Dispensação:</strong> confira paciente, produto, apresentação, unidade, quantidade e lote.</li><li><strong>Administração:</strong> a Enfermagem registra o que foi efetivamente administrado.</li></ul><p><strong>Embalagem não determina dose.</strong> Uma caixa com 20 comprimidos permite contar o estoque, mas não informa quantos miligramas serão administrados. Conversões clínicas exigem apresentação/concentração e regra institucional.</p></article>
     </section>}
     {pharmacyTab === 'stock' && <>
     {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}>
@@ -1092,7 +1099,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
 
 function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; items: PharmacyItem[]; onReceived: () => void }) {
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
-  const [form, setForm] = useState({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: '', purchase_quantity: '', purchase_unit: '', packaging_levels: [] as PackagingLevel[], justification: '' })
+  const [form, setForm] = useState({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: 'unidade', purchase_quantity: '', purchase_unit: 'unidade', packaging_levels: [] as PackagingLevel[], justification: '' })
   const [quotes, setQuotes] = useState<Record<string, { supplier: string; price: string }>>({})
   const [receipts, setReceipts] = useState<Record<string, { lot: string; expiry_date: string; quantity: string; storage_location: string }>>({})
   const [loading, setLoading] = useState(true)
@@ -1137,7 +1144,7 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
       })
       const created = await readApiResponse<PurchaseRequest>(response)
       setRequests((current) => [created, ...current])
-      setForm({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: '', purchase_quantity: '', purchase_unit: '', packaging_levels: [], justification: '' })
+      setForm({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: 'unidade', purchase_quantity: '', purchase_unit: 'unidade', packaging_levels: [], justification: '' })
       setNotice('Solicitação enviada para cotação e aprovação.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível criar a solicitação.')
@@ -1191,7 +1198,7 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
     {canCreate && <form className="account-create-panel" onSubmit={(event) => void createRequest(event)}>
       <h3>Nova solicitação</h3>
       <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Produto cadastrado (opcional)</span><select value={form.product_id} onChange={(event) => { const item = products.find((product) => String(product.product_id) === event.target.value); setForm((current) => ({ ...current, product_id: event.target.value, ...(item ? { item_name: item.item_name, category: item.category, active_ingredient: item.active_ingredient, presentation: item.presentation, base_unit: item.unit, purchase_unit: item.product_packaging_unit, packaging_levels: packagingLevelsForBase(item.product_packaging_levels, item.unit) } : { purchase_unit: '', packaging_levels: [] }) })) }}><option value="">Novo produto</option>{products.map((item) => <option key={item.product_id} value={item.product_id}>{item.item_name} · base: {item.unit}</option>)}</select></label>
+        <label className="field"><span className="field-label">Produto cadastrado (opcional)</span><select value={form.product_id} onChange={(event) => { const item = products.find((product) => String(product.product_id) === event.target.value); setForm((current) => ({ ...current, product_id: event.target.value, ...(item ? { item_name: item.item_name, category: item.category, active_ingredient: item.active_ingredient, presentation: item.presentation, base_unit: item.unit, purchase_unit: item.product_packaging_unit || 'unidade', packaging_levels: packagingLevelsForBase(item.product_packaging_levels, item.unit) } : { item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: 'unidade', purchase_unit: 'unidade', packaging_levels: [] }) })) }}><option value="">Novo produto</option>{products.map((item) => <option key={item.product_id} value={item.product_id}>{item.item_name} · base: {item.unit}</option>)}</select></label>
         <label className="field"><span className="field-label">Nome do produto</span><input required minLength={2} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} /></label>
         {!form.product_id && <><label className="field"><span className="field-label">Categoria</span><input required minLength={2} maxLength={40} value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></label><label className="field"><span className="field-label">Unidade base do estoque</span><input required maxLength={24} value={form.base_unit} onChange={(event) => setForm({ ...form, base_unit: event.target.value, packaging_levels: packagingLevelsForBase(form.packaging_levels, event.target.value) })} placeholder="Comprimido, mL, unidade..." /></label></>}
         <label className="field"><span className="field-label">Princípio ativo (opcional)</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} /></label>
