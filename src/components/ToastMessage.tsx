@@ -20,12 +20,16 @@ export default function ToastMessage({
   persistent = false,
   progress,
   progressLabel = 'Progresso da operação',
+  actionLabel,
+  onAction,
 }: {
   children: string
   variant: ToastVariant
   persistent?: boolean
   progress?: number | null
   progressLabel?: string
+  actionLabel?: string
+  onAction?: () => void
 }) {
   const [root] = useState(getToastRoot)
   const [dismissedMessage, setDismissedMessage] = useState<string | null>(null)
@@ -54,7 +58,8 @@ export default function ToastMessage({
           <span style={progress === null ? undefined : { width: `${progress}%` }} />
         </div>}
       </div>
-      {!persistent && <button type="button" aria-label="Fechar notificação" onClick={() => setDismissedMessage(children)}>Fechar</button>}
+      {actionLabel && onAction && <button type="button" onClick={onAction}>{actionLabel}</button>}
+      {!persistent && !actionLabel && <button type="button" aria-label="Fechar notificação" onClick={() => setDismissedMessage(children)}>Fechar</button>}
     </div>,
     root,
   )

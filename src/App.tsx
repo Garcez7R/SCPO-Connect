@@ -488,11 +488,32 @@ class AppErrorBoundary extends Component<
 function App() {
   return <AppErrorBoundary>
     <AppDialogProvider>
+      <AppUpdateToast />
       {window.location.pathname === '/painel-sala-espera' || window.location.pathname === '/painel'
         ? <Suspense fallback={<StartupScreen />}><WaitingRoomKioskPage /></Suspense>
         : <AuthenticatedAppEntry />}
     </AppDialogProvider>
   </AppErrorBoundary>
+}
+
+function AppUpdateToast() {
+  const [updateReady, setUpdateReady] = useState(false)
+
+  useEffect(() => {
+    const handleUpdateReady = () => setUpdateReady(true)
+    window.addEventListener('scpo-app-update-ready', handleUpdateReady)
+    return () => window.removeEventListener('scpo-app-update-ready', handleUpdateReady)
+  }, [])
+
+  if (!updateReady) return null
+  return <ToastMessage
+    variant="info"
+    persistent
+    actionLabel="Atualizar agora"
+    onAction={() => window.dispatchEvent(new CustomEvent('scpo-app-update-activate'))}
+  >
+    Nova versão disponível. Atualize para usar a versão mais recente.
+  </ToastMessage>
 }
 
 function AuthenticatedAppEntry() {

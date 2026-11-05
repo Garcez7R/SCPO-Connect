@@ -14,6 +14,8 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Situação resumida das fases
 
+- **Atualização controlada do aplicativo — implementada nesta fase:** o service worker deixou de ativar uma nova versão automaticamente. A aplicação verifica atualizações e mostra um toast persistente com o botão “Atualizar agora”; até a confirmação, o usuário continua na sessão atual. Ao confirmar, o novo worker é ativado, o cache antigo é removido e a página é recarregada uma vez. README, guia interno e informações da versão foram revisados nesta fase.
+
 - **Cadastro simplificado de embalagens da Farmácia — implementado nesta fase:** o fluxo passou a apresentar opções amplas em lista: unidade avulsa, caixa externa com unidades e caixa externa com caixa interna. Cada opção inclui descrição prática e exemplo de cálculo; o formulário mostra apenas os números necessários e a conferência fica em tempo real. Os nomes e níveis adicionais permanecem disponíveis em Configuração avançada. Ajustes responsivos de alinhamento e documentação também foram revisados, preservando lotes, FEFO, metas, semáforo e propriedades dos cards informativos.
 - **Informativos na Visão geral — implementados nesta fase:** a faixa compacta passou a ocupar o espaço ao lado da saudação e do nome. Um comunicado é mostrado por vez; com vários informativos, eles alternam a cada 10 segundos, e usuários com preferência de movimento reduzido permanecem com troca automática desativada. Link externo abre em nova guia, enquanto informativos em texto ficam no próprio cartão. README e ajuda interna foram atualizados. Commit publicado: `9b51c32`.
 

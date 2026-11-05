@@ -58,7 +58,9 @@ const PRECACHE = ${JSON.stringify([
   '/scpo-connect-laundry-512.png',
   '/sidebar-health-watermark.svg',
 ])};
-self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
 self.addEventListener('activate', (event) => event.waitUntil((async () => {
   for (const key of await caches.keys()) if (key.startsWith('scpo-connect-') && key !== CACHE) await caches.delete(key);
   await self.clients.claim();
