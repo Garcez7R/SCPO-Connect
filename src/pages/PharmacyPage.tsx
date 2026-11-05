@@ -151,25 +151,22 @@ function PackagingConversionEditor({
       <button className={`pharmacy-packaging-mode${mode === 'unit' ? ' is-selected' : ''}`} type="button" onClick={() => {
         onPurchaseUnitChange?.(baseUnit || 'unidade')
         onChange([{ unit: baseUnit || 'unidade', units_per_parent: '1' }])
-      }}><strong>Unidade avulsa</strong><span>Sem caixa</span></button>
+      }} aria-pressed={mode === 'unit'}><strong>Unidade avulsa</strong><span>Contar cada unidade separadamente</span><small>Ex.: 24 unidades = 24 unidades</small></button>
       <button className={`pharmacy-packaging-mode${mode === 'external' ? ' is-selected' : ''}`} type="button" onClick={() => {
         onPurchaseUnitChange?.('caixa externa')
         onChange([{ unit: baseUnit || 'unidade', units_per_parent: '1' }])
-      }}><strong>Caixa externa</strong><span>Uma caixa contém unidades</span></button>
+      }} aria-pressed={mode === 'external'}><strong>Caixa externa com unidades</strong><span>Uma caixa contém unidades soltas</span><small>Ex.: 10 caixas × 12 unidades = 120 unidades</small></button>
       <button className={`pharmacy-packaging-mode${mode === 'internal' ? ' is-selected' : ''}`} type="button" onClick={() => {
         onPurchaseUnitChange?.('caixa externa')
         onChange([{ unit: 'caixa interna', units_per_parent: '1' }, { unit: baseUnit || 'unidade', units_per_parent: '1' }])
-      }}><strong>Caixa externa + interna</strong><span>Caixa dentro da caixa</span></button>
+      }} aria-pressed={mode === 'internal'}><strong>Caixa externa + caixa interna</strong><span>Há caixas menores dentro da caixa externa</span><small>Ex.: 2 caixas × 5 internas × 12 unidades = 120 unidades</small></button>
     </div>
     {mode !== 'unit' && <div className="pharmacy-packaging-simple-fields">
       {mode === 'external' && <>
-        <label className="field"><span className="field-label">Nome da caixa externa</span><input required maxLength={24} value={purchaseUnit} onChange={(event) => onPurchaseUnitChange?.(event.target.value)} placeholder="Ex.: caixa" /></label>
         <label className="field"><span className="field-label">Quantas {baseUnit || 'unidades'} cabem em cada {purchaseUnit || 'caixa externa'}?</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={resolvedLevels[0]?.units_per_parent ?? '1'} onChange={(event) => updateLevel(0, { units_per_parent: formatDecimalInput(event.target.value) })} /></label>
       </>}
       {mode === 'internal' && <>
-        <label className="field"><span className="field-label">Nome da caixa externa</span><input required maxLength={24} value={purchaseUnit} onChange={(event) => onPurchaseUnitChange?.(event.target.value)} placeholder="Ex.: caixa externa" /></label>
         <label className="field"><span className="field-label">Quantas caixas internas cabem na caixa externa?</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={resolvedLevels[0]?.units_per_parent ?? '1'} onChange={(event) => updateLevel(0, { units_per_parent: formatDecimalInput(event.target.value) })} /></label>
-        <label className="field"><span className="field-label">Nome da caixa interna</span><input required maxLength={24} value={resolvedLevels[0]?.unit ?? 'caixa interna'} onChange={(event) => updateLevel(0, { unit: event.target.value })} placeholder="Ex.: cartela, caixa interna" /></label>
         <label className="field"><span className="field-label">Quantas {baseUnit || 'unidades'} cabem em cada {resolvedLevels[0]?.unit || 'caixa interna'}?</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={resolvedLevels[1]?.units_per_parent ?? '1'} onChange={(event) => updateLevel(1, { units_per_parent: formatDecimalInput(event.target.value) })} /></label>
       </>}
     </div>}

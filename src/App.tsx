@@ -2785,11 +2785,11 @@ function Dashboard({ profile, onNavigate, canAccessModule }: { profile: Profile;
     <section className="dashboard-page page-enter">
       <div className="welcome-row">
         <div><p className="eyebrow">{new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date()).toUpperCase()}</p><h1>{getGreeting()}, {firstName}.</h1><p className="welcome-copy">Acesse os espaços de trabalho disponíveis para o seu perfil.</p></div>
+        <AppAnnouncementsFeed compact />
         <div className="date-chip"><Clock3 size={16} /><span>{allowedModules.length} módulos disponíveis</span></div>
         <span className="module-icon module-icon-home" aria-hidden="true"><Home size={23} /></span>
       </div>
 
-      <AppAnnouncementsFeed />
       <div className="section-heading"><div><p className="eyebrow">ACESSO POR PERFIL</p><h2>Seus espaços de trabalho</h2></div><span className="module-total">{allowedModules.length} espaços disponíveis</span></div>
       <div className="module-grid">
         {dashboardModules.map(({ id, label, icon: Icon, description }) => {

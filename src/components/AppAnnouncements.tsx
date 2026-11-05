@@ -18,9 +18,10 @@ export type AppAnnouncement = {
   created_by_name: string
 }
 
-export function AppAnnouncementsFeed() {
+export function AppAnnouncementsFeed({ compact = false }: { compact?: boolean }) {
   const [items, setItems] = useState<AppAnnouncement[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeIndex, setActiveIndex] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -41,7 +42,32 @@ export function AppAnnouncementsFeed() {
     return () => window.clearTimeout(timer)
   }, [load])
 
+  useEffect(() => {
+    if (!compact || items.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % items.length)
+    }, 10_000)
+    return () => window.clearInterval(timer)
+  }, [compact, items.length])
+
   if (loading || items.length === 0) return null
+  if (compact) {
+    const item = items[activeIndex % items.length]
+    const content = <><span className="app-announcement-icon"><Megaphone size={17} /></span><span><strong>{item.title}</strong>{item.summary && <small>{item.summary}</small>}{!item.summary && item.content && <small className="app-announcement-content">{item.content}</small>}</span>{item.url && <ExternalLink size={15} aria-hidden="true" />}</>
+    return (
+      <section className="app-announcements app-announcements-compact" aria-label="Informativos">
+        {item.url ? (
+          <a className="app-announcement-link" href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`${item.title}${items.length > 1 ? `, informativo ${(activeIndex % items.length) + 1} de ${items.length}` : ''}`}>
+            {content}
+          </a>
+        ) : (
+          <article className="app-announcement-link app-announcement-card" aria-label={`${item.title}${items.length > 1 ? `, informativo ${(activeIndex % items.length) + 1} de ${items.length}` : ''}`}>
+            {content}
+          </article>
+        )}
+      </section>
+    )
+  }
   return (
     <section className="app-announcements" aria-label="Informativos">
       <div className="section-heading">
