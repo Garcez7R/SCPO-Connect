@@ -80,6 +80,7 @@ import HelpGuide from './components/HelpGuide'
 import { AppDialogProvider } from './components/AppDialogs'
 import { useAppDialogs } from './components/appDialogContext'
 import TherapyMediaSettings from './components/TherapyMediaSettings'
+import { AppAnnouncementsAdmin, AppAnnouncementsFeed } from './components/AppAnnouncements'
 
 type ModuleId = 'home' | 'work-orders' | 'patients' | 'patient-history' | 'nursing' | 'nursing-history' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight' | 'system-admin' | 'about'
 type ProfileId = 'patients' | 'nursing' | 'pharmacy' | 'xray' | 'physician' | 'social' | 'nutrition' | 'hygiene' | 'reception' | 'therapy' | 'psychology' | 'maintenance' | 'laundry' | 'management' | 'admin' | 'oversight'
@@ -87,14 +88,14 @@ type EntryState = 'draft' | 'review' | 'saving' | 'saved' | 'error'
 const sessionDurationMs = 12 * 60 * 60 * 1000
 const nursingTabValues = ['overview', 'vitals', 'medications', 'safety', 'rounds', 'triage'] as const
 const nursingTabLabels: Record<typeof nursingTabValues[number], string> = { overview: 'Visão geral', vitals: 'Sinais vitais', medications: 'Medicações', safety: 'Fila e segurança', rounds: 'Verificação horária', triage: 'Triagem' }
-const adminTabValues = ['users', 'reports', 'audit'] as const
-const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Usuários e permissões', reports: 'Relatórios', audit: 'Auditoria de ações' }
+const adminTabValues = ['users', 'announcements', 'reports', 'audit'] as const
+const adminTabLabels: Record<typeof adminTabValues[number], string> = { users: 'Usuários e permissões', announcements: 'Informativos', reports: 'Relatórios', audit: 'Auditoria de ações' }
 const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior', 'governance', 'shortcuts'] as const
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'images', 'album', 'materials', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', album: 'Álbum', materials: 'Materiais', reports: 'Relatórios' }
-const systemAdminTabValues = ['dashboard', 'accounts', 'backup', 'recovery'] as const
-const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemAdminTabValues = ['dashboard', 'announcements', 'accounts', 'backup', 'recovery'] as const
+const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', announcements: 'Informativos', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const systemControlModules = [
   { id: 'patients', label: 'Pacientes' },
   { id: 'nursing', label: 'Enfermagem' },
@@ -2788,6 +2789,7 @@ function Dashboard({ profile, onNavigate, canAccessModule }: { profile: Profile;
         <span className="module-icon module-icon-home" aria-hidden="true"><Home size={23} /></span>
       </div>
 
+      <AppAnnouncementsFeed />
       <div className="section-heading"><div><p className="eyebrow">ACESSO POR PERFIL</p><h2>Seus espaços de trabalho</h2></div><span className="module-total">{allowedModules.length} espaços disponíveis</span></div>
       <div className="module-grid">
         {dashboardModules.map(({ id, label, icon: Icon, description }) => {
@@ -3872,7 +3874,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
   const availableTabs = useMemo<readonly (typeof adminTabValues[number])[]>(
     () => view === 'accounts'
       ? (canManageApp ? ['users'] : [])
-      : adminTabValues.filter((value) => value === 'users' ? canManageApp : canReviewData),
+      : adminTabValues.filter((value) => value === 'users' || value === 'announcements' ? canManageApp : canReviewData),
     [canManageApp, canReviewData, view],
   )
   const assignableModules = accessModules.filter(([module]) => module !== 'management' || canManageApp)
@@ -4094,7 +4096,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
     : [{ key: 'all', label: '', accounts: visibleAccounts }]
 
   return <section className="admin-page page-enter">
-    <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div>{activeTab !== 'users' && <p className="eyebrow">ADMINISTRAÇÃO</p>}<h1>{activeTab === 'users' ? 'Administração' : adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div></div>
+    <div className="page-title-row"><span className="module-icon module-icon-admin"><ShieldCheck size={23} /></span><div>{activeTab !== 'users' && <p className="eyebrow">ADMINISTRAÇÃO</p>}<h1>{activeTab === 'users' ? 'Administração' : adminTabLabels[activeTab]}</h1><p className="welcome-copy">{activeTab === 'users' ? 'Administre contas, permissões e cadastros profissionais do aplicativo.' : activeTab === 'announcements' ? 'Publique, desative ou remova comunicados exibidos na visão geral.' : activeTab === 'reports' ? 'Consulte relatórios digitais dos módulos sem concentrá-los na gestão operacional.' : 'Consulte os eventos administrativos registrados pelo sistema.'}</p></div></div>
     {view === 'full' && <ModuleTabNavigation
       ariaLabel="Seções de Administração"
       value={activeTab}
@@ -4166,6 +4168,7 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
     </section>
     <section className="permission-map"><div className="panel-heading"><div><p className="eyebrow">CONTROLE DE ACESSO</p><h2>Matriz efetiva de permissões</h2></div><LockKeyhole size={18} /></div><div className="permission-legend"><span><strong>Módulo operacional</strong> consultar, criar e alterar por padrão</span><span><strong>Arquivamento</strong> opcional em Pacientes, Enfermagem, Nutrição e Recepção</span><span><strong>Gestão Hospitalar</strong> amplia ações operacionais em todos os módulos, mas não administra contas</span><span>Confirme a matriz institucional antes de atribuir acessos a dados reais.</span></div></section>
     </>}
+    {activeTab === 'announcements' && canManageApp && <AppAnnouncementsAdmin endpointPrefix="/api/v1/admin" />}
     {activeTab === 'reports' && canReviewData && <AdminReportsCenter />}
     {activeTab === 'audit' && canReviewData && <AuditLogPanel />}
     {resetPasswordTarget && <div className="patient-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !resettingPassword) { setResetPasswordTarget(null); setTemporaryPassword('') } }}><section className="patient-archive-dialog credential-reset-dialog" role="dialog" aria-modal="true" aria-labelledby="credential-reset-title"><div className="credential-reset-heading"><img src="/scpo-connect-icon.png" alt="" /><div><p className="eyebrow">ADMINISTRAÇÃO · CREDENCIAIS</p><h2 id="credential-reset-title">{temporaryPassword ? 'Senha temporária gerada' : 'Redefinir senha?'}</h2></div></div>{temporaryPassword ? <><p>A senha da conta foi redefinida e as sessões encerradas. Entregue ao titular, por canal seguro, a senha temporária <strong>0000</strong>. Se a conta já usa MFA, ele deve informar o código atual do aplicativo autenticador; depois, deverá criar uma nova senha.</p><code className="credential-reset-value">{temporaryPassword}</code><div className="form-actions"><button className="button button-primary" type="button" onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Concluir</button></div></> : <><p>A senha de <strong>{resetPasswordTarget.name}</strong> será redefinida para 0000 e as sessões serão encerradas. O MFA atual, se configurado, será preservado. No próximo acesso, a pessoa deverá criar uma nova senha; se já usa MFA, também precisará do código atual do autenticador.</p>{mutationError && <ToastMessage variant="error">{mutationError}</ToastMessage>}<div className="form-actions"><button className="button button-secondary" type="button" disabled={resettingPassword} onClick={() => { setResetPasswordTarget(null); setTemporaryPassword('') }}>Cancelar</button><button className="button button-danger" type="button" disabled={resettingPassword} onClick={() => void confirmPasswordReset()}>{resettingPassword ? 'Redefinindo…' : 'Confirmar redefinição'}</button></div></>}</section></div>}
@@ -6301,6 +6304,7 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Superusuário</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><a className="button button-secondary" href="/scpo-root-ca.crt" download="scpo-connect-root-ca.crt"><Download size={16} /> Baixar certificado do app</a><span className="module-icon"><ShieldCheck size={20} /></span></div>
     <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
+    {tab === 'announcements' && <AppAnnouncementsAdmin endpointPrefix="/api/v1/system-admin" />}
     {tab === 'dashboard' && <section className="system-dashboard">
       <section className="patient-list-panel system-dashboard-connectivity">
         <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>

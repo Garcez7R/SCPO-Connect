@@ -94,6 +94,21 @@ class SystemModuleSettings(Base):
     updated_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
 
 
+class AppAnnouncement(Base):
+    __tablename__ = "app_announcements"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SystemUserActivity(Base):
     __tablename__ = "system_user_activity"
     __table_args__ = (
@@ -338,6 +353,23 @@ class SystemModuleSettingsPayload(BaseModel):
     def validate_settings_present(self) -> "SystemModuleSettingsPayload":
         if not self.module_enabled and self.maintenance_mode is None:
             raise ValueError("Informe ao menos uma configuração")
+
+
+class AppAnnouncementPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=3, max_length=160)
+    url: str = Field(min_length=8, max_length=2048)
+    summary: str | None = Field(default=None, max_length=500)
+    expires_at: datetime | None = None
+    active: bool = True
+
+    @field_validator("url")
+    @classmethod
+    def validate_http_url(cls, value: str) -> str:
+        url = value.strip()
+        if not url.startswith(("http://", "https://")):
+            raise ValueError("Informe uma URL HTTPS ou HTTP")
+        return url
         return self
 
 
@@ -817,6 +849,123 @@ def app_module_settings(
     _current_user(request, db)
     settings = _system_module_settings(db)
     return _module_settings_response(settings)
+
+
+def _announcement_response(item: AppAnnouncement) -> dict[str, object]:
+    return {
+        "id": item.id,
+        "title": item.title,
+        "url": item.url,
+        "summary": item.summary,
+        "active": item.active,
+        "published_at": item.published_at.isoformat(),
+        "expires_at": item.expires_at.isoformat() if item.expires_at else None,
+        "created_by_name": item.created_by_name,
+    }
+
+
+@app.get("/api/v1/app/announcements")
+def list_app_announcements(
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _current_user(request, db)
+    now = datetime.now(UTC)
+    items = db.scalars(
+        select(AppAnnouncement)
+        .where(
+            AppAnnouncement.active.is_(True),
+            AppAnnouncement.published_at <= now,
+            (AppAnnouncement.expires_at.is_(None)) | (AppAnnouncement.expires_at > now),
+        )
+        .order_by(AppAnnouncement.published_at.desc(), AppAnnouncement.created_at.desc())
+        .limit(20)
+    ).all()
+    return {"announcements": [_announcement_response(item) for item in items]}
+
+
+@app.get("/api/v1/system-admin/announcements")
+@app.get("/api/v1/admin/announcements")
+def list_system_admin_announcements(
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _, principal = _require_account_admin(request, db)
+    items = db.scalars(
+        select(AppAnnouncement).order_by(AppAnnouncement.created_at.desc()).limit(100)
+    ).all()
+    emit_audit_event(principal, "management", "app_announcements_read", "all", service="access")
+    return {"announcements": [_announcement_response(item) for item in items]}
+
+
+@app.post("/api/v1/system-admin/announcements", status_code=201)
+@app.post("/api/v1/admin/announcements", status_code=201)
+def create_system_admin_announcement(
+    payload: AppAnnouncementPayload,
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    user, principal = _require_account_admin(request, db)
+    now = datetime.now(UTC)
+    item = AppAnnouncement(
+        id=str(uuid.uuid4()),
+        title=payload.title.strip(),
+        url=payload.url.strip(),
+        summary=payload.summary.strip() if payload.summary and payload.summary.strip() else None,
+        active=payload.active,
+        published_at=now,
+        expires_at=payload.expires_at,
+        created_by_id=user.id,
+        created_by_name=principal.actor_name,
+        created_at=now,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    emit_audit_event(principal, "management", "app_announcement_created", item.id, db=db, service="access")
+    db.commit()
+    return _announcement_response(item)
+
+
+@app.patch("/api/v1/system-admin/announcements/{announcement_id}")
+@app.patch("/api/v1/admin/announcements/{announcement_id}")
+def update_system_admin_announcement(
+    announcement_id: str,
+    payload: AppAnnouncementPayload,
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> dict[str, object]:
+    _, principal = _require_account_admin(request, db)
+    item = db.get(AppAnnouncement, announcement_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Informativo não encontrado")
+    item.title = payload.title.strip()
+    item.url = payload.url.strip()
+    item.summary = payload.summary.strip() if payload.summary and payload.summary.strip() else None
+    item.expires_at = payload.expires_at
+    item.active = payload.active
+    db.commit()
+    db.refresh(item)
+    emit_audit_event(principal, "management", "app_announcement_updated", item.id, db=db, service="access")
+    db.commit()
+    return _announcement_response(item)
+
+
+@app.delete("/api/v1/system-admin/announcements/{announcement_id}", status_code=204)
+@app.delete("/api/v1/admin/announcements/{announcement_id}", status_code=204)
+def delete_system_admin_announcement(
+    announcement_id: str,
+    request: Request,
+    db: Annotated[Session, Depends(get_access_db)],
+) -> Response:
+    _, principal = _require_account_admin(request, db)
+    item = db.get(AppAnnouncement, announcement_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Informativo não encontrado")
+    db.delete(item)
+    emit_audit_event(principal, "management", "app_announcement_deleted", item.id, db=db, service="access")
+    db.commit()
+    return Response(status_code=204)
 
 
 @app.post("/internal/v1/auth/introspect")

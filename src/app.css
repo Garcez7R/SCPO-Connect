@@ -3431,6 +3431,28 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.app-announcements { margin-bottom: 6px; }
+.app-announcement-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.app-announcement-link { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 64px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); text-decoration: none; }
+.app-announcement-link:hover { border-color: var(--blue); }
+.app-announcement-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--page); color: var(--blue); }
+.app-announcement-link > span:nth-child(2) { display: grid; gap: 4px; min-width: 0; }
+.app-announcement-link strong { overflow-wrap: anywhere; }
+.app-announcement-link small { color: var(--muted); line-height: 1.45; }
+.app-announcement-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.app-announcement-form textarea { resize: vertical; }
+.app-announcement-active { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 12px; }
+.app-announcement-form .button { align-self: end; justify-self: start; }
+.app-announcement-admin-list { display: grid; gap: 8px; }
+.app-announcement-admin-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.app-announcement-admin-list article > span { display: grid; gap: 3px; min-width: 0; }
+.app-announcement-admin-list article small { color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .app-announcement-list, .app-announcement-form { grid-template-columns: 1fr; }
+  .app-announcement-admin-list article { grid-template-columns: 1fr; }
+  .app-announcement-admin-list article .button { width: 100%; justify-content: center; }
+}
 @media (max-width: 760px) {
   :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .nursing-triage-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary, .laundry-summary, .kitchen-mobile-summary, .nutrition-kitchen-summary):has(> article:nth-child(5):last-child) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
