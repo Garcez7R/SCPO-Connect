@@ -1,6 +1,6 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
 ## Quadro de acompanhamento
 
@@ -13,6 +13,9 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - E2E e deploy/atualização do servidor de testes permanecem pausados até orientação/autorização. Não executar migrações em dados reais.
 
 ### Situação resumida das fases
+
+- **Almoxarifado — implementação iniciada nesta fase:** módulo próprio criado para catálogo de materiais, insumos, patrimônio/equipamentos controlados, localização, lotes, validade, número de série, estoque mínimo, entradas, saídas, ajustes, devoluções, perdas, solicitações de setores e vínculo opcional com ordens de serviço. O backend reutiliza o serviço de Manutenção no MVP, mantendo patrimônio separado dos consumíveis. Migração `0068_warehouse_module` adicionada sem aplicação em dados reais. A rota `/api/v1/admin/*` também foi restaurada no proxy para liberar Informativos na Administração; os campos de senha restantes receberam controles de mostrar/ocultar. Build frontend passou. Instalação/testes Python locais ficaram bloqueados pela ausência do ambiente virtual/dependências apt, não por falha de código.
+- **Próxima prioridade acordada — reformulação operacional da Farmácia:** rever integralmente a aba de cadastro de itens com foco em prevenção de erro, fluxo rápido, validade de embalagens, lotes, conversões e consulta; não alterar as propriedades dos cards informativos. Esta reformulação será iniciada depois de concluir e publicar a fase atual do Almoxarifado.
 
 - **Retomada atual — correções da Farmácia, participantes da Oficina Terapêutica e informativos:** informativos passam a ocupar a barra superior global, fora da Visão geral, e ficam como última aba de Administração e Superadministrador. Participantes da Oficina agora são validados antes do envio e apresentam orientação explícita quando um paciente não está mais disponível. A conversão interna da Farmácia usa o fator da unidade interna correta ao mostrar caixas internas; pendente validar visualmente esta apresentação.
 - **Pré-condição operacional concluída em 05/11/2026:** relógio sincronizado, timezone de aplicação/servidor validado e MFA confirmado como operacional. A migração sintética foi revisada; os testes de esquema agora incluem as tabelas de informativos e estado automático da Anvisa/CMED adicionadas nas fases recentes.

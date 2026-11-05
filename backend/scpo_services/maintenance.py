@@ -127,6 +127,61 @@ class EquipmentAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class WarehouseItem(Base):
+    __tablename__ = "warehouse_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    unit: Mapped[str] = mapped_column(String(24), nullable=False, default="unidade")
+    location: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    barcode: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    lot: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    serial_number: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    balance: Mapped[str] = mapped_column(Numeric(12, 3), nullable=False, default="0")
+    minimum_balance: Mapped[str] = mapped_column(Numeric(12, 3), nullable=False, default="0")
+    active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WarehouseMovement(Base):
+    __tablename__ = "warehouse_movements"
+    __table_args__ = (Index("ix_warehouse_movements_item_created", "item_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[str] = mapped_column(ForeignKey("warehouse_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    movement_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity: Mapped[str] = mapped_column(Numeric(12, 3), nullable=False)
+    balance_after: Mapped[str] = mapped_column(Numeric(12, 3), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    destination: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    work_order_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WarehouseRequest(Base):
+    __tablename__ = "warehouse_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(ForeignKey("warehouse_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    quantity: Mapped[str] = mapped_column(Numeric(12, 3), nullable=False)
+    department: Mapped[str] = mapped_column(String(120), nullable=False)
+    destination: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    justification: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    work_order_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    requester_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    requester_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class PreventiveMaintenancePlan(Base):
     __tablename__ = "preventive_maintenance_plans"
 
@@ -533,6 +588,55 @@ class EquipmentAssetPayload(BaseModel):
     @field_validator("name", "category", "unit", "location", "manufacturer", "model", "serial_number")
     @classmethod
     def trim_asset_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class WarehouseItemPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=2, max_length=120)
+    category: str = Field(min_length=2, max_length=80)
+    unit: str = Field(min_length=1, max_length=24)
+    location: str = Field(default="", max_length=120)
+    barcode: str = Field(default="", max_length=80)
+    lot: str = Field(default="", max_length=80)
+    expiry_date: date | None = None
+    serial_number: str = Field(default="", max_length=100)
+    balance: Decimal = Field(default=Decimal("0"), ge=0, le=999_999_999, max_digits=12, decimal_places=3)
+    minimum_balance: Decimal = Field(default=Decimal("0"), ge=0, le=999_999_999, max_digits=12, decimal_places=3)
+    active: bool = True
+
+    @field_validator("name", "category", "unit", "location", "barcode", "lot", "serial_number")
+    @classmethod
+    def trim_warehouse_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class WarehouseMovementPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    movement_type: Literal["entry", "issue", "adjustment", "return", "loss"]
+    quantity: Decimal = Field(gt=0, le=999_999_999, max_digits=12, decimal_places=3)
+    reason: str = Field(min_length=2, max_length=500)
+    destination: str = Field(default="", max_length=120)
+    work_order_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("reason", "destination")
+    @classmethod
+    def trim_movement_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class WarehouseRequestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    item_id: str = Field(min_length=36, max_length=36)
+    quantity: Decimal = Field(gt=0, le=999_999_999, max_digits=12, decimal_places=3)
+    department: str = Field(min_length=2, max_length=120)
+    destination: str = Field(default="", max_length=120)
+    justification: str = Field(default="", max_length=500)
+    work_order_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("department", "destination", "justification")
+    @classmethod
+    def trim_request_text(cls, value: str) -> str:
         return value.strip()
 
 
@@ -1266,6 +1370,257 @@ def create_asset(
     db.commit()
     db.refresh(asset)
     return _serialize_asset(asset)
+
+
+def _serialize_warehouse_item(item: WarehouseItem) -> dict[str, object]:
+    return {
+        "id": item.id,
+        "name": item.name,
+        "category": item.category,
+        "unit": item.unit,
+        "location": item.location,
+        "barcode": item.barcode,
+        "lot": item.lot,
+        "expiry_date": item.expiry_date.isoformat() if item.expiry_date else None,
+        "serial_number": item.serial_number,
+        "balance": float(item.balance),
+        "minimum_balance": float(item.minimum_balance),
+        "active": item.active,
+        "created_by": item.created_by,
+        "created_at": item.created_at.isoformat(),
+        "updated_at": item.updated_at.isoformat(),
+    }
+
+
+def _serialize_warehouse_movement(movement: WarehouseMovement, item_name: str) -> dict[str, object]:
+    return {
+        "id": movement.id,
+        "item_id": movement.item_id,
+        "item_name": item_name,
+        "movement_type": movement.movement_type,
+        "quantity": float(movement.quantity),
+        "balance_after": float(movement.balance_after),
+        "reason": movement.reason,
+        "destination": movement.destination,
+        "work_order_id": movement.work_order_id,
+        "actor_name": movement.actor_name,
+        "created_at": movement.created_at.isoformat(),
+    }
+
+
+def _serialize_warehouse_request(request: WarehouseRequest, item_name: str, item_unit: str) -> dict[str, object]:
+    return {
+        "id": request.id,
+        "item_id": request.item_id,
+        "item_name": item_name,
+        "item_unit": item_unit,
+        "quantity": float(request.quantity),
+        "department": request.department,
+        "destination": request.destination,
+        "justification": request.justification,
+        "work_order_id": request.work_order_id,
+        "status": request.status,
+        "requester_name": request.requester_name,
+        "updated_by": request.updated_by,
+        "created_at": request.created_at.isoformat(),
+        "updated_at": request.updated_at.isoformat(),
+    }
+
+
+@app.get("/api/v1/warehouse/items")
+def list_warehouse_items(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, list[dict[str, object]]]:
+    items = db.scalars(select(WarehouseItem).order_by(WarehouseItem.active.desc(), WarehouseItem.name)).all()
+    emit_audit_event(principal, "warehouse", "warehouse_items_read", "all", db=db)
+    return {"items": [_serialize_warehouse_item(item) for item in items]}
+
+
+@app.post("/api/v1/warehouse/items", status_code=201)
+def create_warehouse_item(
+    payload: WarehouseItemPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    now = datetime.now(UTC)
+    item = WarehouseItem(
+        id=str(uuid.uuid4()),
+        name=payload.name,
+        category=payload.category,
+        unit=payload.unit,
+        location=payload.location,
+        barcode=payload.barcode,
+        lot=payload.lot,
+        expiry_date=payload.expiry_date,
+        serial_number=payload.serial_number,
+        balance=payload.balance,
+        minimum_balance=payload.minimum_balance,
+        active=payload.active,
+        created_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(item)
+    emit_audit_event(principal, "warehouse", "warehouse_item_created", item.id, db=db)
+    db.commit()
+    db.refresh(item)
+    return _serialize_warehouse_item(item)
+
+
+@app.post("/api/v1/warehouse/items/{item_id}/movements", status_code=201)
+def create_warehouse_movement(
+    item_id: str,
+    payload: WarehouseMovementPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    item = db.get(WarehouseItem, item_id)
+    if item is None or not item.active:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+
+    current = Decimal(str(item.balance or 0))
+    quantity = payload.quantity
+    if payload.movement_type in {"entry", "return"}:
+        balance_after = current + quantity
+    elif payload.movement_type == "adjustment":
+        balance_after = quantity
+    else:
+        if quantity > current:
+            raise HTTPException(status_code=409, detail="Saldo insuficiente para esta movimentação")
+        balance_after = current - quantity
+
+    now = datetime.now(UTC)
+    item.balance = balance_after
+    item.updated_at = now
+    movement = WarehouseMovement(
+        item_id=item.id,
+        movement_type=payload.movement_type,
+        quantity=quantity,
+        balance_after=balance_after,
+        reason=payload.reason,
+        destination=payload.destination,
+        work_order_id=payload.work_order_id,
+        actor_id=principal.actor_id,
+        actor_name=principal.actor_name,
+        created_at=now,
+    )
+    db.add(movement)
+    emit_audit_event(principal, "warehouse", "warehouse_movement_created", item.id, db=db)
+    db.commit()
+    db.refresh(movement)
+    return _serialize_warehouse_movement(movement, item.name)
+
+
+@app.get("/api/v1/warehouse/movements")
+def list_warehouse_movements(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, list[dict[str, object]]]:
+    rows = db.execute(
+        select(WarehouseMovement, WarehouseItem.name)
+        .join(WarehouseItem, WarehouseItem.id == WarehouseMovement.item_id)
+        .order_by(WarehouseMovement.created_at.desc())
+        .limit(500)
+    ).all()
+    emit_audit_event(principal, "warehouse", "warehouse_movements_read", "all", db=db)
+    return {"movements": [_serialize_warehouse_movement(movement, name) for movement, name in rows]}
+
+
+@app.get("/api/v1/warehouse/requests")
+def list_warehouse_requests(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, list[dict[str, object]]]:
+    rows = db.execute(
+        select(WarehouseRequest, WarehouseItem.name, WarehouseItem.unit)
+        .join(WarehouseItem, WarehouseItem.id == WarehouseRequest.item_id)
+        .order_by(WarehouseRequest.created_at.desc())
+    ).all()
+    emit_audit_event(principal, "warehouse", "warehouse_requests_read", "all", db=db)
+    return {"requests": [_serialize_warehouse_request(request, name, unit) for request, name, unit in rows]}
+
+
+@app.post("/api/v1/warehouse/requests", status_code=201)
+def create_warehouse_request(
+    payload: WarehouseRequestPayload,
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    item = db.get(WarehouseItem, payload.item_id)
+    if item is None or not item.active:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+    now = datetime.now(UTC)
+    request = WarehouseRequest(
+        id=str(uuid.uuid4()),
+        item_id=item.id,
+        quantity=payload.quantity,
+        department=payload.department,
+        destination=payload.destination,
+        justification=payload.justification,
+        work_order_id=payload.work_order_id,
+        status="pending",
+        requester_id=principal.actor_id,
+        requester_name=principal.actor_name,
+        updated_by=principal.actor_name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(request)
+    emit_audit_event(principal, "warehouse", "warehouse_request_created", request.id, db=db)
+    db.commit()
+    db.refresh(request)
+    return _serialize_warehouse_request(request, item.name, item.unit)
+
+
+@app.patch("/api/v1/warehouse/requests/{request_id}")
+def update_warehouse_request(
+    request_id: str,
+    payload: dict[str, str],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    db: Annotated[Session, Depends(get_maintenance_db)],
+) -> dict[str, object]:
+    request = db.get(WarehouseRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+    status = payload.get("status")
+    if status not in {"cancelled", "fulfilled"}:
+        raise HTTPException(status_code=422, detail="Status inválido")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail="Solicitação já foi finalizada")
+
+    now = datetime.now(UTC)
+    item = db.get(WarehouseItem, request.item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+    if status == "fulfilled":
+        quantity = Decimal(str(request.quantity))
+        current = Decimal(str(item.balance or 0))
+        if quantity > current:
+            raise HTTPException(status_code=409, detail="Saldo insuficiente para atender a solicitação")
+        item.balance = current - quantity
+        item.updated_at = now
+        movement = WarehouseMovement(
+            item_id=item.id,
+            movement_type="issue",
+            quantity=quantity,
+            balance_after=item.balance,
+            reason=f"Atendimento da solicitação {request.id}",
+            destination=request.destination or request.department,
+            work_order_id=request.work_order_id,
+            actor_id=principal.actor_id,
+            actor_name=principal.actor_name,
+            created_at=now,
+        )
+        db.add(movement)
+
+    request.status = status
+    request.updated_by = principal.actor_name
+    request.updated_at = now
+    emit_audit_event(principal, "warehouse", "warehouse_request_updated", request.id, db=db)
+    db.commit()
+    db.refresh(request)
+    return _serialize_warehouse_request(request, item.name, item.unit)
 
 
 @app.get("/api/v1/maintenance/preventive-plans")
