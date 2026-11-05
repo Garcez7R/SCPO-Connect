@@ -97,24 +97,84 @@ function packagingFormula(quantity: string, purchaseUnit: string, levels: Packag
   return `${quantity || '0'} ${purchaseUnit || 'embalagem'} ${steps.join(' ')} = ${result} ${baseUnit || 'unidade base'}`
 }
 
+type StockDisplayUnit = 'base' | 'purchase' | 'internal'
+
+function packagingDisplayValue(balance: string, item: PharmacyItem, displayUnit: StockDisplayUnit): { value: string; unit: string } {
+  const baseBalance = Number(balance.replace(',', '.'))
+  const levels = packagingLevelsForBase(item.product_packaging_levels?.length ? item.product_packaging_levels : item.packaging_levels, item.unit)
+  if (!Number.isFinite(baseBalance) || baseBalance < 0) return { value: balance, unit: item.unit }
+  if (displayUnit === 'base') return { value: balance, unit: item.unit }
+  if (displayUnit === 'purchase') {
+    const factor = packagingFactor(levels)
+    if (!factor || factor <= 0) return { value: balance, unit: item.unit }
+    return {
+      value: new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(baseBalance / factor),
+      unit: item.product_packaging_unit || item.purchase_unit || item.unit,
+    }
+  }
+  if (levels.length >= 2) {
+    const internalLevel = levels[levels.length - 2]
+    const internalFactor = Number(internalLevel.units_per_parent.replace(',', '.')) || 1
+    return {
+      value: new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(baseBalance / internalFactor),
+      unit: internalLevel.unit,
+    }
+  }
+  return { value: balance, unit: item.unit }
+}
+
 function PackagingConversionEditor({
   purchaseUnit,
   baseUnit,
   receivedQuantity,
   levels,
   onChange,
+  onPurchaseUnitChange,
 }: {
   purchaseUnit: string
   baseUnit: string
   receivedQuantity: string
   levels: PackagingLevel[]
   onChange: (levels: PackagingLevel[]) => void
+  onPurchaseUnitChange?: (purchaseUnit: string) => void
 }) {
   const resolvedLevels = packagingLevelsForBase(levels, baseUnit)
+  const isStandalone = purchaseUnit.trim().toLocaleLowerCase('pt-BR') === baseUnit.trim().toLocaleLowerCase('pt-BR')
+  const isInternalBox = resolvedLevels.length >= 2
+  const mode = isStandalone ? 'unit' : isInternalBox ? 'internal' : 'external'
+  const updateLevel = (index: number, value: Partial<PackagingLevel>) => {
+    onChange(resolvedLevels.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...value } : entry))
+  }
   return <section className="pharmacy-packaging-editor" aria-label="Conversão das embalagens para a unidade base">
-    <div><strong>Como as embalagens viram saldo de estoque</strong><span>Informe cada embalagem interna e quantas unidades dela cabem na embalagem anterior. A última etapa sempre termina na unidade base.</span></div>
+    <div><strong>Como recebi o medicamento?</strong><span>Escolha uma opção e informe somente os números que aparecem na embalagem. O saldo em unidades será calculado automaticamente.</span></div>
+    <div className="pharmacy-packaging-mode-grid" role="group" aria-label="Tipo de embalagem recebida">
+      <button className={`pharmacy-packaging-mode${mode === 'unit' ? ' is-selected' : ''}`} type="button" onClick={() => {
+        onPurchaseUnitChange?.(baseUnit || 'unidade')
+        onChange([{ unit: baseUnit || 'unidade', units_per_parent: '1' }])
+      }}><strong>Unidade avulsa</strong><span>Sem caixa</span></button>
+      <button className={`pharmacy-packaging-mode${mode === 'external' ? ' is-selected' : ''}`} type="button" onClick={() => {
+        onPurchaseUnitChange?.('caixa externa')
+        onChange([{ unit: baseUnit || 'unidade', units_per_parent: '1' }])
+      }}><strong>Caixa externa</strong><span>Uma caixa contém unidades</span></button>
+      <button className={`pharmacy-packaging-mode${mode === 'internal' ? ' is-selected' : ''}`} type="button" onClick={() => {
+        onPurchaseUnitChange?.('caixa externa')
+        onChange([{ unit: 'caixa interna', units_per_parent: '1' }, { unit: baseUnit || 'unidade', units_per_parent: '1' }])
+      }}><strong>Caixa externa + interna</strong><span>Caixa dentro da caixa</span></button>
+    </div>
+    {mode !== 'unit' && <div className="pharmacy-packaging-simple-fields">
+      {mode === 'external' && <>
+        <label className="field"><span className="field-label">Nome da caixa externa</span><input required maxLength={24} value={purchaseUnit} onChange={(event) => onPurchaseUnitChange?.(event.target.value)} placeholder="Ex.: caixa" /></label>
+        <label className="field"><span className="field-label">Quantas {baseUnit || 'unidades'} cabem em cada {purchaseUnit || 'caixa externa'}?</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={resolvedLevels[0]?.units_per_parent ?? '1'} onChange={(event) => updateLevel(0, { units_per_parent: formatDecimalInput(event.target.value) })} /></label>
+      </>}
+      {mode === 'internal' && <>
+        <label className="field"><span className="field-label">Nome da caixa externa</span><input required maxLength={24} value={purchaseUnit} onChange={(event) => onPurchaseUnitChange?.(event.target.value)} placeholder="Ex.: caixa externa" /></label>
+        <label className="field"><span className="field-label">Quantas caixas internas cabem na caixa externa?</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={resolvedLevels[0]?.units_per_parent ?? '1'} onChange={(event) => updateLevel(0, { units_per_parent: formatDecimalInput(event.target.value) })} /></label>
+        <label className="field"><span className="field-label">Nome da caixa interna</span><input required maxLength={24} value={resolvedLevels[0]?.unit ?? 'caixa interna'} onChange={(event) => updateLevel(0, { unit: event.target.value })} placeholder="Ex.: cartela, caixa interna" /></label>
+        <label className="field"><span className="field-label">Quantas {baseUnit || 'unidades'} cabem em cada {resolvedLevels[0]?.unit || 'caixa interna'}?</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={resolvedLevels[1]?.units_per_parent ?? '1'} onChange={(event) => updateLevel(1, { units_per_parent: formatDecimalInput(event.target.value) })} /></label>
+      </>}
+    </div>}
     <details>
-      <summary>Configurar embalagens (opcional para unidades únicas)</summary>
+      <summary>Configuração avançada</summary>
       <div className="pharmacy-packaging-steps">
     {resolvedLevels.map((level, index) => {
       const isBaseUnit = index === resolvedLevels.length - 1
@@ -224,6 +284,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [labelHeight, setLabelHeight] = useState('30')
   const [labelCount, setLabelCount] = useState('1')
   const [query, setQuery] = useState('')
+  const [stockDisplayUnit, setStockDisplayUnit] = useState<StockDisplayUnit>('base')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -1024,7 +1085,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         <label className="field pharmacy-quantity-field"><span className="field-label">Quantidade de embalagens recebidas</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.purchase_quantity} onChange={(event) => setForm({ ...form, purchase_quantity: formatDecimalInput(event.target.value) })} placeholder="Ex.: 10" /><span className="field-hint">Informe quantas embalagens deste lote foram recebidas.</span></label>
         <label className="field"><span className="field-label">Unidade de compra</span><input required maxLength={24} list="pharmacy-units" value={form.purchase_unit} onChange={(event) => setForm({ ...form, purchase_unit: event.target.value })} placeholder="Ex.: caixa" /><datalist id="pharmacy-units"><option value="unidade" /><option value="comprimido" /><option value="cápsula" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /><option value="caixa" /></datalist></label>
         <label className="field"><span className="field-label">Unidade base do estoque</span><input required maxLength={24} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value, packaging_levels: packagingLevelsForBase(form.packaging_levels, event.target.value) })} placeholder="Ex.: comprimido, frasco, mL" /><span className="field-hint">É a unidade usada para registrar saldo, movimentações e dispensações. Ela não determina a dose prescrita.</span></label>
-        <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} />
+        <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} onPurchaseUnitChange={(purchase_unit) => setForm({ ...form, purchase_unit })} />
         <div className="pharmacy-opening-balance" aria-live="polite"><span>Saldo inicial calculado</span><strong>{Number.isFinite(convertedBalance) ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(convertedBalance) : '—'} {form.unit || 'unidade base'}</strong><small>Confira os fatores e as unidades; o servidor valida e registra a conversão no lote.</small></div>
         <label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label>
         <label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label>
@@ -1038,17 +1099,32 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       <div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving || !form.pharmacy_registration_confirmed}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div>
     </form>}
     <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
+      {filteredItems.length > 0 && (() => {
+        const representative = filteredItems.find((item) => item.product_packaging_levels?.length || item.product_packaging_unit !== item.unit) ?? filteredItems[0]
+        const levels = packagingLevelsForBase(representative.product_packaging_levels?.length ? representative.product_packaging_levels : representative.packaging_levels, representative.unit)
+        const internalUnit = levels.length >= 2 ? levels[levels.length - 2].unit : representative.unit
+        const purchaseUnit = representative.product_packaging_unit || representative.purchase_unit || representative.unit
+        return <div className="pharmacy-stock-unit-selector" role="group" aria-label="Apresentação do saldo">
+          <span>Mostrar estoque em</span>
+          <button className={`button button-secondary${stockDisplayUnit === 'purchase' ? ' is-selected' : ''}`} type="button" aria-pressed={stockDisplayUnit === 'purchase'} onClick={() => setStockDisplayUnit('purchase')}>{purchaseUnit}</button>
+          {levels.length >= 2 && <button className={`button button-secondary${stockDisplayUnit === 'internal' ? ' is-selected' : ''}`} type="button" aria-pressed={stockDisplayUnit === 'internal'} onClick={() => setStockDisplayUnit('internal')}>{internalUnit}</button>}
+          <button className={`button button-secondary${stockDisplayUnit === 'base' ? ' is-selected' : ''}`} type="button" aria-pressed={stockDisplayUnit === 'base'} onClick={() => setStockDisplayUnit('base')}>{representative.unit}</button>
+        </div>
+      })()}
       {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => {
         const expired = item.expiry_date < today
         const expiring = !expired && item.expiry_date <= soon
         const level = productLevelById.get(item.product_id) ?? 'unconfigured'
         const low = level === 'critical'
         const product = productStocks.find((candidate) => candidate.product_id === item.product_id)
+        const displayedBalance = packagingDisplayValue(item.balance, item, stockDisplayUnit)
+        const displayedProductBalance = product ? packagingDisplayValue(String(product.available_balance), item, stockDisplayUnit) : null
+        const displayedMinimum = product ? packagingDisplayValue(product.minimum_balance, item, stockDisplayUnit) : null
         return <article className="pharmacy-item-card" key={item.id}>
           <div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired || expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Estoque crítico' : 'Dentro da validade'}</span></div>
           <h3>{item.item_name}</h3>
           <p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p>
-          <div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low && product ? ` · disponível no produto: ${product.available_balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${item.unit} (mínimo ${product.minimum_balance})` : ''}</span></div>
+          <div className="pharmacy-stock"><span className={`pharmacy-level-dot level-${level}`} /><strong>{displayedBalance.value}</strong><span>{displayedBalance.unit}{low && displayedProductBalance && displayedMinimum ? ` · disponível no produto: ${displayedProductBalance.value} ${displayedProductBalance.unit} (mínimo ${displayedMinimum.value} ${displayedMinimum.unit})` : ''}</span></div>
           <div className="pharmacy-item-meta"><span><small>Entrada · conta registrada</small><strong>{packagingFormula(item.purchase_quantity, item.purchase_unit, item.packaging_levels, item.unit)}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div>
           {!mobileMode && <button className="button button-secondary pharmacy-label-button" type="button" onClick={() => setLabelItem(item)}><Printer size={16} /> Imprimir etiquetas</button>}
           <button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>
@@ -1205,7 +1281,7 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
         <label className="field"><span className="field-label">Apresentação (opcional)</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} /></label>
         <label className="field"><span className="field-label">Quantidade solicitada</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={form.purchase_quantity} onChange={(event) => setForm({ ...form, purchase_quantity: formatDecimalInput(event.target.value) })} /></label>
         <label className="field"><span className="field-label">Unidade comprada</span><input required maxLength={24} value={form.purchase_unit} onChange={(event) => setForm({ ...form, purchase_unit: event.target.value })} placeholder="Caixa, frasco, pacote..." /></label>
-        <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.base_unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} />
+        <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.base_unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} onPurchaseUnitChange={(purchase_unit) => setForm({ ...form, purchase_unit })} />
         <div className="pharmacy-packaging-example"><strong>Conversão solicitada</strong><span>{packagingFormula(form.purchase_quantity, form.purchase_unit, packagingLevelsForBase(form.packaging_levels, form.base_unit), form.base_unit)}</span><small>A mesma hierarquia será preservada no pedido e aplicada aos recebimentos por lote.</small></div>
         <label className="field"><span className="field-label">Justificativa da compra</span><textarea required minLength={5} maxLength={500} value={form.justification} onChange={(event) => setForm({ ...form, justification: event.target.value })} /></label>
       </div>
