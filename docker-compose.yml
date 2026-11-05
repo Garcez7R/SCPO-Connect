@@ -140,7 +140,7 @@ services:
       SCPO_BACKUP_THERAPY_DIR: /mnt/therapy-materials
       SCPO_BACKUP_TIMEZONE: ${SCPO_BACKUP_TIMEZONE:-America/Sao_Paulo}
     volumes:
-      - ${SCPO_BACKUP_HOST_DIR:-./data/backup-staging}:/var/lib/scpo-backup
+      - ${SCPO_BACKUP_HOST_DIR:-/backups}:/var/lib/scpo-backup
       - ./.env:/run/secrets/scpo-env:ro
       - caddy_data:/mnt/caddy-data:ro
       - ${SCPO_THERAPY_LIBRARY_HOST_DIR:-${SCPO_THERAPY_MATERIALS_HOST_DIR:-/biblio}}:/mnt/therapy-materials:ro

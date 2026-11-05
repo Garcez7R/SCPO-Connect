@@ -130,6 +130,32 @@ def test_backup_retention_keeps_only_the_most_recent_configured_count(
     assert [path.exists() for path in backups] == [True, True, False, False]
 
 
+def test_backup_retention_applies_maximum_storage_quota(tmp_path: Path) -> None:
+    now = datetime(2026, 10, 31, tzinfo=UTC)
+    oldest = tmp_path / "scpo-connect-old.rgs"
+    newest = tmp_path / "scpo-connect-new.rgs"
+    oldest.write_bytes(b"x" * 700)
+    newest.write_bytes(b"x" * 700)
+    os.utime(oldest, (now.timestamp() - 100, now.timestamp() - 100))
+    os.utime(newest, (now.timestamp(), now.timestamp()))
+
+    assert backup._prune_automatic_backups(tmp_path, now, max_storage_bytes=800) == 1
+    assert not oldest.exists()
+    assert newest.exists()
+
+
+def test_password_encryption_state_can_be_saved_and_loaded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SCPO_SESSION_SIGNING_KEY", "test-session-signing-key")
+    state = {"automatic_password": backup._store_automatic_password("senha-segura-123")}
+
+    assert backup._load_automatic_password(state) == "senha-segura-123"
+    assert not backup._store_automatic_password("senha-segura-123")["ciphertext"].startswith(
+        "senha-segura-123"
+    )
+
+
 def test_backup_schedule_retries_failed_runs_at_most_hourly() -> None:
     timezone = ZoneInfo("America/Sao_Paulo")
     now = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)

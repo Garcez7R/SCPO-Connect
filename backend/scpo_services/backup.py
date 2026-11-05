@@ -97,10 +97,13 @@ class AutomaticBackupSchedule(BaseModel):
 class AutomaticBackupConfig(AutomaticBackupSchedule):
     directory: str = Field(min_length=1, max_length=200)
     fingerprint_confirmation: str = Field(
-        min_length=40,
+        default="",
+        min_length=0,
         max_length=64,
-        pattern=r"^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$",
     )
+    encryption_type: Literal["gpg", "password"] = "gpg"
+    password: SecretStr | None = Field(default=None, min_length=12, max_length=128)
+    max_storage_bytes: int | None = Field(default=None, ge=1, le=20 * 1024**4)
 
 
 class AutomaticBackupKeyRequest(BaseModel):
@@ -384,7 +387,12 @@ def _automatic_backup_status() -> dict[str, object]:
     schedule = _automatic_schedule(state)
     directory = state.get("directory")
     recipient = state.get("recipient")
-    configured = isinstance(directory, str) and isinstance(recipient, str)
+    encryption_type = state.get("encryption_type", "gpg")
+    password_configured = isinstance(state.get("automatic_password"), dict)
+    configured = isinstance(directory, str) and (
+        (encryption_type == "gpg" and isinstance(recipient, str))
+        or (encryption_type == "password" and password_configured)
+    )
     destination = _resolve_automatic_destination(directory) if configured else None
     base = _backup_data_dir()
     base_available = base.is_dir() and os.access(base, os.W_OK)
@@ -394,6 +402,15 @@ def _automatic_backup_status() -> dict[str, object]:
     disk_path = destination or base
     disk = shutil.disk_usage(disk_path) if disk_path.exists() else None
     free_bytes = disk.free if disk else None
+    used_bytes = (
+        sum(
+            path.stat().st_size
+            for path in destination.glob("scpo-connect-*.rgs")
+            if not path.is_symlink() and path.is_file()
+        )
+        if destination and destination.is_dir()
+        else 0
+    ) if configured else 0
     low_space = bool(
         disk and disk.total > 0 and disk.free / disk.total < LOW_DISK_SPACE_FRACTION
     )
@@ -427,6 +444,10 @@ def _automatic_backup_status() -> dict[str, object]:
         "destination_directory": directory if configured else None,
         "recipient_configured": bool(recipient),
         "recipient_fingerprint": recipient,
+        "encryption_type": encryption_type,
+        "password_configured": password_configured,
+        "max_storage_bytes": state.get("max_storage_bytes"),
+        "storage_used_bytes": used_bytes,
         "private_key_configured": private_key_fingerprint is not None,
         "private_key_fingerprint": private_key_fingerprint,
         "schedule": _schedule_description(schedule, timezone_name),
@@ -474,6 +495,7 @@ def _prune_automatic_backups(
     destination: Path,
     now: datetime | None = None,
     retention_count: int = AUTO_BACKUP_RETENTION_COUNT,
+    max_storage_bytes: int | None = None,
 ) -> int:
     if retention_count < 1:
         raise ValueError("A quantidade de backups mantidos deve ser positiva")
@@ -493,6 +515,18 @@ def _prune_automatic_backups(
         if index >= retention_count or modified_at < cutoff:
             backup.unlink()
             removed += 1
+    if max_storage_bytes is not None:
+        backups = [
+            backup for backup in destination.glob("scpo-connect-*.rgs")
+            if not backup.is_symlink() and backup.is_file()
+        ]
+        backups.sort(key=lambda backup: (backup.stat().st_mtime, backup.name), reverse=True)
+        total = sum(backup.stat().st_size for backup in backups)
+        while total > max_storage_bytes and backups:
+            oldest = backups.pop()
+            total -= oldest.stat().st_size
+            oldest.unlink()
+            removed += 1
     return removed
 
 
@@ -509,12 +543,52 @@ def _remove_stale_backup_staging(destination: Path, now: datetime | None = None)
     return removed
 
 
+def _automatic_password_key() -> bytes:
+    import hashlib
+
+    secret = os.getenv("SCPO_SESSION_SIGNING_KEY") or os.getenv("SCPO_SERVICE_TOKEN")
+    if not secret:
+        raise RuntimeError("A chave de proteção da sessão não está configurada")
+    return hashlib.sha256(("scpo-auto-backup-password:" + secret).encode()).digest()
+
+
+def _store_automatic_password(password: str) -> dict[str, str]:
+    nonce = secrets.token_bytes(12)
+    encrypted = AESGCM(_automatic_password_key()).encrypt(
+        nonce, password.encode("utf-8"), b"scpo-auto-backup-password"
+    )
+    return {
+        "nonce": base64.b64encode(nonce).decode("ascii"),
+        "ciphertext": base64.b64encode(encrypted).decode("ascii"),
+    }
+
+
+def _load_automatic_password(state: dict[str, object]) -> str:
+    secret = state.get("automatic_password")
+    if not isinstance(secret, dict):
+        raise RuntimeError("A senha do backup automático não está configurada")
+    try:
+        nonce = base64.b64decode(str(secret["nonce"]), validate=True)
+        ciphertext = base64.b64decode(str(secret["ciphertext"]), validate=True)
+        value = AESGCM(_automatic_password_key()).decrypt(
+            nonce, ciphertext, b"scpo-auto-backup-password"
+        )
+        return value.decode("utf-8")
+    except (KeyError, ValueError, InvalidTag, UnicodeDecodeError, binascii.Error) as exc:
+        raise RuntimeError("Não foi possível recuperar a senha do backup automático") from exc
+
+
 def _create_automatic_backup() -> Path:
     state = _load_automatic_backup_state()
     directory = state.get("directory")
     recipient = state.get("recipient")
-    if not isinstance(directory, str) or not isinstance(recipient, str):
-        raise TypeError("Configure o destino e a chave pública antes de ativar backups")
+    encryption_type = state.get("encryption_type", "gpg")
+    if not isinstance(directory, str):
+        raise TypeError("Configure o destino antes de ativar backups")
+    if encryption_type == "gpg" and not isinstance(recipient, str):
+        raise TypeError("Configure a chave pública antes de ativar backups por GPG")
+    if encryption_type == "password" and not isinstance(state.get("automatic_password"), dict):
+        raise TypeError("Configure a senha antes de ativar backups por senha")
     destination = _resolve_automatic_destination(directory)
     if not destination.is_dir() or not os.access(destination, os.W_OK):
         raise RuntimeError("A subpasta de backup não está disponível para gravação")
@@ -525,11 +599,18 @@ def _create_automatic_backup() -> Path:
     )
     if not env_file.is_file() or env_file.is_symlink():
         raise RuntimeError("O arquivo .env não está disponível para backup")
-    if not _gpg_home().is_dir():
+    if encryption_type == "gpg" and not _gpg_home().is_dir():
         raise RuntimeError("A chave pública GPG configurada não está disponível")
 
     schedule = _automatic_schedule(state)
-    _prune_automatic_backups(destination, retention_count=schedule.retention_count)
+    max_storage_bytes = state.get("max_storage_bytes")
+    if not isinstance(max_storage_bytes, int):
+        max_storage_bytes = None
+    _prune_automatic_backups(
+        destination,
+        retention_count=schedule.retention_count,
+        max_storage_bytes=max_storage_bytes,
+    )
     _remove_stale_backup_staging(destination)
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup_path = destination / f"scpo-connect-{timestamp}.rgs"
@@ -569,12 +650,12 @@ def _create_automatic_backup() -> Path:
                 )
         manifest = (
             "SCPO Connect backup\n"
-            "Formato: RGS v1 (GPG)\n"
+            f"Formato: RGS v1 ({'senha AES-GCM' if encryption_type == 'password' else 'GPG'})\n"
             f"Criado em UTC: {timestamp}\n"
             f"Bancos: {' '.join(databases)}\n"
             "Anexos: .env, autoridade Caddy e biblioteca da Oficina Terapêutica\n"
             f"Arquivos Caddy: {caddy_count}; arquivos da Oficina: {therapy_count}\n"
-            "Contém dados pessoais e clínicos protegidos por chave pública GPG.\n"
+            "Contém dados pessoais e clínicos protegidos por criptografia do modo configurado.\n"
         )
         (staging / "MANIFEST.txt").write_text(manifest, encoding="utf-8")
         archive_path = staging / "bundle.tar.gz"
@@ -583,28 +664,38 @@ def _create_automatic_backup() -> Path:
                 if path != archive_path:
                     archive.add(path, arcname=path.relative_to(staging).as_posix())
         encrypted_path = staging / "bundle.rgs"
-        subprocess.run(
-            [
-                "gpg",
-                "--batch",
-                "--yes",
-                "--trust-model",
-                "always",
-                "--homedir",
-                str(_gpg_home()),
-                "--encrypt",
-                "--recipient",
-                recipient,
-                "--output",
-                str(encrypted_path),
-                str(archive_path),
-            ],
-            check=True,
-            capture_output=True,
-            timeout=1800,
-        )
+        if encryption_type == "password":
+            encrypted_path.write_bytes(
+                _encrypt(archive_path.read_bytes(), _load_automatic_password(state))
+            )
+        else:
+            subprocess.run(
+                [
+                    "gpg",
+                    "--batch",
+                    "--yes",
+                    "--trust-model",
+                    "always",
+                    "--homedir",
+                    str(_gpg_home()),
+                    "--encrypt",
+                    "--recipient",
+                    str(recipient),
+                    "--output",
+                    str(encrypted_path),
+                    str(archive_path),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=1800,
+            )
         os.chmod(encrypted_path, 0o600)
         os.replace(encrypted_path, backup_path)
+    _prune_automatic_backups(
+        destination,
+        retention_count=schedule.retention_count,
+        max_storage_bytes=max_storage_bytes,
+    )
     return backup_path
 
 
@@ -613,9 +704,13 @@ def _should_run_automatic_backup(
     now: datetime,
     timezone: ZoneInfo,
 ) -> bool:
-    if not isinstance(state.get("directory"), str) or not isinstance(
-        state.get("recipient"), str
-    ):
+    if not isinstance(state.get("directory"), str):
+        return False
+    encryption_type = state.get("encryption_type", "gpg")
+    if encryption_type == "password":
+        if not isinstance(state.get("automatic_password"), dict):
+            return False
+    elif not isinstance(state.get("recipient"), str):
         return False
     due_run = _scheduled_occurrence(state, now, timezone, future=False)
     if due_run is None or _schedule_slot_succeeded(state, due_run):
@@ -1262,19 +1357,30 @@ def configure_automatic_backup(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     state = _load_automatic_backup_state()
-    if not isinstance(state.get("recipient"), str):
-        raise HTTPException(
-            status_code=409,
-            detail="Importe primeiro a chave pública GPG autorizada",
-        )
-    if not hmac.compare_digest(
-        str(state["recipient"]).upper(),
-        payload.fingerprint_confirmation.upper(),
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail="A impressão digital não corresponde à chave pública importada",
-        )
+    if payload.encryption_type == "gpg":
+        if not isinstance(state.get("recipient"), str):
+            raise HTTPException(
+                status_code=409,
+                detail="Importe primeiro a chave pública GPG autorizada",
+            )
+        if not payload.fingerprint_confirmation or not hmac.compare_digest(
+            str(state["recipient"]).upper(),
+            payload.fingerprint_confirmation.upper(),
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="A impressão digital não corresponde à chave pública importada",
+            )
+    else:
+        if payload.password is None and not isinstance(state.get("automatic_password"), dict):
+            raise HTTPException(
+                status_code=422,
+                detail="Informe uma senha nova para proteger os backups automáticos",
+            )
+        if payload.password is not None:
+            state["automatic_password"] = _store_automatic_password(
+                payload.password.get_secret_value()
+            )
     try:
         destination.mkdir(parents=True, exist_ok=True, mode=0o750)
     except OSError as exc:
@@ -1289,7 +1395,7 @@ def configure_automatic_backup(
         )
     state["directory"] = payload.directory
     schedule_values = payload.model_dump(
-        exclude={"directory", "fingerprint_confirmation"}
+        exclude={"directory", "fingerprint_confirmation", "password"}
     )
     state.update(schedule_values)
     configured_at = datetime.now(UTC)

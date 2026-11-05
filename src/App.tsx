@@ -5328,6 +5328,10 @@ type AutomaticBackupStatus = {
   recipient_fingerprint: string | null
   private_key_configured: boolean
   private_key_fingerprint: string | null
+  encryption_type: 'gpg' | 'password'
+  password_configured: boolean
+  max_storage_bytes: number | null
+  storage_used_bytes: number
   schedule: string
   schedule_type: 'daily' | 'interval' | 'weekly' | 'monthly'
   interval_value: number
@@ -5350,6 +5354,9 @@ type AutomaticBackupStatus = {
 function BackupExportPanel() {
   const [automaticStatus, setAutomaticStatus] = useState<AutomaticBackupStatus | null>(null)
   const [automaticDirectory, setAutomaticDirectory] = useState('')
+  const [automaticEncryptionType, setAutomaticEncryptionType] = useState<'gpg' | 'password'>('gpg')
+  const [automaticPassword, setAutomaticPassword] = useState('')
+  const [automaticMaxStorageGb, setAutomaticMaxStorageGb] = useState('')
   const [automaticPublicKey, setAutomaticPublicKey] = useState<File | null>(null)
   const [automaticFingerprintConfirmation, setAutomaticFingerprintConfirmation] = useState('')
   const [generatedKeyIdentity, setGeneratedKeyIdentity] = useState('SCPO Connect Backup')
@@ -5391,6 +5398,10 @@ function BackupExportPanel() {
       )
       setAutomaticStatus(status)
       setAutomaticDirectory(status.destination_directory ?? '')
+      setAutomaticEncryptionType(status.encryption_type ?? 'gpg')
+      setAutomaticMaxStorageGb(
+        status.max_storage_bytes ? String(Math.round(status.max_storage_bytes / 1024 ** 3 * 10) / 10) : '',
+      )
       setAutomaticSchedule({
         schedule_type: status.schedule_type,
         interval_value: String(status.interval_value),
@@ -5545,6 +5556,11 @@ function BackupExportPanel() {
           body: JSON.stringify({
             directory: automaticDirectory.trim(),
             fingerprint_confirmation: automaticFingerprintConfirmation.trim(),
+            encryption_type: automaticEncryptionType,
+            password: automaticPassword || undefined,
+            max_storage_bytes: automaticMaxStorageGb.trim()
+              ? Math.round(Number(automaticMaxStorageGb) * 1024 ** 3)
+              : null,
             schedule_type: automaticSchedule.schedule_type,
             interval_value: configuredIntervalValue,
             interval_unit: automaticSchedule.interval_unit,
@@ -5557,6 +5573,7 @@ function BackupExportPanel() {
       )
       setAutomaticMessage('Configuração do backup automático salva. A próxima execução ocorrerá no horário exibido acima.')
       setAutomaticFingerprintConfirmation('')
+      setAutomaticPassword('')
       await loadAutomaticStatus()
     } catch (saveError) {
       setAutomaticError(saveError instanceof Error
@@ -5779,6 +5796,26 @@ function BackupExportPanel() {
           <span className="field-hint">Informe somente uma subpasta relativa ao volume de backup já montado pela TI, local ou de rede. Caminhos absolutos e saídas do volume não são aceitos.</span>
         </label>
         <label className="field">
+          <span className="field-label">Criptografia automática</span>
+          <select value={automaticEncryptionType} onChange={(event) => setAutomaticEncryptionType(event.target.value as 'gpg' | 'password')}>
+            <option value="gpg">Chave GPG (compatibilidade atual)</option>
+            <option value="password">Senha AES-GCM</option>
+          </select>
+        </label>
+        {automaticEncryptionType === 'password' && <label className="field">
+          <span className="field-label">Senha dos backups automáticos</span>
+          <input type="password" minLength={12} maxLength={128} value={automaticPassword} onChange={(event) => setAutomaticPassword(event.target.value)} placeholder={automaticStatus?.password_configured ? 'Deixe vazio para manter a senha atual' : 'Mínimo de 12 caracteres'} autoComplete="new-password" />
+          <span className="field-hint">Guarde esta senha separadamente; ela é necessária para restaurar os arquivos automáticos.</span>
+        </label>}
+        <label className="field">
+          <span className="field-label">Limite máximo deste destino em GB</span>
+          <input type="number" min="1" max="20000000" step="1" value={automaticMaxStorageGb} onChange={(event) => setAutomaticMaxStorageGb(event.target.value)} placeholder="Sem limite" />
+          <span className="field-hint">
+            Quando informado, os arquivos mais antigos são removidos até caber nesse limite.
+            {automaticStatus?.storage_used_bytes ? ` Uso atual: ${(automaticStatus.storage_used_bytes / 1024 ** 3).toFixed(2)} GB.` : ''}
+          </span>
+        </label>
+        <label className="field">
           <span className="field-label">Periodicidade</span>
           <select value={automaticSchedule.schedule_type} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, schedule_type: event.target.value as AutomaticBackupStatus['schedule_type'] }))}>
             <option value="daily">Todos os dias</option>
@@ -5823,12 +5860,12 @@ function BackupExportPanel() {
           <input required type="number" min="1" max="365" value={automaticSchedule.retention_count} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, retention_count: event.target.value }))} />
           <span className="field-hint">Mantém as mais recentes até esse limite; a retenção máxima preexistente de 30 dias continua aplicada.</span>
         </label>
-        <label className="field backup-fingerprint-field">
+        {automaticEncryptionType === 'gpg' && <label className="field backup-fingerprint-field">
           <span className="field-label">Confirme a impressão digital fornecida pela TI</span>
           <input required minLength={32} maxLength={64} value={automaticFingerprintConfirmation} onChange={(event) => setAutomaticFingerprintConfirmation(event.target.value.toUpperCase())} placeholder="Impressão digital hexadecimal" autoComplete="off" />
           <span className="field-hint">Compare a impressão digital exibida acima por um canal independente antes de ativar.</span>
-        </label>
-        <button className="button button-primary" type="submit" disabled={automaticSaving || automaticLoading || !automaticDirectory.trim() || !automaticStatus?.recipient_fingerprint || automaticFingerprintConfirmation.trim() !== automaticStatus.recipient_fingerprint || Number(automaticSchedule.retention_count) < 1 || Number(automaticSchedule.retention_count) > 365 || (automaticSchedule.schedule_type === 'interval' && (Number(automaticSchedule.interval_value) < 1 || Number(automaticSchedule.interval_value) > (automaticSchedule.interval_unit === 'hours' ? 24 : 365)))}>
+        </label>}
+        <button className="button button-primary" type="submit" disabled={automaticSaving || automaticLoading || !automaticDirectory.trim() || (automaticEncryptionType === 'gpg' && (!automaticStatus?.recipient_fingerprint || automaticFingerprintConfirmation.trim() !== automaticStatus.recipient_fingerprint)) || (automaticEncryptionType === 'password' && !automaticPassword && !automaticStatus?.password_configured) || Number(automaticSchedule.retention_count) < 1 || Number(automaticSchedule.retention_count) > 365 || (automaticSchedule.schedule_type === 'interval' && (Number(automaticSchedule.interval_value) < 1 || Number(automaticSchedule.interval_value) > (automaticSchedule.interval_unit === 'hours' ? 24 : 365)))}>
           {automaticSaving ? 'Salvando configuração…' : automaticStatus?.enabled ? 'Atualizar configuração' : 'Salvar e ativar rotina'}
         </button>
       </form>
