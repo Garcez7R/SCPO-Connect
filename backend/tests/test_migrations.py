@@ -214,9 +214,10 @@ def test_each_service_migration_creates_only_its_owned_table(
             column["name"] for column in inspect(get_engine(service)).get_columns("app_users")
         }
     elif service == "maintenance":
-        assert len(tables) == 12
+        assert len(tables) == 15
         assert "audit_outbox" in tables
         assert "hygiene_requests" in tables
+        assert {"warehouse_items", "warehouse_movements", "warehouse_requests"} <= tables
         hygiene_columns = {
             column["name"] for column in inspect(get_engine(service)).get_columns("hygiene_requests")
         }
@@ -364,6 +365,37 @@ def test_revision_identifiers_fit_alembic_version_column() -> None:
     revisions = ScriptDirectory.from_config(Config("alembic.ini")).walk_revisions()
 
     assert all(len(revision.revision) <= 32 for revision in revisions)
+
+
+def test_warehouse_global_module_migration_preserves_existing_settings(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = "access"
+    monkeypatch.setenv("SCPO_SERVICE", service)
+    monkeypatch.setenv("SCPO_ACCESS_DATABASE_URL", f"sqlite:///{tmp_path / 'access.sqlite3'}")
+    clear_engine_cache()
+    config = Config("alembic.ini")
+    command.upgrade(config, "0068_warehouse_module")
+    with get_engine(service).begin() as connection:
+        module_enabled = connection.execute(
+            text("SELECT module_enabled FROM system_module_settings WHERE id = 1")
+        ).scalar_one()
+        module_enabled = json.loads(module_enabled) if isinstance(module_enabled, str) else module_enabled
+        module_enabled["pharmacy"] = False
+        connection.execute(
+            text("UPDATE system_module_settings SET module_enabled = :module_enabled WHERE id = 1"),
+            {"module_enabled": json.dumps(module_enabled)},
+        )
+
+    command.upgrade(config, "head")
+    with get_engine(service).connect() as connection:
+        module_enabled = connection.execute(
+            text("SELECT module_enabled FROM system_module_settings WHERE id = 1")
+        ).scalar_one()
+    module_enabled = json.loads(module_enabled) if isinstance(module_enabled, str) else module_enabled
+    assert module_enabled["warehouse"] is True
+    assert module_enabled["pharmacy"] is False
+    clear_engine_cache()
 
 
 def test_access_migration_marks_only_configured_username_as_superuser(

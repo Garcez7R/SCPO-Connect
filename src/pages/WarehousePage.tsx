@@ -3,9 +3,9 @@ import type { FormEvent } from 'react'
 import { Package, Plus, History, ClipboardList } from 'lucide-react'
 import { readApiResponse } from '../api'
 
-type Item = { id: string; name: string; category: string; unit: string; location: string; lot: string; expiry_date: string | null; balance: number; minimum_balance: number }
+type Item = { id: string; name: string; category: string; unit: string; location: string; lot: string; expiry_date: string | null; balance: number; minimum_balance: number; active: boolean }
 type Movement = { id: number; item_name: string; movement_type: string; quantity: number; balance_after: number; reason: string; destination: string; actor_name: string; created_at: string }
-type Request = { id: string; item_name: string; item_unit: string; quantity: number; department: string; destination: string; justification: string; status: string; requester_name: string }
+type Request = { id: string; item_name: string; item_unit: string; quantity: number; department: string; destination: string; justification: string; status: 'pending' | 'fulfilled' | 'cancelled'; requester_name: string }
 
 export default function WarehousePage() {
   const [tab, setTab] = useState<'items' | 'requests' | 'movements'>('items')
@@ -23,6 +23,12 @@ export default function WarehousePage() {
   const [serialNumber, setSerialNumber] = useState('')
   const [balance, setBalance] = useState('0')
   const [minimum, setMinimum] = useState('0')
+  const [requestItemId, setRequestItemId] = useState('')
+  const [requestQuantity, setRequestQuantity] = useState('1')
+  const [requestDepartment, setRequestDepartment] = useState('')
+  const [requestDestination, setRequestDestination] = useState('')
+  const [requestJustification, setRequestJustification] = useState('')
+  const [notice, setNotice] = useState('')
 
   async function load() {
     try {
@@ -43,7 +49,10 @@ export default function WarehousePage() {
     }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   async function createItem(event: FormEvent) {
     event.preventDefault()
@@ -95,6 +104,37 @@ export default function WarehousePage() {
     }
   }
 
+  async function createRequest(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const request = await readApiResponse<Request>(await fetch('/api/v1/warehouse/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: requestItemId,
+          quantity: Number(requestQuantity),
+          department: requestDepartment.trim(),
+          destination: requestDestination.trim(),
+          justification: requestJustification.trim(),
+        }),
+      }))
+      setRequests((current) => [request, ...current])
+      setRequestItemId('')
+      setRequestQuantity('1')
+      setRequestDepartment('')
+      setRequestDestination('')
+      setRequestJustification('')
+      setNotice('Pedido enviado ao Almoxarifado e incluído na fila de solicitações.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível enviar o pedido ao Almoxarifado')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className="warehouse-page page-section">
       <div className="warehouse-header page-title-row"><span className="module-icon module-icon-maintenance"><Package size={23} /></span><div><p className="eyebrow">MÓDULO · ALMOXARIFADO</p><h1>Materiais, estoque e movimentações</h1><p className="welcome-copy">Cadastro de itens, lotes, solicitações e histórico do almoxarifado.</p></div></div>
@@ -104,6 +144,7 @@ export default function WarehousePage() {
         <button className={`button ${tab === 'movements' ? 'button-primary' : 'button-secondary'}`} type="button" onClick={() => setTab('movements')}><History size={16} /> Histórico</button>
       </div>
       {error && <div className="form-error" role="alert">{error}</div>}
+      {notice && <div className="warehouse-notice" role="status">{notice}</div>}
       {tab === 'items' && <>
         <form className="warehouse-item-form" onSubmit={createItem}>
           <div className="section-heading"><div><p className="eyebrow">NOVO CADASTRO</p><h2>Identificar item</h2></div></div>
@@ -125,9 +166,22 @@ export default function WarehousePage() {
           {items.map((item) => <WarehouseItemRow key={item.id} item={item} busy={busy} onMove={moveItem} />)}
         </tbody></table></div>}</section>
       </>}
-      {tab === 'requests' && <section className="warehouse-panel"><div className="section-heading"><div><p className="eyebrow">SOLICITAÇÕES</p><h2>Pedidos dos setores</h2></div></div>{requests.length === 0 ? <div className="warehouse-empty">Nenhuma solicitação registrada.</div> : <div className="warehouse-table-wrap"><table className="warehouse-table"><thead><tr><th>Material</th><th>Setor</th><th>Quantidade</th><th>Status</th><th>Ações</th></tr></thead><tbody>
-        {requests.map((request) => <tr key={request.id}><td><strong>{request.item_name}</strong><small>{request.requester_name}</small></td><td><strong>{request.department}</strong><small>{request.destination || request.justification || '-'}</small></td><td><strong>{request.quantity} {request.item_unit}</strong></td><td><span className={`warehouse-status warehouse-status-${request.status}`}>{request.status === 'pending' ? 'Pendente' : request.status === 'fulfilled' ? 'Atendida' : 'Cancelada'}</span></td><td>{request.status === 'pending' ? <div className="warehouse-request-actions"><button className="button button-primary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'fulfilled')}>Atender</button><button className="button button-secondary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'cancelled')}>Cancelar</button></div> : '-'}</td></tr>)}
-      </tbody></table></div>}</section>}
+      {tab === 'requests' && <>
+        <form className="warehouse-item-form warehouse-request-form" onSubmit={(event) => void createRequest(event)}>
+          <div className="section-heading"><div><p className="eyebrow">PEDIDO DE MATERIAL</p><h2>Solicitar ao Almoxarifado</h2><p className="welcome-copy">Informe o setor, o item cadastrado e a quantidade necessária. O pedido ficará pendente até ser atendido ou cancelado.</p></div></div>
+          <div className="warehouse-form-grid">
+            <label className="field"><span className="field-label">Setor solicitante *</span><input required minLength={2} maxLength={120} value={requestDepartment} onChange={(event) => setRequestDepartment(event.target.value)} placeholder="Ex.: Enfermagem, Nutrição" /></label>
+            <label className="field"><span className="field-label">Material *</span><select required value={requestItemId} onChange={(event) => setRequestItemId(event.target.value)}><option value="">Selecione um item disponível</option>{items.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name} · saldo {item.balance} {item.unit}</option>)}</select></label>
+            <label className="field"><span className="field-label">Quantidade *</span><input required type="number" min="0.001" max="999999999" step="0.001" value={requestQuantity} onChange={(event) => setRequestQuantity(event.target.value)} /></label>
+            <label className="field"><span className="field-label">Destino / local de uso</span><input maxLength={120} value={requestDestination} onChange={(event) => setRequestDestination(event.target.value)} placeholder="Unidade, sala ou localização" /></label>
+            <label className="field warehouse-request-justification"><span className="field-label">Justificativa</span><textarea maxLength={500} value={requestJustification} onChange={(event) => setRequestJustification(event.target.value)} placeholder="Descreva a necessidade do setor" /></label>
+          </div>
+          <div className="warehouse-form-actions"><button className="button button-primary" type="submit" disabled={busy || !items.some((item) => item.id === requestItemId && item.active)}><ClipboardList size={16} /> {busy ? 'Enviando…' : 'Enviar pedido'}</button></div>
+        </form>
+        <section className="warehouse-panel"><div className="section-heading"><div><p className="eyebrow">FILA DE ATENDIMENTO</p><h2>Pedidos dos setores</h2></div></div>{requests.length === 0 ? <div className="warehouse-empty">Nenhuma solicitação registrada.</div> : <div className="warehouse-table-wrap"><table className="warehouse-table"><thead><tr><th>Material</th><th>Setor</th><th>Quantidade</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+          {requests.map((request) => <tr key={request.id}><td><strong>{request.item_name}</strong><small>{request.requester_name}</small>{request.justification && <small>{request.justification}</small>}</td><td><strong>{request.department}</strong><small>{request.destination || '-'}</small></td><td><strong>{request.quantity} {request.item_unit}</strong></td><td><span className={`warehouse-status warehouse-status-${request.status}`}>{request.status === 'pending' ? 'Pendente' : request.status === 'fulfilled' ? 'Atendida' : 'Cancelada'}</span></td><td>{request.status === 'pending' ? <div className="warehouse-request-actions"><button className="button button-primary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'fulfilled')}>Atender</button><button className="button button-secondary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'cancelled')}>Cancelar</button></div> : '-'}</td></tr>)}
+        </tbody></table></div>}</section>
+      </>}
       {tab === 'movements' && <section className="warehouse-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO</p><h2>Movimentações registradas</h2></div></div>{movements.length === 0 ? <div className="warehouse-empty">Nenhuma movimentação registrada.</div> : <div className="warehouse-table-wrap"><table className="warehouse-table"><thead><tr><th>Data</th><th>Material</th><th>Movimento</th><th>Saldo após</th><th>Responsável</th></tr></thead><tbody>
         {movements.map((movement) => <tr key={movement.id}><td>{new Date(movement.created_at).toLocaleString('pt-BR')}</td><td><strong>{movement.item_name}</strong></td><td><strong>{movement.movement_type === 'entry' ? 'Entrada' : movement.movement_type === 'issue' ? 'Saída' : movement.movement_type === 'return' ? 'Devolução' : movement.movement_type === 'adjustment' ? 'Ajuste' : movement.movement_type}: {movement.quantity}</strong><small>{movement.reason}</small></td><td><strong>{movement.balance_after}</strong></td><td>{movement.actor_name}</td></tr>)}
       </tbody></table></div>}</section>}

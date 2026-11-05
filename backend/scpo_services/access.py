@@ -53,7 +53,7 @@ from .security import (
 MODULES = {
     "patients", "nursing", "pharmacy", "xray", "physician", "social", "nutrition", "hygiene",
     "reception", "therapy", "psychology", "maintenance", "management", "admin", "oversight",
-    "laundry",
+    "laundry", "warehouse",
 }
 GLOBAL_MODULES = MODULES - {"oversight"}
 ACTIONS = {"consultar", "criar", "alterar", "excluir", "administrar"}

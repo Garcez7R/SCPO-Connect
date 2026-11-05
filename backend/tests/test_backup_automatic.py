@@ -409,10 +409,14 @@ def test_automatic_backup_packages_all_database_and_file_sources(
     therapy = tmp_path / "therapy"
     therapy.mkdir()
     (therapy / "image.png").write_bytes(b"synthetic-image")
+    therapy_album = tmp_path / "therapy-album"
+    therapy_album.mkdir()
+    (therapy_album / "album.png").write_bytes(b"synthetic-album-image")
     monkeypatch.setenv("SCPO_BACKUP_DATA_DIR", str(base))
     monkeypatch.setenv("SCPO_BACKUP_ENV_FILE", str(env_file))
     monkeypatch.setenv("SCPO_BACKUP_CADDY_DIR", str(caddy))
     monkeypatch.setenv("SCPO_BACKUP_THERAPY_DIR", str(therapy))
+    monkeypatch.setenv("SCPO_BACKUP_THERAPY_ALBUM_DIR", str(therapy_album))
     backup._save_automatic_backup_state(
         {"directory": "daily", "recipient": "A" * 40}
     )
@@ -433,6 +437,7 @@ def test_automatic_backup_packages_all_database_and_file_sources(
             assert "attachments/env/.env" in names
             assert "attachments/caddy-data/certificate.crt" in names
             assert "attachments/therapy-materials/image.png" in names
+            assert "attachments/therapy-album/album.png" in names
             output_path = Path(arguments[arguments.index("--output") + 1])
             output_path.write_bytes(b"encrypted-bundle")
         return subprocess.CompletedProcess(arguments, 0, stdout=b"", stderr=b"")

@@ -82,6 +82,7 @@ def test_global_module_settings_are_seeded_enabled(domain_database: dict[str, Se
     settings = domain_database["access"].get(access.SystemModuleSettings, 1)
     assert settings is not None
     assert set(settings.module_enabled) == access.GLOBAL_MODULES
+    assert "warehouse" in access.GLOBAL_MODULES
     assert all(settings.module_enabled.values())
     assert settings.maintenance_mode is False
 
@@ -126,7 +127,7 @@ def test_system_superadmin_can_update_global_module_settings(
 
     result = access.update_system_admin_module_settings(
         access.SystemModuleSettingsPayload(
-            module_enabled={"pharmacy": False},
+            module_enabled={"pharmacy": False, "warehouse": False},
             maintenance_mode=True,
         ),
         request,
@@ -135,8 +136,10 @@ def test_system_superadmin_can_update_global_module_settings(
 
     settings = db.get(access.SystemModuleSettings, 1)
     assert result["module_enabled"]["pharmacy"] is False
+    assert result["module_enabled"]["warehouse"] is False
     assert settings is not None
     assert settings.module_enabled["pharmacy"] is False
+    assert settings.module_enabled["warehouse"] is False
     assert result["maintenance_mode"] is True
     assert settings.maintenance_mode is True
     assert settings.updated_by_id == user.id
@@ -1219,6 +1222,55 @@ def test_audit_accepts_minimum_clinical_access_event_without_payload() -> None:
             actor_name="Enfermeira", actor_role="nursing", action="vitals_recorded",
             module="nursing", target_id="patient-uuid", clinical_payload="not allowed",
         )
+
+
+def test_pharmacy_adds_stock_to_an_existing_lot(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    pharmacist = DemoPrincipal(
+        "pharm-1",
+        "pharm",
+        "Farmacêutica",
+        "pharmacy",
+        ["pharmacy"],
+        {"pharmacy": ["consultar", "criar"]},
+    )
+    item = pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Frasco de teste",
+            balance="10",
+            unit="frasco",
+            lot="L-01",
+            expiry_date="2027-02-01",
+            pharmacy_registration_confirmed=True,
+        ),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+
+    entry = pharmacy.create_stock_movement(
+        item["id"],
+        pharmacy.StockMovementPayload(
+            movement_type="entry",
+            quantity="5",
+            reason="Recebimento complementar",
+        ),
+        pharmacist,
+        domain_database["pharmacy"],
+    )
+
+    assert entry["quantity"] == "5"
+    assert entry["balance_after"] == "15"
+    updated_item = pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]
+    assert updated_item["id"] == item["id"]
+    assert updated_item["lot"] == "L-01"
+    assert updated_item["balance"] == "15"
+    movements = pharmacy.list_stock_movements(
+        pharmacist, domain_database["pharmacy"], item_id=item["id"]
+    )
+    assert movements["total"] == 2
+    assert movements["movements"][0]["reason"] == "Recebimento complementar"
 
 
 def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]) -> None:

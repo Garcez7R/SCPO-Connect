@@ -309,12 +309,12 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .backup-generated-key-panel .section-heading { margin: 0; }
 .backup-generated-key-panel h4 { margin: 2px 0 0; color: var(--ink); font-size: 15px; }
 .backup-generated-key-panel .welcome-copy { margin: 6px 0 0; }
-.backup-generated-key-panel .backup-generated-key-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.backup-generated-key-panel .backup-generated-key-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; }
 .backup-generated-key-form > .field,
 .backup-automatic-config-form > .field,
 .backup-automatic-config-form > .backup-weekday-field,
 .backup-restore-form > .field { align-self: start; }
-.backup-generated-key-panel .backup-generated-key-form > .button { justify-self: start; }
+.backup-generated-key-panel .backup-generated-key-form > .button { grid-column: 1 / -1; justify-self: stretch; min-height: 44px; justify-content: center; }
 .backup-automatic-config-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .backup-automatic-config-form > .backup-fingerprint-field { grid-column: 1 / -1; }
 .backup-fingerprint-field input { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; letter-spacing: .06em; }
@@ -965,9 +965,12 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(15 28 38 / 72%); }
 .pharmacy-label-dialog { display: grid; width: min(620px, 96vw); max-height: 94dvh; gap: 16px; padding: clamp(16px, 3vw, 26px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 36%); }
 .pharmacy-label-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pharmacy-label-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pharmacy-label-heading > img { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 9px; background: #fff; object-fit: contain; }
 .pharmacy-label-dialog > header h2 { margin: 3px 0 0; color: var(--ink); font-size: clamp(18px, 2.4vw, 23px); }
 .pharmacy-label-dialog > header p:not(.eyebrow) { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .pharmacy-label-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pharmacy-label-profile-field { grid-column: 1 / -1; }
 .pharmacy-label-count { grid-column: 1 / -1; }
 .pharmacy-label-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pharmacy-label-error { margin: 0; color: #a4232e; font-size: 12px; }
@@ -3653,6 +3656,11 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
 .backup-manual-password-row,
 .backup-key-import-row { align-items: end; }
 .backup-key-import-row > .button { justify-content: center; }
+.backup-manual-password-row > .button,
+.backup-export-form > .button,
+.backup-key-import-row > .button { min-height: 44px; justify-content: center; white-space: normal; }
+.backup-key-import-row { align-items: stretch; }
+.backup-key-import-row .therapy-image-file-picker { align-items: center; }
 .recovery-confirm-dialog { width: min(560px, calc(100% - 32px)); }
 .recovery-confirm-form { display: grid; gap: 15px; }
 .recovery-confirm-form .form-actions { justify-content: flex-end; }
@@ -3672,7 +3680,7 @@ html[data-theme="dark"] .vital-trends-table tbody tr:nth-child(even) { backgroun
 .app-dialog form { display: grid; gap: 16px; }
 .app-dialog .form-actions { justify-content: flex-end; }
 
-html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-detail-modal, .patient-archive-dialog, .pharmacy-scanner-dialog, .beta-dialog, .install-dialog) {
+html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-detail-modal, .patient-archive-dialog, .pharmacy-scanner-dialog, .pharmacy-label-dialog, .beta-dialog, .install-dialog) {
   color-scheme: light;
   --page: #f4f7fa;
   --surface: #fff;
@@ -3710,7 +3718,7 @@ html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-deta
 
 html[data-theme="dark"] .auth-page .auth-brand { border-color: #e6edf0; background: linear-gradient(110deg, #f2f8fa 0%, #fff 88%); }
 html[data-theme="dark"] .auth-page :is(input, select, textarea) { border-color: var(--line); background-color: #fff; color: var(--ink); }
-html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-detail-modal, .patient-archive-dialog, .pharmacy-scanner-dialog, .beta-dialog, .install-dialog) :is(input, select, textarea) {
+html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-detail-modal, .patient-archive-dialog, .pharmacy-scanner-dialog, .pharmacy-label-dialog, .beta-dialog, .install-dialog) :is(input, select, textarea) {
   border-color: #d8e1e8;
   background-color: #fff;
   color: #18324a;

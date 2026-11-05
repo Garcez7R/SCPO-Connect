@@ -134,17 +134,6 @@ services:
       <<: *backend-environment
       SCPO_SERVICE: maintenance
       SCPO_MAINTENANCE_DATABASE_URL: postgresql+psycopg://${SCPO_MAINTENANCE_DB_USER}:${SCPO_MAINTENANCE_DB_PASSWORD}@db:5432/scpo_maintenance
-      SCPO_BACKUP_DATA_DIR: /var/lib/scpo-backup
-      SCPO_BACKUP_ENV_FILE: /run/secrets/scpo-env
-      SCPO_BACKUP_CADDY_DIR: /mnt/caddy-data
-      SCPO_BACKUP_THERAPY_DIR: /mnt/therapy-materials
-      SCPO_BACKUP_TIMEZONE: ${SCPO_BACKUP_TIMEZONE:-America/Sao_Paulo}
-    volumes:
-      - ${SCPO_BACKUP_HOST_DIR:-/backups}:/var/lib/scpo-backup
-      - ./.env:/run/secrets/scpo-env:ro
-      - caddy_data:/mnt/caddy-data:ro
-      - ${SCPO_THERAPY_LIBRARY_HOST_DIR:-${SCPO_THERAPY_MATERIALS_HOST_DIR:-/biblio}}:/mnt/therapy-materials:ro
-      - ${SCPO_THERAPY_ALBUM_HOST_DIR:-/album}:/mnt/therapy-materials/photo-album:ro
     networks: [backend]
 
   therapy:
@@ -176,6 +165,18 @@ services:
       SCPO_SOCIAL_DATABASE_URL: postgresql+psycopg://${SCPO_SOCIAL_DB_USER}:${SCPO_SOCIAL_DB_PASSWORD}@db:5432/scpo_social
       SCPO_XRAY_DATABASE_URL: postgresql+psycopg://${SCPO_XRAY_DB_USER}:${SCPO_XRAY_DB_PASSWORD}@db:5432/scpo_xray
       SCPO_MAINTENANCE_DATABASE_URL: postgresql+psycopg://${SCPO_MAINTENANCE_DB_USER}:${SCPO_MAINTENANCE_DB_PASSWORD}@db:5432/scpo_maintenance
+      SCPO_BACKUP_DATA_DIR: /var/lib/scpo-backup
+      SCPO_BACKUP_ENV_FILE: /run/secrets/scpo-env
+      SCPO_BACKUP_CADDY_DIR: /mnt/caddy-data
+      SCPO_BACKUP_THERAPY_DIR: /mnt/therapy-materials
+      SCPO_BACKUP_THERAPY_ALBUM_DIR: /mnt/therapy-album
+      SCPO_BACKUP_TIMEZONE: ${SCPO_BACKUP_TIMEZONE:-America/Sao_Paulo}
+    volumes:
+      - ${SCPO_BACKUP_HOST_DIR:-/backups}:/var/lib/scpo-backup
+      - ./.env:/run/secrets/scpo-env:ro
+      - caddy_data:/mnt/caddy-data:ro
+      - ${SCPO_THERAPY_LIBRARY_HOST_DIR:-${SCPO_THERAPY_MATERIALS_HOST_DIR:-/biblio}}:/mnt/therapy-materials:ro
+      - ${SCPO_THERAPY_ALBUM_HOST_DIR:-/album}:/mnt/therapy-album:ro
     networks: [backend]
 
   web:

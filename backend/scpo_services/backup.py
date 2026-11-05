@@ -597,6 +597,7 @@ def _create_automatic_backup() -> Path:
     therapy_directory = Path(
         os.getenv("SCPO_BACKUP_THERAPY_DIR", "/mnt/therapy-materials")
     )
+    therapy_album_directory_value = os.getenv("SCPO_BACKUP_THERAPY_ALBUM_DIR")
     if not env_file.is_file() or env_file.is_symlink():
         raise RuntimeError("O arquivo .env não está disponível para backup")
     if encryption_type == "gpg" and not _gpg_home().is_dir():
@@ -629,6 +630,11 @@ def _create_automatic_backup() -> Path:
         therapy_count = _copy_tree_without_symlinks(
             therapy_directory, attachments / "therapy-materials"
         )
+        therapy_album_count = 0
+        if therapy_album_directory_value:
+            therapy_album_count = _copy_tree_without_symlinks(
+                Path(therapy_album_directory_value), attachments / "therapy-album"
+            )
 
         databases = tuple(f"scpo_{service}" for service in DATABASES)
         for service, database in zip(DATABASES, databases, strict=True):
@@ -653,8 +659,9 @@ def _create_automatic_backup() -> Path:
             f"Formato: RGS v1 ({'senha AES-GCM' if encryption_type == 'password' else 'GPG'})\n"
             f"Criado em UTC: {timestamp}\n"
             f"Bancos: {' '.join(databases)}\n"
-            "Anexos: .env, autoridade Caddy e biblioteca da Oficina Terapêutica\n"
-            f"Arquivos Caddy: {caddy_count}; arquivos da Oficina: {therapy_count}\n"
+            "Anexos: .env, autoridade Caddy, Biblioteca e Álbum da Oficina Terapêutica\n"
+            f"Arquivos Caddy: {caddy_count}; Biblioteca: {therapy_count}; "
+            f"Álbum: {therapy_album_count}\n"
             "Contém dados pessoais e clínicos protegidos por criptografia do modo configurado.\n"
         )
         (staging / "MANIFEST.txt").write_text(manifest, encoding="utf-8")
