@@ -460,6 +460,20 @@ Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O diálogo de etiquetas mantém campos legíveis com tema escuro, com fundo claro explícito para os controles de entrada.
 - README e guia interno (“Infos”) foram atualizados para explicar os pedidos e os perfis de etiqueta. Ainda é necessário validar os fluxos por perfil autenticado e conferir a impressão na Zebra ZD220 com os rolos reais.
 
+### Próxima etapa — revisão operacional completa da Farmácia
+
+Executar esta revisão em sequência, sem iniciar testes/builds simultâneos na VM. Depois de concluir as correções, atualizar README e Infos, validar, criar commit e fazer push.
+
+- **Inventário A–Z:** aumentar a legibilidade das informações secundárias de cada item, especialmente lote e validade. O tamanho do texto de quantidade já está adequado e deve ser preservado.
+- **Níveis de estoque:** alinhar os campos de configuração da meta média.
+- **Dispensação:** ao selecionar uma prescrição, preencher automaticamente o prescritor correspondente e validar que o dado exibido é o prescritor da prescrição selecionada.
+- **Prescrições:** corrigir o alinhamento horizontal da guia, que está deslocada para a esquerda.
+- **Compras e suprimentos:** rever a experiência dos recebimentos e retirar campos desnecessários sobre “como recebi esse medicamento”. Na criação de nova solicitação, disponibilizar opções de seleção apropriadas, definidas após verificar o modelo e as regras existentes.
+- **Guia “Como funciona” / Infos:** conferir cada instrução frente ao comportamento atual e atualizar junto com as mudanças, sem documentar funcionalidades que ainda não existam.
+- **Unidades e plural:** revisar todos os rótulos, descrições, campos, saldos e movimentações da Farmácia. Garantir consistência entre unidade cadastrada e unidade exibida (por exemplo, não transformar ampola em frasco) e tratar plural/quantidade de forma coerente em cada contexto.
+- **Movimentações, prescrições e dispensações:** rastrear como as movimentações de estoque se relacionam hoje com prescrições e dispensações e documentar o comportamento real antes de propor mudanças no vínculo ou na auditoria.
+- **Movimentações e rastreabilidade:** revisar quantos quadros/registros são renderizados nas guias de Movimentações e Rastreabilidade do estoque; limitar ou paginar o conteúdo para evitar poluição visual e carga desnecessária, preservando acesso ao histórico completo.
+
 ## Validações conhecidas
 
 - **Dashboard do Superadministrador (02/11/2026):** `npm run typecheck`, `npm run lint`, `npm run build`, Ruff, `backend/tests/test_migrations.py` (25 testes) e a suíte backend completa (192 testes) passaram. O teste de Psicologia que falhava por mock incompleto foi corrigido para fornecer o formato `references` esperado. A conferência manual autenticada não foi possível: o frontend HTTPS local respondeu, mas a API de Acesso em `localhost:8002` recusou conexão; o certificado HTTPS interno também não é confiável pelo navegador integrado.
