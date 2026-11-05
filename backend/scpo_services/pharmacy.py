@@ -16,6 +16,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
@@ -57,6 +58,12 @@ class PharmacyProduct(Base):
     unit: Mapped[str] = mapped_column(String(24), nullable=False)
     minimum_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     average_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
+    packaging_purchase_unit: Mapped[str] = mapped_column(
+        String(24), nullable=False, default=""
+    )
+    packaging_levels: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     metadata_source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
     source_reference: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -104,6 +111,9 @@ class InventoryLot(Base):
     purchase_quantity: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     purchase_unit: Mapped[str] = mapped_column(String(24), nullable=False, default="")
     units_per_purchase_unit: Mapped[str] = mapped_column(String(32), nullable=False, default="1")
+    packaging_levels: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -126,6 +136,9 @@ class PurchaseRequest(Base):
     purchase_quantity: Mapped[str] = mapped_column(String(32), nullable=False)
     purchase_unit: Mapped[str] = mapped_column(String(24), nullable=False)
     units_per_purchase_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    packaging_levels: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     received_quantity: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
     supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     quoted_unit_price: Mapped[str] = mapped_column(String(32), nullable=False, default="")
@@ -197,6 +210,26 @@ ANVISA_CMED_CATALOG_URL = "https://dados.anvisa.gov.br/dados/TA_PRECO_MEDICAMENT
 MAX_ANVISA_CATALOG_BYTES = 32 * 1024 * 1024
 
 
+class PackagingLevel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unit: str = Field(min_length=1, max_length=24)
+    units_per_parent: str = Field(
+        pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32
+    )
+
+    @field_validator("unit")
+    @classmethod
+    def trim_unit(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("units_per_parent")
+    @classmethod
+    def validate_positive_factor(cls, value: str) -> str:
+        if parse_stock_quantity(value) <= 0:
+            raise ValueError("Cada fator de embalagem deve ser maior que zero")
+        return value
+
+
 class InventoryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     item_name: str = Field(min_length=1, max_length=120)
@@ -204,6 +237,7 @@ class InventoryPayload(BaseModel):
     purchase_quantity: str | None = Field(default=None, pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
     purchase_unit: str = Field(default="", max_length=24)
     units_per_purchase_unit: str = Field(default="1", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    packaging_levels: list["PackagingLevel"] | None = Field(default=None, max_length=5)
     unit: str = Field(min_length=1, max_length=24)
     lot: str = Field(min_length=1, max_length=80)
     expiry_date: date
@@ -212,6 +246,7 @@ class InventoryPayload(BaseModel):
     active_ingredient: str = Field(default="", max_length=120)
     presentation: str = Field(default="", max_length=120)
     catalog_registration: str = Field(default="", max_length=32)
+    pharmacy_registration_confirmed: bool = False
     supplier: str = Field(default="", max_length=120)
     storage_location: str = Field(default="", max_length=80)
     minimum_balance: str = Field(default="0", pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
@@ -219,19 +254,87 @@ class InventoryPayload(BaseModel):
 
     @model_validator(mode="after")
     def validate_quantity_conversion(self) -> "InventoryPayload":
+        if not self.pharmacy_registration_confirmed:
+            raise ValueError(
+                "A pessoa responsável pela Farmácia deve conferir e confirmar os dados antes do cadastro"
+            )
         if self.purchase_quantity:
             if not self.purchase_unit.strip():
                 raise ValueError("Informe a unidade da embalagem recebida")
             quantity = parse_stock_quantity(self.purchase_quantity)
-            factor = parse_stock_quantity(self.units_per_purchase_unit)
-            if quantity <= 0 or factor <= 0:
+            if quantity <= 0:
                 raise ValueError("Quantidade e fator de conversão devem ser maiores que zero")
+            levels = normalized_packaging_levels(
+                self.packaging_levels,
+                self.purchase_unit,
+                self.unit,
+                self.units_per_purchase_unit,
+            )
+            factor = packaging_conversion_factor(levels)
             validate_base_stock_quantity(quantity * factor)
         elif self.balance is None:
             raise ValueError("Informe o saldo em unidade base ou a quantidade de embalagens recebidas")
-        elif self.purchase_unit or self.units_per_purchase_unit != "1":
+        elif self.purchase_unit or self.units_per_purchase_unit != "1" or self.packaging_levels is not None:
             raise ValueError("Informe a quantidade comprada para converter embalagens")
         return self
+
+
+def normalized_packaging_levels(
+    levels: list[PackagingLevel] | None,
+    purchase_unit: str,
+    base_unit: str,
+    legacy_factor: str,
+) -> list[dict[str, str]]:
+    resolved = levels or [
+        PackagingLevel(unit=base_unit, units_per_parent=legacy_factor)
+    ]
+    unit_names = [level.unit.strip() for level in resolved]
+    normalized_names = [name.casefold() for name in unit_names]
+    if any(not name for name in unit_names):
+        raise ValueError("Informe o nome de cada unidade da embalagem")
+    if len(set(normalized_names)) != len(normalized_names):
+        raise ValueError("Cada nível da embalagem deve ter uma unidade diferente")
+    if purchase_unit.strip().casefold() in normalized_names and not (
+        len(normalized_names) == 1
+        and purchase_unit.strip().casefold() == base_unit.strip().casefold()
+        and normalized_names[0] == base_unit.strip().casefold()
+    ):
+        raise ValueError("A unidade de compra não pode se repetir nos níveis internos")
+    if unit_names[-1].casefold() != base_unit.strip().casefold():
+        raise ValueError("O último nível da embalagem deve corresponder à unidade base do estoque")
+    return [
+        {
+            "unit": level.unit.strip(),
+            "units_per_parent": format_stock_quantity(
+                parse_stock_quantity(level.units_per_parent)
+            ),
+        }
+        for level in resolved
+    ]
+
+
+def packaging_conversion_factor(levels: list[dict[str, str]]) -> Decimal:
+    factor = Decimal(1)
+    for level in levels:
+        factor *= parse_stock_quantity(level["units_per_parent"])
+    return factor
+
+
+def describe_packaging_conversion(
+    purchase_quantity: str,
+    purchase_unit: str,
+    levels: list[dict[str, str]],
+    base_quantity: str,
+    base_unit: str,
+) -> str:
+    parts = [f"{purchase_quantity} {purchase_unit}"]
+    parent_unit = purchase_unit
+    for level in levels:
+        parts.append(
+            f"{level['units_per_parent']} {level['unit']} por {parent_unit}"
+        )
+        parent_unit = level["unit"]
+    return f"{' × '.join(parts)} = {base_quantity} {base_unit}"
 
 
 class PurchaseRequestPayload(BaseModel):
@@ -245,6 +348,7 @@ class PurchaseRequestPayload(BaseModel):
     purchase_quantity: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
     purchase_unit: str = Field(min_length=1, max_length=24)
     units_per_purchase_unit: str = Field(pattern=r"^\d{1,9}(?:[.,]\d{1,3})?$", max_length=32)
+    packaging_levels: list[PackagingLevel] | None = Field(default=None, max_length=5)
     justification: str = Field(min_length=5, max_length=500)
 
     @field_validator("item_name", "category", "active_ingredient", "presentation", "base_unit", "purchase_unit", "justification")
@@ -255,9 +359,15 @@ class PurchaseRequestPayload(BaseModel):
     @model_validator(mode="after")
     def validate_purchase_amount(self) -> "PurchaseRequestPayload":
         quantity = parse_stock_quantity(self.purchase_quantity)
-        factor = parse_stock_quantity(self.units_per_purchase_unit)
-        if quantity <= 0 or factor <= 0:
+        if quantity <= 0:
             raise ValueError("Quantidade e fator de conversão devem ser maiores que zero")
+        levels = normalized_packaging_levels(
+            self.packaging_levels,
+            self.purchase_unit,
+            self.base_unit,
+            self.units_per_purchase_unit,
+        )
+        factor = packaging_conversion_factor(levels)
         validate_base_stock_quantity(quantity * factor)
         return self
 
@@ -756,9 +866,15 @@ def create_item(
     db: Annotated[Session, Depends(get_pharmacy_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
+    packaging_levels = normalized_packaging_levels(
+        payload.packaging_levels,
+        payload.purchase_unit or payload.unit,
+        payload.unit,
+        payload.units_per_purchase_unit,
+    )
     if payload.purchase_quantity:
         received_quantity = parse_stock_quantity(payload.purchase_quantity)
-        conversion_factor = parse_stock_quantity(payload.units_per_purchase_unit)
+        conversion_factor = packaging_conversion_factor(packaging_levels)
         base_balance = received_quantity * conversion_factor
         purchase_unit = payload.purchase_unit.strip()
         factor_text = format_stock_quantity(conversion_factor)
@@ -806,6 +922,11 @@ def create_item(
                 detail="Há cadastros divergentes para este GTIN. Revise e consolide o produto antes de incluir outro lote.",
             )
 
+    if product is not None and (
+        payload.packaging_levels is not None or not product.packaging_levels
+    ):
+        product.packaging_purchase_unit = payload.purchase_unit.strip()
+        product.packaging_levels = packaging_levels
     if product is None:
         product = PharmacyProduct(
             gtin=gtin,
@@ -817,6 +938,8 @@ def create_item(
             unit=payload.unit.strip(),
             minimum_balance=payload.minimum_balance,
             average_balance=payload.average_balance,
+            packaging_purchase_unit=payload.purchase_unit.strip(),
+            packaging_levels=packaging_levels,
             metadata_source="manual",
             source_reference="",
             created_at=now,
@@ -857,6 +980,7 @@ def create_item(
         purchase_quantity=purchase_quantity,
         purchase_unit=purchase_unit,
         units_per_purchase_unit=factor_text,
+        packaging_levels=packaging_levels,
         created_at=now,
     )
     db.add(item)
@@ -868,8 +992,7 @@ def create_item(
             quantity=format_stock_quantity(base_balance),
             balance_after=item.balance,
             reason=(
-                f"Entrada de {purchase_quantity} {purchase_unit} x {factor_text} "
-                f"{product.unit} por embalagem."
+                f"Entrada calculada: {describe_packaging_conversion(purchase_quantity, purchase_unit, packaging_levels, item.balance, product.unit)}."
                 if payload.purchase_quantity
                 else "Saldo inicial informado em unidade de estoque."
             ),
@@ -910,6 +1033,16 @@ def create_purchase_request(
         raise HTTPException(status_code=404, detail="Produto não encontrado no catálogo da Farmácia")
     if product and payload.base_unit.casefold() != product.unit.casefold():
         raise HTTPException(status_code=409, detail="A unidade base deve corresponder ao catálogo do produto")
+    packaging_levels = normalized_packaging_levels(
+        payload.packaging_levels,
+        payload.purchase_unit,
+        payload.base_unit,
+        payload.units_per_purchase_unit,
+    )
+    conversion_factor = packaging_conversion_factor(packaging_levels)
+    if product is not None:
+        product.packaging_purchase_unit = payload.purchase_unit.strip()
+        product.packaging_levels = packaging_levels
     now = datetime.now(UTC)
     request = PurchaseRequest(
         id=str(uuid.uuid4()),
@@ -921,9 +1054,8 @@ def create_purchase_request(
         base_unit=product.unit if product else payload.base_unit,
         purchase_quantity=format_stock_quantity(parse_stock_quantity(payload.purchase_quantity)),
         purchase_unit=payload.purchase_unit,
-        units_per_purchase_unit=format_stock_quantity(
-            parse_stock_quantity(payload.units_per_purchase_unit)
-        ),
+        units_per_purchase_unit=format_stock_quantity(conversion_factor),
+        packaging_levels=packaging_levels,
         received_quantity="0",
         supplier="",
         quoted_unit_price="",
@@ -1005,11 +1137,20 @@ def receive_purchase_request(
             unit=request.base_unit,
             metadata_source="manual",
             source_reference="",
+            packaging_purchase_unit=request.purchase_unit,
+            packaging_levels=request.packaging_levels,
             created_at=now,
         )
         db.add(product)
         db.flush()
         request.product_id = product.id
+    product.packaging_levels = request.packaging_levels or normalized_packaging_levels(
+        None,
+        request.purchase_unit,
+        request.base_unit,
+        request.units_per_purchase_unit,
+    )
+    product.packaging_purchase_unit = request.purchase_unit
 
     location = None
     location_name = payload.storage_location
@@ -1022,7 +1163,13 @@ def receive_purchase_request(
             db.add(location)
             db.flush()
 
-    factor = parse_stock_quantity(request.units_per_purchase_unit)
+    packaging_levels = request.packaging_levels or normalized_packaging_levels(
+        None,
+        request.purchase_unit,
+        request.base_unit,
+        request.units_per_purchase_unit,
+    )
+    factor = packaging_conversion_factor(packaging_levels)
     base_quantity = received * factor
     try:
         validate_base_stock_quantity(base_quantity)
@@ -1040,6 +1187,7 @@ def receive_purchase_request(
         purchase_quantity=format_stock_quantity(received),
         purchase_unit=request.purchase_unit,
         units_per_purchase_unit=format_stock_quantity(factor),
+        packaging_levels=packaging_levels,
         created_at=now,
     )
     db.add(lot)
@@ -1051,8 +1199,8 @@ def receive_purchase_request(
             quantity=format_stock_quantity(base_quantity),
             balance_after=lot.balance,
             reason=(
-                f"Recebimento da solicitação {request.id}: {format_stock_quantity(received)} "
-                f"{request.purchase_unit} x {format_stock_quantity(factor)} {product.unit}."
+                f"Recebimento da solicitação {request.id}: "
+                f"{describe_packaging_conversion(format_stock_quantity(received), request.purchase_unit, packaging_levels, lot.balance, product.unit)}."
             ),
             actor_id=principal.user_id,
             actor_name=principal.actor_name,
@@ -1411,6 +1559,12 @@ def update_product_stock_thresholds(
 
 
 def serialize_item(item: InventoryLot) -> dict[str, object]:
+    packaging_levels = item.packaging_levels or normalized_packaging_levels(
+        None,
+        item.purchase_unit or item.product.unit,
+        item.product.unit,
+        item.units_per_purchase_unit,
+    )
     return {
         "id": item.id,
         "product_id": item.product_id,
@@ -1420,6 +1574,9 @@ def serialize_item(item: InventoryLot) -> dict[str, object]:
         "purchase_quantity": item.purchase_quantity,
         "purchase_unit": item.purchase_unit or item.product.unit,
         "units_per_purchase_unit": item.units_per_purchase_unit,
+        "packaging_levels": packaging_levels,
+        "product_packaging_levels": item.product.packaging_levels or packaging_levels,
+        "product_packaging_unit": item.product.packaging_purchase_unit,
         "lot": item.lot,
         "expiry_date": item.expiry_date.isoformat(),
         "created_at": item.created_at.isoformat(),
@@ -1437,6 +1594,12 @@ def serialize_item(item: InventoryLot) -> dict[str, object]:
 
 
 def serialize_purchase_request(request: PurchaseRequest) -> dict[str, object]:
+    packaging_levels = request.packaging_levels or normalized_packaging_levels(
+        None,
+        request.purchase_unit,
+        request.base_unit,
+        request.units_per_purchase_unit,
+    )
     return {
         "id": request.id,
         "product_id": request.product_id,
@@ -1448,6 +1611,7 @@ def serialize_purchase_request(request: PurchaseRequest) -> dict[str, object]:
         "purchase_quantity": request.purchase_quantity,
         "purchase_unit": request.purchase_unit,
         "units_per_purchase_unit": request.units_per_purchase_unit,
+        "packaging_levels": packaging_levels,
         "received_quantity": request.received_quantity,
         "supplier": request.supplier,
         "quoted_unit_price": request.quoted_unit_price,

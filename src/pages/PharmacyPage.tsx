@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, Camera, CalendarDays, ClipboardList, Package, Pill, Printer, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BookOpen, Camera, CalendarDays, ClipboardList, Package, Pill, Printer, Search, X } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
@@ -12,14 +12,15 @@ import { formatDecimalInput } from '../inputFormatting'
 
 type Patient = { reference: string; name: string; room: string; bed: string; allergies?: string; allergies_status?: 'unknown' | 'none_known' | 'known' }
 type AuthUser = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]> }
-type PharmacyItem = { id: number; product_id: number; item_name: string; balance: string; unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
+type PackagingLevel = { unit: string; units_per_parent: string }
+type PharmacyItem = { id: number; product_id: number; item_name: string; balance: string; unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; packaging_levels: PackagingLevel[]; product_packaging_unit: string; product_packaging_levels: PackagingLevel[]; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
 type AnvisaCatalogSuggestion = { gtin: string; product_name: string; active_ingredient: string; presentation: string; manufacturer: string; registration: string }
 type AnvisaCatalogStatus = { source: string; source_url: string; entry_count: number; imported_at: string | null; source_updated_at: string | null }
 type PharmacyBarcodeLookup = { gtin: string; lot: string | null; expiry_date: string | null; serial: string | null; matches: PharmacyItem[]; catalog_suggestions: AnvisaCatalogSuggestion[]; catalog_imported_at: string | null }
 type PharmacyMovement = { id: number; item_id: number; movement_type: 'opening_balance' | 'entry' | 'issue' | 'adjustment'; quantity: string; balance_after: string; reason: string; actor_name: string; created_at: string }
 type MedicationDispensation = { id: string; patient_reference: string; item_id: number; medication_name: string; quantity: string; unit: string; instructions: string; prescription_reference: string; prescriber_name: string; allergy_reviewed: boolean; prescription_fulfillment_pending?: boolean; status: 'dispensed' | 'cancelled'; actor_name: string; created_at: string }
 type InternalPrescription = { id: string; patient_reference: string; medication_name: string; active_ingredient: string; presentation: string; dose: string; route: string; frequency: string; administration_times: string[]; duration: string; quantity: string; unit: string; instructions: string; is_controlled: boolean; prescriber_name: string; crm: string; crm_state: string; status: 'pending' | 'fulfilled' | 'cancelled'; created_at: string }
-type PurchaseRequest = { id: string; product_id: number | null; item_name: string; category: string; active_ingredient: string; presentation: string; base_unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; received_quantity: string; supplier: string; quoted_unit_price: string; justification: string; status: 'requested' | 'quoted' | 'approved' | 'ordered' | 'received' | 'rejected'; requested_by: string; approved_by: string; received_by: string; created_at: string; updated_at: string }
+type PurchaseRequest = { id: string; product_id: number | null; item_name: string; category: string; active_ingredient: string; presentation: string; base_unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; packaging_levels: PackagingLevel[]; received_quantity: string; supplier: string; quoted_unit_price: string; justification: string; status: 'requested' | 'quoted' | 'approved' | 'ordered' | 'received' | 'rejected'; requested_by: string; approved_by: string; received_by: string; created_at: string; updated_at: string }
 type StockLevel = 'critical' | 'attention' | 'healthy' | 'unconfigured'
 type StockFilter = 'all' | 'expired' | 'expiring' | 'critical' | 'attention'
 type MovementReportFilters = {
@@ -62,7 +63,72 @@ function patientLocationLabel(patient: Pick<Patient, 'room' | 'bed'>) {
   return patient.room.trim() && patient.bed.trim() ? `Quarto ${patient.room} · leito ${patient.bed}` : 'Sem quarto/leito atribuído'
 }
 
-const pharmacyTabs = ['stock', 'inventory', 'dispensation', 'prescriptions', 'reports', 'purchases'] as const
+function prescriptionMatchesLot(prescription: InternalPrescription | undefined, item: PharmacyItem | undefined): boolean {
+  if (!prescription || !item) return false
+  const normalize = (value: string) => value.trim().toLocaleLowerCase('pt-BR')
+  return normalize(prescription.medication_name) === normalize(item.item_name)
+    && normalize(prescription.unit) === normalize(item.unit)
+    && normalize(prescription.presentation) === normalize(item.presentation)
+    && normalize(prescription.active_ingredient) === normalize(item.active_ingredient)
+}
+
+function packagingLevelsForBase(levels: PackagingLevel[], baseUnit: string): PackagingLevel[] {
+  const resolved = levels.length
+    ? levels.map((level) => ({ ...level }))
+    : [{ unit: baseUnit, units_per_parent: '1' }]
+  resolved[resolved.length - 1].unit = baseUnit
+  return resolved
+}
+
+function packagingFactor(levels: PackagingLevel[]): number {
+  return levels.reduce((factor, level) => factor * Number(level.units_per_parent.replace(',', '.')), 1)
+}
+
+function packagingFormula(quantity: string, purchaseUnit: string, levels: PackagingLevel[], baseUnit: string): string {
+  if (!quantity.trim() || !purchaseUnit.trim() || !baseUnit.trim()) return 'Complete a quantidade, a embalagem recebida e a unidade base para visualizar o cálculo.'
+  const amount = Number(quantity.replace(',', '.'))
+  const factor = packagingFactor(levels)
+  if (!Number.isFinite(amount) || !Number.isFinite(factor) || factor <= 0 || !levels.length) return 'Complete a quantidade e os níveis de embalagem para visualizar o cálculo.'
+  const steps = levels.map((level, index) => {
+    const parentUnit = index === 0 ? purchaseUnit : levels[index - 1].unit
+    return `× ${level.units_per_parent || '0'} ${level.unit || 'unidade'} por ${parentUnit || 'embalagem anterior'}`
+  })
+  const result = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(amount * factor)
+  return `${quantity || '0'} ${purchaseUnit || 'embalagem'} ${steps.join(' ')} = ${result} ${baseUnit || 'unidade base'}`
+}
+
+function PackagingConversionEditor({
+  purchaseUnit,
+  baseUnit,
+  receivedQuantity,
+  levels,
+  onChange,
+}: {
+  purchaseUnit: string
+  baseUnit: string
+  receivedQuantity: string
+  levels: PackagingLevel[]
+  onChange: (levels: PackagingLevel[]) => void
+}) {
+  const resolvedLevels = packagingLevelsForBase(levels, baseUnit)
+  return <section className="pharmacy-packaging-editor" aria-label="Conversão das embalagens para a unidade base">
+    <div><strong>Como as embalagens viram saldo de estoque</strong><span>Informe cada embalagem interna e quantas unidades dela cabem na embalagem anterior. A última etapa sempre termina na unidade base.</span></div>
+    {resolvedLevels.map((level, index) => {
+      const isBaseUnit = index === resolvedLevels.length - 1
+      const parentUnit = index === 0 ? purchaseUnit : resolvedLevels[index - 1].unit
+      return <div className="pharmacy-packaging-step" key={`packaging-step-${index}`}>
+        {!isBaseUnit && <label className="field"><span className="field-label">Nome da embalagem interna {index + 1}</span><input required maxLength={24} value={level.unit} onChange={(event) => onChange(resolvedLevels.map((entry, entryIndex) => entryIndex === index ? { ...entry, unit: event.target.value } : entry))} placeholder="Ex.: caixa" /></label>}
+        {isBaseUnit && <div className="pharmacy-packaging-base"><span className="field-label">Unidade base do estoque</span><strong>{baseUnit || 'Informe a unidade base abaixo'}</strong></div>}
+        <label className="field"><span className="field-label">Quantas {level.unit || (isBaseUnit ? 'unidades base' : 'embalagens')} há em cada {parentUnit || 'unidade anterior'}?</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={level.units_per_parent} onChange={(event) => onChange(resolvedLevels.map((entry, entryIndex) => entryIndex === index ? { ...entry, units_per_parent: formatDecimalInput(event.target.value) } : entry))} /></label>
+        {!isBaseUnit && <button className="button button-secondary pharmacy-packaging-remove" type="button" aria-label={`Remover nível ${level.unit || index + 1}`} onClick={() => onChange(resolvedLevels.filter((_, entryIndex) => entryIndex !== index))}>Remover nível</button>}
+      </div>
+    })}
+    {resolvedLevels.length < 5 && <button className="button button-secondary" type="button" onClick={() => onChange([...resolvedLevels.slice(0, -1), { unit: '', units_per_parent: '1' }, resolvedLevels[resolvedLevels.length - 1]])}>Adicionar nível de embalagem</button>}
+    <div className="pharmacy-packaging-formula" aria-live="polite"><span>Conferência da conta</span><strong>{packagingFormula(receivedQuantity, purchaseUnit, resolvedLevels, baseUnit)}</strong></div>
+  </section>
+}
+
+const pharmacyTabs = ['stock', 'inventory', 'dispensation', 'prescriptions', 'reports', 'purchases', 'guide'] as const
 const pharmacyTabLabels: Record<(typeof pharmacyTabs)[number], string> = {
   stock: 'Movimentações',
   inventory: 'Estoque geral A–Z',
@@ -70,6 +136,7 @@ const pharmacyTabLabels: Record<(typeof pharmacyTabs)[number], string> = {
   prescriptions: 'Prescrições médicas',
   reports: 'Relatórios',
   purchases: 'Compras e suprimentos',
+  guide: 'Como funciona',
 }
 const movementTypeLabels: Record<PharmacyMovement['movement_type'], string> = {
   opening_balance: 'Saldo inicial legado',
@@ -146,7 +213,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const setMovementForm = (value: { movement_type: 'entry' | 'issue' | 'adjustment'; quantity: string; reason: string }) =>
     setMovementFormState({ ...value, quantity: formatDecimalInput(value.quantity) })
   const [movementSaving, setMovementSaving] = useState(false)
-  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+  const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: '', packaging_levels: [] as PackagingLevel[], unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [labelItem, setLabelItem] = useState<PharmacyItem | null>(null)
   const [labelWidth, setLabelWidth] = useState('50')
   const [labelHeight, setLabelHeight] = useState('30')
@@ -188,19 +255,23 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         ...current,
         barcode: result.gtin,
         catalog_registration: '',
+        pharmacy_registration_confirmed: false,
         ...(clearOldAutofill && current.barcode.trim() !== result.gtin ? {
           item_name: '',
           category: 'Medicamento',
           active_ingredient: '',
           presentation: '',
           unit: '',
+          packaging_levels: [],
         } : {}),
         ...(result.matches[0] ? {
           item_name: result.matches[0].item_name,
           category: result.matches[0].category,
           active_ingredient: result.matches[0].active_ingredient,
           presentation: result.matches[0].presentation,
+          purchase_unit: result.matches[0].product_packaging_unit,
           unit: result.matches[0].unit,
+          packaging_levels: packagingLevelsForBase(result.matches[0].product_packaging_levels, result.matches[0].unit),
           catalog_registration: '',
         } : {}),
         ...(result.lot ? { lot: result.lot } : {}),
@@ -263,11 +334,15 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     setForm((current) => ({
       ...current,
       barcode: suggestion.gtin,
+      pharmacy_registration_confirmed: false,
       item_name: suggestion.product_name,
       category: 'Medicamento',
       active_ingredient: suggestion.active_ingredient,
       presentation: suggestion.presentation,
       catalog_registration: suggestion.registration,
+      purchase_unit: '',
+      unit: '',
+      packaging_levels: [],
     }))
     setNotice('Sugestão Anvisa aplicada ao rascunho. Confira produto, apresentação, unidade, lote e validade antes de cadastrar.')
   }
@@ -282,12 +357,14 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       ...current,
       barcode: code,
       catalog_registration: '',
+      pharmacy_registration_confirmed: false,
       ...(replaceAutofilledProduct ? {
         item_name: '',
         category: 'Medicamento',
         active_ingredient: '',
         presentation: '',
         unit: '',
+        packaging_levels: [],
       } : {}),
     }))
   }
@@ -528,10 +605,12 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     event.preventDefault()
     setSaving(true); setError(''); setNotice('')
     try {
-      const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: null, purchase_quantity: form.purchase_quantity.replace(',', '.'), purchase_unit: form.purchase_unit.trim(), units_per_purchase_unit: form.units_per_purchase_unit.replace(',', '.'), unit: form.unit.trim(), lot: form.lot.trim() }) })
+      const levels = packagingLevelsForBase(form.packaging_levels, form.unit.trim())
+      const conversion = packagingFactor(levels)
+      const response = await fetch('/api/v1/pharmacy/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, item_name: form.item_name.trim(), balance: null, purchase_quantity: form.purchase_quantity.replace(',', '.'), purchase_unit: form.purchase_unit.trim(), packaging_levels: levels.map((level) => ({ ...level, units_per_parent: level.units_per_parent.replace(',', '.') })), units_per_purchase_unit: String(conversion), unit: form.unit.trim(), lot: form.lot.trim() }) })
       const data = await readApiResponse<PharmacyItem>(response)
       setItems((current) => [...current, data].sort((a, b) => a.item_name.localeCompare(b.item_name, 'pt-BR')))
-      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
+      setForm({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: '', packaging_levels: [], unit: '', lot: '', expiry_date: '', supplier: '', storage_location: '' })
       lastBarcodeLookupRef.current = ''
       barcodeProductAutofillRef.current = false
       setShowForm(false)
@@ -586,6 +665,13 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
 
   const dispensePatient = patients.find((patient) => patient.reference === dispenseForm.patient_reference)
   const selectedDispenseLot = items.find((item) => String(item.id) === dispenseForm.item_id)
+  const selectedDispensePrescription = prescriptions.find(
+    (prescription) => prescription.id === dispenseForm.prescription_reference,
+  )
+  const prescriptionMatchesSelectedLot = prescriptionMatchesLot(
+    selectedDispensePrescription,
+    selectedDispenseLot,
+  )
 
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
   const soonDate = new Date(`${today}T12:00:00`)
@@ -664,7 +750,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     `${product.item_name} ${product.active_ingredient} ${product.presentation} ${product.category} ${product.lots.map((lot) => `${lot.lot} ${lot.storage_location}`).join(' ')}`
       .toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')),
   )
-  const pharmacyPrintRows: PrintRow[] = reportStockItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Entrada original', `${item.purchase_quantity} ${item.purchase_unit} × ${item.units_per_purchase_unit} ${item.unit}`], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
+  const pharmacyPrintRows: PrintRow[] = reportStockItems.map((item) => ({ id: String(item.id), date: item.created_at, title: item.item_name, fields: [['Categoria', item.category], ['Princípio ativo', item.active_ingredient], ['Apresentação', item.presentation], ['Saldo', `${item.balance} ${item.unit}`], ['Entrada original', packagingFormula(item.purchase_quantity, item.purchase_unit, item.packaging_levels, item.unit)], ['Lote', item.lot], ['Validade', item.expiry_date], ['Código de barras', item.barcode], ['Localização', item.storage_location], ['Fornecedor', item.supplier]] }))
   const movementReportPrintRows: PrintRow[] = reportMovements.map((movement) => {
     const item = items.find((candidate) => candidate.id === movement.item_id)
     return {
@@ -680,8 +766,9 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       ],
     }
   })
+  const conversionLevels = packagingLevelsForBase(form.packaging_levels, form.unit)
   const requestedPackages = Number(form.purchase_quantity.replace(',', '.'))
-  const unitsPerPackage = Number(form.units_per_purchase_unit.replace(',', '.'))
+  const unitsPerPackage = packagingFactor(conversionLevels)
   const convertedBalance = requestedPackages * unitsPerPackage
   const labelWidthValue = Number(labelWidth)
   const labelHeightValue = Number(labelHeight)
@@ -709,7 +796,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   }
 
   return <section className={`pharmacy-page page-enter${mobileMode ? ' pharmacy-page-mobile' : ''}`}>
-    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
+    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : pharmacyTab === 'guide' ? 'Como funcionam as unidades e os medicamentos' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : pharmacyTab === 'guide' ? 'Entenda a conta do estoque e a diferença entre embalagem, dispensação, prescrição e administração.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
     <ModuleTabNavigation
       className="pharmacy-tabs"
       ariaLabel="Seções da Farmácia"
@@ -733,6 +820,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
               ? <><ClipboardList size={16} /> {pharmacyTabLabels[value]}</>
             : value === 'purchases'
               ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
+              : value === 'guide'
+                ? <><BookOpen size={16} /> {pharmacyTabLabels[value]}</>
               : <><ArrowRight size={16} /> {pharmacyTabLabels[value]}</>,
       }))}
     />
@@ -821,7 +910,9 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       <div className="section-heading"><div><p className="eyebrow">FILA DA FARMÁCIA</p><h2>Prescrições internas pendentes</h2><p className="welcome-copy">A prescrição só é marcada como atendida após registrar a dispensação e debitar o lote.</p></div><span className="module-total">{prescriptions.length} pendente(s)</span></div>
       {prescriptions.length ? <div className="patient-list">{prescriptions.map((prescription) => {
         const patient = patients.find((candidate) => candidate.reference === prescription.patient_reference)
-        const matchingLot = eligibleMedicationLots.find((item) => item.item_name.trim().toLocaleLowerCase('pt-BR') === prescription.medication_name.trim().toLocaleLowerCase('pt-BR'))
+        const matchingLot = eligibleMedicationLots.find((item) =>
+          prescriptionMatchesLot(prescription, item),
+        )
         return <article className="patient-list-row" key={prescription.id}>
           <div><strong>{prescription.medication_name}{prescription.presentation ? ` · ${prescription.presentation}` : ''}</strong><p>{patient?.name ?? 'Paciente não localizado'} · {patient ? patientLocationLabel(patient) : ''}</p><p>{prescription.dose} · {prescription.route} · {prescription.frequency} · {prescription.duration} · {prescription.quantity} {prescription.unit}</p>{prescription.administration_times.length > 0 && <p>Horários definidos pelo prescritor: {prescription.administration_times.join(' · ')}</p>}<small>{prescription.prescriber_name} · CRM {prescription.crm}/{prescription.crm_state}{prescription.is_controlled ? ' · medicamento controlado' : ''}</small>{prescription.instructions && <small>{prescription.instructions}</small>}</div>
           <button className="button button-primary" type="button" disabled={!patient} onClick={() => {
@@ -829,13 +920,13 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
             setDispenseForm({
               patient_reference: prescription.patient_reference,
               item_id: matchingLot ? String(matchingLot.id) : '',
-              quantity: prescription.quantity,
+              quantity: matchingLot ? prescription.quantity : '',
               instructions: `${prescription.dose} · ${prescription.route} · ${prescription.frequency} · ${prescription.duration}${prescription.instructions ? ` · ${prescription.instructions}` : ''}`.slice(0, 500),
               prescription_reference: prescription.id,
               prescriber_name: prescription.prescriber_name,
               allergy_reviewed: false,
             })
-            setNotice(matchingLot ? 'Confira dose, quantidade, lote e alergias antes de dispensar.' : 'Não há lote válido com o mesmo nome. Escolha o medicamento/lote compatível antes de dispensar.')
+            setNotice(matchingLot ? 'Confira dose, quantidade, lote e alergias antes de dispensar.' : 'Não há lote válido com medicamento, apresentação, princípio ativo e unidades exatamente iguais à prescrição. Confira os dados; a quantidade não foi convertida.')
             setError('')
           }}>Preparar dispensação</button>
         </article>
@@ -845,20 +936,35 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       <div className="section-heading"><div><p className="eyebrow">SAÍDA ASSISTENCIAL</p><h2>Dispensar para paciente</h2><p className="welcome-copy">Registre a prescrição, confirme as alergias e selecione o lote dispensado. A Enfermagem receberá a quantidade e poderá registrar administrações parciais vinculadas à mesma dispensação.</p></div></div>
       <form className="field-grid field-grid-two" onSubmit={(event) => void submitDispensation(event)}>
         <PatientSelect label="Paciente" patients={patients} value={dispenseForm.patient_reference} onChange={(reference) => setDispenseForm({ ...dispenseForm, patient_reference: reference, prescription_reference: '', prescriber_name: '', instructions: '', allergy_reviewed: false })} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} />
-        <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => setDispenseForm({ ...dispenseForm, item_id: event.target.value })}><option value="">Selecione lote válido</option>{eligibleMedicationLots.map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot}{suggestedFefoLotIds.has(item.id) ? ' · sugestão FEFO' : ''} · saldo {item.balance} {item.unit}</option>)}</select><span className="field-hint">A sugestão FEFO indica o lote válido com vencimento mais próximo por produto; a seleção permanece manual e deve seguir a política da instituição.</span></label>
-        <label className="field"><span className="field-label">Quantidade ({selectedDispenseLot?.unit || 'unidade do lote'})</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: formatDecimalInput(event.target.value) })} /><span className="field-hint">Informe a quantidade entregue nesta unidade. O mesmo total fica disponível para registro de doses parciais na Enfermagem.</span></label>
+        <label className="field"><span className="field-label">Medicamento e lote</span><select required value={dispenseForm.item_id} onChange={(event) => {
+          const nextLot = eligibleMedicationLots.find((candidate) => String(candidate.id) === event.target.value)
+          const matches = prescriptionMatchesLot(selectedDispensePrescription, nextLot)
+          setDispenseForm((current) => ({
+            ...current,
+            item_id: event.target.value,
+            quantity: selectedDispensePrescription
+              ? matches
+                ? current.quantity || selectedDispensePrescription.quantity
+                : ''
+              : current.quantity,
+          }))
+        }}><option value="">Selecione lote válido</option>{eligibleMedicationLots.map((item) => <option key={item.id} value={item.id}>{item.item_name} · Lote {item.lot}{suggestedFefoLotIds.has(item.id) ? ' · sugestão FEFO' : ''} · saldo {item.balance} {item.unit}</option>)}</select><span className="field-hint">A sugestão FEFO indica o lote válido com vencimento mais próximo por produto; a seleção permanece manual e deve seguir a política da instituição.</span></label>
+        <label className="field"><span className="field-label">Quantidade ({selectedDispenseLot?.unit || 'unidade do lote'})</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={dispenseForm.quantity} onChange={(event) => setDispenseForm({ ...dispenseForm, quantity: formatDecimalInput(event.target.value) })} /><span className="field-hint">Informe a quantidade entregue nesta unidade. O total fica disponível para registro na Enfermagem; o sistema não converte a dose prescrita.</span></label>
         <label className="field"><span className="field-label">Prescrição pendente</span><select required value={dispenseForm.prescription_reference} onChange={(event) => {
           const prescription = prescriptions.find((item) => item.id === event.target.value)
           setDispenseForm((current) => ({
             ...current,
             prescription_reference: prescription?.id ?? '',
             patient_reference: prescription?.patient_reference ?? current.patient_reference,
-            quantity: prescription?.quantity ?? current.quantity,
+            quantity: prescription && prescriptionMatchesLot(prescription, selectedDispenseLot)
+              ? prescription.quantity
+              : '',
             prescriber_name: prescription?.prescriber_name ?? '',
             instructions: prescription ? `${prescription.dose} · ${prescription.route} · ${prescription.frequency} · ${prescription.duration}${prescription.instructions ? ` · ${prescription.instructions}` : ''}`.slice(0, 500) : '',
             allergy_reviewed: false,
           }))
         }}><option value="">Selecione uma prescrição pendente</option>{prescriptions.filter((item) => item.patient_reference === dispenseForm.patient_reference || !dispenseForm.patient_reference).map((item) => <option key={item.id} value={item.id}>{item.medication_name} · {patients.find((patient) => patient.reference === item.patient_reference)?.name ?? 'Paciente'} · {item.prescriber_name}</option>)}</select></label>
+        {selectedDispensePrescription && selectedDispenseLot && !prescriptionMatchesSelectedLot && <div className="pharmacy-dispensation-safety" role="alert"><AlertTriangle size={19} /><div><strong>Produto, apresentação ou unidade divergente; quantidade não preenchida automaticamente.</strong><p>Confira a prescrição ({selectedDispensePrescription.medication_name}{selectedDispensePrescription.presentation ? ` · ${selectedDispensePrescription.presentation}` : ''} · {selectedDispensePrescription.quantity} {selectedDispensePrescription.unit}) e o lote ({selectedDispenseLot.item_name}{selectedDispenseLot.presentation ? ` · ${selectedDispenseLot.presentation}` : ''} · unidade {selectedDispenseLot.unit}). A interface não presume equivalência nem converte dose clínica.</p></div></div>}
         <label className="field"><span className="field-label">Profissional prescritor</span><input required minLength={2} maxLength={120} value={dispenseForm.prescriber_name} readOnly /></label>
         <label className="field"><span className="field-label">Instruções para administração (conforme prescrição)</span><input maxLength={500} value={dispenseForm.instructions} onChange={(event) => setDispenseForm({ ...dispenseForm, instructions: event.target.value })} /></label>
         {dispensePatient && <PatientAllergyAlert patient={dispensePatient} />}
@@ -870,6 +976,12 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       {!!dispensations.length && <div className="pharmacy-dispensation-list"><h3>Dispensações aguardando registro da Enfermagem</h3>{dispensations.map((item) => <article key={item.id}><strong>{patients.find((patient) => patient.reference === item.patient_reference)?.name ?? 'Paciente vinculado'} · {item.medication_name}</strong><span>{item.quantity} {item.unit} · prescrição {item.prescription_reference} · {dateTime(item.created_at)}</span></article>)}</div>}
     </section>}
     {pharmacyTab === 'purchases' && canManagePurchases && <PurchaseRequestsPanel user={user} items={items} onReceived={() => void loadItems(0)} />}
+    {pharmacyTab === 'guide' && <section className="patient-list-panel pharmacy-explanation" aria-labelledby="pharmacy-explanation-title">
+      <div className="section-heading"><div><p className="eyebrow">GUIA DE REFERÊNCIA</p><h2 id="pharmacy-explanation-title">Embalagens, estoque e cuidado com medicamentos</h2><p className="welcome-copy">A embalagem ajuda a contar o estoque. Ela não define a dose do paciente.</p></div></div>
+      <article><h3>1. Como a embalagem vira saldo</h3><p>Escolha uma unidade para controlar e informe cada nível de embalagem, do maior para o menor. Em cada etapa, diga quantas unidades menores cabem em uma unidade maior. O sistema multiplica os fatores e mostra a conta antes de salvar.</p><div className="pharmacy-packaging-example"><strong>Exemplo</strong><span>3 caixas externas × 4 caixas internas por caixa externa × 10 comprimidos por caixa interna = 120 comprimidos em estoque.</span><small>O saldo fica em comprimidos; a fórmula usada também fica registrada no lote para explicar a entrada mais tarde.</small></div><p>Para frascos, ampolas, materiais ou itens sem embalagens internas, use apenas os níveis necessários. Confira a apresentação recebida; o código de barras, o QR e a descrição do catálogo não preenchem quantidades automaticamente.</p></article>
+      <article><h3>2. O que cada etapa registra</h3><ul><li><strong>Recebimento:</strong> número de embalagens e lote/validade; a conversão calcula apenas o saldo na unidade base.</li><li><strong>Dispensação:</strong> produto e lote são conferidos e a quantidade fica na unidade de estoque mostrada no sistema.</li><li><strong>Prescrição:</strong> dose, via, frequência e horários vêm do prescritor; embalagem não pode inferi-los nem alterá-los.</li><li><strong>Administração:</strong> a Enfermagem consulta a prescrição vinculada e registra a quantidade efetivamente administrada na unidade apresentada. Conversão clínica e tratamento informatizado de recusa, suspensão ou dose parcial dependem de fluxo institucional validado e não são deduzidos pela embalagem.</li></ul></article>
+      <article><h3>3. Conversão clínica não é conversão de embalagem</h3><p>Uma caixa com 20 comprimidos permite calcular o estoque de comprimidos, mas não permite concluir quantos miligramas foram prescritos ou qual dose deve ser administrada. Converter entre mg, mL, comprimido ou outra unidade clínica exige apresentação/concentração exata e regra aprovada pela instituição. O sistema não calcula doses, não cria horários e não substitui conferência clínica.</p></article>
+    </section>}
     {pharmacyTab === 'stock' && <>
     {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2><p className="welcome-copy">Mantenha saldo, movimentações, dispensações e administrações na mesma unidade de estoque.</p></div></div>
@@ -904,15 +1016,19 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         <label className="field"><span className="field-label">Registro informado pela fonte</span><input maxLength={32} value={form.catalog_registration} readOnly placeholder="Preenchido ao aplicar sugestão Anvisa" /><span className="field-hint">Referência informativa da sugestão; confirme os dados na fonte oficial.</span></label>
         <label className="field pharmacy-quantity-field"><span className="field-label">Quantidade de embalagens recebidas</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.purchase_quantity} onChange={(event) => setForm({ ...form, purchase_quantity: formatDecimalInput(event.target.value) })} placeholder="Ex.: 10" /><span className="field-hint">Informe quantas embalagens deste lote foram recebidas.</span></label>
         <label className="field"><span className="field-label">Unidade de compra</span><input required maxLength={24} list="pharmacy-units" value={form.purchase_unit} onChange={(event) => setForm({ ...form, purchase_unit: event.target.value })} placeholder="Ex.: caixa" /><datalist id="pharmacy-units"><option value="unidade" /><option value="comprimido" /><option value="cápsula" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /><option value="caixa" /></datalist></label>
-        <label className="field"><span className="field-label">Unidades de estoque em cada embalagem</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.units_per_purchase_unit} onChange={(event) => setForm({ ...form, units_per_purchase_unit: formatDecimalInput(event.target.value) })} placeholder="Ex.: 20 comprimidos por caixa" /></label>
-        <label className="field"><span className="field-label">Unidade mínima movimentada e dispensada</span><input required maxLength={24} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="Ex.: comprimido, frasco, mL" /><span className="field-hint">O fator converte a embalagem para esta unidade base. Exemplo: 10 caixas × 20 comprimidos = 200 comprimidos no saldo, permitindo dispensar 1 comprimido.</span></label>
-        <div className="pharmacy-opening-balance" aria-live="polite"><span>Saldo inicial calculado</span><strong>{Number.isFinite(convertedBalance) ? convertedBalance : '—'} {form.unit || 'unidade base'}</strong><small>Embalagens recebidas × unidades por embalagem. O servidor valida e registra esse saldo.</small></div>
+        <label className="field"><span className="field-label">Unidade base do estoque</span><input required maxLength={24} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value, packaging_levels: packagingLevelsForBase(form.packaging_levels, event.target.value) })} placeholder="Ex.: comprimido, frasco, mL" /><span className="field-hint">É a unidade usada para registrar saldo, movimentações e dispensações. Ela não determina a dose prescrita.</span></label>
+        <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} />
+        <div className="pharmacy-opening-balance" aria-live="polite"><span>Saldo inicial calculado</span><strong>{Number.isFinite(convertedBalance) ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(convertedBalance) : '—'} {form.unit || 'unidade base'}</strong><small>Confira os fatores e as unidades; o servidor valida e registra a conversão no lote.</small></div>
         <label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label>
         <label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label>
         <label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label>
         <label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label>
+        <label className="pharmacy-allergy-confirm">
+          <input type="checkbox" required checked={form.pharmacy_registration_confirmed} onChange={(event) => setForm({ ...form, pharmacy_registration_confirmed: event.target.checked })} />
+          <span><strong>Conferência responsável pela Farmácia</strong><small>Confirmo que conferi produto, princípio ativo, apresentação, unidade, embalagem, lote, validade, quantidade e dados do responsável antes de registrar.</small></span>
+        </label>
       </div>
-      <div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div>
+      <div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving || !form.pharmacy_registration_confirmed}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div>
     </form>}
     <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
       {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => {
@@ -926,7 +1042,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           <h3>{item.item_name}</h3>
           <p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p>
           <div className="pharmacy-stock"><strong>{item.balance}</strong><span>{item.unit}{low && product ? ` · disponível no produto: ${product.available_balance.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${item.unit} (mínimo ${product.minimum_balance})` : ''}</span></div>
-          <div className="pharmacy-item-meta"><span><small>Entrada</small><strong>{item.purchase_quantity} {item.purchase_unit} × {item.units_per_purchase_unit} {item.unit}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div>
+          <div className="pharmacy-item-meta"><span><small>Entrada · conta registrada</small><strong>{packagingFormula(item.purchase_quantity, item.purchase_unit, item.packaging_levels, item.unit)}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(new Date(`${item.expiry_date}T00:00:00Z`))}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div>
           {!mobileMode && <button className="button button-secondary pharmacy-label-button" type="button" onClick={() => setLabelItem(item)}><Printer size={16} /> Imprimir etiquetas</button>}
           <button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Movimentar estoque'}</button>
           {movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada</option><option value="issue">Saída / dispensação</option><option value="adjustment">Ajuste de inventário</option></select></label><label className="field"><span className="field-label">Quantidade ({item.unit}) {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /><span className="field-hint">Use a mesma unidade do saldo deste lote: {item.unit}.</span></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: dispensação, recebimento da nota fiscal" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : 'Registrar movimentação'}</button></form>}
@@ -976,7 +1092,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
 
 function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; items: PharmacyItem[]; onReceived: () => void }) {
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
-  const [form, setForm] = useState({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', justification: '' })
+  const [form, setForm] = useState({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: '', purchase_quantity: '', purchase_unit: '', packaging_levels: [] as PackagingLevel[], justification: '' })
   const [quotes, setQuotes] = useState<Record<string, { supplier: string; price: string }>>({})
   const [receipts, setReceipts] = useState<Record<string, { lot: string; expiry_date: string; quantity: string; storage_location: string }>>({})
   const [loading, setLoading] = useState(true)
@@ -1006,6 +1122,8 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
   async function createRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError(''); setNotice('')
     try {
+      const levels = packagingLevelsForBase(form.packaging_levels, form.base_unit.trim())
+      const conversion = packagingFactor(levels)
       const response = await fetch('/api/v1/pharmacy/purchase-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1013,12 +1131,13 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
           ...form,
           product_id: form.product_id ? Number(form.product_id) : null,
           purchase_quantity: form.purchase_quantity.replace(',', '.'),
-          units_per_purchase_unit: form.units_per_purchase_unit.replace(',', '.'),
+          units_per_purchase_unit: String(conversion),
+          packaging_levels: levels.map((level) => ({ ...level, units_per_parent: level.units_per_parent.replace(',', '.') })),
         }),
       })
       const created = await readApiResponse<PurchaseRequest>(response)
       setRequests((current) => [created, ...current])
-      setForm({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: '', purchase_quantity: '', purchase_unit: '', units_per_purchase_unit: '1', justification: '' })
+      setForm({ product_id: '', item_name: '', category: 'Medicamento', active_ingredient: '', presentation: '', base_unit: '', purchase_quantity: '', purchase_unit: '', packaging_levels: [], justification: '' })
       setNotice('Solicitação enviada para cotação e aprovação.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível criar a solicitação.')
@@ -1072,14 +1191,15 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
     {canCreate && <form className="account-create-panel" onSubmit={(event) => void createRequest(event)}>
       <h3>Nova solicitação</h3>
       <div className="field-grid field-grid-two">
-        <label className="field"><span className="field-label">Produto cadastrado (opcional)</span><select value={form.product_id} onChange={(event) => { const item = products.find((product) => String(product.product_id) === event.target.value); setForm((current) => ({ ...current, product_id: event.target.value, ...(item ? { item_name: item.item_name, category: item.category, active_ingredient: item.active_ingredient, presentation: item.presentation, base_unit: item.unit } : {}) })) }}><option value="">Novo produto</option>{products.map((item) => <option key={item.product_id} value={item.product_id}>{item.item_name} · base: {item.unit}</option>)}</select></label>
+        <label className="field"><span className="field-label">Produto cadastrado (opcional)</span><select value={form.product_id} onChange={(event) => { const item = products.find((product) => String(product.product_id) === event.target.value); setForm((current) => ({ ...current, product_id: event.target.value, ...(item ? { item_name: item.item_name, category: item.category, active_ingredient: item.active_ingredient, presentation: item.presentation, base_unit: item.unit, purchase_unit: item.product_packaging_unit, packaging_levels: packagingLevelsForBase(item.product_packaging_levels, item.unit) } : { purchase_unit: '', packaging_levels: [] }) })) }}><option value="">Novo produto</option>{products.map((item) => <option key={item.product_id} value={item.product_id}>{item.item_name} · base: {item.unit}</option>)}</select></label>
         <label className="field"><span className="field-label">Nome do produto</span><input required minLength={2} maxLength={120} value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} /></label>
-        {!form.product_id && <><label className="field"><span className="field-label">Categoria</span><input required minLength={2} maxLength={40} value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></label><label className="field"><span className="field-label">Unidade base do estoque</span><input required maxLength={24} value={form.base_unit} onChange={(event) => setForm({ ...form, base_unit: event.target.value })} placeholder="Comprimido, mL, unidade..." /></label></>}
+        {!form.product_id && <><label className="field"><span className="field-label">Categoria</span><input required minLength={2} maxLength={40} value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></label><label className="field"><span className="field-label">Unidade base do estoque</span><input required maxLength={24} value={form.base_unit} onChange={(event) => setForm({ ...form, base_unit: event.target.value, packaging_levels: packagingLevelsForBase(form.packaging_levels, event.target.value) })} placeholder="Comprimido, mL, unidade..." /></label></>}
         <label className="field"><span className="field-label">Princípio ativo (opcional)</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} /></label>
         <label className="field"><span className="field-label">Apresentação (opcional)</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} /></label>
         <label className="field"><span className="field-label">Quantidade solicitada</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={form.purchase_quantity} onChange={(event) => setForm({ ...form, purchase_quantity: formatDecimalInput(event.target.value) })} /></label>
         <label className="field"><span className="field-label">Unidade comprada</span><input required maxLength={24} value={form.purchase_unit} onChange={(event) => setForm({ ...form, purchase_unit: event.target.value })} placeholder="Caixa, frasco, pacote..." /></label>
-        <label className="field"><span className="field-label">Unidades base por embalagem</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" value={form.units_per_purchase_unit} onChange={(event) => setForm({ ...form, units_per_purchase_unit: formatDecimalInput(event.target.value) })} /><span className="field-hint">Ex.: 20 comprimidos por caixa.</span></label>
+        <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.base_unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} />
+        <div className="pharmacy-packaging-example"><strong>Conversão solicitada</strong><span>{packagingFormula(form.purchase_quantity, form.purchase_unit, packagingLevelsForBase(form.packaging_levels, form.base_unit), form.base_unit)}</span><small>A mesma hierarquia será preservada no pedido e aplicada aos recebimentos por lote.</small></div>
         <label className="field"><span className="field-label">Justificativa da compra</span><textarea required minLength={5} maxLength={500} value={form.justification} onChange={(event) => setForm({ ...form, justification: event.target.value })} /></label>
       </div>
       <button className="button button-primary" type="submit" disabled={saving || !form.base_unit.trim()}>{saving ? 'Enviando…' : 'Enviar para cotação'}</button>
@@ -1088,7 +1208,7 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
       const receipt = receipts[request.id] ?? { lot: '', expiry_date: '', quantity: '', storage_location: '' }
       const remaining = Math.max(0, Number(request.purchase_quantity.replace(',', '.')) - Number(request.received_quantity.replace(',', '.')))
       return <article className="collection-row" key={request.id}>
-        <div className="collection-row-heading"><strong>{request.item_name} · {request.purchase_quantity} {request.purchase_unit} × {request.units_per_purchase_unit} {request.base_unit}</strong><span className={`work-order-status status-${request.status === 'received' ? 'completed' : request.status === 'rejected' ? 'cancelled' : request.status === 'requested' ? 'open' : 'in_progress'}`}>{purchaseStatusLabels[request.status]}</span></div>
+        <div className="collection-row-heading"><strong>{request.item_name} · {packagingFormula(request.purchase_quantity, request.purchase_unit, request.packaging_levels, request.base_unit)}</strong><span className={`work-order-status status-${request.status === 'received' ? 'completed' : request.status === 'rejected' ? 'cancelled' : request.status === 'requested' ? 'open' : 'in_progress'}`}>{purchaseStatusLabels[request.status]}</span></div>
         <p>{request.justification}</p>
         <small>Solicitado por {request.requested_by} · {dateTime(request.created_at)}{request.supplier ? ` · Fornecedor ${request.supplier}` : ''}{request.quoted_unit_price ? ` · Cotação ${request.quoted_unit_price} por ${request.purchase_unit}` : ''}</small>
         {canManage && request.status === 'requested' && <form className="field-grid field-grid-two" onSubmit={(event) => { event.preventDefault(); void changeStatus(request, 'quoted') }}><label className="field"><span className="field-label">Fornecedor cotado</span><input required minLength={2} maxLength={120} value={quotes[request.id]?.supplier ?? ''} onChange={(event) => setQuotes((current) => ({ ...current, [request.id]: { supplier: event.target.value, price: current[request.id]?.price ?? '' } }))} /></label><label className="field"><span className="field-label">Preço por embalagem</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,2})?" value={quotes[request.id]?.price ?? ''} onChange={(event) => setQuotes((current) => ({ ...current, [request.id]: { supplier: current[request.id]?.supplier ?? '', price: formatDecimalInput(event.target.value) } }))} /></label><button className="button button-secondary" type="submit" disabled={saving}>Registrar cotação</button></form>}
@@ -1099,6 +1219,7 @@ function PurchaseRequestsPanel({ user, items, onReceived }: { user: AuthUser; it
           <label className="field"><span className="field-label">Lote recebido</span><input required maxLength={80} value={receipt.lot} onChange={(event) => setReceipts((current) => ({ ...current, [request.id]: { ...receipt, lot: event.target.value } }))} /></label>
           <label className="field"><span className="field-label">Validade do lote</span><input required type="date" value={receipt.expiry_date} onChange={(event) => setReceipts((current) => ({ ...current, [request.id]: { ...receipt, expiry_date: event.target.value } }))} /></label>
           <label className="field"><span className="field-label">Quantidade recebida ({request.purchase_unit})</span><input required inputMode="decimal" max={remaining} pattern="[0-9]+([.,][0-9]{1,3})?" value={receipt.quantity} onChange={(event) => setReceipts((current) => ({ ...current, [request.id]: { ...receipt, quantity: formatDecimalInput(event.target.value) } }))} /></label>
+          <div className="pharmacy-packaging-example"><strong>Saldo que será adicionado neste lote</strong><span>{packagingFormula(receipt.quantity, request.purchase_unit, request.packaging_levels, request.base_unit)}</span></div>
           <label className="field"><span className="field-label">Localização (opcional)</span><input maxLength={80} value={receipt.storage_location} onChange={(event) => setReceipts((current) => ({ ...current, [request.id]: { ...receipt, storage_location: event.target.value } }))} /></label>
           <button className="button button-primary" type="submit" disabled={saving}>{saving ? 'Recebendo…' : 'Receber no estoque por lote'}</button>
         </form>}

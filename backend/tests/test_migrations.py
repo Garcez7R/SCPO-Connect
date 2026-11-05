@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -230,6 +232,12 @@ def test_each_service_migration_creates_only_its_owned_table(
         }
         assert {"product_id", "location_id"} <= {
             column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")
+        }
+        assert {"packaging_levels"} <= {
+            column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")
+        }
+        assert {"packaging_levels", "packaging_purchase_unit"} <= {
+            column["name"] for column in inspect(get_engine(service)).get_columns("pharmacy_products")
         }
     elif service == "xray":
         assert len(tables) == 3
@@ -608,8 +616,12 @@ def test_administrative_operations_migration_downgrades_cleanly(
             "purchase_quantity",
             "purchase_unit",
             "units_per_purchase_unit",
+            "packaging_levels",
         }.isdisjoint(
             {column["name"] for column in inspector.get_columns("inventory_items")}
+        )
+        assert {"packaging_levels", "packaging_purchase_unit"}.isdisjoint(
+            {column["name"] for column in inspector.get_columns("pharmacy_products")}
         )
     clear_engine_cache()
 
@@ -679,6 +691,14 @@ def test_pharmacy_migration_records_existing_stock_as_legacy_baseline(
         ).one()
         foreign_keys = inspect(get_engine("pharmacy")).get_foreign_keys("inventory_items")
         columns = {column["name"] for column in inspect(get_engine("pharmacy")).get_columns("inventory_items")}
+        packaging = connection.execute(
+            text(
+                "SELECT i.packaging_levels, p.packaging_levels, i.units_per_purchase_unit, "
+                "p.packaging_purchase_unit "
+                "FROM inventory_items i JOIN pharmacy_products p ON p.id=i.product_id "
+                "WHERE i.lot='L-01'"
+            )
+        ).one()
     assert product == (
         "07891106000956",
         "Soro",
@@ -690,6 +710,12 @@ def test_pharmacy_migration_records_existing_stock_as_legacy_baseline(
         "10",
     )
     assert {"product_id", "location_id"} <= columns
+    lot_levels = json.loads(packaging[0])
+    assert lot_levels == [
+        {"unit": "frasco", "units_per_parent": packaging[2]}
+    ]
+    assert json.loads(packaging[1]) == lot_levels
+    assert packaging[3] == ""
     assert {"item_name", "barcode", "unit", "storage_location"}.isdisjoint(columns)
     assert {foreign_key["referred_table"] for foreign_key in foreign_keys} >= {
         "pharmacy_products",

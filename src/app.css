@@ -675,6 +675,24 @@ html[data-theme="dark"] .placeholder-state { background: var(--surface); color: 
 .pharmacy-opening-balance > span { color: var(--muted); font-size: 11px; font-weight: 600; }
 .pharmacy-opening-balance > strong { color: var(--ink); font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
 .pharmacy-opening-balance > small { color: var(--subtle); font-size: 10px; line-height: 1.4; }
+.pharmacy-packaging-editor { grid-column: 1 / -1; display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.pharmacy-packaging-editor > div:first-child { display: grid; gap: 4px; }
+.pharmacy-packaging-editor > div:first-child strong, .pharmacy-packaging-base > strong { color: var(--ink); font-size: 13px; }
+.pharmacy-packaging-editor > div:first-child span { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.pharmacy-packaging-step { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.pharmacy-packaging-step .field { min-width: 0; }
+.pharmacy-packaging-base { display: grid; align-content: center; gap: 6px; min-height: 44px; }
+.pharmacy-packaging-remove { min-height: 40px; }
+.pharmacy-packaging-formula, .pharmacy-packaging-example { display: grid; gap: 5px; padding: 12px; border: 1px solid #b8d5e0; border-radius: 7px; background: #edf7fa; }
+.pharmacy-packaging-formula > span, .pharmacy-packaging-example > strong { color: #355b69; font-size: 11px; font-weight: 700; }
+.pharmacy-packaging-formula > strong, .pharmacy-packaging-example > span { color: #173d4d; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.pharmacy-packaging-example > small { color: #456b78; font-size: 11px; line-height: 1.5; }
+.pharmacy-explanation { display: grid; gap: 18px; }
+.pharmacy-explanation > article { display: grid; gap: 9px; }
+.pharmacy-explanation > article + article { padding-top: 16px; border-top: 1px solid var(--line); }
+.pharmacy-explanation h3 { margin: 0; color: var(--ink); font-size: 15px; }
+.pharmacy-explanation p, .pharmacy-explanation li { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.pharmacy-explanation ul { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
 .history-clear-button { justify-self: start; min-height: 38px; }
 .history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .history-pagination > div { display: flex; align-items: center; gap: 10px; }
@@ -2280,6 +2298,12 @@ html[data-theme="dark"] .pharmacy-level-count.level-healthy { border-color: #315
 html[data-theme="dark"] .pharmacy-allergy-confirm { background: var(--surface); }
 html[data-theme="dark"] .pharmacy-dispensation-safety { border-color: #705b31; background: #332d20; color: #f1ce86; }
 html[data-theme="dark"] .pharmacy-catalog-suggestions { background: var(--surface); }
+html[data-theme="dark"] .pharmacy-packaging-editor { border-color: var(--line); background: #111c23; }
+html[data-theme="dark"] .pharmacy-packaging-step { border-color: var(--line); background: var(--surface); }
+html[data-theme="dark"] :is(.pharmacy-packaging-formula, .pharmacy-packaging-example) { border-color: #355d70; background: #203743; }
+html[data-theme="dark"] :is(.pharmacy-packaging-formula > span, .pharmacy-packaging-example > strong) { color: #b5dce9; }
+html[data-theme="dark"] :is(.pharmacy-packaging-formula > strong, .pharmacy-packaging-example > span) { color: #e0f3f8; }
+html[data-theme="dark"] .pharmacy-packaging-example > small { color: #b5dce9; }
 html[data-theme="dark"] .temporary-credentials { border-color: #315744; background: #21372d; color: #a2dfbb; }
 html[data-theme="dark"] .temporary-credential-list p { border-color: #315744; }
 html[data-theme="dark"] .module-card-status .status-dot { background: currentColor; }
@@ -2747,6 +2771,17 @@ html[data-theme="dark"] .account-settings-dialog .field :is(input, select):disab
 :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(3) { animation-delay: 70ms; }
 :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(4) { animation-delay: 105ms; }
 :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:nth-child(5) { animation-delay: 140ms; }
+html[data-card-motion="disabled"] :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article,
+html[data-card-motion="disabled"] :is(.pharmacy-stock-levels > .pharmacy-level-count, .module-overview-grid > .overview-stat),
+html[data-card-motion="disabled"] .dashboard-page .module-card {
+  animation: none;
+  transition: none;
+}
+html[data-card-motion="disabled"] :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article:hover,
+html[data-card-motion="disabled"] :is(.pharmacy-stock-levels > .pharmacy-level-count, .module-overview-grid > .overview-stat):hover,
+html[data-card-motion="disabled"] .dashboard-page .module-card:hover {
+  transform: none;
+}
 @media (prefers-reduced-motion: reduce) {
   :is(.hygiene-summary, .pharmacy-summary, .nursing-overview-summary, .executive-kpis, .executive-summary-grid, .waiting-room-counts, .therapy-summary) > article,
   :is(.pharmacy-stock-levels > .pharmacy-level-count, .module-overview-grid > .overview-stat),
@@ -2982,6 +3017,8 @@ html[data-theme="dark"] .pharmacy-opening-balance { border-color: var(--line); b
   .reception-appointment-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
   .reception-appointment-state { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; align-items: end; }
   .waiting-room-kiosk { gap: 14px; padding: 16px; }
+  .pharmacy-packaging-step { grid-template-columns: minmax(0, 1fr); }
+  .pharmacy-packaging-remove { justify-self: start; }
   .waiting-room-kiosk-groups, .waiting-room-kiosk-slots { grid-template-columns: 1fr; }
   .waiting-room-kiosk-card { min-height: clamp(135px, 20vh, 220px); }
   .waiting-room-kiosk-tools time { font-size: 22px; }

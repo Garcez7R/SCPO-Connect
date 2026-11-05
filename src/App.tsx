@@ -626,6 +626,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem('scpo-theme') === 'dark')
   const [fontZoom, setFontZoom] = useState(() => Number(window.localStorage.getItem('scpo-font-zoom') || '1'))
   const [mobileFeedback, setMobileFeedback] = useState(() => window.localStorage.getItem(MOBILE_FEEDBACK_STORAGE_KEY) === 'enabled')
+  const [cardMotionEnabled, setCardMotionEnabled] = useState(() => window.localStorage.getItem('scpo-card-motion') !== 'disabled')
   const logoClickCount = useRef(0)
   const logoClickTimer = useRef<number | undefined>(undefined)
   const closeBetaPopup = useCallback(() => setShowBetaPopup(false), [])
@@ -641,8 +642,13 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     if (themeColor) themeColor.content = darkMode ? '#101820' : '#f4f7fa'
   }, [darkMode])
   useEffect(() => {
+    document.documentElement.dataset.cardMotion = cardMotionEnabled ? 'enabled' : 'disabled'
+    window.localStorage.setItem('scpo-card-motion', cardMotionEnabled ? 'enabled' : 'disabled')
+  }, [cardMotionEnabled])
+  useEffect(() => {
     const syncTheme = (event: StorageEvent) => {
       if (event.key === 'scpo-theme') setDarkMode(event.newValue === 'dark')
+      if (event.key === 'scpo-card-motion') setCardMotionEnabled(event.newValue !== 'disabled')
     }
     window.addEventListener('storage', syncTheme)
     return () => window.removeEventListener('storage', syncTheme)
@@ -944,7 +950,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
           <div className="topbar-right">
             <ModuleConnectionStatus service={activeService} />
             <span className="session-role">{getGreeting()}, {profile.name.split(/\s+/)[0]}</span>
-            <div className="accessibility-controls" aria-label="Acessibilidade e aparência"><button className={`icon-button appearance-button ${mobileFeedback ? 'feedback-enabled' : ''}`} type="button" aria-label={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} aria-pressed={mobileFeedback} title={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} onClick={() => { const enabled = !mobileFeedback; setMobileFeedback(enabled); window.localStorage.setItem(MOBILE_FEEDBACK_STORAGE_KEY, enabled ? 'enabled' : 'disabled') }}><Vibrate size={17} /></button><button className="icon-button appearance-button" type="button" aria-label={`Aumentar texto (${Math.round(fontZoom * 100)}%)`} title="Aumentar texto" onClick={() => setFontZoom((current) => current >= 1.2 ? 1 : Math.round((current + 0.1) * 10) / 10)}><span>A+</span></button><button className="icon-button appearance-button" type="button" aria-label={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} title={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} onClick={() => setDarkMode((current) => !current)}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}</button></div>
+            <div className="accessibility-controls" aria-label="Acessibilidade e aparência"><button className={`icon-button appearance-button ${mobileFeedback ? 'feedback-enabled' : ''}`} type="button" aria-label={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} aria-pressed={mobileFeedback} title={mobileFeedback ? 'Desativar vibração após salvar' : 'Ativar vibração após salvar'} onClick={() => { const enabled = !mobileFeedback; setMobileFeedback(enabled); window.localStorage.setItem(MOBILE_FEEDBACK_STORAGE_KEY, enabled ? 'enabled' : 'disabled') }}><Vibrate size={17} /></button><button className="icon-button appearance-button" type="button" aria-label={`Aumentar texto (${Math.round(fontZoom * 100)}%)`} title="Aumentar texto" onClick={() => setFontZoom((current) => current >= 1.2 ? 1 : Math.round((current + 0.1) * 10) / 10)}><span>A+</span></button><button className="icon-button appearance-button" type="button" aria-label={cardMotionEnabled ? 'Desativar movimento dos quadros informativos' : 'Ativar movimento dos quadros informativos'} aria-pressed={cardMotionEnabled} title={cardMotionEnabled ? 'Desativar movimento dos quadros informativos' : 'Ativar movimento dos quadros informativos'} onClick={() => setCardMotionEnabled((current) => !current)}><Activity size={17} /></button><button className="icon-button appearance-button" type="button" aria-label={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} title={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'} onClick={() => setDarkMode((current) => !current)}>{darkMode ? <Sun size={17} /> : <Moon size={17} />}</button></div>
             <InstallAppButton />
             <button className="button button-secondary account-settings-button" type="button" aria-label="Abrir minha conta" onClick={() => setAccountSettingsOpen(true)}><UserRound size={15} /><span>Minha conta</span></button>
             <button className="button button-secondary logout-button" type="button" onClick={async () => { await fetch('/api/v1/auth/logout', { method: 'POST' }); onLogout() }}><LogOut size={15} /> Sair</button>
@@ -3359,12 +3365,12 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
                 {selectedAdministrationPrescription.instructions && <small>{selectedAdministrationPrescription.instructions}</small>}
               </>
               : <span>Prescrição vinculada não carregada para conferência. Consulte as prescrições deste paciente antes de registrar.</span>}
-            <small>A quantidade do campo abaixo usa a unidade do lote dispensado; confira a equivalência com a dose prescrita e o protocolo institucional.</small>
+            <small>O campo abaixo usa a unidade de estoque da dispensação. O sistema não converte a dose prescrita em comprimidos, mL ou mg; confira a apresentação/concentração e siga a prescrição e o protocolo institucional. A quantidade restante é um limite do estoque dispensado, não uma recomendação de dose.</small>
           </article>}
           {selectedDispensation && (() => {
             const item = dispensations.find((dispensation) => dispensation.id === selectedDispensation)
             if (!item) return null
-            return <label className="field"><span className="field-label">Quantidade desta administração ({item.unit})</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={medicationDose} onChange={(event) => setMedicationDose(formatDecimalInput(event.target.value))} /><span className="field-hint">Ainda disponível nesta dispensação: {remainingDispensedQuantity(item, administrations)} {item.unit}. Informe somente a dose desta ação, não todo o saldo.</span></label>
+            return <label className="field"><span className="field-label">Quantidade registrada ({item.unit})</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={medicationDose} onChange={(event) => setMedicationDose(formatDecimalInput(event.target.value))} /><span className="field-hint">Saldo dispensado ainda disponível: {remainingDispensedQuantity(item, administrations)} {item.unit}. Este limite controla somente o saldo do estoque; não converte nem calcula a dose clínica. Confira a prescrição e o protocolo antes de registrar.</span></label>
           })()}
           <label className="field"><span className="field-label">Resultado</span><select value={medicationStatus} onChange={(event) => setMedicationStatus(event.target.value as MedicationAdministration['status'])}><option value="administered">Administrado</option><option value="refused">Recusado pelo paciente</option><option value="held">Suspenso / não administrado</option></select></label>
           {medicationStatus !== 'administered' && <label className="field"><span className="field-label">Motivo</span><input required minLength={3} maxLength={500} value={medicationReason} onChange={(event) => setMedicationReason(event.target.value)} /></label>}

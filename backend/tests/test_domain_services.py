@@ -1227,7 +1227,7 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     monkeypatch.setattr(pharmacy, "verify_patient_reference", lambda reference: {"reference": reference, "name": "Paciente"})
     pharmacist = DemoPrincipal("pharm-1", "pharm", "Farmacêutica", "pharmacy", ["pharmacy"], {"pharmacy": ["consultar", "criar"]})
     item = pharmacy.create_item(
-        pharmacy.InventoryPayload(item_name="Comprimido de teste", balance="20", unit="comprimido", lot="L-01", expiry_date="2027-02-01"),
+        pharmacy.InventoryPayload(item_name="Comprimido de teste", balance="20", unit="comprimido", lot="L-01", expiry_date="2027-02-01", pharmacy_registration_confirmed=True),
         pharmacist, domain_database["pharmacy"],
     )
     assert item["balance"] == "20"
@@ -1372,6 +1372,7 @@ def test_pharmacy_dispenses_one_tablet_from_twenty_counted_in_tablets(
             unit="comprimido",
             lot="L-20",
             expiry_date="2099-12-31",
+            pharmacy_registration_confirmed=True,
         ),
         pharmacist,
         domain_database["pharmacy"],
@@ -1429,6 +1430,7 @@ def test_pharmacy_reuses_existing_dispensation_for_prescription_retry(
             unit="comprimido",
             lot="L-RETRY",
             expiry_date="2099-12-31",
+            pharmacy_registration_confirmed=True,
         ),
         pharmacist,
         db,
@@ -1595,6 +1597,7 @@ def test_pharmacy_gtin_lookup_returns_lots_without_changing_stock(
                 unit="caixa",
                 lot=lot,
                 expiry_date=expiry,
+                pharmacy_registration_confirmed=True,
             ),
             pharmacist,
             db,
@@ -1615,6 +1618,7 @@ def test_pharmacy_gtin_lookup_returns_lots_without_changing_stock(
             unit="unidade",
             lot="UPC-LOTE",
             expiry_date="2027-01-01",
+            pharmacy_registration_confirmed=True,
         ),
         pharmacist,
         db,
@@ -1642,6 +1646,7 @@ def test_pharmacy_stock_alerts_include_reorder_and_expiry_actions(
             expiry_date="2000-01-01",
             minimum_balance="2",
             average_balance="10",
+            pharmacy_registration_confirmed=True,
         ),
         pharmacist,
         domain_database["pharmacy"],
@@ -2957,6 +2962,7 @@ def test_pharmacy_converts_purchase_packages_and_receives_orders_by_lot(
             unit="comprimido",
             lot="L-01",
             expiry_date="2027-12-31",
+            pharmacy_registration_confirmed=True,
         ),
         pharmacist,
         db,
@@ -3045,6 +3051,7 @@ def test_pharmacy_rejects_unrepresentable_converted_stock(
             unit="comprimido",
             lot="L-01",
             expiry_date="2027-12-31",
+            pharmacy_registration_confirmed=True,
         )
     with pytest.raises(ValidationError, match="quantidade convertida"):
         pharmacy.PurchaseRequestPayload(
@@ -3054,6 +3061,135 @@ def test_pharmacy_rejects_unrepresentable_converted_stock(
             purchase_unit="caixa",
             units_per_purchase_unit=factor,
             justification="Reposição solicitada",
+        )
+
+
+def test_pharmacy_multilevel_packaging_is_explained_and_kept_with_receipt(
+    monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    pharmacist = DemoPrincipal(
+        "pharm-1",
+        "pharmacy",
+        "Farmacêutica",
+        "pharmacy",
+        ["pharmacy"],
+        {"pharmacy": ["consultar", "criar", "alterar"]},
+    )
+    manager = DemoPrincipal(
+        "manager-1",
+        "manager",
+        "Gestora",
+        "management",
+        ["management"],
+        {"management": ["consultar", "criar", "alterar", "administrar"]},
+    )
+    db = domain_database["pharmacy"]
+    levels = [
+        {"unit": "caixa", "units_per_parent": "4"},
+        {"unit": "comprimido", "units_per_parent": "10"},
+    ]
+    lot = pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Dipirona",
+            balance=None,
+            purchase_quantity="3",
+            purchase_unit="caixa externa",
+            units_per_purchase_unit="40",
+            packaging_levels=levels,
+            unit="comprimido",
+            lot="L-MULTI",
+            expiry_date="2027-12-31",
+            pharmacy_registration_confirmed=True,
+        ),
+        pharmacist,
+        db,
+    )
+    assert lot["balance"] == "120"
+    assert lot["packaging_levels"] == levels
+    assert lot["product_packaging_unit"] == "caixa externa"
+    assert lot["product_packaging_levels"] == levels
+    assert db.get(pharmacy.PharmacyProduct, lot["product_id"]).packaging_levels == levels
+    opening_movement = db.query(pharmacy.PharmacyStockMovement).filter_by(item_id=lot["id"]).one()
+    assert "3 caixa externa × 4 caixa por caixa externa × 10 comprimido por caixa" in opening_movement.reason
+    assert "= 120 comprimido" in opening_movement.reason
+
+    request = pharmacy.create_purchase_request(
+        pharmacy.PurchaseRequestPayload(
+            product_id=lot["product_id"],
+            item_name="Dipirona",
+            category="Medicamento",
+            base_unit="comprimido",
+            purchase_quantity="3",
+            purchase_unit="caixa externa",
+            units_per_purchase_unit="40",
+            packaging_levels=levels,
+            justification="Reposição do estoque mínimo",
+        ),
+        pharmacist,
+        db,
+    )
+    assert request["units_per_purchase_unit"] == "40"
+    assert request["packaging_levels"] == levels
+    assert db.get(pharmacy.PharmacyProduct, lot["product_id"]).packaging_purchase_unit == "caixa externa"
+    for status in ("quoted", "approved", "ordered"):
+        update_payload = pharmacy.PurchaseRequestUpdatePayload(
+            status=status,
+            supplier="Fornecedor Hospitalar" if status == "quoted" else "",
+            quoted_unit_price="12.50" if status == "quoted" else "0",
+        )
+        request = pharmacy.update_purchase_request(
+            request["id"],
+            update_payload,
+            manager,
+            db,
+        )
+    receipt = pharmacy.receive_purchase_request(
+        request["id"],
+        pharmacy.PurchaseReceiptPayload(
+            lot="L-RECEIPT",
+            expiry_date="2027-12-31",
+            actual_purchase_quantity="2",
+        ),
+        pharmacist,
+        db,
+    )
+    assert receipt["lot"]["balance"] == "80"
+    assert receipt["lot"]["packaging_levels"] == levels
+    receipt_movement = db.query(pharmacy.PharmacyStockMovement).filter_by(item_id=receipt["lot"]["id"]).one()
+    assert "2 caixa externa × 4 caixa por caixa externa × 10 comprimido por caixa" in receipt_movement.reason
+    assert "= 80 comprimido" in receipt_movement.reason
+
+
+@pytest.mark.parametrize(
+    ("levels", "message"),
+    [
+        ([{"unit": "caixa", "units_per_parent": "0"}], "maior que zero"),
+        (
+            [
+                {"unit": "caixa", "units_per_parent": "4"},
+                {"unit": "Caixa", "units_per_parent": "10"},
+            ],
+            "diferente",
+        ),
+        ([{"unit": "caixa", "units_per_parent": "20"}], "unidade base"),
+    ],
+)
+def test_pharmacy_rejects_invalid_packaging_hierarchies(
+    levels: list[dict[str, str]], message: str
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        pharmacy.InventoryPayload(
+            item_name="Medicamento",
+            balance=None,
+            purchase_quantity="3",
+            purchase_unit="caixa externa",
+            units_per_purchase_unit="20",
+            packaging_levels=levels,
+            unit="comprimido",
+            lot="L-01",
+            expiry_date="2027-12-31",
+            pharmacy_registration_confirmed=True,
         )
 
 
