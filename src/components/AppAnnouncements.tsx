@@ -18,6 +18,8 @@ export type AppAnnouncement = {
   created_by_name: string
 }
 
+export const APP_ANNOUNCEMENTS_UPDATED_EVENT = 'scpo-app-announcements-updated'
+
 export function AppAnnouncementsFeed({ compact = false }: { compact?: boolean }) {
   const [items, setItems] = useState<AppAnnouncement[]>([])
   const [loading, setLoading] = useState(true)
@@ -39,7 +41,14 @@ export function AppAnnouncementsFeed({ compact = false }: { compact?: boolean })
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
+    const refresh = () => void load()
+    window.addEventListener(APP_ANNOUNCEMENTS_UPDATED_EVENT, refresh)
+    const polling = window.setInterval(refresh, 30_000)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener(APP_ANNOUNCEMENTS_UPDATED_EVENT, refresh)
+      window.clearInterval(polling)
+    }
   }, [load])
 
   useEffect(() => {
@@ -157,6 +166,7 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
       setExpiresAt('')
       setActive(true)
       setNotice('Informativo publicado.')
+      window.dispatchEvent(new Event(APP_ANNOUNCEMENTS_UPDATED_EVENT))
       await load()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Não foi possível publicar o informativo.')
@@ -172,6 +182,7 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
     try {
       await readApiResponse(await fetch(`${endpointPrefix}/announcements/${item.id}`, { method: 'DELETE' }))
       setNotice('Informativo excluído.')
+      window.dispatchEvent(new Event(APP_ANNOUNCEMENTS_UPDATED_EVENT))
       await load()
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : 'Não foi possível excluir o informativo.')

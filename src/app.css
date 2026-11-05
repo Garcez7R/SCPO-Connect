@@ -878,6 +878,68 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-threshold-editor input { min-height: 38px; }
 .pharmacy-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .pharmacy-form-actions .button { min-height: 42px; }
+
+.pharmacy-registration-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.pharmacy-registration-steps li button {
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.pharmacy-registration-steps li button > span {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  font-weight: 800;
+}
+.pharmacy-registration-steps li.is-active button {
+  border-color: var(--blue);
+  background: var(--page);
+  color: var(--ink);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 12%, transparent);
+}
+.pharmacy-registration-steps li.is-active button > span,
+.pharmacy-registration-steps li.is-complete button > span {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: white;
+}
+.pharmacy-registration-steps li.is-complete button {
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
+}
+.pharmacy-registration-review {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--page);
+  padding: 14px 15px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.pharmacy-registration-review strong {
+  color: var(--ink);
+  margin-bottom: 3px;
+}
 .pharmacy-scan-field { align-content: start; }
 .pharmacy-scan-field > .button { justify-self: start; min-height: 42px; }
 .pharmacy-catalog-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
@@ -2026,6 +2088,7 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
   .work-order-form-actions .button { width: 100%; justify-content: center; }
   .pharmacy-form-actions { flex-direction: column-reverse; }
   .pharmacy-form-actions .button { width: 100%; justify-content: center; }
+  .pharmacy-registration-steps { grid-template-columns: 1fr; }
   .patient-registry-form, .patient-list-panel, .patient-history-summary, .therapy-form, .therapy-calendar-panel, .therapy-birthday-panel, .therapy-activity-list { gap: 13px; padding: 15px; }
   .patient-registry-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .patient-filter-clear { width: 100%; justify-content: center; }

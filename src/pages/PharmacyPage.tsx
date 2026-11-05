@@ -284,6 +284,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [stockDisplayUnit, setStockDisplayUnit] = useState<StockDisplayUnit>('base')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
+  const [formStep, setFormStep] = useState<1 | 2 | 3>(1)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -666,6 +667,11 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!form.item_name.trim() || !form.purchase_quantity.trim() || !form.purchase_unit.trim() || !form.unit.trim() || !form.lot.trim() || !form.expiry_date || !form.pharmacy_registration_confirmed) {
+      setError('Complete e confira todas as etapas antes de cadastrar o lote.')
+      setFormStep(!form.item_name.trim() ? 1 : (!form.purchase_quantity.trim() || !form.purchase_unit.trim() || !form.unit.trim() ? 2 : 3))
+      return
+    }
     setSaving(true); setError(''); setNotice('')
     try {
       const levels = packagingLevelsForBase(form.packaging_levels, form.unit.trim())
@@ -677,6 +683,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       lastBarcodeLookupRef.current = ''
       barcodeProductAutofillRef.current = false
       setShowForm(false)
+      setFormStep(1)
       setNotice('Lote cadastrado no estoque.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Falha ao cadastrar o lote.')
@@ -859,7 +866,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   }
 
   return <section className={`pharmacy-page page-enter${mobileMode ? ' pharmacy-page-mobile' : ''}`}>
-    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : pharmacyTab === 'guide' ? 'Como funcionam as unidades e os medicamentos' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : pharmacyTab === 'guide' ? 'Entenda a conta do estoque e a diferença entre embalagem, dispensação, prescrição e administração.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => !current); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
+    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : pharmacyTab === 'guide' ? 'Como funcionam as unidades e os medicamentos' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : pharmacyTab === 'guide' ? 'Entenda a conta do estoque e a diferença entre embalagem, dispensação, prescrição e administração.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => { const next = !current; if (next) setFormStep(1); return next }); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
     <ModuleTabNavigation
       className="pharmacy-tabs"
       ariaLabel="Seções da Farmácia"
@@ -1050,13 +1057,17 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     {pharmacyTab === 'stock' && <>
     {showForm && <form className="pharmacy-form" onSubmit={(event) => void submit(event)}>
       <div className="section-heading"><div><p className="eyebrow">ENTRADA DE ESTOQUE</p><h2>Produto, lote e armazenamento</h2><p className="welcome-copy">Mantenha saldo, movimentações, dispensações e administrações na mesma unidade de estoque.</p></div></div>
-      <div className="pharmacy-catalog-panel">
+      <ol className="pharmacy-registration-steps" aria-label="Etapas do cadastro">
+        {[1, 2, 3].map((step) => <li key={step} className={formStep === step ? 'is-active' : formStep > step ? 'is-complete' : ''}><button type="button" onClick={() => setFormStep(step as 1 | 2 | 3)}><span>{step}</span><strong>{step === 1 ? 'Identificar' : step === 2 ? 'Receber' : 'Conferir lote'}</strong></button></li>)}
+      </ol>
+      {formStep === 1 && <div className="pharmacy-catalog-panel">
         <div><strong>Catálogo público de medicamentos · Anvisa/CMED</strong><span>{catalogStatus ? `${catalogStatus.entry_count.toLocaleString('pt-BR')} sugestões disponíveis · última importação: ${catalogStatus.imported_at ? dateTime(catalogStatus.imported_at) : 'ainda não importado'}${catalogStatus.automatic_enabled ? ` · atualização automática: ${catalogStatus.automatic_run_time ?? '00:00'} (${catalogStatus.automatic_timezone ?? 'America/Sao_Paulo'})` : ' · atualização automática: desativada'}` : 'Consultando disponibilidade do catálogo…'}</span>{catalogStatus?.automatic_last_attempt_at && <small>{catalogStatus.automatic_last_error ? `Última tentativa automática: ${catalogStatus.automatic_last_error}` : `Última atualização automática: ${dateTime(catalogStatus.automatic_last_success_at ?? catalogStatus.automatic_last_attempt_at)} · ${catalogStatus.automatic_last_entry_count ?? 0} registros`}</small>}<a href={catalogStatus?.source_url ?? 'https://dados.anvisa.gov.br/dados/TA_PRECO_MEDICAMENTO.csv'} target="_blank" rel="noreferrer">Ver fonte pública</a></div>
         <button className="button button-secondary" type="button" onClick={() => void refreshAnvisaCatalog()} disabled={catalogRefreshing}>{catalogRefreshing ? 'Atualizando catálogo…' : 'Atualizar catálogo Anvisa'}</button>
         {catalogStatusError && <span className="pharmacy-catalog-error" role="alert">{catalogStatusError}</span>}
         <p className="field-hint">A atualização consulta a lista pública CMED. Os dados são sugestões de identificação, não confirmam registro ativo, autenticidade ou adequação clínica; confira e aprove cada dado antes de cadastrar.</p>
-      </div>
+      </div>}
       <div className="field-grid field-grid-two">
+        {formStep === 1 && <>
         <label className="field">
           <span className="field-label">Código de barras ou QR · GTIN/GS1</span>
           <input inputMode="numeric" autoComplete="off" maxLength={200} value={form.barcode} onChange={(event) => changeBarcode(event.target.value)} onFocus={prepareBarcodeAudio} onKeyDown={(event) => { if (event.key === 'Enter' && form.barcode.trim()) { event.preventDefault(); prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) } }} placeholder="Leia com o leitor USB ou digite" />
@@ -1079,21 +1090,31 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         <label className="field"><span className="field-label">Princípio ativo</span><input maxLength={120} value={form.active_ingredient} onChange={(event) => setForm({ ...form, active_ingredient: event.target.value })} placeholder="Ex.: dipirona sódica" /></label>
         <label className="field"><span className="field-label">Apresentação / concentração</span><input maxLength={120} value={form.presentation} onChange={(event) => setForm({ ...form, presentation: event.target.value })} placeholder="Ex.: comprimido 500 mg, solução 20 mg/mL" /></label>
         <label className="field"><span className="field-label">Registro informado pela fonte</span><input maxLength={32} value={form.catalog_registration} readOnly placeholder="Preenchido ao aplicar sugestão Anvisa" /><span className="field-hint">Referência informativa da sugestão; confirme os dados na fonte oficial.</span></label>
+        </>}
+        {formStep === 2 && <>
         <label className="field pharmacy-quantity-field"><span className="field-label">Quantidade de embalagens recebidas</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.purchase_quantity} onChange={(event) => setForm({ ...form, purchase_quantity: formatDecimalInput(event.target.value) })} placeholder="Ex.: 10" /><span className="field-hint">Informe quantas embalagens deste lote foram recebidas.</span></label>
         <label className="field"><span className="field-label">Unidade de compra</span><input required maxLength={24} list="pharmacy-units" value={form.purchase_unit} onChange={(event) => setForm({ ...form, purchase_unit: event.target.value })} placeholder="Ex.: caixa" /><datalist id="pharmacy-units"><option value="unidade" /><option value="comprimido" /><option value="cápsula" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /><option value="caixa" /></datalist></label>
         <label className="field"><span className="field-label">Unidade base do estoque</span><input required maxLength={24} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value, packaging_levels: packagingLevelsForBase(form.packaging_levels, event.target.value) })} placeholder="Ex.: comprimido, frasco, mL" /><span className="field-hint">É a unidade usada para registrar saldo, movimentações e dispensações. Ela não determina a dose prescrita.</span></label>
         <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} onPurchaseUnitChange={(purchase_unit) => setForm({ ...form, purchase_unit })} />
         <div className="pharmacy-opening-balance" aria-live="polite"><span>Saldo inicial calculado</span><strong>{Number.isFinite(convertedBalance) ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(convertedBalance) : '—'} {form.unit || 'unidade base'}</strong><small>Confira os fatores e as unidades; o servidor valida e registra a conversão no lote.</small></div>
+        </>}
+        {formStep === 3 && <>
         <label className="field"><span className="field-label">Lote</span><input required maxLength={80} value={form.lot} onChange={(event) => setForm({ ...form, lot: event.target.value })} /></label>
         <label className="field"><span className="field-label">Validade</span><input required type="date" value={form.expiry_date} onChange={(event) => setForm({ ...form, expiry_date: event.target.value })} /></label>
         <label className="field"><span className="field-label">Fornecedor</span><input maxLength={120} value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} /></label>
         <label className="field"><span className="field-label">Local de armazenamento</span><input maxLength={80} value={form.storage_location} onChange={(event) => setForm({ ...form, storage_location: event.target.value })} placeholder="Ex.: armário 2, prateleira B" /></label>
+        <div className="pharmacy-registration-review"><strong>Resumo antes de salvar</strong><span>{form.item_name || 'Produto não informado'} · {form.purchase_quantity || '0'} {form.purchase_unit || 'embalagem(es)'}</span><span>Saldo calculado: {Number.isFinite(convertedBalance) ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(convertedBalance) : '—'} {form.unit || 'unidade base'}</span><span>Lote: {form.lot || 'não informado'} · Validade: {form.expiry_date || 'não informada'}</span></div>
         <label className="pharmacy-allergy-confirm">
           <input type="checkbox" required checked={form.pharmacy_registration_confirmed} onChange={(event) => setForm({ ...form, pharmacy_registration_confirmed: event.target.checked })} />
           <span><strong>Conferência responsável pela Farmácia</strong><small>Confirmo que conferi produto, princípio ativo, apresentação, unidade, embalagem, lote, validade, quantidade e dados do responsável antes de registrar.</small></span>
         </label>
+        </>}
       </div>
-      <div className="pharmacy-form-actions"><button className="button button-secondary" type="button" onClick={() => { setShowForm(false); setCameraScannerOpen(false) }} disabled={saving}>Cancelar</button><button className="button button-primary" type="submit" disabled={saving || !form.pharmacy_registration_confirmed}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button></div>
+      <div className="pharmacy-form-actions">
+        <button className="button button-secondary" type="button" onClick={() => { if (formStep === 1) { setShowForm(false); setCameraScannerOpen(false); } else setFormStep((formStep - 1) as 1 | 2 | 3) }} disabled={saving}>{formStep === 1 ? 'Cancelar' : 'Voltar'}</button>
+        {formStep < 3 && <button className="button button-primary" type="button" disabled={saving || (formStep === 1 && !form.item_name.trim()) || (formStep === 2 && (!form.purchase_quantity.trim() || !form.purchase_unit.trim() || !form.unit.trim() || !Number.isFinite(convertedBalance) || convertedBalance <= 0))} onClick={() => setFormStep((formStep + 1) as 2 | 3)}>Continuar <ArrowRight size={16} /></button>}
+        {formStep === 3 && <button className="button button-primary" type="submit" disabled={saving || !form.pharmacy_registration_confirmed || !form.lot.trim() || !form.expiry_date}>{saving ? 'Salvando…' : 'Cadastrar lote'} <ArrowRight size={16} /></button>}
+      </div>
     </form>}
     <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
       {filteredItems.length > 0 && (() => {

@@ -2,6 +2,16 @@
 
 Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
+## Operação concluída — reforma operacional do cadastro da Farmácia
+
+- O cadastro de lote foi refeito como assistente sequencial em três etapas: Identificar, Receber e Conferir lote.
+- A etapa de identificação concentra código/GTIN, câmera, catálogo Anvisa, nome, princípio ativo, apresentação e categoria.
+- A etapa de recebimento concentra quantidade, unidade de compra, unidade base, hierarquia de embalagens e saldo inicial calculado.
+- A etapa final reúne lote, validade, fornecedor, armazenamento, resumo do cadastro e conferência responsável.
+- Foram adicionadas validações de produto, embalagem, quantidade, lote, validade e confirmação antes do envio ao servidor.
+- Os cards informativos verde/amarelo/vermelho não foram alterados em critérios ou propriedades.
+- README e guia interno foram revisados; o frontend compilou com sucesso após esta reforma.
+
 ## Quadro de acompanhamento
 
 ### Forma de execução acordada
