@@ -14,6 +14,8 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Situação resumida das fases
 
+- **Informativos institucionais em texto próprio — implementado nesta retomada:** além de links externos ou internos, Administrador e Superadministrador podem criar avisos, informações e mudanças de procedimento diretamente no aplicativo. Cada comunicado pode ter título, resumo, texto completo, validade, estado publicado/inativo e link opcional. Informativos puramente textuais são exibidos sem botão externo. README e guia de ajuda foram atualizados. Typecheck, build frontend e compilação Python passaram; a migração `0067_app_announcement_content` foi confirmada em SQLite com URL anulável e campos `content`/`kind`. Commit e push desta retomada ainda serão registrados.
+
 - **Cadastro visual de embalagens da Farmácia — implementado nesta fase:** o cadastro ganhou seleção direta para unidade avulsa, caixa externa e caixa externa com caixa interna, com cálculo automático da unidade base. O Inventário ganhou seletor visual para mostrar saldo em caixa externa, caixa interna ou unidade, preservando lote, validade, FEFO e semáforo de metas. README, ajuda e documentação do módulo foram atualizados nesta fase.
 
 - **Validação operacional posterior ao commit eb9faa3:** relógio confirmado sincronizado via `timedatectl`, timezone `America/Sao_Paulo (-03)`, Docker Engine acessível e os 12 containers em execução. A validação funcional de login MFA continua exigindo interação real com o servidor/conta TOTP e ainda deve ser feita antes das migrações em dados reais. Nenhuma migração de dados reais foi aplicada nesta etapa.

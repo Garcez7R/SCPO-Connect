@@ -8,8 +8,10 @@ import { useAppDialogs } from './appDialogContext'
 export type AppAnnouncement = {
   id: string
   title: string
-  url: string
+  url: string | null
   summary?: string | null
+  content?: string | null
+  kind: 'notice' | 'information' | 'procedure'
   active: boolean
   published_at: string
   expires_at?: string | null
@@ -47,11 +49,18 @@ export function AppAnnouncementsFeed() {
       </div>
       <div className="app-announcement-list">
         {items.map((item) => (
+          item.url ? (
           <a className="app-announcement-link" key={item.id} href={item.url} target="_blank" rel="noopener noreferrer">
             <span className="app-announcement-icon"><Megaphone size={18} /></span>
-            <span><strong>{item.title}</strong>{item.summary && <small>{item.summary}</small>}</span>
+            <span><strong>{item.title}</strong>{item.summary && <small>{item.summary}</small>}{item.content && <small>{item.content}</small>}</span>
             <ExternalLink size={16} aria-hidden="true" />
           </a>
+          ) : (
+          <article className="app-announcement-link app-announcement-card" key={item.id}>
+            <span className="app-announcement-icon"><Megaphone size={18} /></span>
+            <span><strong>{item.title}</strong>{item.summary && <small>{item.summary}</small>}{item.content && <small className="app-announcement-content">{item.content}</small>}</span>
+          </article>
+          )
         ))}
       </div>
     </section>
@@ -64,6 +73,8 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
   const [title, setTitle] = useState('')
   const [url, setUrl] = useState('')
   const [summary, setSummary] = useState('')
+  const [content, setContent] = useState('')
+  const [kind, setKind] = useState<AppAnnouncement['kind']>('notice')
   const [expiresAt, setExpiresAt] = useState('')
   const [active, setActive] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -103,8 +114,10 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title,
-            url,
+            url: url || null,
             summary: summary || null,
+            content: content || null,
+            kind,
             expires_at: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : null,
             active,
           }),
@@ -113,6 +126,8 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
       setTitle('')
       setUrl('')
       setSummary('')
+      setContent('')
+      setKind('notice')
       setExpiresAt('')
       setActive(true)
       setNotice('Informativo publicado.')
@@ -149,8 +164,10 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
       {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
       <form className="app-announcement-form" onSubmit={submit}>
         <label className="field">Título<input value={title} onChange={(event) => setTitle(event.target.value)} minLength={3} maxLength={160} required /></label>
-        <label className="field">Link<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} maxLength={2048} required /></label>
+        <label className="field">Tipo<select value={kind} onChange={(event) => setKind(event.target.value as AppAnnouncement['kind'])}><option value="notice">Aviso</option><option value="information">Informação</option><option value="procedure">Mudança de procedimento</option></select></label>
+        <label className="field">Link opcional<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} maxLength={2048} /></label>
         <label className="field">Resumo opcional<textarea value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={500} rows={3} /></label>
+        <label className="field app-announcement-content-field">Texto do informativo opcional<textarea value={content} onChange={(event) => setContent(event.target.value)} maxLength={5000} rows={6} placeholder="Escreva o comunicado completo. Não é obrigatório informar um link." /></label>
         <label className="field">Validade opcional<input type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></label>
         <label className="app-announcement-active"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} /> Publicado</label>
         <button className="button button-primary" type="submit" disabled={busy || loading}>{busy ? 'Salvando…' : 'Publicar informativo'}</button>
@@ -158,8 +175,8 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
       <div className="app-announcement-admin-list">
         {loading ? <div className="history-empty">Carregando informativos…</div> : items.length ? items.map((item) => (
           <article key={item.id}>
-            <span><strong>{item.title}</strong><small>{item.active ? 'Publicado' : 'Inativo'} · {item.url}</small></span>
-            <a className="button button-secondary" href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Abrir</a>
+            <span><strong>{item.title}</strong><small>{item.active ? 'Publicado' : 'Inativo'} · {item.url ?? 'Informativo em texto'}</small></span>
+            {item.url ? <a className="button button-secondary" href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Abrir</a> : <span />}
             <button className="button button-secondary" type="button" onClick={() => void remove(item)} disabled={busy}><Trash2 size={15} /> Excluir</button>
           </article>
         )) : <div className="history-empty">Nenhum informativo cadastrado.</div>}

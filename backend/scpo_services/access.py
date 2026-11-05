@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Collection
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 import httpx
 from cryptography.exceptions import InvalidTag
@@ -99,8 +99,10 @@ class AppAnnouncement(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
-    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    content: Mapped[str | None] = mapped_column(String(5000), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="notice")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -358,18 +360,27 @@ class SystemModuleSettingsPayload(BaseModel):
 class AppAnnouncementPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=3, max_length=160)
-    url: str = Field(min_length=8, max_length=2048)
+    url: str | None = Field(default=None, max_length=2048)
     summary: str | None = Field(default=None, max_length=500)
+    content: str | None = Field(default=None, max_length=5000)
+    kind: Literal["notice", "information", "procedure"] = "notice"
     expires_at: datetime | None = None
     active: bool = True
 
     @field_validator("url")
     @classmethod
-    def validate_http_url(cls, value: str) -> str:
+    def validate_http_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         url = value.strip()
         if not url.startswith(("http://", "https://")):
             raise ValueError("Informe uma URL HTTPS ou HTTP")
         return url
+
+    @model_validator(mode="after")
+    def validate_link_or_content(self) -> "AppAnnouncementPayload":
+        if not self.url and not (self.content and self.content.strip()):
+            raise ValueError("Informe uma URL ou o texto do informativo")
         return self
 
 
@@ -857,6 +868,8 @@ def _announcement_response(item: AppAnnouncement) -> dict[str, object]:
         "title": item.title,
         "url": item.url,
         "summary": item.summary,
+        "content": item.content,
+        "kind": item.kind,
         "active": item.active,
         "published_at": item.published_at.isoformat(),
         "expires_at": item.expires_at.isoformat() if item.expires_at else None,
@@ -910,8 +923,10 @@ def create_system_admin_announcement(
     item = AppAnnouncement(
         id=str(uuid.uuid4()),
         title=payload.title.strip(),
-        url=payload.url.strip(),
+        url=payload.url.strip() if payload.url else None,
         summary=payload.summary.strip() if payload.summary and payload.summary.strip() else None,
+        content=payload.content.strip() if payload.content and payload.content.strip() else None,
+        kind=payload.kind,
         active=payload.active,
         published_at=now,
         expires_at=payload.expires_at,
@@ -940,8 +955,10 @@ def update_system_admin_announcement(
     if item is None:
         raise HTTPException(status_code=404, detail="Informativo não encontrado")
     item.title = payload.title.strip()
-    item.url = payload.url.strip()
+    item.url = payload.url.strip() if payload.url else None
     item.summary = payload.summary.strip() if payload.summary and payload.summary.strip() else None
+    item.content = payload.content.strip() if payload.content and payload.content.strip() else None
+    item.kind = payload.kind
     item.expires_at = payload.expires_at
     item.active = payload.active
     db.commit()
