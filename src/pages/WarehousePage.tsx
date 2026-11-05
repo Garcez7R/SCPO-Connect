@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Package, Plus, History, ClipboardList } from 'lucide-react'
 import { readApiResponse } from '../api'
 
 type Item = { id: string; name: string; category: string; unit: string; location: string; lot: string; expiry_date: string | null; balance: number; minimum_balance: number }
@@ -95,39 +96,41 @@ export default function WarehousePage() {
   }
 
   return (
-    <section className="page-section">
-      <div className="module-header"><div><h1>Almoxarifado</h1><p>Materiais, estoque, lotes, validade e movimentações.</p></div></div>
+    <section className="warehouse-page page-section">
+      <div className="warehouse-header page-title-row"><span className="module-icon module-icon-maintenance"><Package size={23} /></span><div><p className="eyebrow">MÓDULO · ALMOXARIFADO</p><h1>Materiais, estoque e movimentações</h1><p className="welcome-copy">Cadastro de itens, lotes, solicitações e histórico do almoxarifado.</p></div></div>
       <div className="module-tabs" role="tablist">
-        <button className={tab === 'items' ? 'active' : ''} type="button" onClick={() => setTab('items')}>Estoque e cadastro</button>
-        <button className={tab === 'requests' ? 'active' : ''} type="button" onClick={() => setTab('requests')}>Solicitações</button>
-        <button className={tab === 'movements' ? 'active' : ''} type="button" onClick={() => setTab('movements')}>Histórico</button>
+        <button className={`button ${tab === 'items' ? 'button-primary' : 'button-secondary'}`} type="button" onClick={() => setTab('items')}><Package size={16} /> Estoque e cadastro</button>
+        <button className={`button ${tab === 'requests' ? 'button-primary' : 'button-secondary'}`} type="button" onClick={() => setTab('requests')}><ClipboardList size={16} /> Solicitações {requests.filter((request) => request.status === 'pending').length > 0 && <span>{requests.filter((request) => request.status === 'pending').length}</span>}</button>
+        <button className={`button ${tab === 'movements' ? 'button-primary' : 'button-secondary'}`} type="button" onClick={() => setTab('movements')}><History size={16} /> Histórico</button>
       </div>
       {error && <div className="form-error" role="alert">{error}</div>}
       {tab === 'items' && <>
-        <form className="pharmacy-item-form" onSubmit={createItem}>
-          <div className="form-grid pharmacy-grid">
-            <label>Material<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
-            <label>Categoria<input value={category} onChange={(event) => setCategory(event.target.value)} required /></label>
-            <label>Unidade<select value={unit} onChange={(event) => setUnit(event.target.value)}><option>unidade</option><option>caixa</option><option>pacote</option><option>litro</option><option>kg</option><option>metro</option></select></label>
-            <label>Localização<input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Depósito, armário, prateleira" /></label>
-            <label>Lote<input value={lot} onChange={(event) => setLot(event.target.value)} /></label>
-            <label>Validade<input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} /></label>
-            <label>Número de série/patrimônio<input value={serialNumber} onChange={(event) => setSerialNumber(event.target.value)} /></label>
-            <label>Saldo inicial<input type="number" min="0" step="0.001" value={balance} onChange={(event) => setBalance(event.target.value)} /></label>
-            <label>Estoque mínimo<input type="number" min="0" step="0.001" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label>
+        <form className="warehouse-item-form" onSubmit={createItem}>
+          <div className="section-heading"><div><p className="eyebrow">NOVO CADASTRO</p><h2>Identificar item</h2></div></div>
+          <div className="warehouse-form-grid">
+            <label className="field"><span className="field-label">Material *</span><input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Nome do item ou equipamento" /></label>
+            <label className="field"><span className="field-label">Categoria *</span><input value={category} onChange={(event) => setCategory(event.target.value)} required placeholder="Ex.: limpeza, elétrica, EPI" /></label>
+            <label className="field"><span className="field-label">Unidade</span><select value={unit} onChange={(event) => setUnit(event.target.value)}><option>unidade</option><option>caixa</option><option>pacote</option><option>litro</option><option>kg</option><option>metro</option></select></label>
+            <label className="field"><span className="field-label">Localização</span><input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Depósito, armário, prateleira" /></label>
+            <label className="field"><span className="field-label">Lote</span><input value={lot} onChange={(event) => setLot(event.target.value)} /></label>
+            <label className="field"><span className="field-label">Validade</span><input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} /></label>
+            <label className="field"><span className="field-label">Número de série / patrimônio</span><input value={serialNumber} onChange={(event) => setSerialNumber(event.target.value)} /></label>
+            <label className="field"><span className="field-label">Saldo inicial</span><input type="number" min="0" step="0.001" value={balance} onChange={(event) => setBalance(event.target.value)} /></label>
+            <label className="field"><span className="field-label">Estoque mínimo</span><input type="number" min="0" step="0.001" value={minimum} onChange={(event) => setMinimum(event.target.value)} /></label>
           </div>
-          <button className="button button-primary" type="submit" disabled={busy}>Cadastrar item</button>
+          <div className="warehouse-form-actions"><button className="button button-primary" type="submit" disabled={busy}><Plus size={16} /> {busy ? 'Salvando…' : 'Cadastrar item'}</button></div>
         </form>
-        <div className="table-responsive"><table className="data-table"><thead><tr><th>Material</th><th>Local</th><th>Lote/validade</th><th>Saldo</th><th>Movimentação rápida</th></tr></thead><tbody>
+        <section className="warehouse-panel"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><span className="warehouse-count">{items.length} {items.length === 1 ? 'item' : 'itens'}</span></div>
+        {items.length === 0 ? <div className="warehouse-empty">Nenhum item cadastrado.</div> : <div className="warehouse-table-wrap"><table className="warehouse-table"><thead><tr><th>Material</th><th>Local</th><th>Lote / validade</th><th>Saldo</th><th>Movimentação rápida</th></tr></thead><tbody>
           {items.map((item) => <WarehouseItemRow key={item.id} item={item} busy={busy} onMove={moveItem} />)}
-        </tbody></table></div>
+        </tbody></table></div>}</section>
       </>}
-      {tab === 'requests' && <div className="table-responsive"><table className="data-table"><thead><tr><th>Material</th><th>Setor</th><th>Quantidade</th><th>Status</th><th>Ações</th></tr></thead><tbody>
-        {requests.map((request) => <tr key={request.id}><td><strong>{request.item_name}</strong><br /><small>{request.requester_name}</small></td><td>{request.department}<br /><small>{request.destination || request.justification || '-'}</small></td><td>{request.quantity} {request.item_unit}</td><td>{request.status === 'pending' ? 'Pendente' : request.status === 'fulfilled' ? 'Atendida' : 'Cancelada'}</td><td>{request.status === 'pending' && <><button className="button button-primary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'fulfilled')}>Atender</button>{' '}<button className="button button-secondary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'cancelled')}>Cancelar</button></>}</td></tr>)}
-      </tbody></table></div>}
-      {tab === 'movements' && <div className="table-responsive"><table className="data-table"><thead><tr><th>Data</th><th>Material</th><th>Movimento</th><th>Saldo</th><th>Responsável</th></tr></thead><tbody>
-        {movements.map((movement) => <tr key={movement.id}><td>{new Date(movement.created_at).toLocaleString('pt-BR')}</td><td>{movement.item_name}</td><td>{movement.movement_type}: {movement.quantity}<br /><small>{movement.reason}</small></td><td>{movement.balance_after}</td><td>{movement.actor_name}</td></tr>)}
-      </tbody></table></div>}
+      {tab === 'requests' && <section className="warehouse-panel"><div className="section-heading"><div><p className="eyebrow">SOLICITAÇÕES</p><h2>Pedidos dos setores</h2></div></div>{requests.length === 0 ? <div className="warehouse-empty">Nenhuma solicitação registrada.</div> : <div className="warehouse-table-wrap"><table className="warehouse-table"><thead><tr><th>Material</th><th>Setor</th><th>Quantidade</th><th>Status</th><th>Ações</th></tr></thead><tbody>
+        {requests.map((request) => <tr key={request.id}><td><strong>{request.item_name}</strong><small>{request.requester_name}</small></td><td><strong>{request.department}</strong><small>{request.destination || request.justification || '-'}</small></td><td><strong>{request.quantity} {request.item_unit}</strong></td><td><span className={`warehouse-status warehouse-status-${request.status}`}>{request.status === 'pending' ? 'Pendente' : request.status === 'fulfilled' ? 'Atendida' : 'Cancelada'}</span></td><td>{request.status === 'pending' ? <div className="warehouse-request-actions"><button className="button button-primary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'fulfilled')}>Atender</button><button className="button button-secondary" type="button" disabled={busy} onClick={() => void updateRequest(request.id, 'cancelled')}>Cancelar</button></div> : '-'}</td></tr>)}
+      </tbody></table></div>}</section>}
+      {tab === 'movements' && <section className="warehouse-panel"><div className="section-heading"><div><p className="eyebrow">HISTÓRICO</p><h2>Movimentações registradas</h2></div></div>{movements.length === 0 ? <div className="warehouse-empty">Nenhuma movimentação registrada.</div> : <div className="warehouse-table-wrap"><table className="warehouse-table"><thead><tr><th>Data</th><th>Material</th><th>Movimento</th><th>Saldo após</th><th>Responsável</th></tr></thead><tbody>
+        {movements.map((movement) => <tr key={movement.id}><td>{new Date(movement.created_at).toLocaleString('pt-BR')}</td><td><strong>{movement.item_name}</strong></td><td><strong>{movement.movement_type === 'entry' ? 'Entrada' : movement.movement_type === 'issue' ? 'Saída' : movement.movement_type === 'return' ? 'Devolução' : movement.movement_type === 'adjustment' ? 'Ajuste' : movement.movement_type}: {movement.quantity}</strong><small>{movement.reason}</small></td><td><strong>{movement.balance_after}</strong></td><td>{movement.actor_name}</td></tr>)}
+      </tbody></table></div>}</section>}
     </section>
   )
 }
@@ -135,5 +138,5 @@ export default function WarehousePage() {
 function WarehouseItemRow({ item, busy, onMove }: { item: Item; busy: boolean; onMove: (id: string, type: 'entry' | 'issue', quantity: string, reason: string) => Promise<void> }) {
   const [quantity, setQuantity] = useState('1')
   const [reason, setReason] = useState('')
-  return <tr><td><strong>{item.name}</strong><br /><small>{item.category}</small></td><td>{item.location || '-'}</td><td>{item.lot || '-'}{item.expiry_date ? ` · ${item.expiry_date}` : ''}</td><td><strong className={item.balance <= item.minimum_balance ? 'danger-text' : ''}>{item.balance} {item.unit}</strong></td><td><div className="warehouse-movement-actions"><input aria-label="Quantidade" className="compact-number" type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /><input aria-label="Motivo" className="compact-text" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo" /><button className="button button-secondary" type="button" disabled={busy || !reason.trim()} onClick={() => void onMove(item.id, 'entry', quantity, reason)}>Entrada</button><button className="button button-secondary" type="button" disabled={busy || !reason.trim()} onClick={() => void onMove(item.id, 'issue', quantity, reason)}>Saída</button></div></td></tr>
+  return <tr><td><strong>{item.name}</strong><small>{item.category}</small></td><td>{item.location || '-'}</td><td><strong>{item.lot || '-'}</strong>{item.expiry_date && <small>Validade: {item.expiry_date}</small>}</td><td><strong className={item.balance <= item.minimum_balance ? 'warehouse-low-stock' : ''}>{item.balance} {item.unit}</strong>{item.minimum_balance > 0 && <small>Mín. {item.minimum_balance}</small>}</td><td><div className="warehouse-movement-actions"><label><span>Quantidade</span><input aria-label={`Quantidade para ${item.name}`} type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label><label><span>Motivo</span><input aria-label={`Motivo da movimentação de ${item.name}`} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo" /></label><div><button className="button button-secondary" type="button" disabled={busy || !reason.trim() || Number(quantity) <= 0} onClick={() => void onMove(item.id, 'entry', quantity, reason)}>Entrada</button><button className="button button-secondary" type="button" disabled={busy || !reason.trim() || Number(quantity) <= 0} onClick={() => void onMove(item.id, 'issue', quantity, reason)}>Saída</button></div></div></td></tr>
 }

@@ -2,6 +2,13 @@
 
 Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
+## Correção concluída — alinhamento visual do Almoxarifado
+
+- O cadastro de itens, as abas operacionais, os formulários, as tabelas, a movimentação rápida, solicitações, histórico e estados vazios receberam classes próprias de layout responsivo.
+- Campos, botões, cabeçalhos e tabelas agora usam grades e larguras controladas em computador, tablet e celular, evitando textos amontoados ou campos desalinhados.
+- O Superadministrador permanece com acesso completo ao módulo, inclusive na navegação lateral e nas APIs.
+- README e resume foram revisados; o frontend compilou com sucesso após a correção visual.
+
 ## Operação concluída — reforma operacional do cadastro da Farmácia
 
 - O cadastro de lote foi refeito como assistente sequencial em três etapas: Identificar, Receber e Conferir lote.
