@@ -14,6 +14,7 @@ type Patient = { reference: string; name: string; room: string; bed: string; all
 type AuthUser = { id: string; username: string; name: string; role: string; modules: string[]; permissions: Record<string, string[]> }
 type PackagingLevel = { unit: string; units_per_parent: string }
 type PharmacyItem = { id: number; product_id: number; item_name: string; balance: string; unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; packaging_levels: PackagingLevel[]; product_packaging_unit: string; product_packaging_levels: PackagingLevel[]; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
+const PHARMACY_UNIT_OPTIONS = ['unidade', 'comprimido', 'cápsula', 'frasco', 'ampola', 'pacote', 'caixa externa', 'caixa', 'mL', 'mg', 'g']
 type AnvisaCatalogSuggestion = { gtin: string; product_name: string; active_ingredient: string; presentation: string; manufacturer: string; registration: string }
 type AnvisaCatalogStatus = { source: string; source_url: string; entry_count: number; imported_at: string | null; source_updated_at: string | null; automatic_enabled?: boolean; automatic_run_time?: string; automatic_timezone?: string; automatic_last_attempt_at?: string | null; automatic_last_success_at?: string | null; automatic_last_entry_count?: number; automatic_last_error?: string }
 type PharmacyBarcodeLookup = { gtin: string; lot: string | null; expiry_date: string | null; serial: string | null; matches: PharmacyItem[]; catalog_suggestions: AnvisaCatalogSuggestion[]; catalog_imported_at: string | null }
@@ -404,8 +405,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       active_ingredient: suggestion.active_ingredient,
       presentation: suggestion.presentation,
       catalog_registration: suggestion.registration,
-      purchase_unit: '',
-      unit: '',
+      purchase_unit: 'unidade',
+      unit: 'unidade',
       packaging_levels: [],
     }))
     setNotice('Sugestão Anvisa aplicada ao rascunho. Confira produto, apresentação, unidade, lote e validade antes de cadastrar.')
@@ -1093,8 +1094,14 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         </>}
         {formStep === 2 && <>
         <label className="field pharmacy-quantity-field"><span className="field-label">Quantidade de embalagens recebidas</span><input required inputMode="decimal" pattern="[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={form.purchase_quantity} onChange={(event) => setForm({ ...form, purchase_quantity: formatDecimalInput(event.target.value) })} placeholder="Ex.: 10" /><span className="field-hint">Informe quantas embalagens deste lote foram recebidas.</span></label>
-        <label className="field"><span className="field-label">Unidade de compra</span><input required maxLength={24} list="pharmacy-units" value={form.purchase_unit} onChange={(event) => setForm({ ...form, purchase_unit: event.target.value })} placeholder="Ex.: caixa" /><datalist id="pharmacy-units"><option value="unidade" /><option value="comprimido" /><option value="cápsula" /><option value="frasco" /><option value="ampola" /><option value="pacote" /><option value="mL" /><option value="mg" /><option value="caixa" /></datalist></label>
-        <label className="field"><span className="field-label">Unidade base do estoque</span><input required maxLength={24} value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value, packaging_levels: packagingLevelsForBase(form.packaging_levels, event.target.value) })} placeholder="Ex.: comprimido, frasco, mL" /><span className="field-hint">É a unidade usada para registrar saldo, movimentações e dispensações. Ela não determina a dose prescrita.</span></label>
+        <label className="field"><span className="field-label">Unidade de compra</span><select required value={form.purchase_unit || 'unidade'} onChange={(event) => setForm({ ...form, purchase_unit: event.target.value })}>
+          {!PHARMACY_UNIT_OPTIONS.includes(form.purchase_unit) && form.purchase_unit && <option value={form.purchase_unit}>{form.purchase_unit}</option>}
+          {PHARMACY_UNIT_OPTIONS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+        </select></label>
+        <label className="field"><span className="field-label">Unidade base do estoque</span><select required value={form.unit || 'unidade'} onChange={(event) => setForm({ ...form, unit: event.target.value, packaging_levels: packagingLevelsForBase(form.packaging_levels, event.target.value) })}>
+          {!PHARMACY_UNIT_OPTIONS.includes(form.unit) && form.unit && <option value={form.unit}>{form.unit}</option>}
+          {PHARMACY_UNIT_OPTIONS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+        </select><span className="field-hint">É a unidade usada para registrar saldo, movimentações e dispensações. Ela não determina a dose prescrita.</span></label>
         <PackagingConversionEditor purchaseUnit={form.purchase_unit} baseUnit={form.unit} receivedQuantity={form.purchase_quantity} levels={form.packaging_levels} onChange={(packaging_levels) => setForm({ ...form, packaging_levels })} onPurchaseUnitChange={(purchase_unit) => setForm({ ...form, purchase_unit })} />
         <div className="pharmacy-opening-balance" aria-live="polite"><span>Saldo inicial calculado</span><strong>{Number.isFinite(convertedBalance) ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(convertedBalance) : '—'} {form.unit || 'unidade base'}</strong><small>Confira os fatores e as unidades; o servidor valida e registra a conversão no lote.</small></div>
         </>}

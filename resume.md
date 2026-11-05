@@ -2,6 +2,13 @@
 
 Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
+## Correção concluída — unidades da Farmácia e rota do Almoxarifado
+
+- As unidades de compra e unidade base da etapa 2 do cadastro da Farmácia passaram de campos livres com sugestão a seleções controladas, com opções de unidade, comprimido, cápsula, frasco, ampola, pacote, caixa, mL, mg e g; unidades herdadas de cadastros antigos permanecem visíveis.
+- Ao aplicar uma sugestão do catálogo Anvisa, compra e unidade base passam a iniciar em `unidade` em vez de ficar vazias.
+- O prefixo `/api/v1/warehouse` foi adicionado ao proxy local do Vite e ao reconhecimento de disponibilidade de módulos no backend. O Caddy já encaminhava `/api/v1/warehouse/*` ao serviço de Manutenção.
+- `npm run build` passou após as correções.
+
 ## Correção concluída — alinhamento visual do Almoxarifado
 
 - O cadastro de itens, as abas operacionais, os formulários, as tabelas, a movimentação rápida, solicitações, histórico e estados vazios receberam classes próprias de layout responsivo.

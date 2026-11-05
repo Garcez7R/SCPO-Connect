@@ -38,6 +38,7 @@ export default defineConfig({
       '/api/v1/psychology': 'http://127.0.0.1:8005',
       '/api/v1/xray': 'http://127.0.0.1:8004',
       '/api/v1/maintenance': 'http://127.0.0.1:8007',
+      '/api/v1/warehouse': 'http://127.0.0.1:8007',
       '/api/v1/hygiene': 'http://127.0.0.1:8007',
       '/api/v1/laundry': 'http://127.0.0.1:8007',
       '/api/v1/therapy': 'http://127.0.0.1:8008',

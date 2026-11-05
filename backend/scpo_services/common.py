@@ -353,6 +353,7 @@ def _app_modules_for_path(path: str) -> tuple[str, ...]:
         ("/api/v1/hygiene", ("hygiene",)),
         ("/api/v1/laundry", ("laundry",)),
         ("/api/v1/maintenance", ("maintenance",)),
+        ("/api/v1/warehouse", ("warehouse",)),
         ("/api/v1/audit", ("admin",)),
         ("/api/v1/backup", ("admin",)),
     )
