@@ -1429,7 +1429,7 @@ def _serialize_warehouse_request(request: WarehouseRequest, item_name: str, item
 
 @app.get("/api/v1/warehouse/items")
 def list_warehouse_items(
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role_or_superuser("warehouse", "maintenance", "management"))],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, list[dict[str, object]]]:
     items = db.scalars(select(WarehouseItem).order_by(WarehouseItem.active.desc(), WarehouseItem.name)).all()
@@ -1440,7 +1440,7 @@ def list_warehouse_items(
 @app.post("/api/v1/warehouse/items", status_code=201)
 def create_warehouse_item(
     payload: WarehouseItemPayload,
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role_or_superuser("warehouse", "maintenance", "management"))],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
     now = datetime.now(UTC)
@@ -1472,7 +1472,7 @@ def create_warehouse_item(
 def create_warehouse_movement(
     item_id: str,
     payload: WarehouseMovementPayload,
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role_or_superuser("warehouse", "maintenance", "management"))],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
     item = db.get(WarehouseItem, item_id)
@@ -1514,7 +1514,7 @@ def create_warehouse_movement(
 
 @app.get("/api/v1/warehouse/movements")
 def list_warehouse_movements(
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role_or_superuser("warehouse", "maintenance", "management"))],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, list[dict[str, object]]]:
     rows = db.execute(
@@ -1529,7 +1529,7 @@ def list_warehouse_movements(
 
 @app.get("/api/v1/warehouse/requests")
 def list_warehouse_requests(
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role_or_superuser("warehouse", "maintenance", "management"))],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, list[dict[str, object]]]:
     rows = db.execute(
@@ -1544,7 +1544,7 @@ def list_warehouse_requests(
 @app.post("/api/v1/warehouse/requests", status_code=201)
 def create_warehouse_request(
     payload: WarehouseRequestPayload,
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role_or_superuser("warehouse", "maintenance", "management"))],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
     item = db.get(WarehouseItem, payload.item_id)
@@ -1577,7 +1577,7 @@ def create_warehouse_request(
 def update_warehouse_request(
     request_id: str,
     payload: dict[str, str],
-    principal: Annotated[DemoPrincipal, Depends(require_demo_role("warehouse", "maintenance", "management"))],
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role_or_superuser("warehouse", "maintenance", "management"))],
     db: Annotated[Session, Depends(get_maintenance_db)],
 ) -> dict[str, object]:
     request = db.get(WarehouseRequest, request_id)

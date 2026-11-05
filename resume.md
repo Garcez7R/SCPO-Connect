@@ -12,6 +12,14 @@ Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Os cards informativos verde/amarelo/vermelho não foram alterados em critérios ou propriedades.
 - README e guia interno foram revisados; o frontend compilou com sucesso após esta reforma.
 
+## Correção concluída — acesso completo do Superadministrador ao Almoxarifado
+
+- O Superadministrador recebe todos os módulos diretamente no perfil da interface, independentemente da lista atribuída à conta.
+- A navegação lateral e restauração da aba ativa permitem o Almoxarifado para o Superusuário.
+- As APIs de itens, movimentações e solicitações do Almoxarifado aceitam o bypass explícito de superusuário.
+- Almoxarifado permanece configurável na Administração e os módulos atribuíveis são apresentados em ordem alfabética.
+- Nenhuma migração ou alteração em dados reais foi executada.
+
 ## Quadro de acompanhamento
 
 ### Forma de execução acordada

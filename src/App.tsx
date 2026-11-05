@@ -613,6 +613,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
       const id = saved.id
       return id === 'home' || id === 'about' || id === 'work-orders'
         || (id === 'system-admin' && user.is_superuser)
+        || (user.is_superuser && navigation.some((item) => item.id === id))
         || (id === 'admin' && (
           (user.modules.includes('admin') && Boolean(user.permissions.admin?.includes('administrar')))
           || (user.modules.includes('oversight') && Boolean(user.permissions.oversight?.includes('consultar')))
@@ -826,7 +827,13 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     name: user.display_name || user.name,
     role: user.is_superuser ? 'Superadministrador do Sistema' : roleLabels[role],
     initials: (user.display_name || user.name).split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join(''),
-    modules: ['home', ...user.modules, 'about'],
+    modules: user.is_superuser
+      ? [
+          'home', 'work-orders', 'patients', 'patient-history', 'nursing', 'nursing-history',
+          ...modules.map((module) => module.id),
+          'oversight', 'system-admin', 'about',
+        ]
+      : ['home', ...user.modules, 'about'],
   }
   const canReviewTherapyReports = isModuleEnabled('therapy') && profile.modules.includes('management')
   const hasAppAdmin = user.is_superuser || (
@@ -844,6 +851,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
   })
 
   function canAccessModule(id: ModuleId) {
+    if (user.is_superuser) return true
     if (id === 'system-admin') return user.is_superuser
     if (id === 'admin') return hasAppAdmin || hasOversight
     if (id === 'nursing-history') return isModuleEnabled('nursing') && profile.modules.includes('nursing')
@@ -3901,7 +3909,9 @@ const moduleLabels: Record<string, string> = {
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção', warehouse: 'Almoxarifado',
   management: 'Gestão Hospitalar', admin: 'Administração do aplicativo', oversight: 'Relatórios e auditoria',
 }
-const accessModules = Object.entries(moduleLabels)
+const accessModules = Object.entries(moduleLabels).sort((left, right) =>
+  left[1].localeCompare(right[1], 'pt-BR'),
+)
 
 function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'accounts' }) {
   const canManageApp = user.is_superuser || (
