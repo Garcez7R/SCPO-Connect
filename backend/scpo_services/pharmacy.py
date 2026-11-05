@@ -1,7 +1,9 @@
+import asyncio
 import calendar
 import csv
 import hashlib
 import io
+import logging
 import os
 import re
 import uuid
@@ -10,7 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from email.utils import parsedate_to_datetime
 from typing import Annotated, Literal, Self
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -30,6 +32,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.orm import Mapped, Session, joinedload, mapped_column, relationship
+from sqlalchemy.exc import OperationalError
 
 from .common import (
     Base,
@@ -37,6 +40,7 @@ from .common import (
     audit_outbox_lifespan,
     database_session,
     emit_audit_event,
+    get_engine,
     register_audit_outbox_status_route,
     require_demo_role,
     require_service_token,
@@ -90,6 +94,19 @@ class AnvisaCatalogEntry(Base):
     record_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AnvisaCatalogUpdateState(Base):
+    __tablename__ = "anvisa_catalog_update_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    automatic_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    run_time: Mapped[str] = mapped_column(String(5), nullable=False, default="00:00")
+    timezone_name: Mapped[str] = mapped_column(String(40), nullable=False, default="America/Sao_Paulo")
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_entry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str] = mapped_column(String(240), nullable=False, default="")
 
 
 class InventoryLot(Base):
@@ -195,7 +212,15 @@ def get_pharmacy_db():
 async def lifespan(_: FastAPI):
     verify_database_migrated("pharmacy")
     async with audit_outbox_lifespan("pharmacy"):
-        yield
+        task = asyncio.create_task(_run_automatic_anvisa_catalog_worker())
+        try:
+            yield
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
@@ -208,6 +233,8 @@ STOCK_REPORT_ACCESS = require_demo_role("pharmacy", "management", "admin", "over
 DISPENSATION_READ_ROLE = require_demo_role("pharmacy", "nursing", "physician", "management", "admin", "oversight")
 ANVISA_CMED_CATALOG_URL = "https://dados.anvisa.gov.br/dados/TA_PRECO_MEDICAMENTO.csv"
 MAX_ANVISA_CATALOG_BYTES = 32 * 1024 * 1024
+ANVISA_AUTO_UPDATE_LOCK = asyncio.Lock()
+logger = logging.getLogger(__name__)
 
 
 class PackagingLevel(BaseModel):
@@ -746,6 +773,7 @@ def anvisa_catalog_status(
     count = db.scalar(select(func.count(AnvisaCatalogEntry.id))) or 0
     imported_at = db.scalar(select(func.max(AnvisaCatalogEntry.imported_at)))
     source_updated_at = db.scalar(select(func.max(AnvisaCatalogEntry.source_updated_at)))
+    state = _get_anvisa_catalog_update_state(db)
     emit_audit_event(principal, "pharmacy", "anvisa_catalog_status_read", "anvisa_catalog_entries")
     return {
         "source": "Anvisa/CMED · lista pública de preços de medicamentos",
@@ -753,14 +781,37 @@ def anvisa_catalog_status(
         "entry_count": count,
         "imported_at": imported_at.isoformat() if imported_at else None,
         "source_updated_at": source_updated_at.isoformat() if source_updated_at else None,
+        "automatic_enabled": _anvisa_auto_update_enabled(),
+        "automatic_run_time": _anvisa_auto_update_run_time(),
+        "automatic_timezone": _anvisa_auto_update_timezone(),
+        "automatic_last_attempt_at": state.last_attempt_at.isoformat() if state and state.last_attempt_at else None,
+        "automatic_last_success_at": state.last_success_at.isoformat() if state and state.last_success_at else None,
+        "automatic_last_entry_count": state.last_entry_count if state else 0,
+        "automatic_last_error": state.last_error if state else "",
     }
 
 
-@app.post("/api/v1/pharmacy/catalog/anvisa/refresh")
-def refresh_anvisa_catalog(
-    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
-    db: Annotated[Session, Depends(get_pharmacy_db)],
-) -> dict[str, object]:
+def _anvisa_auto_update_enabled() -> bool:
+    return os.getenv("SCPO_ANVISA_AUTO_UPDATE", "true").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _anvisa_auto_update_timezone() -> str:
+    return os.getenv("SCPO_ANVISA_UPDATE_TIMEZONE", "America/Sao_Paulo")
+
+
+def _anvisa_auto_update_run_time() -> str:
+    return os.getenv("SCPO_ANVISA_UPDATE_RUN_TIME", "00:00")
+
+
+def _get_anvisa_catalog_update_state(db: Session) -> AnvisaCatalogUpdateState | None:
+    try:
+        return db.get(AnvisaCatalogUpdateState, 1)
+    except OperationalError:
+        db.rollback()
+        return None
+
+
+def _download_and_replace_anvisa_catalog(db: Session) -> dict[str, object]:
     try:
         with httpx.stream(
             "GET",
@@ -796,25 +847,134 @@ def refresh_anvisa_catalog(
         records = parse_anvisa_cmed_csv(content, imported_at, source_updated_at)
     except (UnicodeDecodeError, csv.Error, ValueError) as exc:
         raise HTTPException(status_code=502, detail=f"Não foi possível interpretar o arquivo público da Anvisa: {exc}") from exc
+    if not records:
+        raise HTTPException(status_code=502, detail="O catálogo público não contém registros válidos")
 
     db.execute(delete(AnvisaCatalogEntry))
     for start in range(0, len(records), 1000):
         db.execute(insert(AnvisaCatalogEntry), records[start:start + 1000])
-    emit_audit_event(
-        principal,
-        "pharmacy",
-        "anvisa_catalog_refreshed",
-        str(len(records)),
-        db=db,
-    )
     db.commit()
     return {
-        "source": "Anvisa/CMED · lista pública de preços de medicamentos",
-        "source_url": ANVISA_CMED_CATALOG_URL,
         "entry_count": len(records),
         "imported_at": imported_at.isoformat(),
         "source_updated_at": source_updated_at.isoformat() if source_updated_at else None,
     }
+
+
+def _automatic_refresh_anvisa_catalog() -> None:
+    with Session(get_engine("pharmacy")) as db:
+        state = _get_anvisa_catalog_update_state(db)
+        if state is None:
+            state = AnvisaCatalogUpdateState(
+                id=1,
+                automatic_enabled=_anvisa_auto_update_enabled(),
+                run_time=_anvisa_auto_update_run_time(),
+                timezone_name=_anvisa_auto_update_timezone(),
+            )
+            db.add(state)
+            try:
+                db.commit()
+            except OperationalError:
+                db.rollback()
+                return
+        attempted_at = datetime.now(UTC)
+        state.last_attempt_at = attempted_at
+        try:
+            result = _download_and_replace_anvisa_catalog(db)
+            state.last_success_at = attempted_at
+            state.last_entry_count = int(result["entry_count"])
+            state.last_error = ""
+        except Exception as exc:
+            db.rollback()
+            state = _get_anvisa_catalog_update_state(db)
+            if state is not None:
+                state.last_attempt_at = attempted_at
+                state.last_error = str(getattr(exc, "detail", exc))[:240]
+                db.commit()
+                logger.warning("Automatic Anvisa catalog update failed: %s", state.last_error)
+            else:
+                logger.warning("Automatic Anvisa catalog update failed: %s", getattr(exc, "detail", exc))
+            return
+        db.commit()
+
+
+@app.post("/api/v1/pharmacy/catalog/anvisa/refresh")
+def refresh_anvisa_catalog(
+    principal: Annotated[DemoPrincipal, Depends(PHARMACY_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+) -> dict[str, object]:
+    result = _download_and_replace_anvisa_catalog(db)
+    emit_audit_event(
+        principal,
+        "pharmacy",
+        "anvisa_catalog_refreshed",
+        str(result["entry_count"]),
+        db=db,
+    )
+    db.commit()
+    state = _get_anvisa_catalog_update_state(db)
+    return {
+        "source": "Anvisa/CMED · lista pública de preços de medicamentos",
+        "source_url": ANVISA_CMED_CATALOG_URL,
+        "entry_count": result["entry_count"],
+        "imported_at": result["imported_at"],
+        "source_updated_at": result["source_updated_at"],
+        "automatic_enabled": _anvisa_auto_update_enabled(),
+        "automatic_run_time": _anvisa_auto_update_run_time(),
+        "automatic_timezone": _anvisa_auto_update_timezone(),
+        "automatic_last_attempt_at": state.last_attempt_at.isoformat() if state and state.last_attempt_at else None,
+        "automatic_last_success_at": state.last_success_at.isoformat() if state and state.last_success_at else None,
+        "automatic_last_entry_count": state.last_entry_count if state else 0,
+        "automatic_last_error": state.last_error if state else "",
+    }
+
+
+async def _run_automatic_anvisa_catalog_worker() -> None:
+    while True:
+        try:
+            if _anvisa_auto_update_enabled():
+                timezone_name = _anvisa_auto_update_timezone()
+                timezone = ZoneInfo(timezone_name)
+                run_time_text = _anvisa_auto_update_run_time()
+                run_hour, run_minute = (int(part) for part in run_time_text.split(":", 1))
+                now = datetime.now(timezone)
+                if (now.hour, now.minute) >= (run_hour, run_minute):
+                    with Session(get_engine("pharmacy")) as db:
+                        state = _get_anvisa_catalog_update_state(db)
+                        if state is None:
+                            state = AnvisaCatalogUpdateState(id=1)
+                            db.add(state)
+                            try:
+                                db.commit()
+                            except OperationalError:
+                                db.rollback()
+                                await asyncio.sleep(60)
+                                continue
+                        state.automatic_enabled = True
+                        state.run_time = run_time_text
+                        state.timezone_name = timezone_name
+                        db.commit()
+                        last_success_at = state.last_success_at
+                        if last_success_at is not None and last_success_at.tzinfo is None:
+                            last_success_at = last_success_at.replace(tzinfo=UTC)
+                        last_attempt_at = state.last_attempt_at
+                        if last_attempt_at is not None and last_attempt_at.tzinfo is None:
+                            last_attempt_at = last_attempt_at.replace(tzinfo=UTC)
+                        due = (
+                            last_success_at is None
+                            or last_success_at.astimezone(timezone).date() != now.date()
+                        )
+                        retry_allowed = (
+                            last_attempt_at is None
+                            or (datetime.now(UTC) - last_attempt_at).total_seconds() >= 30 * 60
+                        )
+                        if due and retry_allowed:
+                            await asyncio.to_thread(_automatic_refresh_anvisa_catalog)
+        except (ZoneInfoNotFoundError, ValueError, RuntimeError) as exc:
+            logger.warning("Automatic Anvisa catalog scheduler configuration is invalid: %s", exc)
+        except Exception:
+            logger.exception("Automatic Anvisa catalog worker failed")
+        await asyncio.sleep(60)
 
 
 @app.get("/api/v1/pharmacy/items/lookup")

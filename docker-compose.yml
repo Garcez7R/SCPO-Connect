@@ -99,6 +99,9 @@ services:
       <<: *backend-environment
       SCPO_SERVICE: pharmacy
       SCPO_PHARMACY_DATABASE_URL: postgresql+psycopg://${SCPO_PHARMACY_DB_USER}:${SCPO_PHARMACY_DB_PASSWORD}@db:5432/scpo_pharmacy
+      SCPO_ANVISA_AUTO_UPDATE: ${SCPO_ANVISA_AUTO_UPDATE:-true}
+      SCPO_ANVISA_UPDATE_RUN_TIME: ${SCPO_ANVISA_UPDATE_RUN_TIME:-00:00}
+      SCPO_ANVISA_UPDATE_TIMEZONE: ${SCPO_ANVISA_UPDATE_TIMEZONE:-America/Sao_Paulo}
     depends_on:
       db:
         condition: service_healthy
