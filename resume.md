@@ -320,6 +320,39 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - GTIN, GS1, QR, catálogo Anvisa/CMED e dados locais permanecem fontes assistivas. O catálogo baixado pode ser consultado offline após atualização, mas não substitui conferência nem registro ativo.
 - Adicionado controle persistente nos acessos rápidos para ativar ou desativar o movimento dos quadros informativos da Visão geral e da Farmácia. Dispositivos com redução de movimento continuam com os quadros estáticos.
 
+## Briefing da retomada — 04/11/2026
+
+### Ajustado nesta rodada
+- Consulta assistida por GTIN/GS1, QR, cadastro local e catálogo público Anvisa/CMED.
+- Dados encontrados são sugestões; o responsável pela Farmácia confere produto, princípio ativo, apresentação, unidade, lote, validade, embalagem e quantidade antes do cadastro.
+- O cadastro exige confirmação explícita na interface e no backend. A origem manual/Anvisa é registrada sem presumir registros ativos ou equivalências clínicas.
+- Movimento dos quadros informativos da Visão geral e da Farmácia agora pode ser ativado ou desativado por um controle persistente nos acessos rápidos.
+- A preferência é sincronizada entre abas da mesma origem. Em dispositivos configurados para reduzir movimento, os cartões continuam estáticos.
+- README, ajuda interna e `resume.md` foram atualizados; o commit publicado é `851514d`.
+
+### Validações da rodada
+- Frontend: typecheck passou.
+- Frontend: lint passou.
+- Backend: 17 testes de Farmácia selecionados passaram em uma única execução focada.
+- Migração de Farmácia: testes direcionados passaram.
+- Produção: build passou.
+- `git diff --check` passou antes da publicação.
+- Esses comandos foram mantidos como etapas separadas; não devem ser iniciados em paralelo na VM, pois o VSCode pode travar.
+
+### Pendentes operacionais
+- Validar o cadastro assistido com lote real e catálogo atualizado em ambiente autorizado; não usar dados reais fora do processo institucional aprovado.
+- Confirmar fisicamente a impressão da Zebra ZD220, incluindo material, adesão, leitura e alinhamento.
+- Validar visualmente e autenticadamente a preferência de movimento no servidor/piloto.
+- Executar migração `0064_pharmacy_packaging` somente em banco autorizado, com backup verificável.
+- Validar conversões clínicas, etiquetas de copos, horários e estados de recusa/suspensão somente com equipe clínica e protocolo aprovado.
+
+### Próxima rodada
+- Priorizar serviços isolados do VSCode: uma validação por vez, começando pelo typecheck, depois lint, build e cada seleção de testes separadamente.
+- Concluir a restauração isolada e os testes sintéticos no `.216` antes de tocar bancos ativos.
+- Investigar HTTP 500 nos uploads da Biblioteca/Álbum usando mensagem completa da API e logs da Oficina Terapêutica; verificar armazenamento e implantação antes de alterar código.
+- Retomar a revisão visual autenticada dos backups, dashboards, módulos móveis e preferências no servidor/piloto.
+- Revisar migração e dados históricos da hierarquia somente após autorização e backup. Não executar E2E ou deploy sem aprovação explícita.
+
 ### Pendente — ordem sugerida
 
 - **Relação entre prescrição e administração — abordagem aprovada em 04/11/2026; separação clínica mantida:** manter distintas a unidade de estoque/dispensação, a apresentação/concentração e a dose clínica. Médico registra dose, via, frequência e horários conforme decisão do prescritor; Farmácia registra produto, lote e quantidade dispensada; Enfermagem confere a prescrição e registra o que efetivamente foi administrado na unidade apresentada. Conversões clínicas, e o tratamento de dose parcial, recusa ou suspensão, só podem ser automatizados com apresentação exata e protocolo institucional validado; nunca deduzir dose pela embalagem, preencher horários ou alterar prescrição. A guia explicativa apresenta essa separação; a integração/alteração clínica continua condicionada à validação do responsável clínico e a uma especificação de estados e compatibilidade histórica.
@@ -373,6 +406,8 @@ npm run lint
 npm run build
 uv run --group dev pytest
 ```
+
+Execute estes comandos separadamente, um por vez. Não inicie suites ou builds em paralelo na VM, pois o VSCode pode travar. Para backend, execute primeiro seleções pequenas de testes e só amplie a cobertura quando não houver carga concorrente.
 
 Para build de imagens e inspeção dos serviços, em um ambiente com Docker instalado:
 
