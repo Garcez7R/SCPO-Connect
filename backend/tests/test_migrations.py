@@ -204,11 +204,12 @@ def test_each_service_migration_creates_only_its_owned_table(
         }
         assert share_columns["expires_at"]["nullable"] is True
     elif service == "access":
-        assert len(tables) == 7
+        assert len(tables) == 8
         assert "audit_outbox" in tables
         assert "physician_profile_deletion_outbox" in tables
         assert "system_module_settings" in tables
         assert "system_user_activity" in tables
+        assert "app_announcements" in tables
         assert "is_superuser" in {
             column["name"] for column in inspect(get_engine(service)).get_columns("app_users")
         }
@@ -222,8 +223,10 @@ def test_each_service_migration_creates_only_its_owned_table(
         assert {"bed_id", "bed_status"} <= hygiene_columns
         assert {"equipment_assets", "preventive_maintenance_plans"} <= tables
     elif service == "pharmacy":
-        assert len(tables) == 9
+        assert len(tables) == 10
         assert "audit_outbox" in tables
+        assert "anvisa_catalog_entries" in tables
+        assert "anvisa_catalog_update_state" in tables
         assert "average_balance" in {column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")}
         assert "medication_dispensations" in tables
         assert "purchase_requests" in tables

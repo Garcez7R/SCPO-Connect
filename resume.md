@@ -14,6 +14,8 @@ Atualizado em 04/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 
 ### Situação resumida das fases
 
+- **Pré-condição operacional concluída em 05/11/2026:** relógio sincronizado, timezone de aplicação/servidor validado e MFA confirmado como operacional. A migração sintética foi revisada; os testes de esquema agora incluem as tabelas de informativos e estado automático da Anvisa/CMED adicionadas nas fases recentes.
+
 - **Atualização controlada do aplicativo — implementada nesta fase:** o service worker deixou de ativar uma nova versão automaticamente. A aplicação verifica atualizações e mostra um toast persistente com o botão “Atualizar agora”; até a confirmação, o usuário continua na sessão atual. Ao confirmar, o novo worker é ativado, o cache antigo é removido e a página é recarregada uma vez. README, guia interno e informações da versão foram revisados nesta fase.
 
 - **Cadastro simplificado de embalagens da Farmácia — implementado nesta fase:** o fluxo passou a apresentar opções amplas em lista: unidade avulsa, caixa externa com unidades e caixa externa com caixa interna. Cada opção inclui descrição prática e exemplo de cálculo; o formulário mostra apenas os números necessários e a conferência fica em tempo real. Os nomes e níveis adicionais permanecem disponíveis em Configuração avançada. Ajustes responsivos de alinhamento e documentação também foram revisados, preservando lotes, FEFO, metas, semáforo e propriedades dos cards informativos.
