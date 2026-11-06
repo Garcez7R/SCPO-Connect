@@ -978,7 +978,8 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pharmacy-label-error { margin: 0; color: #a4232e; font-size: 12px; }
 .pharmacy-label-print-root { display: none; }
-.pharmacy-label-print { display: flex; box-sizing: border-box; flex-direction: column; justify-content: space-between; gap: 1.2mm; padding: 2mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; }
+.pharmacy-label-print-sheet { display: grid; box-sizing: border-box; align-content: start; justify-content: start; gap: 0; overflow: hidden; color: #111; background: #fff; }
+.pharmacy-label-print { display: flex; box-sizing: border-box; flex-direction: column; justify-content: space-between; gap: 1.2mm; padding: 1mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; }
 .pharmacy-label-field-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
 .pharmacy-label-field-options legend { padding: 0 5px; color: var(--ink); font-size: 12px; font-weight: 650; }
 .pharmacy-label-field-options label { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 12px; }
@@ -997,7 +998,7 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
   body.print-pharmacy-labels .pharmacy-label-print-root,
   body.print-pharmacy-labels .pharmacy-label-print-root * { visibility: visible !important; }
   body.print-pharmacy-labels .pharmacy-label-print-root { position: absolute !important; top: 0 !important; left: 0 !important; display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
-  body.print-pharmacy-labels .pharmacy-label-print { break-after: page; page-break-after: always; }
+  body.print-pharmacy-labels .pharmacy-label-print-sheet { break-after: page; page-break-after: always; }
 }
 .pharmacy-item-description { margin: -7px 0 0; color: var(--muted); font-size: 12px; }
 .search-input-wrap { position: relative; display: block; }

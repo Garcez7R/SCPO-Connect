@@ -16,9 +16,36 @@ type AuthUser = { id: string; username: string; name: string; role: string; modu
 type PackagingLevel = { unit: string; units_per_parent: string }
 type PharmacyItem = { id: number; product_id: number; item_name: string; balance: string; unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; packaging_levels: PackagingLevel[]; product_packaging_unit: string; product_packaging_levels: PackagingLevel[]; lot: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
 type PharmacyLabelField = 'item_name' | 'active_ingredient' | 'presentation' | 'lot' | 'expiry_date' | 'storage_location' | 'barcode'
-type PharmacyLabelProfile = { name: string; width: string; height: string; fields: PharmacyLabelField[] }
+type PharmacyLabelProfile = {
+  name: string
+  width: string
+  height: string
+  fields: PharmacyLabelField[]
+  columns: number
+  rows: number
+  marginTop: number
+  marginRight: number
+  marginBottom: number
+  marginLeft: number
+  cornerRadius: number
+  contentPadding: number
+}
 const PHARMACY_LABEL_PROFILES_KEY = 'scpo.pharmacy.label-profiles.v1'
 const DEFAULT_PHARMACY_LABEL_FIELDS: PharmacyLabelField[] = ['item_name', 'active_ingredient', 'presentation', 'lot', 'expiry_date']
+const ZD220_LABEL_PROFILE: PharmacyLabelProfile = {
+  name: 'ZD220 — 32 × 18 mm (3 × 3)',
+  width: '32',
+  height: '18',
+  fields: ['item_name', 'lot', 'expiry_date'],
+  columns: 3,
+  rows: 3,
+  marginTop: 3,
+  marginRight: 3,
+  marginBottom: 3,
+  marginLeft: 3,
+  cornerRadius: 1,
+  contentPadding: 1,
+}
 const PHARMACY_LABEL_FIELD_OPTIONS: { value: PharmacyLabelField; label: string }[] = [
   { value: 'item_name', label: 'Medicamento' },
   { value: 'active_ingredient', label: 'Princípio ativo' },
@@ -33,17 +60,54 @@ const NON_COUNTABLE_UNITS = new Set(['g', 'mg', 'ml'])
 
 function isPharmacyLabelProfile(value: unknown): value is Omit<PharmacyLabelProfile, 'fields'> & { fields?: PharmacyLabelField[] } {
   if (typeof value !== 'object' || value === null) return false
-  const profile = value as { name?: unknown; width?: unknown; height?: unknown; fields?: unknown }
+  const profile = value as {
+    name?: unknown
+    width?: unknown
+    height?: unknown
+    fields?: unknown
+    columns?: unknown
+    rows?: unknown
+    marginTop?: unknown
+    marginRight?: unknown
+    marginBottom?: unknown
+    marginLeft?: unknown
+    cornerRadius?: unknown
+    contentPadding?: unknown
+  }
   const isDimension = (dimension: unknown) => typeof dimension === 'string'
     && dimension.trim() !== ''
     && Number.isFinite(Number(dimension))
     && Number(dimension) >= 10
     && Number(dimension) <= 200
+  const isLegacyLayout = profile.columns === undefined
+    && profile.rows === undefined
+    && profile.marginTop === undefined
+    && profile.marginRight === undefined
+    && profile.marginBottom === undefined
+    && profile.marginLeft === undefined
+    && profile.cornerRadius === undefined
+    && profile.contentPadding === undefined
+  const isValidLayout = isLegacyLayout || (
+    Number.isInteger(profile.columns) && Number(profile.columns) >= 1 && Number(profile.columns) <= 8
+    && Number.isInteger(profile.rows) && Number(profile.rows) >= 1 && Number(profile.rows) <= 20
+    && ['marginTop', 'marginRight', 'marginBottom', 'marginLeft'].every((key) => (
+      Number.isFinite(profile[key as keyof typeof profile])
+      && Number(profile[key as keyof typeof profile]) >= 0
+      && Number(profile[key as keyof typeof profile]) <= 20
+    ))
+    && Number.isFinite(profile.cornerRadius)
+    && Number(profile.cornerRadius) >= 0
+    && Number(profile.cornerRadius) <= 5
+    && Number.isFinite(profile.contentPadding)
+    && Number(profile.contentPadding) >= 0
+    && Number(profile.contentPadding) <= 5
+  )
   return typeof profile.name === 'string'
     && profile.name.trim().length > 0
     && profile.name.trim().length <= 50
     && isDimension(profile.width)
     && isDimension(profile.height)
+    && isValidLayout
     && (profile.fields === undefined || (
       Array.isArray(profile.fields)
       && profile.fields.every((field) => PHARMACY_LABEL_FIELD_OPTIONS.some((option) => option.value === field))
@@ -54,13 +118,28 @@ function isPharmacyLabelProfile(value: unknown): value is Omit<PharmacyLabelProf
 function readPharmacyLabelProfiles(): { profiles: PharmacyLabelProfile[]; error: string } {
   try {
     const saved = window.localStorage.getItem(PHARMACY_LABEL_PROFILES_KEY)
-    if (!saved) return { profiles: [], error: '' }
+    if (!saved) return { profiles: [{ ...ZD220_LABEL_PROFILE }], error: '' }
     const profiles: unknown = JSON.parse(saved)
     if (!Array.isArray(profiles) || !profiles.every(isPharmacyLabelProfile)) {
       throw new Error('As configurações salvas de etiquetas estão inválidas. Salve novos perfis para substituí-las.')
     }
+    const restoredProfiles = profiles.map((profile) => ({
+      ...profile,
+      fields: profile.fields ?? [...DEFAULT_PHARMACY_LABEL_FIELDS],
+      columns: profile.columns ?? 1,
+      rows: profile.rows ?? 1,
+      marginTop: profile.marginTop ?? 0,
+      marginRight: profile.marginRight ?? 0,
+      marginBottom: profile.marginBottom ?? 0,
+      marginLeft: profile.marginLeft ?? 0,
+      cornerRadius: profile.cornerRadius ?? 0,
+      contentPadding: profile.contentPadding ?? 2,
+    }))
+    const includesZd220Profile = restoredProfiles.some((profile) => profile.name === ZD220_LABEL_PROFILE.name)
     return {
-      profiles: profiles.map((profile) => ({ ...profile, fields: profile.fields ?? [...DEFAULT_PHARMACY_LABEL_FIELDS] })),
+      profiles: !includesZd220Profile && restoredProfiles.length < 20
+        ? [...restoredProfiles, { ...ZD220_LABEL_PROFILE }]
+        : restoredProfiles,
       error: '',
     }
   } catch (cause) {
@@ -356,15 +435,23 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [movementSaving, setMovementSaving] = useState(false)
   const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: 'unidade', packaging_levels: [] as PackagingLevel[], unit: 'unidade', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [labelItem, setLabelItem] = useState<PharmacyItem | null>(null)
-  const [labelWidth, setLabelWidth] = useState('50')
-  const [labelHeight, setLabelHeight] = useState('30')
+  const [labelWidth, setLabelWidth] = useState(ZD220_LABEL_PROFILE.width)
+  const [labelHeight, setLabelHeight] = useState(ZD220_LABEL_PROFILE.height)
   const [labelCount, setLabelCount] = useState('1')
-  const [labelFields, setLabelFields] = useState<PharmacyLabelField[]>([...DEFAULT_PHARMACY_LABEL_FIELDS])
+  const [labelFields, setLabelFields] = useState<PharmacyLabelField[]>([...ZD220_LABEL_PROFILE.fields])
+  const [labelColumns, setLabelColumns] = useState(ZD220_LABEL_PROFILE.columns)
+  const [labelRows, setLabelRows] = useState(ZD220_LABEL_PROFILE.rows)
+  const [labelMarginTop, setLabelMarginTop] = useState(ZD220_LABEL_PROFILE.marginTop)
+  const [labelMarginRight, setLabelMarginRight] = useState(ZD220_LABEL_PROFILE.marginRight)
+  const [labelMarginBottom, setLabelMarginBottom] = useState(ZD220_LABEL_PROFILE.marginBottom)
+  const [labelMarginLeft, setLabelMarginLeft] = useState(ZD220_LABEL_PROFILE.marginLeft)
+  const [labelCornerRadius, setLabelCornerRadius] = useState(ZD220_LABEL_PROFILE.cornerRadius)
+  const [labelContentPadding, setLabelContentPadding] = useState(ZD220_LABEL_PROFILE.contentPadding)
   const [labelProfileState, setLabelProfileState] = useState(readPharmacyLabelProfiles)
   const labelProfiles = labelProfileState.profiles
   const labelProfileError = labelProfileState.error
-  const [selectedLabelProfile, setSelectedLabelProfile] = useState('')
-  const [labelProfileName, setLabelProfileName] = useState('')
+  const [selectedLabelProfile, setSelectedLabelProfile] = useState(ZD220_LABEL_PROFILE.name)
+  const [labelProfileName, setLabelProfileName] = useState(ZD220_LABEL_PROFILE.name)
   const [query, setQuery] = useState('')
   const [stockDisplayUnit, setStockDisplayUnit] = useState<StockDisplayUnit>('base')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
@@ -992,7 +1079,17 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const labelCountValue = Number(labelCount)
   const canPrintLabelDimensions = Number.isFinite(labelWidthValue) && labelWidthValue >= 10 && labelWidthValue <= 200
     && Number.isFinite(labelHeightValue) && labelHeightValue >= 10 && labelHeightValue <= 200
+  const labelPageWidth = labelWidthValue * labelColumns + labelMarginLeft + labelMarginRight
+  const labelPageHeight = labelHeightValue * labelRows + labelMarginTop + labelMarginBottom
+  const canPrintLabelLayout = Number.isInteger(labelColumns) && labelColumns >= 1 && labelColumns <= 8
+    && Number.isInteger(labelRows) && labelRows >= 1 && labelRows <= 20
+    && [labelMarginTop, labelMarginRight, labelMarginBottom, labelMarginLeft]
+      .every((margin) => Number.isFinite(margin) && margin >= 0 && margin <= 20)
+    && Number.isFinite(labelCornerRadius) && labelCornerRadius >= 0 && labelCornerRadius <= 5
+    && Number.isFinite(labelContentPadding) && labelContentPadding >= 0 && labelContentPadding <= 5
+    && labelPageWidth <= 200 && labelPageHeight <= 200
   const canPrintLabels = canPrintLabelDimensions
+    && canPrintLabelLayout
     && labelFields.length > 0
     && Number.isInteger(labelCountValue) && labelCountValue >= 1 && labelCountValue <= 500
 
@@ -1012,8 +1109,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       setLabelProfileError('Informe um nome de até 50 caracteres para a configuração.')
       return
     }
-    if (!canPrintLabelDimensions) {
-      setLabelProfileError('Informe dimensões válidas entre 10 e 200 mm antes de salvar.')
+    if (!canPrintLabelDimensions || !canPrintLabelLayout) {
+      setLabelProfileError('Confira as dimensões, a grade e as margens antes de salvar.')
       return
     }
     if (labelFields.length === 0) {
@@ -1027,7 +1124,21 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     }
     const updated = [
       ...labelProfiles.filter((profile) => profile.name !== selectedLabelProfile),
-      { name, width: labelWidth, height: labelHeight, fields: [...labelFields] },
+      {
+        ...ZD220_LABEL_PROFILE,
+        name,
+        width: labelWidth,
+        height: labelHeight,
+        fields: [...labelFields],
+        columns: labelColumns,
+        rows: labelRows,
+        marginTop: labelMarginTop,
+        marginRight: labelMarginRight,
+        marginBottom: labelMarginBottom,
+        marginLeft: labelMarginLeft,
+        cornerRadius: labelCornerRadius,
+        contentPadding: labelContentPadding,
+      },
     ]
     if (updated.length > 20) {
       setLabelProfileError('O navegador permite salvar até 20 configurações de etiquetas.')
@@ -1060,7 +1171,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   function printLabels() {
     if (!labelItem || !canPrintLabels) return
     const printStyle = document.createElement('style')
-    printStyle.textContent = `@page { size: ${labelWidthValue}mm ${labelHeightValue}mm; margin: 0; }`
+    printStyle.textContent = `@page { size: ${labelPageWidth}mm ${labelPageHeight}mm; margin: 0; }`
     document.head.append(printStyle)
     document.body.classList.add('print-pharmacy-labels')
     let fallbackTimer = 0
@@ -1391,21 +1502,47 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     </>}
     {labelItem && <>
       <div className="pharmacy-label-print-root" aria-hidden="true">
-        {canPrintLabels && Array.from({ length: labelCountValue }, (_, index) => (
-          <article
-            className={`pharmacy-label-print${index === labelCountValue - 1 ? ' pharmacy-label-print-last' : ''}`}
-            key={index}
-            style={{ width: `${labelWidthValue}mm`, height: `${labelHeightValue}mm` }}
-          >
-            {labelFields.includes('item_name') && <strong className="pharmacy-label-name">{labelItem.item_name}</strong>}
-            {labelFields.includes('active_ingredient') && labelItem.active_ingredient && <span className="pharmacy-label-description">{labelItem.active_ingredient}</span>}
-            {labelFields.includes('presentation') && labelItem.presentation && <span className="pharmacy-label-description">{labelItem.presentation}</span>}
-            {labelFields.includes('lot') && <span className="pharmacy-label-lot"><small>Lote</small><strong>{labelItem.lot}</strong></span>}
-            {labelFields.includes('expiry_date') && <span className="pharmacy-label-expiry"><small>Validade</small><strong>{formatDateDmy(labelItem.expiry_date)}</strong></span>}
-            {labelFields.includes('storage_location') && <span className="pharmacy-label-description">Local: {labelItem.storage_location || 'Não informada'}</span>}
-            {labelFields.includes('barcode') && labelItem.barcode && <span className="pharmacy-label-description">Código: {labelItem.barcode}</span>}
-          </article>
-        ))}
+        {canPrintLabels && Array.from(
+          { length: Math.ceil(labelCountValue / (labelColumns * labelRows)) },
+          (_, pageIndex) => {
+            const firstLabelIndex = pageIndex * labelColumns * labelRows
+            const labelsOnPage = Math.min(labelColumns * labelRows, labelCountValue - firstLabelIndex)
+            return (
+              <div
+                className={`pharmacy-label-print-sheet${pageIndex === Math.ceil(labelCountValue / (labelColumns * labelRows)) - 1 ? ' pharmacy-label-print-last' : ''}`}
+                key={pageIndex}
+                style={{
+                  width: `${labelPageWidth}mm`,
+                  height: `${labelPageHeight}mm`,
+                  gridTemplateColumns: `repeat(${labelColumns}, ${labelWidthValue}mm)`,
+                  gridTemplateRows: `repeat(${labelRows}, ${labelHeightValue}mm)`,
+                  padding: `${labelMarginTop}mm ${labelMarginRight}mm ${labelMarginBottom}mm ${labelMarginLeft}mm`,
+                }}
+              >
+                {Array.from({ length: labelsOnPage }, (_, labelIndex) => (
+                  <article
+                    className="pharmacy-label-print"
+                    key={firstLabelIndex + labelIndex}
+                    style={{
+                      width: `${labelWidthValue}mm`,
+                      height: `${labelHeightValue}mm`,
+                      borderRadius: `${labelCornerRadius}mm`,
+                      padding: `${labelContentPadding}mm`,
+                    }}
+                  >
+                    {labelFields.includes('item_name') && <strong className="pharmacy-label-name">{labelItem.item_name}</strong>}
+                    {labelFields.includes('active_ingredient') && labelItem.active_ingredient && <span className="pharmacy-label-description">{labelItem.active_ingredient}</span>}
+                    {labelFields.includes('presentation') && labelItem.presentation && <span className="pharmacy-label-description">{labelItem.presentation}</span>}
+                    {labelFields.includes('lot') && <span className="pharmacy-label-lot"><small>Lote</small><strong>{labelItem.lot}</strong></span>}
+                    {labelFields.includes('expiry_date') && <span className="pharmacy-label-expiry"><small>Validade</small><strong>{formatDateDmy(labelItem.expiry_date)}</strong></span>}
+                    {labelFields.includes('storage_location') && <span className="pharmacy-label-description">Local: {labelItem.storage_location || 'Não informada'}</span>}
+                    {labelFields.includes('barcode') && labelItem.barcode && <span className="pharmacy-label-description">Código: {labelItem.barcode}</span>}
+                  </article>
+                ))}
+              </div>
+            )
+          },
+        )}
       </div>
       <div className="pharmacy-label-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setLabelItem(null) }}>
         <section className="pharmacy-label-dialog" role="dialog" aria-modal="true" aria-labelledby="pharmacy-label-title">
@@ -1421,18 +1558,34 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
                 setLabelWidth(profile.width)
                 setLabelHeight(profile.height)
                 setLabelFields([...profile.fields])
+                setLabelColumns(profile.columns)
+                setLabelRows(profile.rows)
+                setLabelMarginTop(profile.marginTop)
+                setLabelMarginRight(profile.marginRight)
+                setLabelMarginBottom(profile.marginBottom)
+                setLabelMarginLeft(profile.marginLeft)
+                setLabelCornerRadius(profile.cornerRadius)
+                setLabelContentPadding(profile.contentPadding)
               }
-            }}><option value="">Dimensões personalizadas / nova configuração</option>{labelProfiles.map((profile) => <option key={profile.name} value={profile.name}>{profile.name} · {profile.width} × {profile.height} mm · {profile.fields.length} campo(s)</option>)}</select></label>
-            <label className="field pharmacy-label-profile-field"><span className="field-label">Nome da configuração</span><input maxLength={50} value={labelProfileName} onChange={(event) => setLabelProfileName(event.target.value)} placeholder="Ex.: etiqueta pequena 30 × 20 mm" /></label>
+            }}><option value="">Dimensões personalizadas / nova configuração</option>{labelProfiles.map((profile) => <option key={profile.name} value={profile.name}>{profile.name} · {profile.width} × {profile.height} mm · {profile.columns} × {profile.rows}</option>)}</select></label>
+            <label className="field pharmacy-label-profile-field"><span className="field-label">Nome da configuração</span><input maxLength={50} value={labelProfileName} onChange={(event) => setLabelProfileName(event.target.value)} placeholder="Ex.: Zebra ZD220 — etiqueta 32 × 18 mm" /></label>
             <label className="field"><span className="field-label">Largura (mm)</span><input type="number" min="10" max="200" step="0.1" required value={labelWidth} onChange={(event) => setLabelWidth(event.target.value)} /></label>
             <label className="field"><span className="field-label">Altura (mm)</span><input type="number" min="10" max="200" step="0.1" required value={labelHeight} onChange={(event) => setLabelHeight(event.target.value)} /></label>
+            <label className="field"><span className="field-label">Colunas por folha</span><input type="number" min="1" max="8" step="1" required value={labelColumns} onChange={(event) => setLabelColumns(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Linhas por folha</span><input type="number" min="1" max="20" step="1" required value={labelRows} onChange={(event) => setLabelRows(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Margem superior (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelMarginTop} onChange={(event) => setLabelMarginTop(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Margem direita (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelMarginRight} onChange={(event) => setLabelMarginRight(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Margem inferior (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelMarginBottom} onChange={(event) => setLabelMarginBottom(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Margem esquerda (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelMarginLeft} onChange={(event) => setLabelMarginLeft(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Raio dos cantos (mm)</span><input type="number" min="0" max="5" step="0.1" required value={labelCornerRadius} onChange={(event) => setLabelCornerRadius(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Recuo interno do conteúdo (mm)</span><input type="number" min="0" max="5" step="0.1" required value={labelContentPadding} onChange={(event) => setLabelContentPadding(Number(event.target.value))} /></label>
             <fieldset className="pharmacy-label-field-options"><legend>Campos impressos</legend>{PHARMACY_LABEL_FIELD_OPTIONS.map((option) => <label key={option.value}><input type="checkbox" checked={labelFields.includes(option.value)} onChange={(event) => setLabelFields((current) => event.target.checked ? [...current, option.value] : current.filter((field) => field !== option.value))} /><span>{option.label}</span></label>)}</fieldset>
             <label className="field pharmacy-label-count"><span className="field-label">Quantidade de etiquetas</span><input type="number" min="1" max="500" step="1" required value={labelCount} onChange={(event) => setLabelCount(event.target.value)} /><span className="field-hint">Escolha a quantidade conforme o uso deste lote (de 1 a 500).</span></label>
           </div>
-          <p className="field-hint">Ajuste largura e altura para o rolo instalado. No diálogo de impressão, escolha a Zebra ZD220 e o tamanho correspondente; desative cabeçalhos e rodapés e use escala de 100%. Confira uma etiqueta antes de imprimir o restante.</p>
+          <p className="field-hint">A prévia usa folha de {labelPageWidth} × {labelPageHeight} mm ({labelColumns} × {labelRows} etiquetas), considerando espaçamento zero entre etiquetas. No diálogo de impressão, escolha a Zebra ZD220, desative cabeçalhos e rodapés e use escala de 100%. Confira o alinhamento com uma impressão de teste antes do lote.</p>
           {labelProfileError && <p className="pharmacy-label-error" role="alert">{labelProfileError}</p>}
-          {!canPrintLabels && <p className="pharmacy-label-error" role="alert">Informe dimensões entre 10 e 200 mm, selecione ao menos um campo e uma quantidade inteira de 1 a 500.</p>}
-          <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={printLabels}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
+          {!canPrintLabels && <p className="pharmacy-label-error" role="alert">Confira dimensões entre 10 e 200 mm, grade, margens (folha máxima 200 mm), raio, ao menos um campo e quantidade inteira de 1 a 500.</p>}
+          <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !canPrintLabelLayout || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && selectedLabelProfile !== ZD220_LABEL_PROFILE.name && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={printLabels}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
         </section>
       </div>
     </>}
