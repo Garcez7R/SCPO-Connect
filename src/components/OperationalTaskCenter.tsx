@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, ClipboardList, RefreshCw } from 'lucide-reac
 import { readApiResponse } from '../api'
 import ToastMessage from './ToastMessage'
 import { hygieneAreaLabels, hygieneRequestTypeLabels, type HygieneArea, type HygieneRequestType } from '../operationsLabels'
+import { formatDateDmy } from '../dateFormatting'
 
 type ModuleId = 'reception' | 'nursing' | 'pharmacy' | 'maintenance' | 'hygiene'
 type TaskFilter = 'all' | 'urgent'
@@ -143,7 +144,7 @@ export default function OperationalTaskCenter({
             tasks: alerts.slice(0, 5).map((alert) => ({
               id: String(alert.item_id),
               title: alert.item_name,
-              detail: `${alert.balance} ${alert.unit} · ${alert.alert_types.includes('expired') ? 'lote vencido' : alert.alert_types.includes('expiring') ? `vence em ${Math.max(0, alert.days_to_expiry)} dias` : 'abaixo do mínimo'} · validade ${alert.expiry_date}`,
+              detail: `${alert.balance} ${alert.unit} · ${alert.alert_types.includes('expired') ? 'lote vencido' : alert.alert_types.includes('expiring') ? `vence em ${Math.max(0, alert.days_to_expiry)} dias` : 'abaixo do mínimo'} · validade ${formatDateDmy(alert.expiry_date)}`,
               priority: alert.alert_types.includes('expired') || alert.alert_types.includes('critical_stock') ? 'urgent' : alert.alert_types.includes('below_minimum') || alert.alert_types.includes('expiring') ? 'high' : 'normal',
             })),
           }
