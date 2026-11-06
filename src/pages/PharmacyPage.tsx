@@ -41,7 +41,7 @@ const ZD220_LABEL_PROFILE: PharmacyLabelProfile = {
   fields: ['item_name', 'lot', 'expiry_date'],
   columns: 3,
   rows: 3,
-  horizontalGap: 3,
+  horizontalGap: 2,
   verticalGap: 3,
   marginTop: 3,
   marginRight: 3,
@@ -144,7 +144,9 @@ function readPharmacyLabelProfiles(): { profiles: PharmacyLabelProfile[]; error:
       fields: profile.fields ?? [...DEFAULT_PHARMACY_LABEL_FIELDS],
       columns: profile.columns ?? 1,
       rows: profile.rows ?? 1,
-      horizontalGap: profile.horizontalGap ?? (profile.name === ZD220_LABEL_PROFILE.name ? 3 : 0),
+      horizontalGap: profile.horizontalGap === 3 && profile.name === ZD220_LABEL_PROFILE.name
+        ? 2
+        : profile.horizontalGap ?? 0,
       verticalGap: profile.verticalGap ?? (profile.name === ZD220_LABEL_PROFILE.name ? 3 : 0),
       marginTop: profile.marginTop ?? 0,
       marginRight: profile.marginRight ?? 0,
