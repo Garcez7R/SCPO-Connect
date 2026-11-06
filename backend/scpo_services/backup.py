@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -38,7 +39,12 @@ from pydantic import (
 )
 
 from .common import DemoPrincipal, authenticated_principal, emit_audit_event
-from .rgs_format import DATABASES, MAGIC, decrypt_and_extract
+from .rgs_format import (
+    DATABASES,
+    MAGIC,
+    decrypt_and_extract,
+    decrypt_automatic_and_extract,
+)
 
 AUTHENTICATED = Depends(authenticated_principal)
 RESTORE_CONFIRMATION = "SUBSTITUIR TODOS OS DADOS"
@@ -52,6 +58,8 @@ AUTO_BACKUP_RETENTION_COUNT = 30
 AUTO_BACKUP_DEFAULT_TIME = "02:00"
 LOW_DISK_SPACE_FRACTION = 0.1
 MAX_PUBLIC_KEY_BYTES = 64 * 1024
+MAX_PRIVATE_KEY_BYTES = 64 * 1024
+MAX_AUTOMATIC_BACKUP_BYTES = 20 * 1024**3
 logger = logging.getLogger(__name__)
 
 
@@ -131,6 +139,17 @@ class AutomaticBackupKeyRequest(BaseModel):
 class AutomaticBackupKeyExportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     passphrase: SecretStr = Field(min_length=16, max_length=128)
+
+
+class AutomaticBackupRestoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    backup_name: str = Field(pattern=r"^scpo-connect-\d{8}T\d{6}Z\.rgs$")
+    confirmation: str = Field(max_length=64)
+    operation_id: UUID
+    backup_password: SecretStr | None = Field(default=None, max_length=128)
+    key_passphrase: SecretStr | None = Field(default=None, max_length=128)
+    private_key: str | None = Field(default=None, max_length=MAX_PRIVATE_KEY_BYTES)
 
 
 def _automatic_schedule(state: dict[str, object]) -> AutomaticBackupSchedule:
@@ -366,6 +385,199 @@ def _generated_private_key_fingerprint() -> str | None:
     ):
         raise RuntimeError("Não foi possível identificar a chave GPG gerada")
     return fingerprint.upper()
+
+
+def _automatic_backup_files() -> list[dict[str, object]]:
+    state = _load_automatic_backup_state()
+    directory = state.get("directory")
+    if not isinstance(directory, str):
+        return []
+    destination = _resolve_automatic_destination(directory)
+    if destination.is_symlink() or not destination.is_dir():
+        return []
+    records: list[dict[str, object]] = []
+    for path in destination.glob("scpo-connect-*.rgs"):
+        if not re.fullmatch(r"scpo-connect-\d{8}T\d{6}Z\.rgs", path.name):
+            continue
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            resolved_path = path.resolve(strict=True)
+            if resolved_path.parent != destination.resolve(strict=True):
+                continue
+            metadata = resolved_path.stat()
+            if metadata.st_size <= 0 or metadata.st_size > MAX_AUTOMATIC_BACKUP_BYTES:
+                continue
+            with resolved_path.open("rb") as source:
+                is_password_bundle = source.read(len(MAGIC)) == MAGIC
+        except OSError:
+            logger.warning("Could not inspect an automatic backup file")
+            continue
+        records.append({
+            "name": path.name,
+            "created_at": datetime.fromtimestamp(metadata.st_mtime, UTC).isoformat(),
+            "size_bytes": metadata.st_size,
+            "encryption_type": "password" if is_password_bundle else "gpg",
+        })
+    return sorted(records, key=lambda record: (str(record["created_at"]), str(record["name"])), reverse=True)
+
+
+def _automatic_backup_path(backup_name: str) -> Path:
+    if not re.fullmatch(r"scpo-connect-\d{8}T\d{6}Z\.rgs", backup_name):
+        raise HTTPException(status_code=422, detail="Nome de backup automático inválido")
+    state = _load_automatic_backup_state()
+    directory = state.get("directory")
+    if not isinstance(directory, str):
+        raise HTTPException(status_code=409, detail="O destino de backup automático não está configurado")
+    destination = _resolve_automatic_destination(directory)
+    path = destination / backup_name
+    try:
+        resolved_destination = destination.resolve(strict=True)
+        resolved_path = path.resolve(strict=True)
+        metadata = path.lstat()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="O backup selecionado não está mais disponível") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Não foi possível acessar o backup selecionado") from exc
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or resolved_path.parent != resolved_destination
+        or metadata.st_size <= 0
+        or metadata.st_size > MAX_AUTOMATIC_BACKUP_BYTES
+    ):
+        raise HTTPException(status_code=422, detail="O arquivo selecionado não é um backup automático válido")
+    return path
+
+
+def _secret_key_fingerprints(home: Path) -> list[str]:
+    try:
+        result = subprocess.run(
+            [
+                "gpg",
+                "--batch",
+                "--homedir",
+                str(home),
+                "--with-colons",
+                "--list-secret-keys",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise HTTPException(status_code=422, detail="Não foi possível ler a chave privada GPG") from exc
+    records = result.stdout.decode("utf-8", errors="replace").splitlines()
+    fingerprints: list[str] = []
+    for index, record in enumerate(records):
+        if not record.startswith("sec:"):
+            continue
+        fingerprint = next(
+            (
+                following.split(":")[9]
+                for following in records[index + 1 :]
+                if following.startswith(("sec:", "fpr:"))
+            ),
+            "",
+        )
+        if fingerprint and fingerprint not in fingerprints:
+            fingerprints.append(fingerprint.upper())
+    return fingerprints
+
+
+def _decrypt_automatic_backup(
+    source: Path,
+    destination: Path,
+    payload: AutomaticBackupRestoreRequest,
+    state: dict[str, object],
+) -> None:
+    with source.open("rb") as encrypted:
+        is_password_bundle = encrypted.read(len(MAGIC)) == MAGIC
+    if is_password_bundle:
+        password = (
+            payload.backup_password.get_secret_value()
+            if payload.backup_password is not None
+            else _load_automatic_password(state)
+        )
+        decrypt_automatic_and_extract(source, destination, password=password)
+        return
+
+    temporary_home: tempfile.TemporaryDirectory[str] | None = None
+    if payload.private_key is not None:
+        try:
+            private_key = payload.private_key.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="Envie uma única chave privada GPG ASCII-armored válida",
+            ) from exc
+        private_marker = b"-----BEGIN PGP PRIVATE KEY BLOCK-----"
+        if (
+            not private_key.strip().startswith(private_marker)
+            or private_key.count(private_marker) != 1
+            or b"-----END PGP PRIVATE KEY BLOCK-----" not in private_key
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Envie uma única chave privada GPG ASCII-armored válida",
+            )
+        temporary_home = tempfile.TemporaryDirectory(prefix="scpo-restore-gpg-")
+        home = Path(temporary_home.name)
+        os.chmod(home, 0o700)
+        try:
+            subprocess.run(
+                ["gpg", "--batch", "--homedir", str(home), "--import"],
+                input=private_key,
+                capture_output=True,
+                check=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            temporary_home.cleanup()
+            raise HTTPException(status_code=422, detail="A chave privada GPG enviada não pôde ser importada") from exc
+        try:
+            fingerprints = _secret_key_fingerprints(home)
+        except HTTPException:
+            temporary_home.cleanup()
+            raise
+        if len(fingerprints) != 1:
+            temporary_home.cleanup()
+            raise HTTPException(status_code=422, detail="Envie uma chave privada GPG por vez")
+    else:
+        expected_fingerprint = state.get("recipient")
+        home = _generated_gpg_home()
+        fingerprint = _generated_private_key_fingerprint()
+        if (
+            not isinstance(expected_fingerprint, str)
+            or fingerprint is None
+            or not hmac.compare_digest(fingerprint, expected_fingerprint.upper())
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="A chave privada correspondente não está no servidor. Envie a cópia privada custodiada para esta restauração.",
+            )
+
+    try:
+        decrypt_automatic_and_extract(
+            source,
+            destination,
+            gpg_home=home,
+            passphrase=payload.key_passphrase.get_secret_value()
+            if payload.key_passphrase is not None
+            else None,
+        )
+    finally:
+        if temporary_home is not None:
+            try:
+                subprocess.run(
+                    ["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"],
+                    capture_output=True,
+                    check=False,
+                    timeout=10,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                logger.warning("Could not stop the temporary GPG agent after automatic restore")
+            temporary_home.cleanup()
 
 
 def _stop_generated_gpg_agent(home: Path) -> None:
@@ -1174,6 +1386,193 @@ def automatic_backup_status(
         service="access",
     )
     return status
+
+
+@app.get("/api/v1/backup/automatic/files")
+def automatic_backup_files(
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+) -> dict[str, object]:
+    _require_admin(principal)
+    try:
+        files = _automatic_backup_files()
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.exception("Could not list automatic backup files")
+        raise HTTPException(
+            status_code=503,
+            detail="Não foi possível listar os backups automáticos",
+        ) from exc
+    emit_audit_event(
+        principal,
+        "management",
+        "automatic_backup_files_read",
+        "automatic_backups",
+        service="access",
+    )
+    return {"files": files}
+
+
+@app.post("/api/v1/backup/automatic/restore")
+async def restore_automatic_backup(
+    payload: AutomaticBackupRestoreRequest,
+    principal: Annotated[DemoPrincipal, AUTHENTICATED],
+) -> dict[str, str]:
+    _require_admin(principal)
+    if payload.confirmation != RESTORE_CONFIRMATION:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Digite exatamente: {RESTORE_CONFIRMATION}",
+        )
+    source = _automatic_backup_path(payload.backup_name)
+    state = _load_automatic_backup_state()
+    operation_id = str(payload.operation_id)
+    if not RESTORE_LOCK.acquire(blocking=False):
+        _update_restore_operation(
+            operation_id,
+            status="failed",
+            stage="rejected",
+            message="Já existe uma restauração em andamento.",
+            progress=None,
+        )
+        raise HTTPException(status_code=409, detail="Já existe uma restauração em andamento")
+
+    _update_restore_operation(
+        operation_id,
+        status="running",
+        stage="decrypting",
+        message=f"Descriptografando o backup automático selecionado ({payload.backup_name}).",
+        progress=5,
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="scpo-automatic-restore-") as temporary:
+            root = Path(temporary)
+            dumps = root / "dumps"
+            try:
+                await asyncio.to_thread(
+                    _decrypt_automatic_backup,
+                    source,
+                    dumps,
+                    payload,
+                    state,
+                )
+            except HTTPException:
+                raise
+            except (InvalidTag, OSError, RuntimeError, ValueError, tarfile.TarError, subprocess.SubprocessError) as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Não foi possível validar o backup automático: confira a senha/chave e se o arquivo está íntegro. Nenhum banco foi alterado.",
+                ) from exc
+
+            total = len(DATABASES)
+            _update_restore_operation(
+                operation_id,
+                status="running",
+                stage="validating",
+                message="Validando os sete bancos antes de alterar os dados atuais.",
+                progress=10,
+            )
+            for index, service in enumerate(DATABASES, start=1):
+                try:
+                    await asyncio.to_thread(
+                        _validate_database_dump,
+                        dumps / f"{service}.dump",
+                    )
+                except (OSError, subprocess.SubprocessError, ValueError) as exc:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"O banco {service} do backup automático é inválido. Nenhum banco foi alterado.",
+                    ) from exc
+                _update_restore_operation(
+                    operation_id,
+                    status="running",
+                    stage="validating",
+                    message=f"Banco {service} validado ({index}/{total}).",
+                    progress=10 + round(index / total * 20),
+                )
+
+            def report_restore_progress(stage: str, completed: int, total: int) -> None:
+                if stage == "snapshot":
+                    progress = 30 + round(completed / total * 25)
+                    message = f"Cópia temporária criada ({completed}/{total})."
+                    operation_stage = "snapshotting"
+                elif stage == "restore_started":
+                    progress = 55 + round((completed - 1) / total * 44)
+                    message = f"Restaurando banco {DATABASES[completed - 1]} ({completed}/{total})."
+                    operation_stage = "restoring"
+                else:
+                    progress = 55 + round(completed / total * 44)
+                    message = f"Banco {DATABASES[completed - 1]} restaurado ({completed}/{total})."
+                    operation_stage = "restoring"
+                _update_restore_operation(
+                    operation_id,
+                    status="running",
+                    stage=operation_stage,
+                    message=message,
+                    progress=progress,
+                )
+
+            try:
+                await asyncio.to_thread(
+                    _restore_all_databases,
+                    dumps,
+                    report_restore_progress,
+                )
+            except RuntimeError as exc:
+                logger.exception("Automatic backup restore and rollback failed")
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                logger.exception("Automatic backup restore failed; automatic rollback succeeded")
+                raise HTTPException(
+                    status_code=503,
+                    detail="A restauração falhou. Os dados anteriores foram recuperados automaticamente.",
+                ) from exc
+
+        emit_audit_event(
+            principal,
+            "management",
+            "automatic_backup_restored",
+            payload.backup_name,
+            service="access",
+        )
+        _update_restore_operation(
+            operation_id,
+            status="completed",
+            stage="completed",
+            message=(
+                "Os sete bancos foram restaurados. Anexos do pacote automático "
+                "(.env, Caddy, Biblioteca e Álbum) não foram aplicados."
+            ),
+            progress=100,
+        )
+        return {
+            "status": "restored",
+            "message": (
+                "Os sete bancos foram restaurados. Anexos do pacote automático "
+                "(.env, Caddy, Biblioteca e Álbum) não foram aplicados."
+            ),
+        }
+    except HTTPException as exc:
+        _update_restore_operation(
+            operation_id,
+            status="failed",
+            stage="failed",
+            message=str(exc.detail),
+            progress=None,
+        )
+        raise
+    finally:
+        operation = _read_restore_operation(operation_id)
+        if operation is not None and operation.get("status") == "running":
+            _update_restore_operation(
+                operation_id,
+                status="failed",
+                stage="failed",
+                message=(
+                    "A restauração foi interrompida antes da conclusão. Confira o estado "
+                    "dos serviços antes de iniciar outra operação."
+                ),
+                progress=None,
+            )
+        RESTORE_LOCK.release()
 
 
 @app.put("/api/v1/backup/automatic/public-key")

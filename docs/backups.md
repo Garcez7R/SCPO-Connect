@@ -46,7 +46,11 @@ export SCPO_RGS_ATTACHMENTS_DIR=/mnt/backup-seguro/anexos-validacao
 bash scripts/restore-rgs-isolated.sh
 ```
 
-O script cria bancos novos `scpo_restore_*` e extrai `.env`, Caddy e biblioteca terapêutica para a pasta isolada, sem aplicá-los à instalação ativa. A chave privada GPG precisa estar disponível no ambiente de restauração. Não use a restauração da interface para arquivos GPG: ela recebe os pacotes AES-GCM gerados pela própria interface.
+O script cria bancos novos `scpo_restore_*` e extrai `.env`, Caddy e biblioteca terapêutica para a pasta isolada, sem aplicá-los à instalação ativa. A chave privada GPG precisa estar disponível no ambiente de restauração.
+
+No Superadministrador → **Cópias de segurança**, a seção **Backups automáticos disponíveis** lista os arquivos `.rgs` da subpasta automática configurada e permite restaurar os sete bancos ativos com a mesma validação, cópias prévias, progresso e rollback do fluxo manual. Pacotes AES-GCM usam a senha automática protegida no volume do serviço ou uma senha informada para backups anteriores à troca de senha. Pacotes GPG usam a chave privada correspondente presente no servidor; se ela estiver custodiada externamente, o operador pode enviá-la para uma única operação, quando é importada em diretório temporário e removida ao final. A senha da chave não é armazenada. Use somente uma chave recebida por canal institucional seguro.
+
+Essa restauração pelo painel **não aplica os anexos** do pacote automático (`.env`, dados do Caddy, Biblioteca ou Álbum); eles permanecem preservados no backup e exigem procedimento isolado/próprio. Confirme nome e data do arquivo, agende manutenção e digite `SUBSTITUIR TODOS OS DADOS`. A operação não é adequada para validar backups sem alterar a instalação ativa; para ensaios, use o procedimento isolado acima.
 
 ## Pacote completo `.rgs`
 
@@ -61,7 +65,7 @@ bash scripts/backup-rgs.sh
 
 Em Administração do Sistema → **Cópias de segurança**, use o atalho **Backup manual** ou a seção **Exportação imediata** para informar somente a senha e baixar o `.rgs`; não é necessário configurar a rotina automática. A exportação manual da interface inclui os sete bancos, usa AES-GCM e não inclui os arquivos da Oficina Terapêutica. A interface não importa nem aplica backups aos bancos ativos. Para validar um arquivo exportado pela interface, use a restauração isolada abaixo; o script solicitará a senha sem expô-la na linha de comando.
 
-Na exportação manual, uma notificação persistente fixa na tela com o ícone do app indica a geração do pacote com barra indeterminada e mostra o percentual recebido durante o download do `.rgs`; a geração em si é indeterminada porque o servidor só inicia a resposta após criar o arquivo. Na restauração pela interface, a mesma notificação fixa mostra o envio e consulta as etapas no servidor: descriptografia, validação dos sete bancos, cópias temporárias e restauração de cada banco. Não feche a página até a conclusão. As operações de CPU e PostgreSQL rodam fora do ciclo HTTP para que a tela continue atualizando. Antes de tocar nos dados atuais, o servidor valida a senha, o manifesto e cada dump com `pg_restore --list`; um arquivo incompatível é rejeitado antes da criação das cópias de segurança ou de qualquer alteração. A tela informa explicitamente que arquivos GPG da rotina automática usam a chave privada custodiada e não podem ser restaurados nesse fluxo da interface.
+Na exportação manual, uma notificação persistente fixa na tela com o ícone do app indica a geração do pacote com barra indeterminada e mostra o percentual recebido durante o download do `.rgs`; a geração em si é indeterminada porque o servidor só inicia a resposta após criar o arquivo. Na restauração pela interface, a mesma notificação fixa mostra o envio e consulta as etapas no servidor: descriptografia, validação dos sete bancos, cópias temporárias e restauração de cada banco. Não feche a página até a conclusão. As operações de CPU e PostgreSQL rodam fora do ciclo HTTP para que a tela continue atualizando. Antes de tocar nos dados atuais, o servidor valida a senha/chave, o manifesto e cada dump com `pg_restore --list`; um arquivo incompatível é rejeitado antes da criação das cópias de segurança ou de qualquer alteração.
 
 ## Biblioteca de imagens e Álbum da Oficina Terapêutica
 

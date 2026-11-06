@@ -4,6 +4,7 @@ import json
 import subprocess
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Event
 from uuid import uuid4
 
@@ -347,3 +348,76 @@ def test_restore_rolls_back_already_restored_databases_on_failure(
         "audit.dump",
         "access.dump",
     ]
+
+
+def test_automatic_backup_list_exposes_only_restorable_files(
+    restore_client: TestClient,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid_name = "scpo-connect-20260523T120000Z.rgs"
+    (tmp_path / valid_name).write_bytes(b"encrypted-backup")
+    (tmp_path / "scpo-connect-old.rgs").write_bytes(b"not-restorable")
+    monkeypatch.setattr(backup, "_load_automatic_backup_state", lambda: {"directory": "daily"})
+    monkeypatch.setattr(backup, "_resolve_automatic_destination", lambda _: tmp_path)
+    monkeypatch.setattr(backup, "emit_audit_event", lambda *args, **kwargs: None)
+
+    response = restore_client.get("/api/v1/backup/automatic/files")
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.json()["files"]] == [valid_name]
+    assert response.json()["files"][0]["encryption_type"] == "gpg"
+
+
+def test_automatic_backup_restore_validates_then_restores_all_databases(
+    restore_client: TestClient,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backup_name = "scpo-connect-20260523T120000Z.rgs"
+    source = tmp_path / backup_name
+    source.write_bytes(b"encrypted-backup")
+    monkeypatch.setattr(backup, "_automatic_backup_path", lambda _: source)
+    monkeypatch.setattr(backup, "_load_automatic_backup_state", lambda: {"directory": "daily"})
+    validated_dumps: list[str] = []
+    restored_dumps: list[str] = []
+
+    def fake_decrypt(
+        _source,
+        destination,
+        _payload,
+        _state,
+    ) -> None:
+        destination.mkdir(parents=True, exist_ok=True)
+        for service in DATABASES:
+            (destination / f"{service}.dump").write_bytes(f"dump-{service}".encode())
+
+    def fake_validate(dump: Path) -> None:
+        validated_dumps.append(dump.name)
+
+    def fake_restore(dumps: Path, _progress_callback) -> None:
+        restored_dumps.extend(path.name for path in dumps.glob("*.dump"))
+
+    monkeypatch.setattr(backup, "_decrypt_automatic_backup", fake_decrypt)
+    monkeypatch.setattr(backup, "_validate_database_dump", fake_validate)
+    monkeypatch.setattr(backup, "_restore_all_databases", fake_restore)
+    monkeypatch.setattr(backup, "emit_audit_event", lambda *args, **kwargs: None)
+    operation_id = str(uuid4())
+
+    response = restore_client.post(
+        "/api/v1/backup/automatic/restore",
+        json={
+            "backup_name": backup_name,
+            "confirmation": backup.RESTORE_CONFIRMATION,
+            "operation_id": operation_id,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "restored"
+    assert len(validated_dumps) == len(DATABASES)
+    assert len(restored_dumps) == len(DATABASES)
+    operation = restore_client.get(f"/api/v1/backup/operations/{operation_id}")
+    assert operation.status_code == 200
+    assert operation.json()["status"] == "completed"
+    assert operation.json()["progress"] == 100

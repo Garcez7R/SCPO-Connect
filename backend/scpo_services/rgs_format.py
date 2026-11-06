@@ -43,6 +43,47 @@ def decrypt_and_extract(
         archive_path.unlink(missing_ok=True)
 
 
+def decrypt_automatic_and_extract(
+    source: Path,
+    destination: Path,
+    *,
+    password: str | None = None,
+    gpg_home: Path | None = None,
+    passphrase: str | None = None,
+) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    archive_path = destination.parent / ".automatic-rgs-bundle.tar.gz"
+    with source.open("rb") as encrypted:
+        is_password_bundle = encrypted.read(len(MAGIC)) == MAGIC
+    try:
+        if is_password_bundle:
+            if password is None:
+                raise ValueError("A senha do backup automático não foi fornecida")
+            _decrypt_password_bundle(source, archive_path, password)
+        else:
+            command = ["gpg", "--batch"]
+            if gpg_home is not None:
+                command.extend(["--homedir", str(gpg_home)])
+            command.extend(["--pinentry-mode", "loopback", "--passphrase-fd", "0", "--decrypt"])
+            with archive_path.open("wb") as output:
+                subprocess.run(
+                    command,
+                    input=f"{passphrase or ''}\n".encode(),
+                    stdout=output,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    timeout=1800,
+                )
+        _extract_validated_archive(
+            archive_path,
+            destination,
+            modern=False,
+            include_attachments=False,
+        )
+    finally:
+        archive_path.unlink(missing_ok=True)
+
+
 def _decrypt_password_bundle(source: Path, destination: Path, password: str) -> None:
     header_length = len(MAGIC) + 16 + 12
     file_size = source.stat().st_size
@@ -77,7 +118,13 @@ def _decrypt_password_bundle(source: Path, destination: Path, password: str) -> 
             output.write(decryptor.finalize())
 
 
-def _extract_validated_archive(archive_path: Path, destination: Path, *, modern: bool) -> None:
+def _extract_validated_archive(
+    archive_path: Path,
+    destination: Path,
+    *,
+    modern: bool,
+    include_attachments: bool = True,
+) -> None:
     with tarfile.open(name=str(archive_path), mode="r:gz") as archive:
         members = archive.getmembers()
         if len(members) > MAX_ARCHIVE_MEMBERS:
@@ -158,7 +205,7 @@ def _extract_validated_archive(archive_path: Path, destination: Path, *, modern:
                 raise ValueError(f"Dump ausente: {service}")
             with (destination / f"{service}.dump").open("xb") as output:
                 shutil.copyfileobj(dump, output, length=1024 * 1024)
-        if not modern:
+        if not modern and include_attachments:
             for member_name in sorted(files):
                 if not member_name.startswith("attachments/"):
                     continue

@@ -116,7 +116,7 @@ const systemControlModules = [
   { id: 'admin', label: 'Administração do aplicativo' },
 ] as const
 type SystemModuleSettings = { module_enabled: Record<string, boolean>; maintenance_mode: boolean; updated_at?: string; updated_by_name?: string }
-type SystemAdminActiveUser = { user_id: string; name: string; role: string; last_activity_at: string }
+type SystemAdminActiveUser = { user_id: string; name: string; role: string; last_activity_at: string; active_module: string | null }
 type SystemAdminActiveUsers = { window_minutes: number; checked_at: string; users: SystemAdminActiveUser[] }
 type TherapyMediaAvailability = { library: { enabled: boolean }; album: { enabled: boolean } }
 const systemAdminServices: { id: ModuleService; label: string }[] = [
@@ -758,7 +758,12 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
       if (!active || heartbeatPending || document.visibilityState !== 'visible' || !navigator.onLine || now - lastHeartbeatAt < 60_000) return
       heartbeatPending = true
       try {
-        const response = await fetch('/api/v1/auth/activity', { method: 'POST', keepalive: true })
+        const response = await fetch('/api/v1/auth/activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active_module: activeModule }),
+          keepalive: true,
+        })
         lastHeartbeatAt = Date.now()
         if (!response.ok && response.status !== 401 && response.status !== 403) {
           console.warn(`Registro de atividade não disponível (HTTP ${response.status}).`)
@@ -773,16 +778,24 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
     const noteInteraction = () => {
       void sendHeartbeat()
     }
+    const noteVisibility = () => {
+      if (document.visibilityState === 'visible') void sendHeartbeat()
+    }
     document.addEventListener('pointerdown', noteInteraction, { passive: true })
     document.addEventListener('keydown', noteInteraction)
     document.addEventListener('touchstart', noteInteraction, { passive: true })
+    document.addEventListener('visibilitychange', noteVisibility)
+    const heartbeatInterval = window.setInterval(noteInteraction, 60_000)
+    void sendHeartbeat()
     return () => {
       active = false
+      window.clearInterval(heartbeatInterval)
       document.removeEventListener('pointerdown', noteInteraction)
       document.removeEventListener('keydown', noteInteraction)
       document.removeEventListener('touchstart', noteInteraction)
+      document.removeEventListener('visibilitychange', noteVisibility)
     }
-  }, [sessionExpiresAt, user.id])
+  }, [activeModule, sessionExpiresAt, user.id])
   useEffect(() => {
     if (window.location.pathname === '/nursing.html'
       || window.location.pathname === '/operations.html'
@@ -3906,9 +3919,11 @@ type Account = { id: string; username: string; name: string; role: string; modul
 
 const moduleLabels: Record<string, string> = {
   patients: 'Pacientes', nursing: 'Enfermagem', pharmacy: 'Farmácia', xray: 'Central de Exames', physician: 'Médico', social: 'Serviço Social',
-  nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica',
+  nutrition: 'Nutrição', hygiene: 'Higienização', reception: 'Recepção', therapy: 'Oficina Terapêutica', laundry: 'Lavanderia/Rouparia',
   psychology: 'Psicologia / Psiquiatria', maintenance: 'Manutenção', warehouse: 'Almoxarifado',
   management: 'Gestão Hospitalar', admin: 'Administração do aplicativo', oversight: 'Relatórios e auditoria',
+  home: 'Início', 'work-orders': 'Ordens de serviço', 'patient-history': 'Histórico assistencial',
+  'nursing-history': 'Histórico de Enfermagem', 'system-admin': 'Superusuário', about: 'Sobre o aplicativo',
 }
 const accessModules = Object.entries(moduleLabels).sort((left, right) =>
   left[1].localeCompare(right[1], 'pt-BR'),
@@ -5402,6 +5417,12 @@ type AutomaticBackupStatus = {
   low_space_warning: boolean
   immutability_validated: boolean
 }
+type AutomaticBackupFile = {
+  name: string
+  created_at: string
+  size_bytes: number
+  encryption_type: 'gpg' | 'password'
+}
 
 function BackupExportPanel() {
   const [automaticStatus, setAutomaticStatus] = useState<AutomaticBackupStatus | null>(null)
@@ -5433,6 +5454,16 @@ function BackupExportPanel() {
   const [automaticSaving, setAutomaticSaving] = useState(false)
   const [automaticMessage, setAutomaticMessage] = useState('')
   const [automaticError, setAutomaticError] = useState('')
+  const [automaticBackupFiles, setAutomaticBackupFiles] = useState<AutomaticBackupFile[]>([])
+  const [automaticFilesLoading, setAutomaticFilesLoading] = useState(true)
+  const [automaticFilesError, setAutomaticFilesError] = useState('')
+  const [selectedAutomaticBackup, setSelectedAutomaticBackup] = useState('')
+  const [automaticRestoreConfirmation, setAutomaticRestoreConfirmation] = useState('')
+  const [automaticRestorePassword, setAutomaticRestorePassword] = useState('')
+  const [automaticRestoreKeyPassphrase, setAutomaticRestoreKeyPassphrase] = useState('')
+  const [automaticRestorePrivateKey, setAutomaticRestorePrivateKey] = useState<File | null>(null)
+  const [automaticRestoreError, setAutomaticRestoreError] = useState('')
+  const [automaticRestoreMessage, setAutomaticRestoreMessage] = useState('')
   const [password, setPassword] = useState('')
   const [showBackupPassword, setShowBackupPassword] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -5476,10 +5507,33 @@ function BackupExportPanel() {
       setAutomaticLoading(false)
     }
   }, [])
+  const loadAutomaticBackupFiles = useCallback(async () => {
+    setAutomaticFilesLoading(true)
+    try {
+      const result = await readApiResponse<{ files: AutomaticBackupFile[] }>(
+        await fetch('/api/v1/backup/automatic/files', { cache: 'no-store' }),
+      )
+      setAutomaticBackupFiles(result.files)
+      setSelectedAutomaticBackup((current) =>
+        result.files.some((file) => file.name === current) ? current : result.files[0]?.name ?? '',
+      )
+      setAutomaticFilesError('')
+    } catch (loadError) {
+      setAutomaticFilesError(loadError instanceof Error
+        ? loadError.message
+        : 'Não foi possível listar os backups automáticos.')
+    } finally {
+      setAutomaticFilesLoading(false)
+    }
+  }, [])
   useEffect(() => {
     const timer = window.setTimeout(() => void loadAutomaticStatus(), 0)
     return () => window.clearTimeout(timer)
   }, [loadAutomaticStatus])
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadAutomaticBackupFiles(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadAutomaticBackupFiles])
   async function importAutomaticBackupKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setAutomaticSaving(true)
@@ -5631,6 +5685,7 @@ function BackupExportPanel() {
       setAutomaticFingerprintConfirmation('')
       setAutomaticPassword('')
       await loadAutomaticStatus()
+      await loadAutomaticBackupFiles()
     } catch (saveError) {
       setAutomaticError(saveError instanceof Error
         ? saveError.message
@@ -5685,6 +5740,111 @@ function BackupExportPanel() {
       setShowBackupPassword(false)
     } catch (exportError) { setError(exportError instanceof Error ? exportError.message : 'Falha ao gerar backup.') }
     finally { setBusy(false); setOperation(null) }
+  }
+  async function restoreAutomaticBackup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const selectedFile = automaticBackupFiles.find((file) => file.name === selectedAutomaticBackup)
+    if (!selectedFile || automaticRestoreConfirmation !== 'SUBSTITUIR TODOS OS DADOS') return
+    const serverKeyAvailable = Boolean(
+      automaticStatus?.recipient_fingerprint
+      && automaticStatus.private_key_fingerprint?.toUpperCase() === automaticStatus.recipient_fingerprint.toUpperCase(),
+    )
+    if (selectedFile.encryption_type === 'gpg' && !serverKeyAvailable && !automaticRestorePrivateKey) {
+      setAutomaticRestoreError('Selecione a cópia da chave privada GPG correspondente a este backup.')
+      return
+    }
+    if (selectedFile.encryption_type === 'gpg' && !automaticRestoreKeyPassphrase) {
+      setAutomaticRestoreError('Informe a senha da chave privada GPG.')
+      return
+    }
+    if (selectedFile.encryption_type === 'password'
+      && !automaticRestorePassword
+      && !automaticStatus?.password_configured) {
+      setAutomaticRestoreError('Informe a senha usada para cifrar o backup automático.')
+      return
+    }
+
+    setRestoring(true)
+    setAutomaticRestoreError('')
+    setAutomaticRestoreMessage('')
+    const operationId = crypto.randomUUID()
+    let progressPolling = true
+    let progressTimer: number | undefined
+    setOperation({
+      kind: 'restore',
+      title: 'Restaurando backup automático',
+      message: `Preparando ${selectedFile.name}…`,
+      progress: null,
+    })
+    const pollRestoreProgress = async () => {
+      if (!progressPolling) return
+      try {
+        const status = await readApiResponse<RestoreOperationStatus>(
+          await fetch(`/api/v1/backup/operations/${operationId}`, { cache: 'no-store' }),
+        )
+        setOperation({
+          kind: 'restore',
+          title: status.status === 'completed'
+            ? 'Restauração concluída'
+            : status.status === 'failed'
+              ? 'Restauração interrompida'
+              : 'Validando e restaurando',
+          message: status.message,
+          progress: status.progress,
+        })
+        progressPolling = status.status === 'running'
+      } catch (progressError) {
+        if (progressError instanceof ApiResponseError
+          && (progressError.status === 401 || progressError.status === 403)) {
+          progressPolling = false
+        }
+        setOperation({
+          kind: 'restore',
+          title: 'Restauração em andamento',
+          message: `Não foi possível atualizar o progresso: ${readableApiError(progressError)} A operação pode continuar no servidor; aguarde a resposta antes de repetir.`,
+          progress: null,
+        })
+      }
+      if (progressPolling) progressTimer = window.setTimeout(() => void pollRestoreProgress(), 1000)
+    }
+    progressTimer = window.setTimeout(() => void pollRestoreProgress(), 250)
+    try {
+      const privateKey = automaticRestorePrivateKey
+        ? await automaticRestorePrivateKey.text()
+        : undefined
+      const response = await fetch('/api/v1/backup/automatic/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          backup_name: selectedFile.name,
+          confirmation: automaticRestoreConfirmation,
+          operation_id: operationId,
+          backup_password: automaticRestorePassword || undefined,
+          key_passphrase: automaticRestoreKeyPassphrase || undefined,
+          private_key: privateKey,
+        }),
+      })
+      const result = await readApiResponse<{ message?: string }>(response)
+      progressPolling = false
+      setAutomaticRestoreMessage(result.message ?? 'Os bancos foram restaurados.')
+      setAutomaticRestoreConfirmation('')
+      setAutomaticRestorePassword('')
+      setAutomaticRestoreKeyPassphrase('')
+      setAutomaticRestorePrivateKey(null)
+      const keyInput = document.getElementById('automatic-restore-private-key')
+      if (keyInput instanceof HTMLInputElement) keyInput.value = ''
+      await Promise.all([loadAutomaticStatus(), loadAutomaticBackupFiles()])
+    } catch (restoreFailure) {
+      progressPolling = false
+      setAutomaticRestoreError(restoreFailure instanceof Error
+        ? restoreFailure.message
+        : 'Falha ao restaurar o backup automático.')
+    } finally {
+      progressPolling = false
+      if (progressTimer !== undefined) window.clearTimeout(progressTimer)
+      setRestoring(false)
+      setOperation(null)
+    }
   }
   async function restoreBackup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -5772,6 +5932,17 @@ function BackupExportPanel() {
     && restorePassword.length >= 12
     && restorePassword.length <= 128
     && restoreConfirmation === 'SUBSTITUIR TODOS OS DADOS'
+  const selectedAutomaticBackupFile = automaticBackupFiles.find((file) => file.name === selectedAutomaticBackup)
+  const automaticServerKeyAvailable = Boolean(
+    automaticStatus?.recipient_fingerprint
+    && automaticStatus.private_key_fingerprint?.toUpperCase() === automaticStatus.recipient_fingerprint.toUpperCase(),
+  )
+  const automaticRestoreReady = Boolean(selectedAutomaticBackupFile)
+    && automaticRestoreConfirmation === 'SUBSTITUIR TODOS OS DADOS'
+    && (selectedAutomaticBackupFile?.encryption_type === 'password'
+      ? automaticStatus?.password_configured || automaticRestorePassword.length >= 12
+      : automaticRestoreKeyPassphrase.length > 0
+        && (automaticServerKeyAvailable || Boolean(automaticRestorePrivateKey)))
   return <section className="patient-list-panel backup-panel">
     <div className="section-heading">
       <div><p className="eyebrow">PROTEÇÃO DE DADOS</p><h2>Backup do sistema</h2><p className="welcome-copy">Exporta os sete bancos protegidos por senha.</p></div>
@@ -5925,6 +6096,39 @@ function BackupExportPanel() {
           {automaticSaving ? 'Salvando configuração…' : automaticStatus?.enabled ? 'Atualizar configuração' : 'Salvar e ativar rotina'}
         </button>
       </form>
+    </section>
+    <section className="backup-restore-section backup-automatic-restore-section">
+      <div className="section-heading">
+        <div><p className="eyebrow">RESTAURAÇÃO NO SERVIDOR</p><h3>Backups automáticos disponíveis</h3><p className="welcome-copy">Selecione uma cópia no destino configurado. A restauração substitui os sete bancos ativos; anexos (.env, Caddy, Biblioteca e Álbum) não são aplicados por este painel.</p></div>
+        <button className="button button-secondary" type="button" onClick={() => void loadAutomaticBackupFiles()} disabled={automaticFilesLoading || restoring}><RefreshCw size={15} /> {automaticFilesLoading ? 'Consultando…' : 'Atualizar lista'}</button>
+      </div>
+      <div className="admin-warning backup-restore-guidance" role="alert"><ShieldCheck size={18} /><div><strong>Restauração destrutiva</strong><span>Agende janela de manutenção e confirme a cópia e a data antes de prosseguir. Os sete bancos atuais são copiados temporariamente para permitir rollback se a operação falhar. Mantenha o sistema sem uso durante toda a restauração.</span></div></div>
+      {automaticFilesError && <ToastMessage variant="error">{automaticFilesError}</ToastMessage>}
+      {automaticRestoreError && <ToastMessage variant="error">{automaticRestoreError}</ToastMessage>}
+      {automaticRestoreMessage && <ToastMessage variant="success">{automaticRestoreMessage}</ToastMessage>}
+      {automaticFilesLoading ? <div className="history-empty" role="status">Carregando backups automáticos…</div>
+        : automaticBackupFiles.length === 0 ? <div className="history-empty">Nenhum backup automático .rgs foi encontrado no destino configurado.</div>
+          : <form className="backup-restore-form" onSubmit={(event) => void restoreAutomaticBackup(event)}>
+            <label className="field backup-automatic-file-select"><span className="field-label">Backup automático</span><select required value={selectedAutomaticBackup} onChange={(event) => setSelectedAutomaticBackup(event.target.value)}>{automaticBackupFiles.map((file) => <option key={file.name} value={file.name}>{file.name} · {dateTime(file.created_at)} · {file.encryption_type === 'gpg' ? 'GPG' : 'senha AES-GCM'}</option>)}</select></label>
+            {selectedAutomaticBackupFile && <p className="field-hint backup-automatic-selected-file">Selecionado: <strong>{selectedAutomaticBackupFile.name}</strong> · {dateTime(selectedAutomaticBackupFile.created_at)} · {new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(selectedAutomaticBackupFile.size_bytes / 1024 ** 2)} MB · criptografia {selectedAutomaticBackupFile.encryption_type === 'gpg' ? 'GPG' : 'AES-GCM'}</p>}
+            {selectedAutomaticBackupFile?.encryption_type === 'password' && <label className="field"><span className="field-label">Senha do backup automático (opcional)</span><input type="password" autoComplete="current-password" maxLength={128} value={automaticRestorePassword} onChange={(event) => setAutomaticRestorePassword(event.target.value)} placeholder={automaticStatus?.password_configured ? 'Deixe vazio para usar a senha protegida no servidor' : 'Informe a senha configurada para esse backup'} /><span className="field-hint">O servidor tentará usar a senha automática protegida no volume. Informe outra senha se este arquivo foi criado antes de uma troca de senha.</span></label>}
+            {selectedAutomaticBackupFile?.encryption_type === 'gpg' && <>
+              <div className="field"><span className="field-label">Chave privada GPG custodiada{automaticServerKeyAvailable ? ' (opcional)' : ''}</span><div className="therapy-image-file-picker"><input className="therapy-image-file-input" id="automatic-restore-private-key" type="file" accept=".asc,.pgp,.gpg,application/pgp-keys,text/plain" aria-label="Selecionar chave privada GPG para restaurar o backup" onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                if (file && file.size > 64 * 1024) {
+                  setAutomaticRestorePrivateKey(null)
+                  setAutomaticRestoreError('A chave privada deve ter no máximo 64 KB.')
+                  event.target.value = ''
+                  return
+                }
+                setAutomaticRestorePrivateKey(file)
+                setAutomaticRestoreError('')
+              }} /><label className="button button-secondary" htmlFor="automatic-restore-private-key"><Upload size={16} /> Escolher chave privada</label><span title={automaticRestorePrivateKey?.name}>{automaticRestorePrivateKey?.name ?? 'Nenhuma chave privada selecionada'}</span></div><span className="field-hint">Se fornecida, a chave será importada apenas em diretório temporário no servidor e removida após a operação. O painel não a armazena.</span></div>
+              <label className="field"><span className="field-label">Senha da chave privada GPG</span><input required type="password" autoComplete="current-password" maxLength={128} value={automaticRestoreKeyPassphrase} onChange={(event) => setAutomaticRestoreKeyPassphrase(event.target.value)} placeholder="Senha usada para proteger a chave privada" /></label>
+            </>}
+            <label className="field backup-automatic-restore-confirmation"><span className="field-label">Confirmação obrigatória</span><input required value={automaticRestoreConfirmation} onChange={(event) => setAutomaticRestoreConfirmation(event.target.value)} placeholder="SUBSTITUIR TODOS OS DADOS" autoComplete="off" /><span className="field-hint">Digite exatamente SUBSTITUIR TODOS OS DADOS.</span></label>
+            <button className="button button-danger" type="submit" disabled={!automaticRestoreReady || restoring || busy}>{restoring ? 'Validando e restaurando…' : 'Restaurar backup automático e substituir dados'}</button>
+          </form>}
     </section>
     <section className="backup-restore-section">
       <div className="section-heading"><div><p className="eyebrow">RESTAURAÇÃO DE BACKUP</p><h3>Substituir dados atuais</h3><p className="welcome-copy">Restaura os sete bancos do sistema a partir de um arquivo protegido por senha.</p></div></div>
@@ -6409,10 +6613,10 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
         <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>
       </section>
       <section className="patient-list-panel system-active-users">
-        <div className="section-heading"><div><p className="eyebrow">SESSÕES · ATIVIDADE RECENTE</p><h2>Contas com atividade nos últimos 5 minutos</h2><p className="welcome-copy">Conta-se uma interação autenticada no aplicativo em qualquer módulo nos últimos 5 minutos (toque/clique ou tecla; registro no máximo uma vez por minuto). Inclui quem está consultando este painel após interagir. Isso não é monitoramento contínuo, não informa qual módulo está aberto e não confirma presença física nem logout.</p></div><button className="button button-secondary" type="button" onClick={() => void loadActiveUsers()} disabled={activeUsersLoading}><RefreshCw size={15} /> {activeUsersLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
+        <div className="section-heading"><div><p className="eyebrow">SESSÕES · ATIVIDADE RECENTE</p><h2>Contas com atividade nos últimos 5 minutos</h2><p className="welcome-copy">Contas autenticadas com o aplicativo visível. O módulo exibido é o último módulo ativo reportado pelo navegador; a tela envia atualização no máximo a cada minuto e ao trocar de módulo. Isso não confirma presença física nem logout.</p></div><button className="button button-secondary" type="button" onClick={() => void loadActiveUsers()} disabled={activeUsersLoading}><RefreshCw size={15} /> {activeUsersLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
         {activeUsersError && <ToastMessage variant="error">{activeUsersError}</ToastMessage>}
         {activeUsersLoading && !activeUsers && <div className="history-empty" role="status">Consultando atividade recente…</div>}
-        {activeUsers && <><p className="field-hint">Consultado em {dateTime(activeUsers.checked_at)} · janela móvel de {activeUsers.window_minutes} minutos · nomes de cada conta são exibidos uma vez.</p>{activeUsers.users.length ? <div className="system-active-user-list">{activeUsers.users.map((activeUser) => <article className="system-active-user-row" key={activeUser.user_id}><strong>{activeUser.name}</strong><span>{roleLabels[activeUser.role as ProfileId] ?? 'Equipe autorizada'}</span><time dateTime={activeUser.last_activity_at}>Última atividade: {dateTime(activeUser.last_activity_at)}</time></article>)}</div> : <div className="history-empty">Nenhuma conta com atividade na janela atual.</div>}</>}
+        {activeUsers && <><p className="field-hint">Consultado em {dateTime(activeUsers.checked_at)} · janela móvel de {activeUsers.window_minutes} minutos · nomes de cada conta são exibidos uma vez.</p>{activeUsers.users.length ? <div className="system-active-user-list">{activeUsers.users.map((activeUser) => <article className="system-active-user-row" key={activeUser.user_id}><strong>{activeUser.name}</strong><span>Módulo: {activeUser.active_module ? moduleLabels[activeUser.active_module] ?? activeUser.active_module : 'Não informado'} · Perfil: {roleLabels[activeUser.role as ProfileId] ?? 'Equipe autorizada'}</span><time dateTime={activeUser.last_activity_at}>Última atividade: {dateTime(activeUser.last_activity_at)}</time></article>)}</div> : <div className="history-empty">Nenhuma conta com atividade na janela atual.</div>}</>}
       </section>
       <section className="patient-list-panel system-module-settings">
         <div className="section-heading"><div><p className="eyebrow">CONTROLES GLOBAIS</p><h2>Disponibilidade dos módulos</h2><p className="welcome-copy">Módulos desativados ficam ocultos para contas comuns e têm o acesso às APIs bloqueado. A alteração não apaga dados; o Superadministrador mantém acesso de manutenção. No PWA da Enfermagem, pendências offline não sincronizadas ficam cifradas no aparelho por até 24 horas e podem ser retomadas se o módulo for reativado nesse prazo.</p></div></div>

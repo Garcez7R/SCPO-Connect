@@ -253,9 +253,14 @@ def test_system_superadmin_can_view_recent_user_activity(
         "query_string": b"",
     })
 
-    heartbeat = access.record_user_activity(activity_request, db)
+    heartbeat = access.record_user_activity(
+        access.UserActivityPayload(active_module="nursing"),
+        activity_request,
+        db,
+    )
     assert heartbeat.status_code == 204
     assert db.get(access.SystemUserActivity, active_user.id) is not None
+    assert db.get(access.SystemUserActivity, active_user.id).active_module == "nursing"
 
     admin_token = issue_session(admin.id, "active", admin.session_version)
     admin_request = Request({
@@ -269,6 +274,7 @@ def test_system_superadmin_can_view_recent_user_activity(
 
     assert result["window_minutes"] == 5
     assert [user["user_id"] for user in result["users"]] == [active_user.id]
+    assert result["users"][0]["active_module"] == "nursing"
 
     regular_token = issue_session(active_user.id, "active", active_user.session_version)
     regular_request = Request({

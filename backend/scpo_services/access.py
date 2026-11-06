@@ -124,6 +124,37 @@ class SystemUserActivity(Base):
         primary_key=True,
     )
     last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    active_module: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class UserActivityPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    active_module: Literal[
+        "home",
+        "work-orders",
+        "patients",
+        "patient-history",
+        "nursing",
+        "nursing-history",
+        "pharmacy",
+        "xray",
+        "physician",
+        "social",
+        "nutrition",
+        "hygiene",
+        "reception",
+        "therapy",
+        "psychology",
+        "maintenance",
+        "warehouse",
+        "laundry",
+        "management",
+        "admin",
+        "oversight",
+        "system-admin",
+        "about",
+    ] | None = None
 
 
 class PhysicianProfileDeletionOutbox(Base):
@@ -846,16 +877,22 @@ def current_session(
 
 @app.post("/api/v1/auth/activity", status_code=204)
 def record_user_activity(
+    payload: UserActivityPayload,
     request: Request,
     db: Annotated[Session, Depends(get_access_db)],
 ) -> Response:
     user, _ = _current_user(request, db, {"active"})
     activity = db.get(SystemUserActivity, user.id)
     if activity is None:
-        activity = SystemUserActivity(user_id=user.id, last_activity_at=datetime.now(UTC))
+        activity = SystemUserActivity(
+            user_id=user.id,
+            last_activity_at=datetime.now(UTC),
+            active_module=payload.active_module,
+        )
         db.add(activity)
     else:
         activity.last_activity_at = datetime.now(UTC)
+        activity.active_module = payload.active_module
     db.commit()
     return Response(status_code=204)
 
@@ -1103,6 +1140,7 @@ def system_admin_active_users(
                 "name": user.display_name or user.name,
                 "role": _user_response(user)["role"],
                 "last_activity_at": activity.last_activity_at.isoformat(),
+                "active_module": activity.active_module,
             }
             for user, activity in active_users
         ],
