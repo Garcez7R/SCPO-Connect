@@ -23,6 +23,8 @@ type PharmacyLabelProfile = {
   fields: PharmacyLabelField[]
   columns: number
   rows: number
+  horizontalGap: number
+  verticalGap: number
   marginTop: number
   marginRight: number
   marginBottom: number
@@ -39,6 +41,8 @@ const ZD220_LABEL_PROFILE: PharmacyLabelProfile = {
   fields: ['item_name', 'lot', 'expiry_date'],
   columns: 3,
   rows: 3,
+  horizontalGap: 3,
+  verticalGap: 3,
   marginTop: 3,
   marginRight: 3,
   marginBottom: 3,
@@ -67,6 +71,8 @@ function isPharmacyLabelProfile(value: unknown): value is Omit<PharmacyLabelProf
     fields?: unknown
     columns?: unknown
     rows?: unknown
+    horizontalGap?: unknown
+    verticalGap?: unknown
     marginTop?: unknown
     marginRight?: unknown
     marginBottom?: unknown
@@ -81,6 +87,8 @@ function isPharmacyLabelProfile(value: unknown): value is Omit<PharmacyLabelProf
     && Number(dimension) <= 200
   const isLegacyLayout = profile.columns === undefined
     && profile.rows === undefined
+    && profile.horizontalGap === undefined
+    && profile.verticalGap === undefined
     && profile.marginTop === undefined
     && profile.marginRight === undefined
     && profile.marginBottom === undefined
@@ -90,6 +98,14 @@ function isPharmacyLabelProfile(value: unknown): value is Omit<PharmacyLabelProf
   const isValidLayout = isLegacyLayout || (
     Number.isInteger(profile.columns) && Number(profile.columns) >= 1 && Number(profile.columns) <= 8
     && Number.isInteger(profile.rows) && Number(profile.rows) >= 1 && Number(profile.rows) <= 20
+    && ['horizontalGap', 'verticalGap'].every((key) => (
+      profile[key as keyof typeof profile] === undefined
+      || (
+        Number.isFinite(profile[key as keyof typeof profile])
+        && Number(profile[key as keyof typeof profile]) >= 0
+        && Number(profile[key as keyof typeof profile]) <= 20
+      )
+    ))
     && ['marginTop', 'marginRight', 'marginBottom', 'marginLeft'].every((key) => (
       Number.isFinite(profile[key as keyof typeof profile])
       && Number(profile[key as keyof typeof profile]) >= 0
@@ -128,6 +144,8 @@ function readPharmacyLabelProfiles(): { profiles: PharmacyLabelProfile[]; error:
       fields: profile.fields ?? [...DEFAULT_PHARMACY_LABEL_FIELDS],
       columns: profile.columns ?? 1,
       rows: profile.rows ?? 1,
+      horizontalGap: profile.horizontalGap ?? (profile.name === ZD220_LABEL_PROFILE.name ? 3 : 0),
+      verticalGap: profile.verticalGap ?? (profile.name === ZD220_LABEL_PROFILE.name ? 3 : 0),
       marginTop: profile.marginTop ?? 0,
       marginRight: profile.marginRight ?? 0,
       marginBottom: profile.marginBottom ?? 0,
@@ -441,6 +459,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [labelFields, setLabelFields] = useState<PharmacyLabelField[]>([...ZD220_LABEL_PROFILE.fields])
   const [labelColumns, setLabelColumns] = useState(ZD220_LABEL_PROFILE.columns)
   const [labelRows, setLabelRows] = useState(ZD220_LABEL_PROFILE.rows)
+  const [labelHorizontalGap, setLabelHorizontalGap] = useState(ZD220_LABEL_PROFILE.horizontalGap)
+  const [labelVerticalGap, setLabelVerticalGap] = useState(ZD220_LABEL_PROFILE.verticalGap)
   const [labelMarginTop, setLabelMarginTop] = useState(ZD220_LABEL_PROFILE.marginTop)
   const [labelMarginRight, setLabelMarginRight] = useState(ZD220_LABEL_PROFILE.marginRight)
   const [labelMarginBottom, setLabelMarginBottom] = useState(ZD220_LABEL_PROFILE.marginBottom)
@@ -1079,11 +1099,11 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const labelCountValue = Number(labelCount)
   const canPrintLabelDimensions = Number.isFinite(labelWidthValue) && labelWidthValue >= 10 && labelWidthValue <= 200
     && Number.isFinite(labelHeightValue) && labelHeightValue >= 10 && labelHeightValue <= 200
-  const labelPageWidth = labelWidthValue * labelColumns + labelMarginLeft + labelMarginRight
-  const labelPageHeight = labelHeightValue * labelRows + labelMarginTop + labelMarginBottom
+  const labelPageWidth = labelWidthValue * labelColumns + labelHorizontalGap * (labelColumns - 1) + labelMarginLeft + labelMarginRight
+  const labelPageHeight = labelHeightValue * labelRows + labelVerticalGap * (labelRows - 1) + labelMarginTop + labelMarginBottom
   const canPrintLabelLayout = Number.isInteger(labelColumns) && labelColumns >= 1 && labelColumns <= 8
     && Number.isInteger(labelRows) && labelRows >= 1 && labelRows <= 20
-    && [labelMarginTop, labelMarginRight, labelMarginBottom, labelMarginLeft]
+    && [labelHorizontalGap, labelVerticalGap, labelMarginTop, labelMarginRight, labelMarginBottom, labelMarginLeft]
       .every((margin) => Number.isFinite(margin) && margin >= 0 && margin <= 20)
     && Number.isFinite(labelCornerRadius) && labelCornerRadius >= 0 && labelCornerRadius <= 5
     && Number.isFinite(labelContentPadding) && labelContentPadding >= 0 && labelContentPadding <= 5
@@ -1132,6 +1152,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         fields: [...labelFields],
         columns: labelColumns,
         rows: labelRows,
+        horizontalGap: labelHorizontalGap,
+        verticalGap: labelVerticalGap,
         marginTop: labelMarginTop,
         marginRight: labelMarginRight,
         marginBottom: labelMarginBottom,
@@ -1516,6 +1538,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
                   height: `${labelPageHeight}mm`,
                   gridTemplateColumns: `repeat(${labelColumns}, ${labelWidthValue}mm)`,
                   gridTemplateRows: `repeat(${labelRows}, ${labelHeightValue}mm)`,
+                  columnGap: `${labelHorizontalGap}mm`,
+                  rowGap: `${labelVerticalGap}mm`,
                   padding: `${labelMarginTop}mm ${labelMarginRight}mm ${labelMarginBottom}mm ${labelMarginLeft}mm`,
                 }}
               >
@@ -1560,6 +1584,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
                 setLabelFields([...profile.fields])
                 setLabelColumns(profile.columns)
                 setLabelRows(profile.rows)
+                setLabelHorizontalGap(profile.horizontalGap)
+                setLabelVerticalGap(profile.verticalGap)
                 setLabelMarginTop(profile.marginTop)
                 setLabelMarginRight(profile.marginRight)
                 setLabelMarginBottom(profile.marginBottom)
@@ -1573,6 +1599,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
             <label className="field"><span className="field-label">Altura (mm)</span><input type="number" min="10" max="200" step="0.1" required value={labelHeight} onChange={(event) => setLabelHeight(event.target.value)} /></label>
             <label className="field"><span className="field-label">Colunas por folha</span><input type="number" min="1" max="8" step="1" required value={labelColumns} onChange={(event) => setLabelColumns(Number(event.target.value))} /></label>
             <label className="field"><span className="field-label">Linhas por folha</span><input type="number" min="1" max="20" step="1" required value={labelRows} onChange={(event) => setLabelRows(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Espaço entre colunas (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelHorizontalGap} onChange={(event) => setLabelHorizontalGap(Number(event.target.value))} /></label>
+            <label className="field"><span className="field-label">Espaço entre linhas (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelVerticalGap} onChange={(event) => setLabelVerticalGap(Number(event.target.value))} /></label>
             <label className="field"><span className="field-label">Margem superior (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelMarginTop} onChange={(event) => setLabelMarginTop(Number(event.target.value))} /></label>
             <label className="field"><span className="field-label">Margem direita (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelMarginRight} onChange={(event) => setLabelMarginRight(Number(event.target.value))} /></label>
             <label className="field"><span className="field-label">Margem inferior (mm)</span><input type="number" min="0" max="20" step="0.1" required value={labelMarginBottom} onChange={(event) => setLabelMarginBottom(Number(event.target.value))} /></label>
@@ -1582,9 +1610,12 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
             <fieldset className="pharmacy-label-field-options"><legend>Campos impressos</legend>{PHARMACY_LABEL_FIELD_OPTIONS.map((option) => <label key={option.value}><input type="checkbox" checked={labelFields.includes(option.value)} onChange={(event) => setLabelFields((current) => event.target.checked ? [...current, option.value] : current.filter((field) => field !== option.value))} /><span>{option.label}</span></label>)}</fieldset>
             <label className="field pharmacy-label-count"><span className="field-label">Quantidade de etiquetas</span><input type="number" min="1" max="500" step="1" required value={labelCount} onChange={(event) => setLabelCount(event.target.value)} /><span className="field-hint">Escolha a quantidade conforme o uso deste lote (de 1 a 500).</span></label>
           </div>
-          <p className="field-hint">A prévia usa folha de {labelPageWidth} × {labelPageHeight} mm ({labelColumns} × {labelRows} etiquetas), considerando espaçamento zero entre etiquetas. No diálogo de impressão, escolha a Zebra ZD220, desative cabeçalhos e rodapés e use escala de 100%. Confira o alinhamento com uma impressão de teste antes do lote.</p>
+          <div className="admin-warning pharmacy-label-media-notice" role="note">
+            <strong>O perfil corresponde ao rolo de {labelColumns} colunas por {labelRows} linhas.</strong>
+            <span>Cada etiqueta mede {labelWidthValue} × {labelHeightValue} mm. A área do bloco, incluindo margens externas de {labelMarginTop}/{labelMarginRight}/{labelMarginBottom}/{labelMarginLeft} mm (superior/direita/inferior/esquerda), mede {labelPageWidth} × {labelPageHeight} mm. No driver da Zebra, cadastre ou selecione essa área como mídia personalizada; não selecione o tamanho individual {labelWidthValue} × {labelHeightValue} mm, pois o navegador pode reduzir o bloco inteiro e centralizá-lo. Use escala de 100%, desative cabeçalhos e rodapés e confira uma impressão de teste.</span>
+          </div>
           {labelProfileError && <p className="pharmacy-label-error" role="alert">{labelProfileError}</p>}
-          {!canPrintLabels && <p className="pharmacy-label-error" role="alert">Confira dimensões entre 10 e 200 mm, grade, margens (folha máxima 200 mm), raio, ao menos um campo e quantidade inteira de 1 a 500.</p>}
+          {!canPrintLabels && <p className="pharmacy-label-error" role="alert">Confira dimensões entre 10 e 200 mm, grade, espaços, margens (folha máxima 200 mm), raio, ao menos um campo e quantidade inteira de 1 a 500.</p>}
           <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !canPrintLabelLayout || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && selectedLabelProfile !== ZD220_LABEL_PROFILE.name && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={printLabels}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
         </section>
       </div>

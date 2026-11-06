@@ -978,6 +978,8 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pharmacy-label-error { margin: 0; color: #a4232e; font-size: 12px; }
 .pharmacy-label-print-root { display: none; }
+.pharmacy-label-media-notice { display: grid; gap: 5px; margin: 0; }
+.pharmacy-label-media-notice strong, .pharmacy-label-media-notice span { color: inherit; }
 .pharmacy-label-print-sheet { display: grid; box-sizing: border-box; align-content: start; justify-content: start; gap: 0; overflow: hidden; color: #111; background: #fff; }
 .pharmacy-label-print { display: flex; box-sizing: border-box; flex-direction: column; justify-content: space-between; gap: 1.2mm; padding: 1mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; }
 .pharmacy-label-field-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
