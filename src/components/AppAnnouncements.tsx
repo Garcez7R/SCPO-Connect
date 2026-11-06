@@ -20,20 +20,28 @@ export type AppAnnouncement = {
 
 export const APP_ANNOUNCEMENTS_UPDATED_EVENT = 'scpo-app-announcements-updated'
 
+function dateTimeLocalValue(value: Date): string {
+  const localDate = new Date(value.getTime() - value.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().slice(0, 16)
+}
+
 export function AppAnnouncementsFeed({ compact = false }: { compact?: boolean }) {
   const [items, setItems] = useState<AppAnnouncement[]>([])
   const [loading, setLoading] = useState(true)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [nextChangeAt, setNextChangeAt] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const response = await readApiResponse<{ announcements?: AppAnnouncement[] }>(
+      const response = await readApiResponse<{ announcements?: AppAnnouncement[]; next_change_at?: string | null }>(
         await fetch('/api/v1/app/announcements', { cache: 'no-store' }),
       )
       setItems(response.announcements ?? [])
+      setNextChangeAt(response.next_change_at ?? null)
     } catch {
       setItems([])
+      setNextChangeAt(null)
     } finally {
       setLoading(false)
     }
@@ -50,6 +58,15 @@ export function AppAnnouncementsFeed({ compact = false }: { compact?: boolean })
       window.clearInterval(polling)
     }
   }, [load])
+
+  useEffect(() => {
+    if (!nextChangeAt) return
+    const boundary = Date.parse(nextChangeAt)
+    if (!Number.isFinite(boundary)) return
+    const delay = Math.min(Math.max(0, boundary - Date.now() + 100), 2_147_483_647)
+    const timer = window.setTimeout(() => void load(), delay)
+    return () => window.clearTimeout(timer)
+  }, [load, nextChangeAt])
 
   useEffect(() => {
     if (!compact || items.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -110,6 +127,7 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
   const [summary, setSummary] = useState('')
   const [content, setContent] = useState('')
   const [kind, setKind] = useState<AppAnnouncement['kind']>('notice')
+  const [publishedAt, setPublishedAt] = useState(() => dateTimeLocalValue(new Date()))
   const [expiresAt, setExpiresAt] = useState('')
   const [active, setActive] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -139,6 +157,10 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (expiresAt && new Date(expiresAt).getTime() <= new Date(publishedAt).getTime()) {
+      setError('O encerramento deve ser posterior ao início da exibição.')
+      return
+    }
     setBusy(true)
     setError('')
     setNotice('')
@@ -153,7 +175,8 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
             summary: summary || null,
             content: content || null,
             kind,
-            expires_at: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : null,
+            published_at: new Date(publishedAt).toISOString(),
+            expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
             active,
           }),
         }),
@@ -163,6 +186,7 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
       setSummary('')
       setContent('')
       setKind('notice')
+      setPublishedAt(dateTimeLocalValue(new Date()))
       setExpiresAt('')
       setActive(true)
       setNotice('Informativo publicado.')
@@ -194,7 +218,7 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
   return (
     <section className="patient-list-panel app-announcements-admin">
       <div className="section-heading">
-        <div><p className="eyebrow">COMUNICAÇÃO INSTITUCIONAL</p><h2>Informativos do aplicativo</h2><p className="welcome-copy">Cadastre links internos ou externos para comunicar novidades, manuais, avisos e orientações.</p></div>
+        <div><p className="eyebrow">COMUNICAÇÃO INSTITUCIONAL</p><h2>Informativos do aplicativo</h2><p className="welcome-copy">Cadastre links internos ou externos e programe data e horário para início e encerramento da exibição.</p></div>
         <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}><RefreshCw size={15} /> Atualizar</button>
       </div>
       {error && <ToastMessage variant="error">{error}</ToastMessage>}
@@ -205,14 +229,15 @@ export function AppAnnouncementsAdmin({ endpointPrefix = '/api/v1/system-admin' 
         <label className="field">Link opcional<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} maxLength={2048} /></label>
         <label className="field">Resumo opcional<textarea value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={500} rows={3} /></label>
         <label className="field app-announcement-content-field">Texto do informativo opcional<textarea value={content} onChange={(event) => setContent(event.target.value)} maxLength={5000} rows={6} placeholder="Escreva o comunicado completo. Não é obrigatório informar um link." /></label>
-        <label className="field">Validade opcional<input type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></label>
-        <label className="app-announcement-active"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} /> Publicado</label>
-        <button className="button button-primary" type="submit" disabled={busy || loading}>{busy ? 'Salvando…' : 'Publicar informativo'}</button>
+        <label className="field">Início da exibição<input type="datetime-local" value={publishedAt} required onChange={(event) => setPublishedAt(event.target.value)} /></label>
+        <label className="field">Encerramento opcional<input type="datetime-local" value={expiresAt} min={publishedAt} onChange={(event) => setExpiresAt(event.target.value)} /><small className="field-hint">O informativo deixa de ser exibido no horário selecionado.</small></label>
+        <label className="app-announcement-active"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} /> Habilitado para exibição</label>
+        <button className="button button-primary" type="submit" disabled={busy || loading}>{busy ? 'Salvando…' : 'Salvar informativo'}</button>
       </form>
       <div className="app-announcement-admin-list">
         {loading ? <div className="history-empty">Carregando informativos…</div> : items.length ? items.map((item) => (
           <article key={item.id}>
-            <span><strong>{item.title}</strong><small>{item.active ? 'Publicado' : 'Inativo'} · {item.url ?? 'Informativo em texto'}</small></span>
+            <span><strong>{item.title}</strong><small>{item.active ? 'Habilitado' : 'Desativado'} · exibição: {new Date(item.published_at).toLocaleString('pt-BR')}{item.expires_at ? ` até ${new Date(item.expires_at).toLocaleString('pt-BR')}` : ' · sem encerramento programado'} · {item.url ?? 'Informativo em texto'}</small></span>
             {item.url ? <a className="button button-secondary" href={item.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Abrir</a> : <span />}
             <button className="button button-secondary" type="button" onClick={() => void remove(item)} disabled={busy}><Trash2 size={15} /> Excluir</button>
           </article>

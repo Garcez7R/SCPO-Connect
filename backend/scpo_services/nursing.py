@@ -4106,6 +4106,45 @@ def list_medication_administrations(
     return {"administrations": [serialize_medication_administration(record) for record in records], "total": total, "limit": limit, "offset": offset}
 
 
+@app.get("/api/v1/nursing/medication-administrations/dispensation-report")
+def list_dispensation_administration_report(
+    principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management", "admin", "oversight", "pharmacy"))],
+    db: Annotated[Session, Depends(get_nursing_db)],
+    dispensation_ids: Annotated[list[str], Query(min_length=1, max_length=25)],
+) -> dict[str, object]:
+    records = db.execute(
+        select(MedicationAdministration, Patient.name)
+        .join(Patient, Patient.reference == MedicationAdministration.patient_reference)
+        .where(MedicationAdministration.dispensation_id.in_(dispensation_ids))
+        .order_by(MedicationAdministration.administered_at.asc(), MedicationAdministration.id.asc())
+    ).all()
+    emit_audit_event(
+        principal,
+        "nursing",
+        "medication_administration_dispensation_report_read",
+        "dispensations",
+        db=db,
+    )
+    return {
+        "administrations": [
+            {
+                "id": record.id,
+                "dispensation_id": record.dispensation_id,
+                "patient_reference": record.patient_reference,
+                "patient_name": patient_name,
+                "medication_name": record.medication_name,
+                "dose": record.dose,
+                "unit": record.unit,
+                "status": record.status,
+                "actor_name": record.actor_name,
+                "administered_at": record.administered_at.isoformat(),
+            }
+            for record, patient_name in records
+        ],
+        "total": len(records),
+    }
+
+
 @app.get("/api/v1/nursing/scheduled-medication-administrations")
 def list_scheduled_medication_administrations(
     principal: Annotated[DemoPrincipal, Depends(require_demo_role("nursing", "management", "admin", "oversight"))],

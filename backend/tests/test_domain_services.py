@@ -87,6 +87,79 @@ def test_global_module_settings_are_seeded_enabled(domain_database: dict[str, Se
     assert settings.maintenance_mode is False
 
 
+def test_app_announcement_schedule_requires_a_valid_timezone_aware_window() -> None:
+    start = datetime(2027, 1, 1, 10, tzinfo=UTC)
+    valid = access.AppAnnouncementPayload(
+        title="Informativo agendado",
+        content="Conteúdo do informativo",
+        published_at=start,
+        expires_at=start + timedelta(hours=2),
+    )
+    assert valid.published_at == start
+
+    with pytest.raises(ValidationError, match="posterior"):
+        access.AppAnnouncementPayload(
+            title="Informativo com intervalo inválido",
+            content="Conteúdo do informativo",
+            published_at=start,
+            expires_at=start,
+        )
+
+    with pytest.raises(ValidationError, match="fuso horário"):
+        access.AppAnnouncementPayload(
+            title="Informativo sem fuso",
+            content="Conteúdo do informativo",
+            published_at=datetime(2027, 1, 1, 10),
+        )
+
+
+def test_app_announcement_feed_exposes_its_next_display_boundary(
+    domain_database: dict[str, Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = domain_database["access"]
+    monkeypatch.setattr(access, "_current_user", lambda *_args, **_kwargs: None)
+    now = datetime.now(UTC)
+    current_expiration = now + timedelta(minutes=30)
+    announcements = [
+        access.AppAnnouncement(
+            id="current-announcement",
+            title="Comunicado em exibição",
+            url=None,
+            summary=None,
+            content="Conteúdo atual",
+            kind="notice",
+            active=True,
+            published_at=now - timedelta(minutes=10),
+            expires_at=current_expiration,
+            created_by_id="admin",
+            created_by_name="Administradora",
+            created_at=now - timedelta(minutes=10),
+        ),
+        access.AppAnnouncement(
+            id="scheduled-announcement",
+            title="Comunicado programado",
+            url=None,
+            summary=None,
+            content="Conteúdo futuro",
+            kind="notice",
+            active=True,
+            published_at=now + timedelta(hours=1),
+            expires_at=None,
+            created_by_id="admin",
+            created_by_name="Administradora",
+            created_at=now,
+        ),
+    ]
+    db.add_all(announcements)
+    db.commit()
+
+    response = access.list_app_announcements(None, db)
+
+    assert [item["id"] for item in response["announcements"]] == ["current-announcement"]
+    next_change = datetime.fromisoformat(response["next_change_at"])
+    assert abs((next_change - current_expiration).total_seconds()) < 2
+
+
 def test_global_module_settings_tolerate_legacy_oversight_flag(
     domain_database: dict[str, Session],
 ) -> None:
@@ -1228,6 +1301,7 @@ def test_pharmacy_adds_stock_to_an_existing_lot(
     monkeypatch: pytest.MonkeyPatch, domain_database: dict[str, Session]
 ) -> None:
     monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
     pharmacist = DemoPrincipal(
         "pharm-1",
         "pharm",
@@ -1373,6 +1447,40 @@ def test_pharmacy_records_stock_and_author(monkeypatch: pytest.MonkeyPatch, doma
     assert dispensation["unit"] == "comprimido"
     assert pharmacy.list_items(pharmacist, domain_database["pharmacy"])["items"][0]["balance"] == "16.5"
     assert pharmacy.list_dispensations(nurse, domain_database["pharmacy"])["dispensations"][0]["id"] == dispensation["id"]
+    stock_movements = pharmacy.list_stock_movements(pharmacist, domain_database["pharmacy"])
+    assert all(
+        movement["reason"] != pharmacy.DISPENSATION_MOVEMENT_REASON
+        for movement in stock_movements["movements"]
+    )
+    persisted_stock_movements = domain_database["pharmacy"].scalars(
+        select(pharmacy.PharmacyStockMovement)
+    ).all()
+    assert any(
+        movement.reason == pharmacy.DISPENSATION_MOVEMENT_REASON
+        for movement in persisted_stock_movements
+    )
+    domain_database["nursing"].add(
+        nursing.MedicationAdministration(
+            dispensation_id=dispensation["id"],
+            patient_reference=str(patient["reference"]),
+            medication_name=dispensation["medication_name"],
+            dose="1",
+            unit=dispensation["unit"],
+            status="administered",
+            reason="",
+            actor_id="nurse-1",
+            actor_name="Enfermeira Teste",
+            administered_at=datetime.now(UTC),
+        )
+    )
+    domain_database["nursing"].commit()
+    administration_report = nursing.list_dispensation_administration_report(
+        pharmacist,
+        domain_database["nursing"],
+        [dispensation["id"]],
+    )
+    assert administration_report["administrations"][0]["patient_name"] == "Paciente da dispensação"
+    assert administration_report["administrations"][0]["actor_name"] == "Enfermeira Teste"
     with pytest.raises(HTTPException) as allergy_unreviewed:
         pharmacy.create_dispensation(
             pharmacy.MedicationDispensePayload(

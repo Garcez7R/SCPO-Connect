@@ -872,9 +872,9 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-stock-badge.level-critical { background: #fff0f0; color: #a4232e; }
 .pharmacy-stock-badge.level-attention { background: #fff7df; color: #8b5c08; }
 .pharmacy-stock-badge.level-healthy { background: #eaf6ef; color: #216b49; }
-.pharmacy-threshold-button { min-height: 34px; padding: 6px 10px; font-size: 10px; }
-.pharmacy-threshold-editor { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: end; gap: 9px; padding-top: 10px; border-top: 1px solid var(--line); }
-.pharmacy-threshold-editor .field { min-width: 120px; }
+.pharmacy-threshold-button { min-height: 36px; padding: 6px 10px; font-size: 11px; }
+.pharmacy-threshold-editor { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; align-items: end; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.pharmacy-threshold-editor .field { min-width: 0; }
 .pharmacy-threshold-editor input { min-height: 38px; }
 .pharmacy-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .pharmacy-form-actions .button { min-height: 42px; }
@@ -975,7 +975,11 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pharmacy-label-error { margin: 0; color: #a4232e; font-size: 12px; }
 .pharmacy-label-print-root { display: none; }
-.pharmacy-label-print { display: grid; box-sizing: border-box; grid-template-rows: auto auto 1fr 1fr; gap: 1.2mm; padding: 2mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; }
+.pharmacy-label-print { display: flex; box-sizing: border-box; flex-direction: column; justify-content: space-between; gap: 1.2mm; padding: 2mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; }
+.pharmacy-label-field-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.pharmacy-label-field-options legend { padding: 0 5px; color: var(--ink); font-size: 12px; font-weight: 650; }
+.pharmacy-label-field-options label { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 12px; }
+.pharmacy-label-field-options input { width: auto; margin: 0; }
 .pharmacy-label-name { align-self: start; font-size: 9pt; line-height: 1.1; overflow-wrap: anywhere; }
 .pharmacy-label-description { font-size: 6.5pt; line-height: 1.1; overflow-wrap: anywhere; }
 .pharmacy-label-lot, .pharmacy-label-expiry { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; border-top: .2mm solid #444; padding-top: 1mm; }
@@ -3320,7 +3324,19 @@ html[data-theme="dark"] .status-called { background: #263a46; color: #b8d8ec; }
 .pharmacy-alphabetic-heading p, .physician-page .patient-list-row p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .pharmacy-alphabetic-heading > strong { color: var(--blue-dark); text-align: right; white-space: nowrap; }
 .pharmacy-alphabetic-lots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
-.pharmacy-alphabetic-lots span { padding: 5px 8px; border-radius: 5px; background: var(--page); color: var(--muted); font-size: 10px; }
+.pharmacy-alphabetic-lots span { padding: 7px 10px; border-radius: 5px; background: var(--page); color: var(--muted); font-size: 13px; line-height: 1.5; }
+.pharmacy-alphabetic-lots strong { color: var(--ink); }
+.pharmacy-prescriptions-panel { width: 100%; min-width: 0; box-sizing: border-box; margin-inline: 0; }
+.pharmacy-prescriptions-panel .patient-list-row { width: 100%; min-width: 0; box-sizing: border-box; }
+.pharmacy-dispensation-location { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); color: var(--ink); }
+.pharmacy-dispensation-location strong { font-size: 12px; }
+.pharmacy-dispensation-location span { font-size: 13px; }
+.pharmacy-dispensation-report-list { display: grid; gap: 10px; }
+.pharmacy-dispensation-report-row { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(220px, .85fr); gap: 14px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.pharmacy-dispensation-report-row > div { display: grid; align-content: start; gap: 5px; min-width: 0; }
+.pharmacy-dispensation-report-row strong { color: var(--ink); font-size: 13px; }
+.pharmacy-dispensation-report-row small { color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.pharmacy-dispensation-report-administrations { padding-left: 12px; border-left: 2px solid var(--line); }
 .physician-page { max-width: 1440px; margin-inline: auto; }
 .physician-page .page-title-row > svg { color: var(--blue); }
 .physician-page .patient-list-panel { display: grid; gap: 16px; }
@@ -3440,6 +3456,7 @@ html[data-theme="dark"] .xray-page .laboratory-print-preview { border-color: var
   .pharmacy-page .pharmacy-packaging-simple-fields,
   .pharmacy-page .pharmacy-packaging-mode-grid,
   .pharmacy-page .pharmacy-label-fields,
+  .pharmacy-page .pharmacy-label-field-options,
   .pharmacy-page .pharmacy-stock-levels,
   .pharmacy-page .pharmacy-item-grid,
   .pharmacy-page .pharmacy-report-filters,
@@ -3448,6 +3465,10 @@ html[data-theme="dark"] .xray-page .laboratory-print-preview { border-color: var
   .pharmacy-page .pharmacy-packaging-remove { justify-self: stretch; width: 100%; }
   .pharmacy-page .pharmacy-stock-level-row,
   .pharmacy-page .pharmacy-movement-row { grid-template-columns: 1fr; align-items: start; }
+  .pharmacy-page .pharmacy-threshold-editor,
+  .pharmacy-page .pharmacy-dispensation-report-row { grid-template-columns: 1fr; }
+  .pharmacy-page .pharmacy-label-field-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pharmacy-page .pharmacy-dispensation-report-administrations { padding: 10px 0 0; border-top: 2px solid var(--line); border-left: 0; }
   .pharmacy-page .pharmacy-stock-level-row .pharmacy-threshold-button { justify-self: stretch; width: 100%; }
   .pharmacy-page .pharmacy-movement-author { grid-column: auto; text-align: left; }
   .pharmacy-page .pharmacy-quick-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }

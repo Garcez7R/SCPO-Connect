@@ -20,6 +20,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    func,
     select,
 )
 from sqlalchemy.exc import SQLAlchemyError
@@ -364,6 +365,7 @@ class AppAnnouncementPayload(BaseModel):
     summary: str | None = Field(default=None, max_length=500)
     content: str | None = Field(default=None, max_length=5000)
     kind: Literal["notice", "information", "procedure"] = "notice"
+    published_at: datetime | None = None
     expires_at: datetime | None = None
     active: bool = True
 
@@ -381,6 +383,12 @@ class AppAnnouncementPayload(BaseModel):
     def validate_link_or_content(self) -> "AppAnnouncementPayload":
         if not self.url and not (self.content and self.content.strip()):
             raise ValueError("Informe uma URL ou o texto do informativo")
+        if self.published_at is not None and self.published_at.utcoffset() is None:
+            raise ValueError("Informe o início da exibição com fuso horário")
+        if self.expires_at is not None and self.expires_at.utcoffset() is None:
+            raise ValueError("Informe o encerramento com fuso horário")
+        if self.published_at is not None and self.expires_at is not None and self.expires_at <= self.published_at:
+            raise ValueError("O encerramento deve ser posterior ao início da exibição")
         return self
 
 
@@ -894,7 +902,31 @@ def list_app_announcements(
         .order_by(AppAnnouncement.published_at.desc(), AppAnnouncement.created_at.desc())
         .limit(20)
     ).all()
-    return {"announcements": [_announcement_response(item) for item in items]}
+    upcoming_start = db.scalar(
+        select(func.min(AppAnnouncement.published_at)).where(
+            AppAnnouncement.active.is_(True),
+            AppAnnouncement.published_at > now,
+            (AppAnnouncement.expires_at.is_(None))
+            | (AppAnnouncement.expires_at > AppAnnouncement.published_at),
+        )
+    )
+    upcoming_expiration = db.scalar(
+        select(func.min(AppAnnouncement.expires_at)).where(
+            AppAnnouncement.active.is_(True),
+            AppAnnouncement.published_at <= now,
+            AppAnnouncement.expires_at > now,
+        )
+    )
+    boundaries = [
+        value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        for value in (upcoming_start, upcoming_expiration)
+        if value is not None
+    ]
+    next_change = min(boundaries) if boundaries else None
+    return {
+        "announcements": [_announcement_response(item) for item in items],
+        "next_change_at": next_change.isoformat() if next_change else None,
+    }
 
 
 @app.get("/api/v1/system-admin/announcements")
@@ -920,6 +952,12 @@ def create_system_admin_announcement(
 ) -> dict[str, object]:
     user, principal = _require_account_admin(request, db)
     now = datetime.now(UTC)
+    published_at = payload.published_at or now
+    if payload.expires_at is not None and payload.expires_at <= published_at:
+        raise HTTPException(
+            status_code=422,
+            detail="O encerramento deve ser posterior ao início da exibição",
+        )
     item = AppAnnouncement(
         id=str(uuid.uuid4()),
         title=payload.title.strip(),
@@ -928,7 +966,7 @@ def create_system_admin_announcement(
         content=payload.content.strip() if payload.content and payload.content.strip() else None,
         kind=payload.kind,
         active=payload.active,
-        published_at=now,
+        published_at=published_at,
         expires_at=payload.expires_at,
         created_by_id=user.id,
         created_by_name=principal.actor_name,
@@ -954,11 +992,21 @@ def update_system_admin_announcement(
     item = db.get(AppAnnouncement, announcement_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Informativo não encontrado")
+    current_published_at = item.published_at
+    if current_published_at.tzinfo is None:
+        current_published_at = current_published_at.replace(tzinfo=UTC)
+    published_at = payload.published_at or current_published_at
+    if payload.expires_at is not None and payload.expires_at <= published_at:
+        raise HTTPException(
+            status_code=422,
+            detail="O encerramento deve ser posterior ao início da exibição",
+        )
     item.title = payload.title.strip()
     item.url = payload.url.strip() if payload.url else None
     item.summary = payload.summary.strip() if payload.summary and payload.summary.strip() else None
     item.content = payload.content.strip() if payload.content and payload.content.strip() else None
     item.kind = payload.kind
+    item.published_at = published_at
     item.expires_at = payload.expires_at
     item.active = payload.active
     db.commit()

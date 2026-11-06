@@ -185,6 +185,9 @@ class PharmacyStockMovement(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+DISPENSATION_MOVEMENT_REASON = "Dispensação vinculada ao paciente."
+
+
 class MedicationDispense(Base):
     __tablename__ = "medication_dispensations"
 
@@ -454,6 +457,8 @@ class StockMovementPayload(BaseModel):
         value = value.strip()
         if len(value) < 3:
             raise ValueError("Informe o motivo da movimentação")
+        if value == DISPENSATION_MOVEMENT_REASON:
+            raise ValueError("Use a guia de Dispensação para registrar saídas vinculadas a pacientes")
         return value
 
 
@@ -1398,7 +1403,7 @@ def list_stock_movements(
             detail="A data inicial não pode ser posterior à data final",
         )
 
-    filters = []
+    filters = [PharmacyStockMovement.reason != DISPENSATION_MOVEMENT_REASON]
     if item_id is not None:
         filters.append(PharmacyStockMovement.item_id == item_id)
     if movement_type is not None:
@@ -1631,7 +1636,7 @@ def create_dispensation(
             movement_type="issue",
             quantity=format_stock_quantity(-amount),
             balance_after=updated_balance,
-            reason="Dispensação vinculada ao paciente.",
+            reason=DISPENSATION_MOVEMENT_REASON,
             actor_id=principal.user_id,
             actor_name=principal.actor_name,
             created_at=now,

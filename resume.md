@@ -460,19 +460,17 @@ Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - O diálogo de etiquetas mantém campos legíveis com tema escuro, com fundo claro explícito para os controles de entrada.
 - README e guia interno (“Infos”) foram atualizados para explicar os pedidos e os perfis de etiqueta. Ainda é necessário validar os fluxos por perfil autenticado e conferir a impressão na Zebra ZD220 com os rolos reais.
 
-### Próxima etapa — revisão operacional completa da Farmácia
+### Revisão operacional completa da Farmácia — concluída nesta retomada
 
-Executar esta revisão em sequência, sem iniciar testes/builds simultâneos na VM. Depois de concluir as correções, atualizar README e Infos, validar, criar commit e fazer push.
-
-- **Inventário A–Z:** aumentar a legibilidade das informações secundárias de cada item, especialmente lote e validade. O tamanho do texto de quantidade já está adequado e deve ser preservado.
-- **Níveis de estoque:** alinhar os campos de configuração da meta média.
-- **Dispensação:** ao selecionar uma prescrição, preencher automaticamente o prescritor correspondente e validar que o dado exibido é o prescritor da prescrição selecionada.
-- **Prescrições:** corrigir o alinhamento horizontal da guia, que está deslocada para a esquerda.
-- **Compras e suprimentos:** rever a experiência dos recebimentos e retirar campos desnecessários sobre “como recebi esse medicamento”. Na criação de nova solicitação, disponibilizar opções de seleção apropriadas, definidas após verificar o modelo e as regras existentes.
-- **Guia “Como funciona” / Infos:** conferir cada instrução frente ao comportamento atual e atualizar junto com as mudanças, sem documentar funcionalidades que ainda não existam.
-- **Unidades e plural:** revisar todos os rótulos, descrições, campos, saldos e movimentações da Farmácia. Garantir consistência entre unidade cadastrada e unidade exibida (por exemplo, não transformar ampola em frasco) e tratar plural/quantidade de forma coerente em cada contexto.
-- **Movimentações, prescrições e dispensações:** rastrear como as movimentações de estoque se relacionam hoje com prescrições e dispensações e documentar o comportamento real antes de propor mudanças no vínculo ou na auditoria.
-- **Movimentações e rastreabilidade:** revisar quantos quadros/registros são renderizados nas guias de Movimentações e Rastreabilidade do estoque; limitar ou paginar o conteúdo para evitar poluição visual e carga desnecessária, preservando acesso ao histórico completo.
+- **Inventário e alinhamento:** lote/validade receberam maior legibilidade sem aumentar a quantidade; os campos de metas e a guia Prescrições foram alinhados.
+- **Dispensação e auditoria:** a prescrição selecionada preenche o prescritor; a localização do lote selecionado fica visível. A baixa assistencial permanece no estoque, mas é omitida das listas genéricas de movimentações e apresentada no relatório assistencial próprio.
+- **Rastreabilidade:** o relatório paginado relaciona paciente, prescritor, profissional que dispensou e registros da Enfermagem (profissional, dose, status e horário). O endpoint da Enfermagem é restrito a perfis assistenciais/administrativos e Farmácia, recebe no máximo 25 IDs de dispensação e devolve apenas campos necessários ao relatório.
+- **Compras e unidades:** a solicitação usa seletores de produto, categoria e unidades, sem o cabeçalho “Como recebi o medicamento”; a hierarquia de embalagens e sua conversão continuam disponíveis. Rótulos e plurais usam a unidade cadastrada.
+- **Listas:** movimentações recentes exibem 10 registros; relatórios de movimentação e dispensação exibem 25 por página, preservando consulta do histórico com paginação.
+- **Etiquetas:** perfis locais guardam dimensões e campos impressos selecionados; perfis antigos sem seleção de campos são migrados em memória para os campos padrão. Não há sincronização entre navegadores.
+- **Informativos:** formulário aceita data/hora de início e encerramento, e valida o intervalo no cliente e no servidor.
+- README, Infos do aplicativo e guia “Como funciona” atualizados. Validações são executadas uma por vez; não executar E2E sem autorização. A impressão física na Zebra e a conferência visual autenticada continuam dependentes do ambiente institucional.
+- **Validação desta retomada:** testes focados de agenda, limites de exibição e relatório Farmácia/Enfermagem (3 passaram); `npm run typecheck`, ESLint dos três componentes alterados, build frontend, OpenAPI do endpoint de rastreabilidade e `git diff --check` passaram. Ruff passou ignorando `I001` e `BLE001`, dois achados preexistentes em `pharmacy.py`; E2E não foi executado.
 
 ## Validações conhecidas
 
