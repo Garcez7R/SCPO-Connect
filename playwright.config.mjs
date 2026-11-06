@@ -4,6 +4,10 @@ const dataDirectory = process.env.SCPO_E2E_DATA_DIR
 if (!dataDirectory) {
   throw new Error('Execute os testes E2E por `npm run test:e2e` para usar bancos temporários isolados.')
 }
+const webPort = Number(process.env.SCPO_E2E_WEB_PORT ?? 7777)
+if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
+  throw new Error('SCPO_E2E_WEB_PORT deve ser uma porta TCP válida.')
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -14,7 +18,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     ...devices['Desktop Chrome'],
-    baseURL: 'http://127.0.0.1:7777',
+    baseURL: `http://127.0.0.1:${webPort}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -32,8 +36,8 @@ export default defineConfig({
       },
     },
     {
-      command: 'npm run dev -- --host 127.0.0.1 --strictPort',
-      url: 'http://127.0.0.1:7777',
+      command: `npm run dev -- --host 127.0.0.1 --port ${webPort} --strictPort`,
+      url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: false,
       timeout: 60_000,
     },

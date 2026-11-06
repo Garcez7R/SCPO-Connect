@@ -778,7 +778,7 @@ def _store_automatic_password(password: str) -> dict[str, str]:
 def _load_automatic_password(state: dict[str, object]) -> str:
     secret = state.get("automatic_password")
     if not isinstance(secret, dict):
-        raise RuntimeError("A senha do backup automático não está configurada")
+        raise TypeError("A senha do backup automático não está configurada")
     try:
         nonce = base64.b64decode(str(secret["nonce"]), validate=True)
         ciphertext = base64.b64decode(str(secret["ciphertext"]), validate=True)
@@ -1456,7 +1456,15 @@ async def restore_automatic_backup(
                 )
             except HTTPException:
                 raise
-            except (InvalidTag, OSError, RuntimeError, ValueError, tarfile.TarError, subprocess.SubprocessError) as exc:
+            except (
+                InvalidTag,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+                tarfile.TarError,
+                subprocess.SubprocessError,
+            ) as exc:
                 raise HTTPException(
                     status_code=422,
                     detail="Não foi possível validar o backup automático: confira a senha/chave e se o arquivo está íntegro. Nenhum banco foi alterado.",

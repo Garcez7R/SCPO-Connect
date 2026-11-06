@@ -99,7 +99,7 @@ Na visão geral, contas autenticadas podem consultar informativos institucionais
 
 ## Testes E2E
 
-Execute `npx playwright install chromium` uma vez e depois `npm run test:e2e` para validar no navegador o fluxo Recepção → Triagem de Enfermagem → fila Médica. O comando inicia as APIs locais com bancos SQLite temporários, sobe o frontend Vite, configura uma conta sintética por bootstrap e MFA e remove o diretório de dados temporário ao terminar. Os testes usam apenas dados fictícios e não acessam o banco de demonstração nem a produção. É necessário ter `uv` disponível; traces e capturas de falha ficam em `test-results/`.
+Execute `npx playwright install chromium` uma vez e depois `npm run test:e2e` para validar no navegador o fluxo Recepção → Triagem de Enfermagem → fila Médica. O comando inicia as APIs locais com bancos SQLite temporários, sobe o frontend Vite, configura uma conta sintética por bootstrap e MFA e remove o diretório de dados temporário ao terminar. Os testes usam apenas dados fictícios e não acessam o banco de demonstração nem a produção. É necessário ter `uv` disponível; traces e capturas de falha ficam em `test-results/`. Se a porta padrão 7777 estiver ocupada, defina `SCPO_E2E_WEB_PORT` para uma porta local livre. A suíte é local e isolada; não aponte o Playwright para uma instância com dados reais.
 
 ### Áreas de trabalho
 
@@ -229,7 +229,7 @@ uv run pytest backend/tests/test_therapy_reports.py backend/tests/test_audit.py 
 uv run ruff check backend
 ```
 
-`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. O Dockerfile frontend deve copiar todos os arquivos HTML de entrada do Vite, incluindo `laundry.html`; a imagem foi validada com esse ponto de entrada em 31/10/2026. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Em 2026-10-31, no host de desenvolvimento `.205`, Docker CLI e Compose estavam acessíveis: as imagens `web`, `access` e `backup` foram construídas e os serviços locais foram reiniciados e verificados. Isso não valida a implantação em outro servidor nem substitui testes de ponta a ponta. Os testes E2E permanecem pausados.
+`npm run build` valida a compilação de produção do frontend e gera as entradas PWA/service worker; não substitui os testes das APIs nem a construção de imagens Docker. Se Docker estiver instalado, `docker compose build` constrói as imagens da implantação. O Dockerfile frontend deve copiar todos os arquivos HTML de entrada do Vite, incluindo `laundry.html`; a imagem foi validada com esse ponto de entrada em 31/10/2026. Para investigar falhas de inicialização depois do build, use `docker compose ps` e `docker compose logs --tail=100 <serviço>`. Em 2026-10-31, no host de desenvolvimento `.205`, Docker CLI e Compose estavam acessíveis: as imagens `web`, `access` e `backup` foram construídas e os serviços locais foram reiniciados e verificados. Isso não valida a implantação em outro servidor nem substitui testes de ponta a ponta. Os E2E não devem ser executados contra outra instância nem usados como autorização para deploy ou atualização.
 
 ## Segurança e dados
 
