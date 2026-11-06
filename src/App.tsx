@@ -6399,21 +6399,21 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'announcements' && <AppAnnouncementsAdmin endpointPrefix="/api/v1/system-admin" />}
     {tab === 'dashboard' && <section className="system-dashboard">
-      <section className="patient-list-panel system-dashboard-connectivity">
-        <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>
-        <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>
-      </section>
-      <section className="patient-list-panel system-active-users">
-        <div className="section-heading"><div><p className="eyebrow">SESSÕES · ATIVIDADE RECENTE</p><h2>Contas com atividade nos últimos 5 minutos</h2><p className="welcome-copy">A lista registra atividade autenticada recente do aplicativo; não confirma presença física nem acompanha navegação.</p></div><button className="button button-secondary" type="button" onClick={() => void loadActiveUsers()} disabled={activeUsersLoading}><RefreshCw size={15} /> {activeUsersLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
-        {activeUsersError && <ToastMessage variant="error">{activeUsersError}</ToastMessage>}
-        {activeUsersLoading && !activeUsers && <div className="history-empty" role="status">Consultando atividade recente…</div>}
-        {activeUsers && <><p className="field-hint">Consultado em {dateTime(activeUsers.checked_at)} · janela móvel de {activeUsers.window_minutes} minutos · nomes de cada conta são exibidos uma vez.</p>{activeUsers.users.length ? <div className="system-active-user-list">{activeUsers.users.map((activeUser) => <article className="system-active-user-row" key={activeUser.user_id}><strong>{activeUser.name}</strong><span>{roleLabels[activeUser.role as ProfileId] ?? 'Equipe autorizada'}</span><time dateTime={activeUser.last_activity_at}>Última atividade: {dateTime(activeUser.last_activity_at)}</time></article>)}</div> : <div className="history-empty">Nenhuma conta com atividade na janela atual.</div>}</>}
-      </section>
       <div className="hygiene-summary executive-kpis system-dashboard-summary-overview" aria-label="Indicadores do aplicativo" aria-busy={loading}>
         <article className="status-tone-neutral"><strong>{APP_VERSION}</strong><span>Versão do aplicativo</span></article>
         <article className="status-tone-neutral"><strong>{loading ? '…' : users.length}</strong><span>Contas comuns cadastradas</span></article>
         <article className="status-tone-neutral"><strong>{systemAdminServices.length}</strong><span>Serviços monitorados</span></article>
       </div>
+      <section className="patient-list-panel system-dashboard-connectivity">
+        <div className="section-heading"><div><p className="eyebrow">SAÚDE DOS SERVIÇOS</p><h2>Conectividade técnica</h2><p className="welcome-copy">Verificação periódica dos endpoints de saúde disponíveis no servidor.</p></div></div>
+        <div className="system-dashboard-services">{systemAdminServices.map(({ id, label }) => <article key={id}><strong>{label}</strong><ModuleConnectionStatus service={id} /></article>)}</div>
+      </section>
+      <section className="patient-list-panel system-active-users">
+        <div className="section-heading"><div><p className="eyebrow">SESSÕES · ATIVIDADE RECENTE</p><h2>Contas com atividade nos últimos 5 minutos</h2><p className="welcome-copy">Conta-se uma interação autenticada no aplicativo em qualquer módulo nos últimos 5 minutos (toque/clique ou tecla; registro no máximo uma vez por minuto). Inclui quem está consultando este painel após interagir. Isso não é monitoramento contínuo, não informa qual módulo está aberto e não confirma presença física nem logout.</p></div><button className="button button-secondary" type="button" onClick={() => void loadActiveUsers()} disabled={activeUsersLoading}><RefreshCw size={15} /> {activeUsersLoading ? 'Atualizando…' : 'Atualizar'}</button></div>
+        {activeUsersError && <ToastMessage variant="error">{activeUsersError}</ToastMessage>}
+        {activeUsersLoading && !activeUsers && <div className="history-empty" role="status">Consultando atividade recente…</div>}
+        {activeUsers && <><p className="field-hint">Consultado em {dateTime(activeUsers.checked_at)} · janela móvel de {activeUsers.window_minutes} minutos · nomes de cada conta são exibidos uma vez.</p>{activeUsers.users.length ? <div className="system-active-user-list">{activeUsers.users.map((activeUser) => <article className="system-active-user-row" key={activeUser.user_id}><strong>{activeUser.name}</strong><span>{roleLabels[activeUser.role as ProfileId] ?? 'Equipe autorizada'}</span><time dateTime={activeUser.last_activity_at}>Última atividade: {dateTime(activeUser.last_activity_at)}</time></article>)}</div> : <div className="history-empty">Nenhuma conta com atividade na janela atual.</div>}</>}
+      </section>
       <section className="patient-list-panel system-module-settings">
         <div className="section-heading"><div><p className="eyebrow">CONTROLES GLOBAIS</p><h2>Disponibilidade dos módulos</h2><p className="welcome-copy">Módulos desativados ficam ocultos para contas comuns e têm o acesso às APIs bloqueado. A alteração não apaga dados; o Superadministrador mantém acesso de manutenção. No PWA da Enfermagem, pendências offline não sincronizadas ficam cifradas no aparelho por até 24 horas e podem ser retomadas se o módulo for reativado nesse prazo.</p></div></div>
         {moduleSettingsError && <ToastMessage variant="error">{moduleSettingsError}</ToastMessage>}

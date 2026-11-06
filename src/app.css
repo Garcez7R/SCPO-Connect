@@ -1257,6 +1257,38 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .xray-request-main p { margin: 5px 0; color: var(--muted); font-size: 12px; }
 .xray-request-main time { color: var(--subtle); font-size: 10px; }
 .xray-status-control { max-width: 320px; }
+.ecg-device-preview { display: grid; gap: 18px; }
+.ecg-preview-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.ecg-preview-heading h2 { margin: 0; color: var(--ink); font-size: 20px; }
+.ecg-preview-heading .welcome-copy { max-width: 760px; margin: 7px 0 0; }
+.ecg-demo-badge, .ecg-file-tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; background: #fff3d8; color: #77520c; font-size: 11px; font-weight: 700; padding: 7px 10px; white-space: nowrap; }
+.ecg-preview-notice { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid #b8d7e8; border-radius: 8px; background: #eff8fc; color: #28536a; }
+.ecg-preview-notice > svg { flex: 0 0 auto; margin-top: 1px; }
+.ecg-preview-notice div, .ecg-device-status div { display: grid; gap: 4px; }
+.ecg-preview-notice span, .ecg-device-status span { font-size: 12px; line-height: 1.5; }
+.ecg-preview-tabs { margin-top: -3px; }
+.ecg-preview-content { display: grid; gap: 16px; }
+.ecg-device-status { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.ecg-status-dot { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 50%; background: #7d858b; box-shadow: 0 0 0 4px #eceff1; }
+.ecg-device-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.ecg-device-details > div { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.ecg-device-details dt { margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+.ecg-device-details dd { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.45; }
+.ecg-preview-footnote { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.ecg-demo-file { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px; border: 1px dashed var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.ecg-demo-file > svg { flex: 0 0 auto; color: var(--blue); }
+.ecg-demo-file > div { display: grid; flex: 1 1 250px; gap: 4px; }
+.ecg-demo-file > div span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.ecg-file-tag { background: #e8eef2; color: #455660; font-size: 10px; }
+.ecg-review-step { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.ecg-review-step > span { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #e7f0f5; color: #275b78; font-size: 12px; font-weight: 700; }
+.ecg-review-step strong { color: var(--ink); font-size: 13px; }
+.ecg-review-step p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.ecg-preview-disabled-action { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+html[data-theme="dark"] .ecg-demo-badge { background: #47371f; color: #f1cb85; }
+html[data-theme="dark"] .ecg-preview-notice { border-color: #365364; background: #20343f; color: #c4deea; }
+html[data-theme="dark"] .ecg-status-dot { background: #90999f; box-shadow: 0 0 0 4px #30373b; }
+html[data-theme="dark"] .ecg-file-tag, html[data-theme="dark"] .ecg-review-step > span { background: #293840; color: #c4d6df; }
 .patient-address-group .patient-form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .patient-photo-editor { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .patient-photo-editor > img, .patient-photo-placeholder { display: grid; width: 72px; height: 72px; place-items: center; border-radius: 14px; object-fit: cover; background: #edf4f6; color: var(--blue); }
@@ -2046,6 +2078,9 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
   .pharmacy-stock-level-row > .pharmacy-threshold-button { grid-column: 1 / -1; justify-self: start; }
 }
 @media (max-width: 520px) {
+  .ecg-device-details { grid-template-columns: 1fr; }
+  .ecg-preview-heading { flex-direction: column; }
+  .ecg-preview-heading h2 { font-size: 18px; }
   .management-operations-grid { grid-template-columns: 1fr; gap: 13px; }
   .system-active-user-row { grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .patient-registry-filters { grid-template-columns: 1fr; }
@@ -3811,6 +3846,67 @@ html[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], .patient-deta
     grid-template-columns: minmax(0, 1fr);
   }
 }
+:is(.hygiene-summary.maintenance-report-summary, .therapy-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] {
+  min-height: 86px;
+  align-content: center;
+  gap: 6px;
+  padding: 12px 14px;
+}
+:is(.hygiene-summary.maintenance-report-summary, .therapy-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > strong {
+  font-size: clamp(20px, 1.35vw, 23px);
+}
+:is(.hygiene-summary.maintenance-report-summary, .therapy-summary):has(> article[class*="status-tone-"]) > article[class*="status-tone-"] > span {
+  font-size: 11px;
+  line-height: 1.35;
+}
+.hygiene-summary.therapy-summary:has(> article:nth-child(5):last-child) {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.hygiene-summary.therapy-summary:has(> article:nth-child(5):last-child) > article {
+  grid-column: auto;
+  justify-self: stretch;
+  width: auto;
+}
+.hygiene-summary.therapy-summary:has(> article:nth-child(5):last-child) > article:nth-child(4),
+.hygiene-summary.therapy-summary:has(> article:nth-child(5):last-child) > article:nth-child(5) {
+  grid-column-start: auto;
+}
+@media (max-width: 960px) {
+  .hygiene-summary.therapy-summary:has(> article:nth-child(5):last-child) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .hygiene-summary.maintenance-report-summary:has(> article:nth-child(6):last-child),
+  .hygiene-summary.therapy-summary:has(> article:nth-child(5):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  .hygiene-summary.maintenance-report-summary:has(> article:nth-child(6):last-child),
+  .hygiene-summary.therapy-summary:has(> article:nth-child(5):last-child) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ecg-demo-tracing {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.ecg-demo-tracing figcaption { display: grid; gap: 4px; }
+.ecg-demo-tracing figcaption strong { color: #233947; font-size: 13px; }
+.ecg-demo-tracing figcaption span { color: #526575; font-size: 11px; line-height: 1.45; }
+.ecg-demo-tracing svg { display: block; width: 100%; height: auto; border: 1px solid #f0d7d9; }
+.ecg-demo-grid-small { fill: none; stroke: #f7e6e7; stroke-width: .7; }
+.ecg-demo-grid-large { fill: none; stroke: #edc9cd; stroke-width: 1; }
+.ecg-demo-trace { fill: none; stroke: #b4232f; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+html[data-theme="dark"] .ecg-demo-tracing { border-color: #d7dfe3; background: #fff; }
+html[data-theme="dark"] .ecg-demo-tracing figcaption strong { color: #233947; }
+html[data-theme="dark"] .ecg-demo-tracing figcaption span { color: #526575; }
 
 /* Almoxarifado: layout próprio, responsivo e alinhado aos demais módulos. */
 .warehouse-page {

@@ -6,11 +6,15 @@ import {
   ArrowRight,
   BadgeCheck,
   Bone,
+  FileCheck2,
   FlaskConical,
   Microscope,
   Info,
+  Link2,
   Printer,
+  Radio,
   Search,
+  ShieldCheck,
 } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { printLaboratoryRequest } from '../printClinicalForm'
@@ -32,6 +36,7 @@ type Patient = {
 }
 type AuthUser = { id: string; permissions: Record<string, string[]> }
 type XrayStatus = 'requested' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+type EcgPreviewTab = 'equipment' | 'reception' | 'review'
 type XrayRequest = {
   id: number
   patient_reference: string
@@ -111,7 +116,8 @@ export default function XrayPage({ user }: { user: AuthUser }) {
   const [filter, setFilter] = useState<'active' | 'all' | XrayStatus>('active')
   const [reportStatus, setReportStatus] = useState<'active' | 'all' | XrayStatus>('active')
   const [reportResultFilter, setReportResultFilter] = useState<'all' | 'with_result' | 'without_result'>('all')
-  const [queueView, setQueueView] = useState<'queue' | 'reports'>('queue')
+  const [queueView, setQueueView] = useState<'queue' | 'reports' | 'device-preview'>('queue')
+  const [ecgPreviewTab, setEcgPreviewTab] = useState<EcgPreviewTab>('equipment')
   const [loading, setLoading] = useState(true)
   const [requestsLoadFailed, setRequestsLoadFailed] = useState(false)
   const [patientsLoadFailed, setPatientsLoadFailed] = useState(false)
@@ -314,7 +320,10 @@ export default function XrayPage({ user }: { user: AuthUser }) {
       className="xray-tabs"
       ariaLabel="Seções da Central de Exames"
       value={section}
-      onChange={setSection}
+      onChange={(value) => {
+        setSection(value)
+        if (value !== 'ecg' && queueView === 'device-preview') setQueueView('queue')
+      }}
       options={xraySections.map((value) => ({
         value,
         label: xraySectionLabels[value],
@@ -325,16 +334,74 @@ export default function XrayPage({ user }: { user: AuthUser }) {
     />
     <ModuleTabNavigation
       className="xray-view-tabs"
-      ariaLabel="Fila ou relatórios de exames"
+      ariaLabel="Fila, relatórios ou prévia do equipamento"
       value={queueView}
       onChange={setQueueView}
       options={[
         { value: 'queue', label: 'Fila', content: <><Activity size={16} /> Fila</> },
         { value: 'reports', label: 'Relatórios', content: <><Printer size={16} /> Relatórios</> },
+        ...(section === 'ecg' ? [{ value: 'device-preview' as const, label: 'Integração EKS2000', content: <><Radio size={16} /> Integração EKS2000</> }] : []),
       ]}
     />
     {error && <ToastMessage variant="error">{error}</ToastMessage>}
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}
+    {section === 'ecg' && queueView === 'device-preview' && <section className="patient-list-panel ecg-device-preview">
+      <div className="ecg-preview-heading">
+        <div><p className="eyebrow">PRÉVIA DE INTERFACE · SEM CONEXÃO</p><h2>Integração Bionet CardioCare 2000 / EKS2000</h2><p className="welcome-copy">Fluxo visual para discussão com a equipe. O protocolo, o firmware e a forma de exportação ainda precisam ser confirmados com o fabricante.</p></div>
+        <span className="ecg-demo-badge"><Info size={15} /> Demonstração</span>
+      </div>
+      <div className="ecg-preview-notice" role="note"><ShieldCheck size={19} /><div><strong>Nenhum equipamento conectado</strong><span>Esta tela não abre portas, não recebe arquivos e não grava nem envia dados. Todos os exemplos abaixo são fictícios.</span></div></div>
+      <ModuleTabNavigation
+        className="ecg-preview-tabs"
+        ariaLabel="Etapas da prévia de integração ECG"
+        value={ecgPreviewTab}
+        onChange={setEcgPreviewTab}
+        options={[
+          { value: 'equipment', label: 'Equipamento', content: <><Radio size={16} /> Equipamento</> },
+          { value: 'reception', label: 'Recepção de exame', content: <><FileCheck2 size={16} /> Recepção de exame</> },
+          { value: 'review', label: 'Conferência e vínculo', content: <><Link2 size={16} /> Conferência e vínculo</> },
+        ]}
+      />
+      {ecgPreviewTab === 'equipment' && <div className="ecg-preview-content">
+        <div className="ecg-device-status"><span className="ecg-status-dot" /><div><strong>Desconectado</strong><span>Aguardando avaliação técnica presencial</span></div></div>
+        <dl className="ecg-device-details">
+          <div><dt>Equipamento informado</dt><dd>Bionet CardioCare 2000 (EKS2000)</dd></div>
+          <div><dt>Identificação vista em impressão de teste</dt><dd>EKG2000 · 6.05 / 3.26 (significado a confirmar)</dd></div>
+          <div><dt>Protocolo de integração</dt><dd>Não confirmado</dd></div>
+          <div><dt>Possíveis formatos</dt><dd>Exportação oficial ou DICOM, se suportado pelo modelo/firmware</dd></div>
+          <div><dt>PACS / Orthanc</dt><dd>Não configurado; avaliar somente após confirmar suporte DICOM</dd></div>
+        </dl>
+        <p className="ecg-preview-footnote">Os números foram observados numa impressão de teste; ainda não foi confirmado se identificam versões de firmware nem a quais componentes se referem. A proposta de PACS é aproveitável como caminho padronizado caso o fabricante confirme exportação DICOM ECG. DICOM, por si só, não garante que o traçado seja exibido corretamente nesta aplicação.</p>
+      </div>}
+      {ecgPreviewTab === 'reception' && <div className="ecg-preview-content">
+        <div className="ecg-demo-file"><FileCheck2 size={22} /><div><strong>Exemplo fictício de exame recebido</strong><span>ECG_DEMONSTRACAO.dcm · formato ilustrativo, não validado no EKS2000</span></div><span className="ecg-file-tag">SIMULADO</span></div>
+        <figure className="ecg-demo-tracing">
+          <figcaption><strong>Traçado ilustrativo</strong><span>Onda sintética para demonstrar a visualização; não é um exame real nem tem finalidade diagnóstica.</span></figcaption>
+          <svg viewBox="0 0 760 150" role="img" aria-labelledby="ecg-demo-waveform-title ecg-demo-waveform-desc">
+            <title id="ecg-demo-waveform-title">Traçado eletrocardiográfico fictício</title>
+            <desc id="ecg-demo-waveform-desc">Onda sintética decorativa sobre grade. Não representa paciente nem resultado clínico.</desc>
+            <defs>
+              <pattern id="ecg-demo-small-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" className="ecg-demo-grid-small" /></pattern>
+              <pattern id="ecg-demo-large-grid" width="50" height="50" patternUnits="userSpaceOnUse"><rect width="50" height="50" fill="url(#ecg-demo-small-grid)" /><path d="M 50 0 L 0 0 0 50" className="ecg-demo-grid-large" /></pattern>
+            </defs>
+            <rect width="760" height="150" fill="url(#ecg-demo-large-grid)" />
+            <path className="ecg-demo-trace" d="M0 76 H34 L41 72 L47 76 H88 L94 76 L101 62 L108 91 L116 35 L125 111 L134 76 H169 L176 72 L182 76 H224 L230 76 L237 62 L244 91 L252 35 L261 111 L270 76 H304 L311 72 L317 76 H359 L365 76 L372 62 L379 91 L387 35 L396 111 L405 76 H439 L446 72 L452 76 H494 L500 76 L507 62 L514 91 L522 35 L531 111 L540 76 H574 L581 72 L587 76 H629 L635 76 L642 62 L649 91 L657 35 L666 111 L675 76 H709 L716 72 L722 76 H760" />
+          </svg>
+        </figure>
+        <dl className="ecg-device-details">
+          <div><dt>Origem</dt><dd>Equipamento de demonstração</dd></div>
+          <div><dt>Paciente / solicitação</dt><dd>Não identificados nesta prévia</dd></div>
+          <div><dt>Integridade e formato</dt><dd>Serão verificados após definir a interface oficial</dd></div>
+        </dl>
+        <p className="ecg-preview-footnote">A etapa real deverá validar formato, tamanho, origem autorizada e integridade antes de disponibilizar qualquer arquivo clínico.</p>
+      </div>}
+      {ecgPreviewTab === 'review' && <div className="ecg-preview-content">
+        <div className="ecg-review-step"><span>1</span><div><strong>Conferir identidade do paciente</strong><p>Comparar os identificadores do exame com uma solicitação existente; não vincular automaticamente em caso de dúvida.</p></div></div>
+        <div className="ecg-review-step"><span>2</span><div><strong>Vincular após confirmação humana</strong><p>Exemplo fictício: solicitação ECG DEMO-001 · paciente de demonstração, sem dados reais.</p></div></div>
+        <div className="ecg-preview-disabled-action"><Link2 size={17} /><span>Vínculo e importação indisponíveis nesta demonstração</span></div>
+        <p className="ecg-preview-footnote">O fluxo definitivo deverá registrar autoria e auditoria, preservar o arquivo original e respeitar o processo clínico de revisão e laudo.</p>
+      </div>}
+    </section>}
     {queueView === 'queue' && <>
     <div className="hygiene-summary" aria-label={`Resumo da fila de ${xraySectionLabels[section]}`} aria-busy={loading}><article className="status-tone-neutral"><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.length}</strong><span>Total de solicitações</span></article><article className={activeCount ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : activeCount}</strong><span>Exames ativos</span></article><article className={sectionRequests.some((request) => request.status === 'in_progress') ? 'status-tone-progress' : 'status-tone-neutral'}><strong>{loading ? '…' : requestsLoadFailed ? '—' : sectionRequests.filter((request) => request.status === 'in_progress').length}</strong><span>Em execução</span></article></div>
     <form className="hygiene-panel" onSubmit={(event) => void (section === 'laboratory' ? submitLaboratory(event) : submit(event))}>

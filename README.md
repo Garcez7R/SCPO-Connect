@@ -257,3 +257,4 @@ Para os PWAs móveis, siga o escopo já autorizado e os controles definidos na d
 - [Modelo de acesso ao cadastro de pacientes](docs/patient-access-model.md)
 - [Preparação para piloto e segurança](docs/pilot-security-readiness.md)
 - [Backup e restauração](docs/backups.md)
+- [Preparação da integração do ECG Bionet CardioCare 2000 / EKS2000](docs/ecg-device-integration.md)
