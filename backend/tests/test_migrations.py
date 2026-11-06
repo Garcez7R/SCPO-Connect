@@ -52,6 +52,13 @@ def test_each_service_migration_creates_only_its_owned_table(
             "laundry_request_items",
             "laundry_inventory_movements",
         } <= tables
+    if service == "pharmacy":
+        assert "lot_qr_token" in {
+            column["name"] for column in inspect(get_engine(service)).get_columns("inventory_items")
+        }
+        assert "uq_inventory_items_lot_qr_token" in {
+            index["name"] for index in inspect(get_engine(service)).get_indexes("inventory_items")
+        }
     if service == "nursing":
         assert len(tables) == 38
         assert "nursing_offline_action_receipts" in tables

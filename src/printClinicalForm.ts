@@ -116,13 +116,43 @@ export function printMedicationAdministrationLabels(data: {
   dose: string
   route: string
   times: string[]
-  prescriberName: string
+  administrationDate: string
 }) {
   if (!data.times.length) return false
-  const labels = data.times.map((time) => `<article><header><img src="/scpo-connect-icon.png" alt=""><div><strong>SCPO Connect</strong><span>Administração · ${escapeHtml(time)}</span></div></header><h1>${escapeHtml(data.patient.name)}</h1><p>${escapeHtml(data.patient.room || 'Quarto —')} · Leito ${escapeHtml(data.patient.bed || '—')}</p><h2>${escapeHtml(data.medicationName)}</h2><p>${escapeHtml(data.dose)} · ${escapeHtml(data.route)}</p><small>Prescritor: ${escapeHtml(data.prescriberName)}</small></article>`).join('')
+  const dateParts = data.administrationDate.split('-').map(Number)
+  const dateLabel = dateParts.length === 3 && dateParts.every(Number.isInteger)
+    ? new Intl.DateTimeFormat('pt-BR').format(new Date(dateParts[0], dateParts[1] - 1, dateParts[2]))
+    : data.administrationDate
+  const sheets: string[] = []
+  for (let index = 0; index < data.times.length; index += 3) {
+    const labels = data.times.slice(index, index + 3).map((time) => `
+      <article>
+        <small class="cup-label-heading">MEDICAÇÃO · ${escapeHtml(time)}</small>
+        <strong class="cup-label-patient">${escapeHtml(data.patient.name)}</strong>
+        <span class="cup-label-location">Quarto ${escapeHtml(data.patient.room || '—')} · Leito ${escapeHtml(data.patient.bed || '—')}</span>
+        <strong class="cup-label-medication">${escapeHtml(data.medicationName)}</strong>
+        <span class="cup-label-dose">${escapeHtml(data.dose)} · ${escapeHtml(data.route)}</span>
+        <small class="cup-label-date">${escapeHtml(dateLabel)}</small>
+      </article>`).join('')
+    sheets.push(`<section class="cup-label-sheet">${labels}</section>`)
+  }
   const popup = window.open('', '_blank', 'width=720,height=720')
   if (!popup) return false
-  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas de administração</title><style>@page{margin:8mm}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#172b3a;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:5mm}article{min-height:48mm;padding:5mm;border:1px dashed #667985;break-inside:avoid}header{display:flex;align-items:center;gap:3mm;border-bottom:1px solid #ccd7df;padding-bottom:2mm}header img{width:10mm;height:10mm;object-fit:contain}header div{display:grid;gap:1mm}header span,small,p{color:#526579}h1{font-size:14px;margin:3mm 0 1mm}h2{font-size:13px;margin:3mm 0 1mm}p{margin:1mm 0 2mm}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}</style></head><body>${labels}</body></html>`)
+  popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas para copinhos de medicação</title><style>
+    @page{size:134mm 34mm;margin:0}*{box-sizing:border-box}
+    body{width:134mm;height:34mm;margin:0;overflow:hidden;color:#172b3a;font:7pt Arial,sans-serif}
+    .cup-label-sheet{display:grid;box-sizing:border-box;width:134mm;height:34mm;grid-template-columns:repeat(3,36mm);grid-template-rows:28mm;column-gap:3mm;row-gap:2mm;align-content:start;justify-content:start;padding:4mm 16mm 2mm 4mm;transform:scaleX(1.5);transform-origin:top left;break-after:page;page-break-after:always}
+    .cup-label-sheet:last-child{break-after:auto;page-break-after:auto}
+    article{position:relative;display:flex;width:36mm;height:28mm;flex-direction:column;justify-content:center;gap:.7mm;overflow:hidden;padding:1mm;background:#fff;break-inside:avoid}
+    article::before{position:absolute;inset:0;z-index:0;background:url('/scpo-connect-icon.png') center/18mm no-repeat;content:'';opacity:.08}
+    article>*{position:relative;z-index:1;overflow-wrap:anywhere}
+    .cup-label-heading{font-size:5.5pt;font-weight:700;letter-spacing:.2pt}
+    .cup-label-patient{font-size:8pt;line-height:1.05}
+    .cup-label-location,.cup-label-date{font-size:6pt;color:#526579}
+    .cup-label-medication{margin-top:.5mm;font-size:7.5pt;line-height:1.05}
+    .cup-label-dose{font-size:6.5pt;font-weight:600}
+    @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  </style></head><body>${sheets.join('')}</body></html>`)
   popup.document.close()
   window.setTimeout(() => {
     if (!popup.closed) {

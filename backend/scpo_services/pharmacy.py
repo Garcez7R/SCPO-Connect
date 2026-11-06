@@ -121,6 +121,9 @@ class InventoryLot(Base):
     )
     balance: Mapped[str] = mapped_column(String(32), nullable=False)
     lot: Mapped[str] = mapped_column(String(80), nullable=False)
+    lot_qr_token: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True, default=lambda: str(uuid.uuid4())
+    )
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
     supplier: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     minimum_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0")
@@ -770,6 +773,38 @@ def list_items(
     return {"items": items}
 
 
+@app.get("/api/v1/pharmacy/lots/lookup")
+def lookup_lot_qr(
+    principal: Annotated[DemoPrincipal, Depends(DISPENSATION_READ_ROLE)],
+    db: Annotated[Session, Depends(get_pharmacy_db)],
+    token: Annotated[str, Query(min_length=36, max_length=36, pattern=r"^[0-9a-f-]{36}$")],
+) -> dict[str, object]:
+    item = db.scalar(
+        select(InventoryLot)
+        .options(joinedload(InventoryLot.product), joinedload(InventoryLot.location))
+        .where(InventoryLot.lot_qr_token == token)
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="O identificador do lote não foi encontrado")
+
+    today = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    status = "expired" if item.expiry_date < today else "expiring" if (item.expiry_date - today).days <= 30 else "valid"
+    emit_audit_event(principal, "pharmacy", "inventory_lot_qr_read", str(item.id), db=db)
+    return {
+        "item_id": item.id,
+        "item_name": item.product.name,
+        "active_ingredient": item.product.active_ingredient,
+        "presentation": item.product.presentation,
+        "gtin": item.product.gtin or item.product.legacy_identifier,
+        "balance": item.balance,
+        "unit": item.product.unit,
+        "lot": item.lot,
+        "expiry_date": item.expiry_date.isoformat(),
+        "storage_location": item.location.name if item.location else "",
+        "status": status,
+    }
+
+
 @app.get("/api/v1/pharmacy/catalog/anvisa/status")
 def anvisa_catalog_status(
     principal: Annotated[DemoPrincipal, Depends(INVENTORY_READ_ROLE)],
@@ -1146,6 +1181,7 @@ def create_item(
         purchase_unit=purchase_unit,
         units_per_purchase_unit=factor_text,
         packaging_levels=packaging_levels,
+        lot_qr_token=str(uuid.uuid4()),
         created_at=now,
     )
     db.add(item)
@@ -1353,6 +1389,7 @@ def receive_purchase_request(
         purchase_unit=request.purchase_unit,
         units_per_purchase_unit=format_stock_quantity(factor),
         packaging_levels=packaging_levels,
+        lot_qr_token=str(uuid.uuid4()),
         created_at=now,
     )
     db.add(lot)
@@ -1743,6 +1780,7 @@ def serialize_item(item: InventoryLot) -> dict[str, object]:
         "product_packaging_levels": item.product.packaging_levels or packaging_levels,
         "product_packaging_unit": item.product.packaging_purchase_unit,
         "lot": item.lot,
+        "lot_qr_token": item.lot_qr_token,
         "expiry_date": item.expiry_date.isoformat(),
         "created_at": item.created_at.isoformat(),
         "barcode": item.product.gtin or item.product.legacy_identifier,

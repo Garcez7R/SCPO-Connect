@@ -1797,6 +1797,41 @@ def test_pharmacy_gtin_lookup_returns_lots_without_changing_stock(
     assert unknown["matches"] == []
 
 
+def test_pharmacy_lot_qr_lookup_returns_current_lot_details_without_moving_stock(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_database: dict[str, Session],
+) -> None:
+    monkeypatch.setattr(pharmacy, "emit_audit_event", lambda *args, **kwargs: None)
+    pharmacist = DemoPrincipal(
+        "pharm-qr-lookup", "pharm", "Farmacêutica", "pharmacy",
+        ["pharmacy"], {"pharmacy": ["consultar", "criar"]},
+    )
+    db = domain_database["pharmacy"]
+    item = pharmacy.create_item(
+        pharmacy.InventoryPayload(
+            item_name="Medicamento rastreável",
+            balance="7",
+            unit="comprimido",
+            lot="QR-LOTE-01",
+            expiry_date="2099-12-31",
+            storage_location="Farmácia central",
+            pharmacy_registration_confirmed=True,
+        ),
+        pharmacist,
+        db,
+    )
+
+    result = pharmacy.lookup_lot_qr(pharmacist, db, item["lot_qr_token"])
+
+    assert result["item_name"] == "Medicamento rastreável"
+    assert result["lot"] == "QR-LOTE-01"
+    assert result["expiry_date"] == "2099-12-31"
+    assert result["storage_location"] == "Farmácia central"
+    assert result["status"] == "valid"
+    assert db.get(pharmacy.InventoryLot, item["id"]).balance == "7"
+    assert db.query(pharmacy.PharmacyStockMovement).count() == 1
+
+
 def test_pharmacy_stock_alerts_include_reorder_and_expiry_actions(
     monkeypatch: pytest.MonkeyPatch,
     domain_database: dict[str, Session],

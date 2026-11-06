@@ -21,6 +21,13 @@ const physicianPatientGroupLabels: Record<typeof physicianPatientGroupValues[num
   registered: 'Cadastrados sem internação',
 }
 
+function localDateInputValue(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 type Patient = {
   reference: string
   name: string
@@ -107,6 +114,7 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
   const [savingPrescription, setSavingPrescription] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [medicationLabelDate, setMedicationLabelDate] = useState(localDateInputValue)
   const encounterSectionRef = useRef<HTMLElement | null>(null)
 
   const visiblePatients = patients
@@ -348,7 +356,7 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
           </form>
         </section>
         <section className="patient-list-panel">
-          <div className="section-heading"><div><p className="eyebrow">HISTÓRICO DE PRESCRIÇÕES</p><h2>Prescrições deste paciente</h2></div></div>
+          <div className="section-heading"><div><p className="eyebrow">HISTÓRICO DE PRESCRIÇÕES</p><h2>Prescrições deste paciente</h2><p className="welcome-copy">Escolha a data das etiquetas dos copinhos; horários, dose e via vêm da prescrição e não são calculados.</p></div><label className="field"><span className="field-label">Data para etiquetas</span><input type="date" value={medicationLabelDate} onChange={(event) => setMedicationLabelDate(event.target.value)} /></label></div>
           {patientPrescriptions.length ? <div className="patient-list">{patientPrescriptions.map((prescription) => <article className="patient-list-row" key={prescription.id}>
             <div><strong>{prescription.medication_name}</strong><p>{prescription.dose} · {prescription.route} · {prescription.frequency} · {prescription.duration}</p>{prescription.administration_times.length > 0 && <p>Horários prescritos: {prescription.administration_times.join(' · ')}</p>}<small>{prescription.prescriber_name} · CRM {prescription.crm}/{prescription.crm_state} · {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(prescription.created_at))}</small></div>
             <div className="patient-row-actions"><span className={`physician-status physician-status-${prescription.status}`}>{prescription.status === 'pending' ? 'Pendente' : prescription.status === 'fulfilled' ? 'Atendida' : 'Cancelada'}</span>
@@ -358,7 +366,20 @@ function PhysicianPage({ userId, onOpenPatientHistory, mobileMode = false }: { u
                   setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.')
                 }
               }}><Printer size={15} /> Receita simples</button>}
-              {prescription.administration_times.length > 0 && selectedPatientForm && <button className="button button-secondary" type="button" onClick={() => { if (!printMedicationAdministrationLabels({ patient: selectedPatientForm, medicationName: prescription.medication_name, dose: prescription.dose, route: prescription.route, times: prescription.administration_times, prescriberName: prescription.prescriber_name })) setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.') }}><Printer size={15} /> Etiquetas de horários</button>}
+              {prescription.administration_times.length > 0 && selectedPatientForm && <button className="button button-secondary" type="button" onClick={() => {
+                if (!medicationLabelDate) {
+                  setError('Selecione a data das etiquetas antes de imprimir.')
+                  return
+                }
+                if (!printMedicationAdministrationLabels({
+                  patient: selectedPatientForm,
+                  medicationName: prescription.medication_name,
+                  dose: prescription.dose,
+                  route: prescription.route,
+                  times: prescription.administration_times,
+                  administrationDate: medicationLabelDate,
+                })) setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este aplicativo.')
+              }}><Printer size={15} /> Etiquetas para copinhos</button>}
               {selectedPatientForm && prescription.administration_times.length > 0 && <button className="button button-secondary" type="button" onClick={() => {
                 const time = prescription.administration_times[0] ?? ''
                 if (!time) return
