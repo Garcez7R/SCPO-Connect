@@ -155,6 +155,8 @@ services:
 
   backup:
     <<: *backend-service
+    group_add:
+      - "${SCPO_BACKUP_ENV_GID:-1000}"
     command: ["uvicorn", "scpo_services.backup:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       <<: *backend-environment
