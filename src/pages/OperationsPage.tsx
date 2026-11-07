@@ -439,6 +439,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
     return summary
   }, { open: 0, in_progress: 0, completed: 0, cancelled: 0 })
   const activeCount = visibleRequests.filter((request) => request.status === 'open' || request.status === 'in_progress').length
+  const urgentRequestCount = visibleRequests.filter((request) => request.priority === 'urgent').length
   const hygienePrintRows: PrintRow[] = visibleRequests.map((request) => ({
     id: request.id,
     date: localDateKey(request.created_at),
@@ -521,6 +522,7 @@ export function HygienePage({ user }: { user: AuthUser }) {
           return <article className={`status-tone-${tone}`} key={status}><strong>{count}</strong><span>{label}</span></article>
         })}
         <article className="status-tone-neutral"><strong>{activeCount}</strong><span>Ativas</span></article>
+        <article className={urgentRequestCount > 0 ? 'status-tone-critical' : 'status-tone-neutral'}><strong>{urgentRequestCount}</strong><span>Urgentes</span></article>
       </div>
       <div className="maintenance-filters hygiene-queue-filters"><label className="field"><span className="field-label">De (data e hora)</span><input type="datetime-local" value={fromDate} max={toDate || undefined} onChange={(event) => setFromDate(event.target.value)} /></label><label className="field"><span className="field-label">Até (data e hora)</span><input type="datetime-local" value={toDate} min={fromDate || undefined} onChange={(event) => setToDate(event.target.value)} /></label><label className="field"><span className="field-label">Situação</span><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}><option value="active">Ativas</option><option value="all">Todas</option>{Object.entries(hygieneStatuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="field maintenance-query"><span className="field-label">Busca</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Unidade, local, tipo ou responsável" /></label><div className="maintenance-filter-actions"><button className="button button-secondary" type="button" onClick={() => { setFromDate(''); setToDate(''); setFilter('active'); setQuery('') }}>Limpar filtros</button></div></div>
       {loading ? <div className="history-empty">Carregando fila…</div> : visibleRequests.length ? <div className="hygiene-request-list">{visibleRequests.map((request) => {
@@ -674,6 +676,7 @@ export function MaintenanceQueuePage({ userId }: { userId: string }) {
 
   const maintenancePrintRows: PrintRow[] = orders.map((order) => ({ id: order.id, date: order.created_at, title: `${order.order_number ?? order.id} · ${order.title}`, fields: [['Número da OS', order.order_number ?? order.id], ['Status', workOrderStatuses[order.status]], ['Prioridade', workOrderPriorities[order.priority]], ['Tipo', order.service_type], ['Setor solicitante', order.department], ['Local', order.location], ['Solicitante', order.requester_name], ['Descrição', order.description]] }))
   const statusSummary = orders.reduce<Record<string, number>>((summary, order) => ({ ...summary, [order.status]: (summary[order.status] ?? 0) + 1 }), {})
+  const urgentOrderCount = orders.filter((order) => order.priority === 'urgent').length
 
   async function saveStatus(order: WorkOrder) {
     const change = changes[order.id] ?? { status: order.status, note: '' }
@@ -705,6 +708,7 @@ export function MaintenanceQueuePage({ userId }: { userId: string }) {
     <section className="work-order-list-panel"><div className="section-heading"><div><p className="eyebrow">PAINEL OPERACIONAL</p><h2>Solicitações recebidas <span className="module-total">{orders.length}</span></h2></div><div className="maintenance-actions">{alertsEnabled ? <span className="field-hint" role="status">Alertas ativos</span> : <button className="button button-secondary" type="button" onClick={() => void enableAlerts()}>Ativar alertas</button>}<button className="button button-secondary" type="button" onClick={printResults} disabled={loading || !orders.length}><Printer size={16} /> Imprimir lista</button><button className="button button-secondary" type="button" onClick={() => void loadQueue()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar fila'}</button></div></div>
       <div className="hygiene-summary maintenance-report-summary" aria-label="Resumo dos resultados">
         <article className="status-tone-neutral"><strong>{orders.length}</strong><span>Ordens</span></article>
+        <article className={urgentOrderCount > 0 ? 'status-tone-critical' : 'status-tone-neutral'}><strong>{urgentOrderCount}</strong><span>Urgentes</span></article>
         {(Object.entries(workOrderStatuses) as [WorkOrderStatus, string][]).map(([status, label]) => {
           const count = statusSummary[status] ?? 0
           const tone = count > 0 ? workOrderStatusTones[status] : 'neutral'
