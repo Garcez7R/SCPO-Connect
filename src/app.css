@@ -2611,10 +2611,11 @@ html[data-theme="dark"] .brand-image, html[data-theme="dark"] .auth-brand img { 
 .pharmacy-mobile-shell .pharmacy-page .page-title-row .module-icon { display: none; }
 .pharmacy-mobile-shell .pharmacy-page .page-title-row > .button { min-height: 42px; padding-inline: 10px; }
 .pharmacy-page-mobile .pharmacy-tabs { position: sticky; z-index: 4; top: 0; margin: 0 -2px; padding: 4px 2px; background: var(--page); }
-.pharmacy-page-mobile .pharmacy-tabs .module-tab-buttons { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
-.pharmacy-page-mobile .pharmacy-tabs .button { min-height: 42px; white-space: nowrap; }
-.pharmacy-page-mobile .hygiene-summary { gap: 8px; }
+.pharmacy-page-mobile .pharmacy-tabs .module-tab-buttons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.pharmacy-page-mobile .pharmacy-tabs .button { min-height: 48px; flex-direction: column; gap: 4px; padding: 6px 4px; font-size: 10px; line-height: 1.2; text-align: center; white-space: normal; }
+.pharmacy-page-mobile .hygiene-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .pharmacy-page-mobile .hygiene-summary article { padding: 12px; }
+.pharmacy-page-mobile .pharmacy-item-grid { grid-template-columns: 1fr; }
 .pharmacy-page-mobile .pharmacy-inventory,
 .pharmacy-page-mobile .pharmacy-dispensation-panel,
 .pharmacy-page-mobile .pharmacy-alphabetic-inventory { padding: 14px; }

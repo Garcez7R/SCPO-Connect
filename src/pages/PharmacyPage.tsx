@@ -499,6 +499,16 @@ const pharmacyTabLabels: Record<(typeof pharmacyTabs)[number], string> = {
   purchases: 'Compras e suprimentos',
   guide: 'Como funciona',
 }
+const pharmacyMobileTabLabels: Record<(typeof pharmacyTabs)[number], string> = {
+  stock: 'Estoque',
+  consultation: 'Consultas',
+  inventory: 'Estoque A–Z',
+  dispensation: 'Dispensar',
+  prescriptions: 'Prescrições',
+  reports: 'Relatórios',
+  purchases: 'Compras',
+  guide: 'Ajuda',
+}
 const movementTypeLabels: Record<PharmacyMovement['movement_type'], string> = {
   opening_balance: 'Saldo inicial legado',
   entry: 'Entrada',
@@ -1549,20 +1559,20 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       }}
       options={availablePharmacyTabs.map((value) => ({
         value,
-        label: pharmacyTabLabels[value],
+        label: mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value],
         content: value === 'stock' || value === 'inventory'
-          ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
+          ? <><Package size={16} /> {mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value]}</>
           : value === 'consultation'
-            ? <><Search size={16} /> {pharmacyTabLabels[value]}</>
+          ? <><Search size={16} /> {mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value]}</>
           : value === 'prescriptions'
-            ? <><ArrowRight size={16} /> {pharmacyTabLabels[value]} <span>{prescriptions.length}</span></>
+            ? <><ArrowRight size={16} /> {mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value]} <span>{prescriptions.length}</span></>
             : value === 'reports'
-              ? <><ClipboardList size={16} /> {pharmacyTabLabels[value]}</>
+            ? <><ClipboardList size={16} /> {mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value]}</>
             : value === 'purchases'
-              ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
+            ? <><Package size={16} /> {mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value]}</>
               : value === 'guide'
-                ? <><BookOpen size={16} /> {pharmacyTabLabels[value]}</>
-              : <><ArrowRight size={16} /> {pharmacyTabLabels[value]}</>,
+              ? <><BookOpen size={16} /> {mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value]}</>
+            : <><ArrowRight size={16} /> {mobileMode ? pharmacyMobileTabLabels[value] : pharmacyTabLabels[value]}</>,
       }))}
     />
     {notice && <ToastMessage variant="success">{notice}</ToastMessage>}{error && <ToastMessage variant="error">{error}</ToastMessage>}
@@ -1864,7 +1874,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           <p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p>
           <div className="pharmacy-stock"><span className={`pharmacy-level-dot level-${level}`} /><strong>{displayedBalance.value}</strong><span>{pharmacyUnitLabel(displayedBalance.unit)}{low && displayedProductBalance && displayedMinimum ? ` · disponível no produto: ${displayedProductBalance.value} ${pharmacyUnitLabel(displayedProductBalance.unit)} (mínimo ${displayedMinimum.value} ${pharmacyUnitLabel(displayedMinimum.unit)})` : ''}</span></div>
           <div className="pharmacy-item-meta"><span><small>Entrada · conta registrada</small><strong>{packagingFormula(item.purchase_quantity, item.purchase_unit, item.packaging_levels, item.unit)}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{formatDateDmy(item.expiry_date)}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div>
-          {!mobileMode && <button className="button button-secondary pharmacy-label-button" type="button" onClick={() => setLabelItem(item)}><Printer size={16} /> Imprimir etiquetas</button>}
+          <button className="button button-secondary pharmacy-label-button" type="button" onClick={() => setLabelItem(item)}><Printer size={16} /> Imprimir etiquetas</button>
           <button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Adicionar ao lote / movimentar'}</button>
           {movementItemId === item.id && renderStockMovementForm(item)}
         </article>
@@ -1881,7 +1891,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
             <td><strong>{displayedBalance.value}</strong><small>{pharmacyUnitLabel(displayedBalance.unit)}</small></td>
             <td><strong>{item.lot}</strong><small className={`pharmacy-table-expiry${expired ? ' pharmacy-expired' : expiring || low ? ' pharmacy-expiring' : ''}`}>{formatDateDmy(item.expiry_date)} · {statusLabel}</small></td>
             <td>{item.storage_location || 'Não informado'}</td>
-            <td><div className="pharmacy-table-actions"><button className="button button-secondary" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Fechar' : 'Movimentar'}</button>{!mobileMode && <button className="button button-secondary" type="button" onClick={() => setLabelItem(item)} aria-label={`Imprimir etiquetas de ${item.item_name}, lote ${item.lot}`}><Printer size={16} /></button>}</div></td>
+            <td><div className="pharmacy-table-actions"><button className="button button-secondary" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Fechar' : 'Movimentar'}</button><button className="button button-secondary" type="button" onClick={() => setLabelItem(item)} aria-label={`Imprimir etiquetas de ${item.item_name}, lote ${item.lot}`}><Printer size={16} /></button></div></td>
           </tr>,
           movementItemId === item.id && <tr key={`movement-${item.id}`}><td className="pharmacy-table-movement-cell" colSpan={5}>{renderStockMovementForm(item)}</td></tr>,
         ]
