@@ -42,6 +42,7 @@ import {
   Images,
   LockKeyhole,
   LogOut,
+  Megaphone,
   Menu,
   Microscope,
   Moon,
@@ -3402,7 +3403,7 @@ function NursingPage({ profile, user, onShowHistory, onOpenPatientHistory }: { p
         alwaysShowButtons
       />
       {nursingTab !== 'triage' && <>
-        <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><PatientCareTrackBadge track={patients.find((patient) => patient.reference === patientRef)?.treatment_track} />{patientRef && patients.find((patient) => patient.reference === patientRef)?.room && patients.find((patient) => patient.reference === patientRef)?.bed && !patientBehavioralStatusLoading && !patientBehavioralStatusError && <BehavioralStatusBadge status={patientBehavioralStatuses[patientRef]?.status ?? null} />}<button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
+        <div className="patient-strip"><span className="patient-avatar"><UserRound size={19} /></span><PatientSelect className="patient-copy" label="Paciente" patients={patients} value={patientRef} onChange={setPatientRef} required optionLabel={(patient) => `${patient.name} · ${patientLocationLabel(patient)}`} /><PatientCareTrackBadge track={patients.find((patient) => patient.reference === patientRef)?.treatment_track} />{patientRef && !patientBehavioralStatusLoading && !patientBehavioralStatusError && <BehavioralStatusBadge status={patientBehavioralStatuses[patientRef]?.status ?? null} />}<button className="button button-secondary" type="button" onClick={() => setShowPatientForm((visible) => !visible)}>Cadastrar paciente</button><div className="patient-meta"><span>Registrado por</span><strong>{profile.name}</strong></div></div>
         {patientBehavioralStatusError && <ToastMessage variant="error">{`Falha ao carregar o semáforo comportamental: ${patientBehavioralStatusError}`}</ToastMessage>}
         <PatientAllergyAlert patient={patients.find((patient) => patient.reference === patientRef)} />
       </>}
@@ -4168,7 +4169,11 @@ function AdminPage({ user, view = 'full' }: { user: AuthUser; view?: 'full' | 'a
       ariaLabel="Seções de Administração"
       value={activeTab}
       onChange={setTab}
-      options={availableTabs.map((value) => ({ value, label: adminTabLabels[value] }))}
+      options={availableTabs.map((value) => ({
+        value,
+        label: adminTabLabels[value],
+        content: value === 'announcements' ? <><Megaphone size={16} /> {adminTabLabels[value]}</> : undefined,
+      }))}
     />}
     {activeTab === 'users' && canManageApp && <>
     <div className="admin-warning"><ShieldCheck size={19} /><div><strong>Acesso restrito à gestão de contas autorizada.</strong><span>Ao criar ou redefinir uma conta, a senha inicial é 0000. Oriente o titular a alterá-la no primeiro acesso.</span></div></div>
@@ -5232,6 +5237,16 @@ function TherapyReportsCenter() {
   </section>
 }
 
+function BehavioralTrafficLightIcon({ size = 16 }: { size?: number }) {
+  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <path d="M12 17v4m-3 1h6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+    <rect x="7" y="1.5" width="10" height="15.5" rx="4" stroke="currentColor" strokeWidth="1.7" />
+    <circle cx="12" cy="5.5" r="1.8" fill="#d94b55" />
+    <circle cx="12" cy="9.5" r="1.8" fill="#e2a72e" />
+    <circle cx="12" cy="13.5" r="1.8" fill="#319b69" />
+  </svg>
+}
+
 function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; onNavigate: (id: ModuleId) => void; allowedModules: ModuleId[] }) {
   const [tab, setTab] = usePersistentTab(`scpo-tab-management-${user.id}`, 'overview', managementTabValues, managementTabLabels)
   const shortcuts: { id: ModuleId; label: string }[] = [
@@ -5257,7 +5272,7 @@ function ManagementPage({ user, onNavigate, allowedModules }: { user: AuthUser; 
           : value === 'tasks' ? <><ClipboardList size={16} /> {managementTabLabels[value]}</>
           : value === 'beds' ? <><Building2 size={16} /> {managementTabLabels[value]}</>
           : value === 'reports' ? <><ClipboardList size={16} /> {managementTabLabels[value]}</>
-          : value === 'behavior' ? <><AlertTriangle size={16} /> {managementTabLabels[value]}</>
+          : value === 'behavior' ? <><BehavioralTrafficLightIcon /> {managementTabLabels[value]}</>
           : value === 'governance' ? <><ShieldCheck size={16} /> {managementTabLabels[value]}</>
           : <><ArrowRight size={16} /> {managementTabLabels[value]}</>,
       }))}
@@ -6424,8 +6439,8 @@ function AuditLogPanel() {
 }
 
 function SystemAdminChartsPanel() {
-  return <section className="patient-list-panel system-admin-chart-readiness">
-    <div className="section-heading"><div><p className="eyebrow">MÉTRICAS TÉCNICAS · RETENÇÃO DE 30 DIAS</p><h2>Gráficos do sistema</h2><p className="welcome-copy">A guia foi criada no local aprovado. Os gráficos só serão habilitados quando existir uma fonte autorizada e um histórico confiável; estados atuais de saúde e backup não são séries históricas.</p></div></div>
+  return <section className="patient-list-panel system-admin-chart-readiness system-charts-war-room">
+    <div className="section-heading"><div><p className="eyebrow">WAR ROOM · TELEMETRIA OPERACIONAL</p><h2>Gráficos do sistema</h2><p className="welcome-copy">Painel preparado para séries técnicas, ainda sem coleta ativa. Os gráficos dependem de fonte autorizada e histórico confiável; estados atuais de saúde e backup não são séries históricas.</p></div><span className="system-chart-readiness-status">Coleta bloqueada</span></div>
     <div className="system-chart-scope-list">
       <article><strong>Coleta planejada</strong><span>Uma amostra a cada 5 minutos, somente para containers e volumes do SCPO.</span></article>
       <article><strong>Indicadores planejados</strong><span>CPU e memória dos serviços instrumentados, disponibilidade e latência, tamanho dos bancos e uso/capacidade dos volumes acompanhados pelo app.</span></article>
@@ -6663,7 +6678,7 @@ function SystemAdminPage({ user, onNavigate }: { user: AuthUser; onNavigate: (mo
   return <section className="system-admin-page page-enter">
     <div className="page-title-row"><div><p className="eyebrow">ACESSO RESTRITO · MANTENEDOR</p><h1>Superusuário</h1><p className="welcome-copy">Operações de manutenção disponíveis exclusivamente à conta superadministradora.</p></div><a className="button button-secondary" href="/scpo-root-ca.crt" download="scpo-connect-root-ca.crt"><Download size={16} /> Baixar certificado do app</a><span className="module-icon"><ShieldCheck size={20} /></span></div>
     <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
-    <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
+    <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{section === 'announcements' && <Megaphone size={16} />}{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'announcements' && <AppAnnouncementsAdmin endpointPrefix="/api/v1/system-admin" />}
     {tab === 'charts' && <SystemAdminChartsPanel />}
     {tab === 'reports' && <SystemAdminReportsHub user={user} onNavigate={onNavigate} />}

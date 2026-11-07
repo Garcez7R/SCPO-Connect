@@ -320,6 +320,19 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .system-chart-scope-list article.status-tone-warning { border-color: var(--status-warning-border); background: var(--status-warning-background); }
 .system-chart-scope-list article.status-tone-warning strong,
 .system-chart-scope-list article.status-tone-warning span { color: var(--status-warning-ink); }
+.system-charts-war-room { position: relative; isolation: isolate; overflow: hidden; border-color: #1b5266; background: radial-gradient(ellipse at 92% 4%, rgb(28 153 165 / 19%), transparent 44%), linear-gradient(145deg, #071923, #0b2431 68%, #091b25); color: #d7edf2; }
+.system-charts-war-room::before { position: absolute; z-index: -1; inset: 0; background-image: linear-gradient(rgb(108 197 207 / 6%) 1px, transparent 1px), linear-gradient(90deg, rgb(108 197 207 / 6%) 1px, transparent 1px); background-size: 24px 24px; content: ''; pointer-events: none; }
+.system-charts-war-room .eyebrow { color: #74d7d4; letter-spacing: 1.2px; }
+.system-charts-war-room .section-heading h2 { color: #effbfc; }
+.system-charts-war-room .welcome-copy { color: #b4cbd2; }
+.system-chart-readiness-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid #8e6a31; border-radius: 999px; background: rgb(111 76 23 / 25%); color: #ffd783; font-size: 10px; font-weight: 750; letter-spacing: .5px; text-transform: uppercase; }
+.system-chart-readiness-status::before { width: 7px; height: 7px; border-radius: 50%; background: #e5ad4a; content: ''; }
+.system-charts-war-room .system-chart-scope-list article { border-color: #235063; background: rgb(5 24 34 / 78%); }
+.system-charts-war-room .system-chart-scope-list article strong { color: #a7e8e4; }
+.system-charts-war-room .system-chart-scope-list article span { color: #c0d5da; }
+.system-charts-war-room .system-chart-scope-list article.status-tone-warning { border-color: #8e6a31; background: rgb(83 58 22 / 45%); }
+.system-charts-war-room .system-chart-scope-list article.status-tone-warning strong { color: #ffda8b; }
+.system-charts-war-room .system-chart-scope-list article.status-tone-warning span { color: #f1dbb2; }
 .backup-generated-key-panel { display: grid; gap: 10px; margin-block: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .backup-generated-key-panel .section-heading { margin: 0; }
 .backup-generated-key-panel h4 { margin: 2px 0 0; color: var(--ink); font-size: 15px; }
@@ -2078,6 +2091,7 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
 @media (max-width: 700px) { .maintenance-filters { grid-template-columns: 1fr 1fr; } .maintenance-query { grid-column: span 2; } .maintenance-filter-actions { grid-column: span 2; } .maintenance-filter-actions .button { flex: 1; min-height: 44px; } .maintenance-actions { width: 100%; } .backup-export-form { align-items: stretch; flex-direction: column; } .backup-manual-password-row, .backup-key-import-row { grid-template-columns: minmax(0, 1fr); } .backup-manual-password-row > .button, .backup-key-import-row > .button { width: 100%; justify-content: center; } .backup-generated-key-form, .backup-automatic-config-form, .backup-schedule-grid { grid-template-columns: 1fr; } .backup-schedule-grid > .backup-weekday-field { grid-column: auto; } .backup-panel > .section-heading > .button { margin-left: auto; } }
 @media (max-width: 700px) {
   .system-chart-scope-list { grid-template-columns: 1fr; }
+  .system-charts-war-room > .section-heading { align-items: flex-start; flex-direction: column; }
   .system-admin-report-shortcuts article { align-items: stretch; flex-direction: column; }
   .system-admin-report-shortcuts .button { justify-content: center; }
 }
@@ -2436,6 +2450,9 @@ html[data-theme="dark"] .overview-stat > span,
 html[data-theme="dark"] .overview-stat small { color: var(--muted); }
 html[data-theme="dark"] .overview-stat strong { color: var(--blue-dark); }
 html[data-theme="dark"] :is(.sidebar, .topbar, .profile-card, .module-card, .activity-panel, .form-section, .patient-strip, .patient-list-panel, .patient-registry-card, .patient-follow-up-panel, .pharmacy-item-card, .work-order-form, .work-order-card, .work-order-list-panel, .vital-history, .vital-extra-details, .vital-extra-card, .history-filter-panel, .print-selection-panel, .patient-detail-modal, .patient-archive-dialog, .account-create-panel, .account-row, .users-panel, .therapy-report-card, .nutrition-record-card, .nutrition-context-card, .patient-detail-sections > section, .pharmacy-page .hygiene-summary article, .pharmacy-stock-details, .pharmacy-level-count, .pharmacy-stock-level-row, .psychology-panel, .psychology-referral-card, .psychology-encounter-card, .psychology-guidance article, .interprofessional-share-card, .hygiene-panel, .hygiene-request-card, .xray-request-card) { border-color: var(--line); background-color: var(--surface); color: var(--ink); }
+html[data-theme="dark"] .system-charts-war-room { border-color: #1b5266; background: radial-gradient(ellipse at 92% 4%, rgb(28 153 165 / 19%), transparent 44%), linear-gradient(145deg, #071923, #0b2431 68%, #091b25); color: #d7edf2; }
+html[data-theme="dark"] .system-charts-war-room .section-heading h2 { color: #effbfc; }
+html[data-theme="dark"] .system-charts-war-room .welcome-copy { color: #b4cbd2; }
 html[data-theme="dark"] .psychology-referral-card.patient-care-track-card { border-left-color: #9aa5ad; }
 html[data-theme="dark"] .psychology-referral-card.patient-care-track-card.care-track-clinical { border-left-color: #54b681; }
 html[data-theme="dark"] .psychology-referral-card.patient-care-track-card.care-track-psychiatric { border-left-color: #a38bd7; }
