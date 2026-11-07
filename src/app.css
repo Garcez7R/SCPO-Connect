@@ -305,6 +305,21 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .backup-fingerprint-value { display: grid; min-width: 0; gap: 5px; }
 .backup-fingerprint-value > span { color: var(--muted); font-size: 11px; font-weight: 600; }
 .backup-fingerprint-value > code { display: block; min-width: 0; overflow-wrap: anywhere; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 12px; letter-spacing: .04em; line-height: 1.55; }
+.backup-schedule-config .field-hint { color: var(--muted); font-size: 11px; line-height: 1.55; text-align: left; }
+.system-admin-reports-hub { display: grid; gap: 18px; }
+.system-admin-report-shortcuts { display: grid; gap: 10px; }
+.system-admin-report-shortcuts article { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.system-admin-report-shortcuts article > div { display: grid; gap: 4px; min-width: 0; }
+.system-admin-report-shortcuts article strong { color: var(--ink); font-size: 13px; }
+.system-admin-report-shortcuts article span { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.system-admin-report-shortcuts .button { flex: 0 0 auto; }
+.system-chart-scope-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.system-chart-scope-list article { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 13px 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); }
+.system-chart-scope-list article strong { color: var(--ink); font-size: 12px; }
+.system-chart-scope-list article span { color: var(--muted); font-size: 11px; line-height: 1.55; }
+.system-chart-scope-list article.status-tone-warning { border-color: var(--status-warning-border); background: var(--status-warning-background); }
+.system-chart-scope-list article.status-tone-warning strong,
+.system-chart-scope-list article.status-tone-warning span { color: var(--status-warning-ink); }
 .backup-generated-key-panel { display: grid; gap: 10px; margin-block: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .backup-generated-key-panel .section-heading { margin: 0; }
 .backup-generated-key-panel h4 { margin: 2px 0 0; color: var(--ink); font-size: 15px; }
@@ -315,10 +330,17 @@ html[data-theme="dark"] .module-icon:not([class*="module-icon-"]) { background: 
 .backup-automatic-config-form > .backup-weekday-field,
 .backup-restore-form > .field { align-self: start; }
 .backup-generated-key-panel .backup-generated-key-form > .button { grid-column: 1 / -1; justify-self: stretch; min-height: 44px; justify-content: center; }
-.backup-automatic-config-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.backup-automatic-config-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px 20px; }
+.backup-automatic-config-form .field-hint { color: var(--muted); font-size: 11px; line-height: 1.55; text-align: left; overflow-wrap: anywhere; }
+.backup-automatic-config-form .field input,
+.backup-automatic-config-form .field select { width: 100%; min-height: 44px; }
 .backup-automatic-config-form > .backup-fingerprint-field { grid-column: 1 / -1; }
 .backup-fingerprint-field input { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; letter-spacing: .06em; }
 .backup-automatic-config-form > .button { grid-column: 1 / -1; justify-self: stretch; align-self: start; min-height: 42px; justify-content: center; }
+.backup-schedule-config { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.backup-schedule-config > legend { padding: 0 6px; color: var(--ink); font-size: 13px; font-weight: 700; }
+.backup-schedule-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px 20px; }
+.backup-schedule-grid > .backup-weekday-field { grid-column: 1 / -1; }
 .backup-weekday-field { min-width: 0; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; }
 .backup-weekday-options { display: flex; flex-wrap: wrap; gap: 10px 16px; }
 .backup-weekday-options label { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-size: 12px; }
@@ -945,6 +967,12 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 }
 .pharmacy-scan-field { align-content: start; }
 .pharmacy-scan-field > .button { justify-self: start; min-height: 42px; }
+.pharmacy-consultation-panel { display: grid; gap: 16px; }
+.pharmacy-consultation-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.pharmacy-consultation-form .field { min-width: 0; }
+.pharmacy-consultation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pharmacy-consultation-actions .button { min-height: 43px; }
+.pharmacy-consulted-lot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--status-success-border); border-radius: 7px; background: var(--status-success-background); color: var(--status-success-ink); font-size: 12px; }
 .pharmacy-catalog-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .pharmacy-catalog-panel > div, .pharmacy-catalog-suggestions > div, .pharmacy-catalog-suggestions article > div { display: grid; gap: 4px; min-width: 0; }
 .pharmacy-catalog-panel strong, .pharmacy-catalog-suggestions strong { color: var(--ink); font-size: 12px; }
@@ -956,17 +984,17 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-catalog-suggestions { grid-column: 1 / -1; display: grid; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
 .pharmacy-catalog-suggestions article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .pharmacy-catalog-suggestions article .button { flex: 0 0 auto; min-height: 38px; }
-.pharmacy-scanner-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(15 28 38 / 72%); }
-.pharmacy-scanner-dialog { display: grid; width: min(920px, 96vw); max-height: 94dvh; gap: 16px; padding: clamp(16px, 3vw, 28px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 36%); }
+.pharmacy-scanner-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; overflow-y: auto; overscroll-behavior: contain; padding: 24px; background: rgb(15 28 38 / 72%); }
+.pharmacy-scanner-dialog { display: grid; width: min(980px, 96vw); max-height: 94dvh; gap: 16px; padding: clamp(16px, 3vw, 28px); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 36%); }
 .pharmacy-scanner-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .pharmacy-scanner-dialog > header h2 { margin: 3px 0 0; color: var(--ink); font-size: clamp(18px, 2.4vw, 23px); }
 .pharmacy-scanner-close { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; }
 .pharmacy-scanner-close:hover { background: var(--page); }
-.pharmacy-scanner-video { display: block; width: 100%; height: min(66dvh, 620px); min-height: 260px; border-radius: 10px; background: #101820; object-fit: contain; }
+.pharmacy-scanner-video { display: block; width: 100%; height: min(68dvh, 640px); min-height: 280px; aspect-ratio: 4 / 3; border-radius: 10px; background: #101820; object-fit: contain; }
 .pharmacy-scanner-dialog > .field-hint { margin: 0; font-size: 13px; }
 .pharmacy-label-button { width: 100%; justify-content: center; }
-.pharmacy-label-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(15 28 38 / 72%); }
-.pharmacy-label-dialog { display: grid; width: min(620px, 96vw); max-height: 94dvh; gap: 16px; padding: clamp(16px, 3vw, 26px); overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 36%); }
+.pharmacy-label-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; overflow-y: auto; overscroll-behavior: contain; padding: 24px; background: rgb(15 28 38 / 72%); }
+.pharmacy-label-dialog { display: grid; width: min(620px, 96vw); max-height: 94dvh; gap: 16px; padding: clamp(16px, 3vw, 26px); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 28px 90px rgb(0 0 0 / 36%); }
 .pharmacy-label-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .pharmacy-label-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .pharmacy-label-heading > img { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 9px; background: #fff; object-fit: contain; }
@@ -988,18 +1016,18 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-print { position: relative; display: flex; box-sizing: border-box; flex-direction: column; justify-content: space-between; gap: 1.2mm; padding: 1mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .pharmacy-label-print::before { position: absolute; inset: 0; z-index: 0; background: url('/sidebar-health-watermark.svg') center / 18mm no-repeat; content: ''; opacity: .08; pointer-events: none; }
 .pharmacy-label-print > * { position: relative; z-index: 1; }
-.pharmacy-label-has-qr > :not(.pharmacy-label-name):not(.pharmacy-label-qr) { max-width: calc(100% - 12mm); }
+.pharmacy-label-has-qr > :not(.pharmacy-label-name):not(.pharmacy-label-qr) { max-width: 55%; }
 .pharmacy-label-has-qr > .pharmacy-label-name { align-self: stretch; width: 100%; max-width: none; }
-.pharmacy-label-qr { position: absolute !important; right: .5mm; bottom: .5mm; display: grid; justify-items: center; gap: .3mm; transform: none; }
-.pharmacy-label-qr img { width: 10mm; height: 10mm; object-fit: contain; }
-.pharmacy-label-qr small { max-width: 11mm; font-size: 4pt; text-align: center; }
+.pharmacy-label-qr { position: absolute !important; right: .5mm; bottom: .5mm; display: grid; width: min(16mm, 45%); height: min(19mm, 76%); grid-template-rows: minmax(0, 1fr) auto; justify-items: center; gap: .3mm; transform: none; }
+.pharmacy-label-qr img { display: block; width: 100%; height: auto; max-height: calc(100% - 5mm); aspect-ratio: 1; object-fit: contain; }
+.pharmacy-label-qr small { max-width: 100%; font-size: 4pt; text-align: center; }
 .pharmacy-label-field-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
 .pharmacy-label-field-options legend { padding: 0 5px; color: var(--ink); font-size: 12px; font-weight: 650; }
 .pharmacy-label-field-options label { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 12px; }
 .pharmacy-label-field-options input { width: auto; margin: 0; }
 .pharmacy-label-name { align-self: start; font-size: 9pt; line-height: 1.1; overflow-wrap: anywhere; }
 .pharmacy-label-test-mark { color: #a4232e; font-size: 4.5pt; font-weight: 700; }
-.pharmacy-label-test-qr { display: grid; width: 10mm; height: 10mm; place-items: center; border: .3mm dashed #111; background: repeating-linear-gradient(45deg, #ddd 0 1px, #fff 1px 3px); color: #111; font-size: 5pt; text-align: center; }
+.pharmacy-label-test-qr { display: grid; width: 100%; height: auto; max-height: calc(100% - 5mm); aspect-ratio: 1; place-items: center; border: .3mm dashed #111; background: repeating-linear-gradient(45deg, #ddd 0 1px, #fff 1px 3px); color: #111; font-size: 5pt; text-align: center; }
 .pharmacy-label-description { font-size: 6.5pt; line-height: 1.1; overflow-wrap: anywhere; }
 .pharmacy-label-lot, .pharmacy-label-expiry { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; border-top: .2mm solid #444; padding-top: 1mm; }
 .pharmacy-label-lot small, .pharmacy-label-expiry small { font-size: 6pt; text-transform: uppercase; }
@@ -1343,7 +1371,7 @@ html[data-theme="dark"] .ecg-file-tag, html[data-theme="dark"] .ecg-review-step 
 .patient-photo-editor input[type=file] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 .patient-photo-editor small { width: 100%; color: var(--muted); font-size: 11px; }
 .patient-camera-panel { display: grid; width: min(100%, 560px); gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafb; }
-.patient-camera-panel video { display: block; width: 100%; max-height: 420px; border-radius: 6px; background: #18252c; object-fit: contain; }
+.patient-camera-panel video { display: block; width: 100%; height: min(60dvh, 480px); min-height: 220px; aspect-ratio: 4 / 3; border-radius: 6px; background: #18252c; object-fit: contain; }
 .patient-camera-panel > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .patient-camera-panel .form-message { margin: 0; }
 .patient-form-actions { display: flex; justify-content: flex-end; gap: 10px; }
@@ -2047,7 +2075,12 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
 .backup-key-import-row .therapy-image-file-picker { min-width: 0; }
 .backup-key-import-row .therapy-image-file-picker > span { min-width: 0; }
 .backup-panel { margin-bottom: 18px; }
-@media (max-width: 700px) { .maintenance-filters { grid-template-columns: 1fr 1fr; } .maintenance-query { grid-column: span 2; } .maintenance-filter-actions { grid-column: span 2; } .maintenance-filter-actions .button { flex: 1; min-height: 44px; } .maintenance-actions { width: 100%; } .backup-export-form { align-items: stretch; flex-direction: column; } .backup-manual-password-row, .backup-key-import-row { grid-template-columns: minmax(0, 1fr); } .backup-manual-password-row > .button, .backup-key-import-row > .button { width: 100%; justify-content: center; } .backup-generated-key-form, .backup-automatic-config-form { grid-template-columns: 1fr; } .backup-panel > .section-heading > .button { margin-left: auto; } }
+@media (max-width: 700px) { .maintenance-filters { grid-template-columns: 1fr 1fr; } .maintenance-query { grid-column: span 2; } .maintenance-filter-actions { grid-column: span 2; } .maintenance-filter-actions .button { flex: 1; min-height: 44px; } .maintenance-actions { width: 100%; } .backup-export-form { align-items: stretch; flex-direction: column; } .backup-manual-password-row, .backup-key-import-row { grid-template-columns: minmax(0, 1fr); } .backup-manual-password-row > .button, .backup-key-import-row > .button { width: 100%; justify-content: center; } .backup-generated-key-form, .backup-automatic-config-form, .backup-schedule-grid { grid-template-columns: 1fr; } .backup-schedule-grid > .backup-weekday-field { grid-column: auto; } .backup-panel > .section-heading > .button { margin-left: auto; } }
+@media (max-width: 700px) {
+  .system-chart-scope-list { grid-template-columns: 1fr; }
+  .system-admin-report-shortcuts article { align-items: stretch; flex-direction: column; }
+  .system-admin-report-shortcuts .button { justify-content: center; }
+}
 @media (max-width: 760px) {
   .laundry-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .laundry-catalog-form { grid-template-columns: 1fr 1fr; }
@@ -2190,6 +2223,10 @@ html[data-theme="dark"] .laundry-catalog-form { border-color: var(--line); backg
   .pharmacy-item-grid { grid-template-columns: 1fr; }
   .pharmacy-catalog-panel { grid-template-columns: 1fr; }
   .pharmacy-catalog-panel .button { grid-column: 1; grid-row: auto; width: 100%; justify-content: center; }
+  .pharmacy-consultation-form { grid-template-columns: 1fr; }
+  .pharmacy-consultation-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pharmacy-consultation-actions .button { justify-content: center; }
+  .pharmacy-consulted-lot { align-items: stretch; flex-direction: column; }
   .pharmacy-catalog-suggestions article { align-items: stretch; flex-direction: column; }
   .work-order-review { grid-template-columns: 1fr; gap: 11px; padding: 14px; }
   .work-order-review-description { grid-column: auto; }
@@ -3099,10 +3136,10 @@ html[data-theme="dark"] .work-order-status[class*="status-tone-"] { border-color
   .pharmacy-report-filters, .pharmacy-movement-report-filters { grid-template-columns: 1fr; }
   .pharmacy-report-actions { grid-column: auto; }
   .pharmacy-report-actions .button { flex: 1 1 100%; justify-content: center; }
-  .pharmacy-scanner-backdrop { padding: 10px; }
+  .pharmacy-scanner-backdrop { place-items: center; padding: 10px; }
   .pharmacy-scanner-dialog { width: 100%; max-height: 96dvh; gap: 12px; padding: 14px; border-radius: 11px; }
-  .pharmacy-scanner-video { height: 60dvh; min-height: 220px; }
-  .pharmacy-label-backdrop { padding: 10px; }
+  .pharmacy-scanner-video { height: 62dvh; min-height: 220px; }
+  .pharmacy-label-backdrop { place-items: center; padding: 10px; }
   .pharmacy-label-dialog { width: 100%; max-height: 96dvh; gap: 12px; padding: 14px; border-radius: 11px; }
   .pharmacy-label-actions .button { flex: 1 1 100%; justify-content: center; }
 }

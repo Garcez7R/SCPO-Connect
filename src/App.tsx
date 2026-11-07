@@ -95,8 +95,8 @@ const managementTabValues = ['overview', 'tasks', 'beds', 'reports', 'behavior',
 const managementTabLabels: Record<typeof managementTabValues[number], string> = { overview: 'Visão geral', tasks: 'Pendências', beds: 'Unidades e leitos', reports: 'Relatórios', behavior: 'Semáforo comportamental', governance: 'Governança', shortcuts: 'Acesso rápido' }
 const therapyTabValues = ['calendar', 'attendance', 'images', 'album', 'materials', 'reports'] as const
 const therapyTabLabels: Record<typeof therapyTabValues[number], string> = { calendar: 'Atividades e calendário', attendance: 'Lista de presença', images: 'Biblioteca de imagens', album: 'Álbum', materials: 'Materiais', reports: 'Relatórios' }
-const systemAdminTabValues = ['dashboard', 'accounts', 'backup', 'recovery', 'announcements'] as const
-const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', announcements: 'Informativos', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
+const systemAdminTabValues = ['dashboard', 'charts', 'reports', 'accounts', 'backup', 'recovery', 'announcements'] as const
+const systemAdminTabLabels: Record<typeof systemAdminTabValues[number], string> = { dashboard: 'Dashboard técnico', charts: 'Gráficos', reports: 'Relatórios do aplicativo', announcements: 'Informativos', accounts: 'Usuários e permissões', backup: 'Cópias de segurança', recovery: 'Recuperação de acesso' }
 const systemControlModules = [
   { id: 'patients', label: 'Pacientes' },
   { id: 'nursing', label: 'Enfermagem' },
@@ -1020,7 +1020,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
           {activeModule === 'physician' && <Suspense fallback={<div className="history-empty" role="status">Carregando módulo Médico…</div>}><PhysicianPage userId={user.id} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'physician')} /></Suspense>}
           {activeModule === 'work-orders' && <Suspense fallback={<div className="history-empty" role="status">Carregando ordens de serviço…</div>}><WorkOrdersPage user={user} /></Suspense>}
           {activeModule === 'maintenance' && <Suspense fallback={<div className="history-empty" role="status">Carregando Manutenção…</div>}><MaintenanceQueuePage userId={user.id} /></Suspense>}
-          {activeModule === 'warehouse' && <Suspense fallback={<div className="history-empty" role="status">Carregando Almoxarifado…</div>}><WarehousePage /></Suspense>}
+          {activeModule === 'warehouse' && <Suspense fallback={<div className="history-empty" role="status">Carregando Almoxarifado…</div>}><WarehousePage userId={user.id} /></Suspense>}
           {activeModule === 'laundry' && <Suspense fallback={<div className="history-empty" role="status">Carregando Lavanderia/Rouparia…</div>}><LaundryPage user={user} /></Suspense>}
           {activeModule === 'hygiene' && <Suspense fallback={<div className="history-empty" role="status">Carregando Higienização…</div>}><HygienePage user={user} /></Suspense>}
           {activeModule === 'psychology' && <Suspense fallback={<div className="history-empty" role="status">Carregando Psicologia…</div>}><PsychologyPage userId={user.id} canPrescribe={profile.modules.includes('physician')} onOpenPhysician={() => navigate('physician')} onOpenPatientHistory={(reference) => openPatientHistory(reference, 'psychology')} /></Suspense>}
@@ -1030,7 +1030,7 @@ function AuthenticatedApp({ user, sessionExpiresAt, onUserUpdated, onSessionExpi
           {activeModule === 'therapy' && <TherapyPage profile={profile} />}
           {activeModule === 'admin' && <AdminPage user={user} />}
           {activeModule === 'management' && <ManagementPage user={user} onNavigate={navigate} allowedModules={profile.modules} />}
-          {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage user={user} />}
+          {activeModule === 'system-admin' && user.is_superuser && <SystemAdminPage user={user} onNavigate={navigate} />}
           {activeModule === 'about' && <AboutPage />}
           {activeModule === 'nutrition' && <NutritionPage user={user} />}
           {activeModule === 'xray' && <Suspense fallback={<div className="history-empty" role="status">Carregando Central de Exames…</div>}><XrayModulePage user={user} /></Suspense>}
@@ -4971,7 +4971,18 @@ function AdminReportsCenter({ scope = 'admin' }: { scope?: 'admin' | 'management
   const [error, setError] = useState('')
   const [reportLoadedAt, setReportLoadedAt] = useState('')
   const invalidPeriod = Boolean(fromDate && toDate && fromDate > toDate)
-  const managementReportSourceIds = ['arrivals', 'hourly-rounds', 'patient-status', 'triages', 'outpatient']
+  const managementReportSourceIds = [
+    'arrivals',
+    'hourly-rounds',
+    'patient-status',
+    'triages',
+    'outpatient',
+    'medications',
+    'medication-actions',
+    'stock',
+    'maintenance',
+    'hygiene',
+  ]
   const visibleSources = scope === 'management'
     ? adminReportSources.filter((item) => managementReportSourceIds.includes(item.id))
     : adminReportSources
@@ -5972,7 +5983,7 @@ function BackupExportPanel() {
         {automaticStatus.configured && !automaticStatus.destination_available && <ToastMessage variant="error">A subpasta configurada não está acessível para gravação.</ToastMessage>}
         {automaticStatus.recipient_fingerprint && <div className="backup-fingerprint-value"><span>Impressão digital GPG</span><code>{automaticStatus.recipient_fingerprint}</code></div>}
         {automaticStatus.last_success_at && <p>Último backup concluído: {dateTime(automaticStatus.last_success_at)}{automaticStatus.last_backup_name ? ` · ${automaticStatus.last_backup_name}` : ''}</p>}
-        {automaticStatus.last_error && <ToastMessage variant="error">{automaticStatus.last_error}</ToastMessage>}
+        {automaticStatus.last_error && <ToastMessage variant="error">{`A execução automática mais recente falhou${automaticStatus.last_attempt_at ? ` em ${dateTime(automaticStatus.last_attempt_at)}` : ''}. Abrir esta tela apenas consulta o estado; para diagnosticar, confira os logs do serviço de backup. Detalhe registrado: ${automaticStatus.last_error}`}</ToastMessage>}
         {automaticStatus.low_space_warning && <ToastMessage variant="error">O volume-base está com menos de 10% de espaço livre. Backups com mais de 30 dias são removidos; os mais recentes não são apagados para liberar espaço.</ToastMessage>}
         <p className="field-hint">
           {automaticStatus.free_space_bytes !== null
@@ -6042,51 +6053,56 @@ function BackupExportPanel() {
             {automaticStatus?.storage_used_bytes ? ` Uso atual: ${(automaticStatus.storage_used_bytes / 1024 ** 3).toFixed(2)} GB.` : ''}
           </span>
         </label>
-        <label className="field">
-          <span className="field-label">Periodicidade</span>
-          <select value={automaticSchedule.schedule_type} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, schedule_type: event.target.value as AutomaticBackupStatus['schedule_type'] }))}>
-            <option value="daily">Todos os dias</option>
-            <option value="interval">A cada intervalo</option>
-            <option value="weekly">Dias da semana</option>
-            <option value="monthly">Dias do mês</option>
-          </select>
-        </label>
-        {automaticSchedule.schedule_type === 'interval' && <>
-          <label className="field">
-            <span className="field-label">Executar a cada</span>
-            <input required type="number" min="1" max={automaticSchedule.interval_unit === 'hours' ? 24 : 365} value={automaticSchedule.interval_value} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, interval_value: event.target.value }))} />
-          </label>
-          <label className="field">
-            <span className="field-label">Unidade do intervalo</span>
-            <select value={automaticSchedule.interval_unit} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, interval_unit: event.target.value as AutomaticBackupStatus['interval_unit'] }))}>
-              <option value="hours">Horas</option>
-              <option value="days">Dias</option>
-            </select>
-          </label>
-        </>}
-        {automaticSchedule.schedule_type === 'weekly' && <fieldset className="backup-weekday-field">
-          <legend className="field-label">Dias da semana</legend>
-          <div className="backup-weekday-options">{[
-            { value: 0, label: 'Seg' }, { value: 1, label: 'Ter' }, { value: 2, label: 'Qua' },
-            { value: 3, label: 'Qui' }, { value: 4, label: 'Sex' }, { value: 5, label: 'Sáb' },
-            { value: 6, label: 'Dom' },
-          ].map((day) => <label key={day.value}><input type="checkbox" checked={automaticSchedule.weekdays.includes(day.value)} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, weekdays: event.target.checked ? [...current.weekdays, day.value].sort() : current.weekdays.filter((value) => value !== day.value) }))} /> {day.label}</label>)}</div>
-        </fieldset>}
-        {automaticSchedule.schedule_type === 'monthly' && <label className="field">
-          <span className="field-label">Dias do mês</span>
-          <input required value={automaticSchedule.month_days} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, month_days: event.target.value }))} placeholder="1, 15, 28" />
-          <span className="field-hint">Separe por vírgulas. Datas inexistentes em um mês (por exemplo, dia 31) são ignoradas naquele mês.</span>
-        </label>}
-        <label className="field">
-          <span className="field-label">Horário local</span>
-          <input required type="time" value={automaticSchedule.run_time} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, run_time: event.target.value }))} />
-          <span className="field-hint">Fuso: America/Sao_Paulo. Para intervalos em horas, este horário ancora o primeiro ciclo.</span>
-        </label>
-        <label className="field">
-          <span className="field-label">Quantidade máxima de cópias</span>
-          <input required type="number" min="1" max="365" value={automaticSchedule.retention_count} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, retention_count: event.target.value }))} />
-          <span className="field-hint">Mantém as mais recentes até esse limite; a retenção máxima preexistente de 30 dias continua aplicada.</span>
-        </label>
+        <fieldset className="backup-schedule-config">
+          <legend>Agendamento e retenção</legend>
+          <div className="backup-schedule-grid">
+            <label className="field">
+              <span className="field-label">Periodicidade</span>
+              <select value={automaticSchedule.schedule_type} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, schedule_type: event.target.value as AutomaticBackupStatus['schedule_type'] }))}>
+                <option value="daily">Todos os dias</option>
+                <option value="interval">A cada intervalo</option>
+                <option value="weekly">Dias da semana</option>
+                <option value="monthly">Dias do mês</option>
+              </select>
+            </label>
+            {automaticSchedule.schedule_type === 'interval' && <>
+              <label className="field">
+                <span className="field-label">Executar a cada</span>
+                <input required type="number" min="1" max={automaticSchedule.interval_unit === 'hours' ? 24 : 365} value={automaticSchedule.interval_value} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, interval_value: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span className="field-label">Unidade do intervalo</span>
+                <select value={automaticSchedule.interval_unit} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, interval_unit: event.target.value as AutomaticBackupStatus['interval_unit'] }))}>
+                  <option value="hours">Horas</option>
+                  <option value="days">Dias</option>
+                </select>
+              </label>
+            </>}
+            {automaticSchedule.schedule_type === 'weekly' && <fieldset className="backup-weekday-field">
+              <legend className="field-label">Dias da semana</legend>
+              <div className="backup-weekday-options">{[
+                { value: 0, label: 'Seg' }, { value: 1, label: 'Ter' }, { value: 2, label: 'Qua' },
+                { value: 3, label: 'Qui' }, { value: 4, label: 'Sex' }, { value: 5, label: 'Sáb' },
+                { value: 6, label: 'Dom' },
+              ].map((day) => <label key={day.value}><input type="checkbox" checked={automaticSchedule.weekdays.includes(day.value)} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, weekdays: event.target.checked ? [...current.weekdays, day.value].sort() : current.weekdays.filter((value) => value !== day.value) }))} /> {day.label}</label>)}</div>
+            </fieldset>}
+            {automaticSchedule.schedule_type === 'monthly' && <label className="field">
+              <span className="field-label">Dias do mês</span>
+              <input required value={automaticSchedule.month_days} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, month_days: event.target.value }))} placeholder="1, 15, 28" />
+              <span className="field-hint">Separe por vírgulas. Dias inexistentes no mês são ignorados.</span>
+            </label>}
+            <label className="field">
+              <span className="field-label">Horário local</span>
+              <input required type="time" value={automaticSchedule.run_time} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, run_time: event.target.value }))} />
+              <span className="field-hint">Fuso America/Sao_Paulo; em intervalos por hora, define o primeiro ciclo.</span>
+            </label>
+            <label className="field">
+              <span className="field-label">Quantidade máxima de cópias</span>
+              <input required type="number" min="1" max="365" value={automaticSchedule.retention_count} onChange={(event) => setAutomaticSchedule((current) => ({ ...current, retention_count: event.target.value }))} />
+              <span className="field-hint">Mantém as mais recentes até esse limite; a retenção máxima continua em 30 dias.</span>
+            </label>
+          </div>
+        </fieldset>
         {automaticEncryptionType === 'gpg' && <label className="field backup-fingerprint-field">
           <span className="field-label">Confirme a impressão digital fornecida pela TI</span>
           <input required minLength={32} maxLength={64} value={automaticFingerprintConfirmation} onChange={(event) => setAutomaticFingerprintConfirmation(event.target.value.toUpperCase())} placeholder="Impressão digital hexadecimal" autoComplete="off" />
@@ -6407,7 +6423,52 @@ function AuditLogPanel() {
   </section>
 }
 
-function SystemAdminPage({ user }: { user: AuthUser }) {
+function SystemAdminChartsPanel() {
+  return <section className="patient-list-panel system-admin-chart-readiness">
+    <div className="section-heading"><div><p className="eyebrow">MÉTRICAS TÉCNICAS · RETENÇÃO DE 30 DIAS</p><h2>Gráficos do sistema</h2><p className="welcome-copy">A guia foi criada no local aprovado. Os gráficos só serão habilitados quando existir uma fonte autorizada e um histórico confiável; estados atuais de saúde e backup não são séries históricas.</p></div></div>
+    <div className="system-chart-scope-list">
+      <article><strong>Coleta planejada</strong><span>Uma amostra a cada 5 minutos, somente para containers e volumes do SCPO.</span></article>
+      <article><strong>Indicadores planejados</strong><span>CPU e memória dos serviços instrumentados, disponibilidade e latência, tamanho dos bancos e uso/capacidade dos volumes acompanhados pelo app.</span></article>
+      <article><strong>Apresentação planejada</strong><span>Valores atuais, picos/limites, horário da amostra e lacunas explícitas; sem fabricar valores quando uma fonte estiver indisponível.</span></article>
+      <article className="status-tone-warning"><strong>Bloqueio técnico</strong><span>A fonte segura de CPU/memória por container ainda não foi definida. Não será usado Docker socket, acesso global ao host, nem dados clínicos ou de backup como substitutos de histórico.</span></article>
+    </div>
+  </section>
+}
+
+function SystemAdminReportsHub({ user, onNavigate }: { user: AuthUser; onNavigate: (module: ModuleId) => void }) {
+  const [navigationError, setNavigationError] = useState('')
+  const destinations: { label: string; module: ModuleId; storageKey: string; tab: string; detail: string }[] = [
+    { label: 'Farmácia', module: 'pharmacy', storageKey: `scpo-tab-pharmacy-${user.id}`, tab: 'reports', detail: 'Posição de estoque, lotes, movimentações e rastreabilidade assistencial.' },
+    { label: 'Lavanderia/Rouparia', module: 'laundry', storageKey: `scpo-tab-laundry-${user.id}`, tab: 'reports', detail: 'Saldos sujo/limpo e movimentações de peças.' },
+    { label: 'Oficina Terapêutica', module: 'therapy', storageKey: `scpo-tab-therapy-${user.id}`, tab: 'reports', detail: 'Relatórios próprios de atividades e participantes.' },
+    { label: 'Central de Exames', module: 'xray', storageKey: `scpo-tab-xray-${user.id}`, tab: 'xray', detail: 'Relatórios das filas de Raio X, ECG e laboratório.' },
+    { label: 'Serviço Social', module: 'social', storageKey: `scpo-tab-social-${user.id}`, tab: 'reports', detail: 'Relatórios próprios de encaminhamentos sociais.' },
+    { label: 'Almoxarifado', module: 'warehouse', storageKey: `scpo-tab-warehouse-${user.id}`, tab: 'movements', detail: 'Histórico auditável de entradas, saídas, ajustes, saldo e responsável.' },
+  ]
+
+  function openReport(destination: (typeof destinations)[number]) {
+    setNavigationError('')
+    try {
+      window.sessionStorage.setItem(destination.storageKey, destination.tab)
+      onNavigate(destination.module)
+    } catch (cause) {
+      setNavigationError(cause instanceof Error
+        ? `Não foi possível abrir o relatório de ${destination.label}: ${cause.message}`
+        : `Não foi possível abrir o relatório de ${destination.label}.`)
+    }
+  }
+
+  return <section className="system-admin-reports-hub">
+    <AdminReportsCenter />
+    <section className="patient-list-panel">
+      <div className="section-heading"><div><p className="eyebrow">RELATÓRIOS PRÓPRIOS DOS MÓDULOS</p><h2>Abrir relatório especializado</h2><p className="welcome-copy">Alguns módulos oferecem relatórios com filtros, cálculos ou apresentação próprios; abra-os diretamente por aqui.</p></div></div>
+      {navigationError && <ToastMessage variant="error">{navigationError}</ToastMessage>}
+      <div className="system-admin-report-shortcuts">{destinations.map((destination) => <article key={destination.module}><div><strong>{destination.label}</strong><span>{destination.detail}</span></div><button className="button button-secondary" type="button" onClick={() => openReport(destination)}>Abrir relatório <ArrowRight size={15} /></button></article>)}</div>
+    </section>
+  </section>
+}
+
+function SystemAdminPage({ user, onNavigate }: { user: AuthUser; onNavigate: (module: ModuleId) => void }) {
   const { confirm } = useAppDialogs()
   const [tab, setTab] = usePersistentTab(`scpo-tab-system-admin-v2-${user.id}`, 'dashboard', systemAdminTabValues, systemAdminTabLabels)
   const [moduleSettings, setModuleSettings] = useState<SystemModuleSettings | null>(null)
@@ -6604,6 +6665,8 @@ function SystemAdminPage({ user }: { user: AuthUser }) {
     <p className="field-hint">Instale o certificado raiz nos dispositivos autorizados para confiar no HTTPS do SCPO Connect. Antes de confiar, confira a impressão digital com a equipe de infraestrutura por um canal independente.</p>
     <div className="admin-tabs module-tabs" role="tablist" aria-label="Seções da Administração do Sistema">{systemAdminTabValues.map((section) => <button key={section} className={`button ${tab === section ? 'button-primary' : 'button-secondary'}`} type="button" role="tab" aria-selected={tab === section} onClick={() => setTab(section)}>{systemAdminTabLabels[section]}</button>)}</div>
     {tab === 'announcements' && <AppAnnouncementsAdmin endpointPrefix="/api/v1/system-admin" />}
+    {tab === 'charts' && <SystemAdminChartsPanel />}
+    {tab === 'reports' && <SystemAdminReportsHub user={user} onNavigate={onNavigate} />}
     {tab === 'dashboard' && <section className="system-dashboard">
       <div className="hygiene-summary executive-kpis system-dashboard-summary-overview" aria-label="Indicadores do aplicativo" aria-busy={loading}>
         <article className="status-tone-neutral"><strong>{APP_VERSION}</strong><span>Versão do aplicativo</span></article>

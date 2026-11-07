@@ -23,6 +23,30 @@ function canRead(user: AuthUser, module: ModuleId) {
   return user.permissions[module]?.includes('consultar') ?? false
 }
 
+async function loadPagedRecords<T>(endpoint: string, collectionKey: string, pageSize: number): Promise<T[]> {
+  const records: T[] = []
+  let offset = 0
+  let total = Number.POSITIVE_INFINITY
+  while (offset < total) {
+    const url = new URL(endpoint, window.location.origin)
+    url.searchParams.set('limit', String(pageSize))
+    url.searchParams.set('offset', String(offset))
+    const data = await readApiResponse<Record<string, unknown>>(await fetch(`${url.pathname}${url.search}`))
+    const page = data[collectionKey]
+    if (!Array.isArray(page) || !page.every((item) => typeof item === 'object' && item !== null && !Array.isArray(item))) {
+      throw new Error(`A resposta de ${endpoint} não contém uma lista válida de ${collectionKey}.`)
+    }
+    records.push(...page as T[])
+    total = typeof data.total === 'number' ? data.total : records.length
+    if (page.length === 0) {
+      if (offset < total) throw new Error(`A consulta de ${endpoint} retornou apenas ${records.length} de ${total} registros.`)
+      break
+    }
+    offset += page.length
+  }
+  return records
+}
+
 function localDateTime(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
@@ -58,7 +82,7 @@ export default function OperationalTaskCenter({
   }
 
   const refresh = useCallback(async () => {
-    type Arrival = { id: string; patient_name: string; reason: string; status: 'waiting' | 'in_service'; clinical_priority: string; created_at: string }
+    type Arrival = { id: string; patient_name: string; reason: string; status: 'waiting' | 'called' | 'in_service'; clinical_priority: string; created_at: string }
     type Dispensation = { id: string; patient_reference: string; medication_name: string; quantity: string; unit: string; created_at: string }
     type Administration = { dispensation_id: string; dose: string; status: 'administered' | 'refused' | 'held' }
     type StockAlert = { item_id: number; item_name: string; balance: string; unit: string; expiry_date: string; days_to_expiry: number; alert_types: string[] }
@@ -71,23 +95,20 @@ export default function OperationalTaskCenter({
       loaders.push({
         module: 'reception',
         load: async () => {
-          const [waitingResponse, serviceResponse] = await Promise.all([
-            fetch('/api/v1/reception/arrivals?status=waiting&limit=100&offset=0'),
-            fetch('/api/v1/reception/arrivals?status=in_service&limit=100&offset=0'),
-          ])
-          const [waiting, inService] = await Promise.all([
-            readApiResponse<{ arrivals?: Arrival[]; total?: number }>(waitingResponse),
-            readApiResponse<{ arrivals?: Arrival[]; total?: number }>(serviceResponse),
-          ])
-          const arrivals = [...(waiting.arrivals ?? []), ...(inService.arrivals ?? [])]
+          const [waiting, called, inService] = await Promise.all(
+            (['waiting', 'called', 'in_service'] as const).map((status) =>
+              loadPagedRecords<Arrival>(`/api/v1/reception/arrivals?status=${status}`, 'arrivals', 100),
+            ),
+          )
+          const arrivals = [...waiting, ...called, ...inService]
           return {
             module: 'reception',
             label: moduleLabels.reception,
-            count: (waiting.total ?? arrivals.filter((item) => item.status === 'waiting').length) + (inService.total ?? arrivals.filter((item) => item.status === 'in_service').length),
+            count: arrivals.length,
             tasks: arrivals.map((arrival) => ({
               id: arrival.id,
               title: arrival.patient_name,
-              detail: `${arrival.status === 'waiting' ? 'Aguardando' : 'Em atendimento'} · ${localDateTime(arrival.created_at)} · ${arrival.reason}`,
+              detail: `${arrival.status === 'waiting' ? 'Aguardando' : arrival.status === 'called' ? 'Chamado' : 'Em atendimento'} · ${localDateTime(arrival.created_at)} · ${arrival.reason}`,
               priority: arrival.clinical_priority === 'urgent' ? 'urgent' : arrival.clinical_priority === 'priority' ? 'high' : 'normal',
             })),
           }
@@ -99,16 +120,11 @@ export default function OperationalTaskCenter({
       loaders.push({
         module: 'nursing',
         load: async () => {
-          const [dispensationResponse, administrationResponse] = await Promise.all([
-            fetch('/api/v1/pharmacy/dispensations?status=dispensed'),
-            fetch('/api/v1/nursing/medication-administrations'),
+          const [dispensations, administrationRecords] = await Promise.all([
+            loadPagedRecords<Dispensation>('/api/v1/pharmacy/dispensations?status=dispensed', 'dispensations', 500),
+            loadPagedRecords<Administration>('/api/v1/nursing/medication-administrations', 'administrations', 500),
           ])
-          const [dispensations, administrations] = await Promise.all([
-            readApiResponse<{ dispensations?: Dispensation[] }>(dispensationResponse),
-            readApiResponse<{ administrations?: Administration[] }>(administrationResponse),
-          ])
-          const administrationRecords = administrations.administrations ?? []
-          const pending = (dispensations.dispensations ?? []).map((item) => {
+          const pending = dispensations.map((item) => {
             const administered = administrationRecords
               .filter((record) => record.dispensation_id === item.id && record.status === 'administered')
               .reduce((total, record) => total + Number(record.dose.replace(',', '.')), 0)
@@ -119,7 +135,7 @@ export default function OperationalTaskCenter({
             module: 'nursing',
             label: 'Enfermagem · registros de medicação',
             count: pending.length,
-            tasks: pending.slice(0, 5).map((item) => ({
+            tasks: pending.map((item) => ({
               id: item.id,
               title: item.medication_name,
               detail: `${item.remaining} de ${item.quantity} ${item.unit} restantes · dispensação ${localDateTime(item.created_at)}`,
@@ -141,7 +157,7 @@ export default function OperationalTaskCenter({
             module: 'pharmacy',
             label: moduleLabels.pharmacy,
             count: alerts.length,
-            tasks: alerts.slice(0, 5).map((alert) => ({
+            tasks: alerts.map((alert) => ({
               id: String(alert.item_id),
               title: alert.item_name,
               detail: `${alert.balance} ${alert.unit} · ${alert.alert_types.includes('expired') ? 'lote vencido' : alert.alert_types.includes('expiring') ? `vence em ${Math.max(0, alert.days_to_expiry)} dias` : 'abaixo do mínimo'} · validade ${formatDateDmy(alert.expiry_date)}`,
@@ -178,9 +194,8 @@ export default function OperationalTaskCenter({
       loaders.push({
         module: 'hygiene',
         load: async () => {
-          const response = await fetch('/api/v1/hygiene/requests')
-          const data = await readApiResponse<{ requests?: HygieneRequest[] }>(response)
-          const openRequests = (data.requests ?? []).filter((request) => request.status === 'open' || request.status === 'in_progress')
+          const requests = await loadPagedRecords<HygieneRequest>('/api/v1/hygiene/requests', 'requests', 500)
+          const openRequests = requests.filter((request) => request.status === 'open' || request.status === 'in_progress')
           return {
             module: 'hygiene',
             label: moduleLabels.hygiene,
@@ -226,6 +241,17 @@ export default function OperationalTaskCenter({
       <label className="field"><span className="field-label">Filtro</span><select value={filter} onChange={(event) => saveFilter(event.target.value as TaskFilter)}><option value="all">Todas as pendências</option><option value="urgent">Somente prioridade urgente</option></select></label>
       <span className="module-total">{loading ? '…' : visibleCount} pendência(s)</span>
     </div>
+    <details className="task-center-source-details">
+      <summary>De onde vêm as pendências?</summary>
+      <ul>
+        <li><strong>Recepção:</strong> chegadas aguardando chamada ou em atendimento; usa situação, prioridade, motivo e horário.</li>
+        <li><strong>Enfermagem:</strong> dispensações ativas cuja quantidade ainda não foi coberta por doses marcadas como administradas. Não avalia horários, indicação nem decisão clínica.</li>
+        <li><strong>Farmácia:</strong> lotes vencidos ou próximos do vencimento e produtos abaixo das metas de estoque; usa saldo, validade e tipo de alerta.</li>
+        <li><strong>Manutenção:</strong> ordens abertas ou em andamento, com assunto, local e prioridade.</li>
+        <li><strong>Higienização:</strong> solicitações abertas ou em andamento, com tipo, unidade, área, local, prioridade e horário.</li>
+      </ul>
+      <p className="field-hint">Cada fila só aparece para módulos em que sua conta tem permissão de consulta. O filtro urgente depende da prioridade registrada na origem.</p>
+    </details>
     {preferenceError && <p className="field-hint" role="status">{preferenceError}</p>}
     {errors.map((message) => <ToastMessage variant="error" key={message}>{message}</ToastMessage>)}
     {loading && !cards.length ? <div className="history-empty">Carregando filas autorizadas…</div>
@@ -234,7 +260,7 @@ export default function OperationalTaskCenter({
         <ul>{card.tasks.slice(0, 5).map((task) => <li key={task.id}><span className={`task-priority task-priority-${task.priority}`}>{task.priority === 'urgent' ? <><AlertTriangle size={13} /> Urgente</> : task.priority === 'high' ? 'Alta' : 'Rotina'}</span><div><strong>{task.title}</strong><small>{task.detail}</small></div></li>)}</ul>
       </article>)}</div>
       : loading ? null : <div className="history-empty"><ClipboardList size={18} />{filter === 'urgent' ? 'Não há pendências com prioridade urgente nos itens carregados.' : 'Nenhuma pendência operacional nas filas disponíveis.'}</div>}
-    {cards.some((card) => card.count > Math.min(5, card.tasks.length)) && filter === 'all' && <p className="field-hint">A lista destaca até cinco itens de cada fila. Abra o módulo para consultar os demais.</p>}
+    {cards.some((card) => card.count > Math.min(5, card.tasks.length)) && filter === 'all' && <p className="field-hint">A caixa destaca até cinco itens de cada fila; use o relatório ou abra o módulo para consultar a lista completa.</p>}
     <p className="field-hint">A prioridade exibida reflete apenas o valor registrado na fila. Pendências de medicação não incluem horário ou indicação clínica de dose.</p>
   </section>
 }

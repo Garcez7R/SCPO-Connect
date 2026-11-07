@@ -6,6 +6,7 @@ import AppearanceModeButton from '../components/AppearanceModeButton'
 import ToastMessage from '../components/ToastMessage'
 import ModuleConnectionStatus from '../components/ModuleConnectionStatus'
 import { useAppDialogs } from '../components/appDialogContext'
+import { usePersistentTab } from '../components/PageNavigationContext'
 
 type LaundryUser = {
   id: string
@@ -63,6 +64,7 @@ type LaundryReports = {
   movements: LaundryMovement[]
 }
 type LaundryTab = 'requests' | 'catalog' | 'reports'
+const laundryTabs = ['requests', 'catalog', 'reports'] as const
 
 const tabLabels: Record<LaundryTab, string> = {
   requests: 'Solicitações',
@@ -118,7 +120,7 @@ export default function LaundryPage({
   onToggleTheme?: () => void
 }) {
   const { confirm } = useAppDialogs()
-  const [tab, setTab] = useState<LaundryTab>('requests')
+  const [tab, setTab] = usePersistentTab(`scpo-tab-laundry-${user.id}`, 'requests', laundryTabs, tabLabels)
   const [items, setItems] = useState<LaundryItem[]>([])
   const [requests, setRequests] = useState<LaundryRequest[]>([])
   const [reports, setReports] = useState<LaundryReports | null>(null)

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { AlertTriangle, ArrowRight, BookOpen, Camera, CalendarDays, ClipboardList, LayoutGrid, List, Package, Pill, Printer, Search, X } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
@@ -16,7 +17,7 @@ type AuthUser = { id: string; username: string; name: string; role: string; modu
 type PackagingLevel = { unit: string; units_per_parent: string }
 type PharmacyItem = { id: number; product_id: number; item_name: string; balance: string; unit: string; purchase_quantity: string; purchase_unit: string; units_per_purchase_unit: string; packaging_levels: PackagingLevel[]; product_packaging_unit: string; product_packaging_levels: PackagingLevel[]; lot: string; lot_qr_token: string; expiry_date: string; created_at: string; barcode: string; category: string; active_ingredient: string; presentation: string; supplier: string; storage_location: string; minimum_balance: string; average_balance: string }
 type PharmacyLabelField = 'item_name' | 'active_ingredient' | 'presentation' | 'lot' | 'expiry_date' | 'storage_location' | 'barcode' | 'lot_qr'
-type PharmacyLotQrLookup = Pick<PharmacyItem, 'item_name' | 'active_ingredient' | 'presentation' | 'lot' | 'expiry_date' | 'storage_location' | 'balance' | 'unit'> & { gtin: string; status: 'valid' | 'expiring' | 'expired' }
+type PharmacyLotQrLookup = Pick<PharmacyItem, 'item_name' | 'active_ingredient' | 'presentation' | 'lot' | 'expiry_date' | 'storage_location' | 'balance' | 'unit'> & { item_id: number; gtin: string; status: 'valid' | 'expiring' | 'expired' }
 type PharmacyLabelProfile = {
   name: string
   width: string
@@ -35,6 +36,7 @@ type PharmacyLabelProfile = {
   horizontalPrintScale: number
 }
 const PHARMACY_LABEL_PROFILES_KEY = 'scpo.pharmacy.label-profiles.v1'
+const PHARMACY_LABEL_PROFILE_MIGRATION_KEY = 'scpo.pharmacy.label-profiles.migrated.v2'
 const DEFAULT_PHARMACY_LABEL_FIELDS: PharmacyLabelField[] = ['item_name', 'active_ingredient', 'presentation', 'lot', 'expiry_date']
 const ZD220_LABEL_PROFILE: PharmacyLabelProfile = {
   name: 'ZD220 — 32 × 18 mm (3 × 3)',
@@ -84,7 +86,7 @@ const ZD220_FINE_ALIGNMENT_TEST_PROFILE: PharmacyLabelProfile = {
   horizontalPrintScale: 150,
 }
 const ZD220_WORKING_CONFIGURATION_PROFILE: PharmacyLabelProfile = {
-  name: 'ZD220 — configuração validada (36 × 28 mm, 3 colunas)',
+  name: 'Zebra ZD220 - 3 Colunas',
   width: '36',
   height: '28',
   fields: ['item_name', 'lot', 'expiry_date', 'lot_qr'],
@@ -230,19 +232,23 @@ function readPharmacyLabelProfiles(): { profiles: PharmacyLabelProfile[]; error:
         error: '',
       }
     }
-    const profiles: unknown = JSON.parse(saved)
-    if (!Array.isArray(profiles) || !profiles.every(isPharmacyLabelProfile)) {
+    const savedProfiles: unknown = JSON.parse(saved)
+    if (!Array.isArray(savedProfiles) || !savedProfiles.every(isPharmacyLabelProfile)) {
       throw new Error('As configurações salvas de etiquetas estão inválidas. Salve novos perfis para substituí-las.')
     }
-    const restoredProfiles = profiles.map((profile) => {
+    const restoredProfiles: PharmacyLabelProfile[] = savedProfiles.map((profile): PharmacyLabelProfile => {
       const isPreviousHorizontalCompensation = profile.name === 'ZD220 — teste horizontal 50% (3 colunas)'
+      const isPreviousValidatedConfiguration = profile.name === 'ZD220 — configuração validada (36 × 28 mm, 3 colunas)'
       const profileName = isPreviousHorizontalCompensation
         ? ZD220_HORIZONTAL_COMPENSATION_PROFILE.name
-        : profile.name
+        : isPreviousValidatedConfiguration
+          ? ZD220_WORKING_CONFIGURATION_PROFILE.name
+          : profile.name
       return {
         ...profile,
         name: profileName,
         fields: profile.name === ZD220_WORKING_CONFIGURATION_PROFILE.name
+          || isPreviousValidatedConfiguration
           ? [...new Set([...(profile.fields ?? DEFAULT_PHARMACY_LABEL_FIELDS), 'lot_qr' as PharmacyLabelField])]
           : profile.fields ?? [...DEFAULT_PHARMACY_LABEL_FIELDS],
         columns: profile.columns ?? 1,
@@ -270,8 +276,16 @@ function readPharmacyLabelProfiles(): { profiles: PharmacyLabelProfile[]; error:
           : profile.horizontalPrintScale ?? 100,
       }
     })
+    const profiles = [...restoredProfiles]
+    if (window.localStorage.getItem(PHARMACY_LABEL_PROFILE_MIGRATION_KEY) !== '1'
+      && !profiles.some((profile) => profile.name === ZD220_WORKING_CONFIGURATION_PROFILE.name)
+      && profiles.length < 20) {
+      profiles.push({ ...ZD220_WORKING_CONFIGURATION_PROFILE })
+      window.localStorage.setItem(PHARMACY_LABEL_PROFILES_KEY, JSON.stringify(profiles))
+    }
+    window.localStorage.setItem(PHARMACY_LABEL_PROFILE_MIGRATION_KEY, '1')
     return {
-      profiles: restoredProfiles,
+      profiles,
       error: '',
     }
   } catch (cause) {
@@ -474,9 +488,10 @@ function PackagingConversionEditor({
   </section>
 }
 
-const pharmacyTabs = ['stock', 'inventory', 'dispensation', 'prescriptions', 'reports', 'purchases', 'guide'] as const
+const pharmacyTabs = ['stock', 'consultation', 'inventory', 'dispensation', 'prescriptions', 'reports', 'purchases', 'guide'] as const
 const pharmacyTabLabels: Record<(typeof pharmacyTabs)[number], string> = {
   stock: 'Movimentações',
+  consultation: 'Consultas',
   inventory: 'Estoque geral A–Z',
   dispensation: 'Dispensação',
   prescriptions: 'Prescrições médicas',
@@ -568,34 +583,37 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [form, setForm] = useState({ item_name: '', barcode: '', category: 'Medicamento', active_ingredient: '', presentation: '', catalog_registration: '', pharmacy_registration_confirmed: false, purchase_quantity: '', purchase_unit: 'unidade', packaging_levels: [] as PackagingLevel[], unit: 'unidade', lot: '', expiry_date: '', supplier: '', storage_location: '' })
   const [labelItem, setLabelItem] = useState<PharmacyItem | null>(null)
   const [labelQrResult, setLabelQrResult] = useState<{ token: string; dataUrl?: string; error?: string } | null>(null)
-  const [labelWidth, setLabelWidth] = useState(ZD220_LABEL_PROFILE.width)
-  const [labelHeight, setLabelHeight] = useState(ZD220_LABEL_PROFILE.height)
+  const [labelWidth, setLabelWidth] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.width)
+  const [labelHeight, setLabelHeight] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.height)
   const [labelCount, setLabelCount] = useState('1')
-  const [labelFields, setLabelFields] = useState<PharmacyLabelField[]>([...ZD220_LABEL_PROFILE.fields])
-  const [labelColumns, setLabelColumns] = useState(ZD220_LABEL_PROFILE.columns)
-  const [labelRows, setLabelRows] = useState(ZD220_LABEL_PROFILE.rows)
-  const [labelHorizontalGap, setLabelHorizontalGap] = useState(ZD220_LABEL_PROFILE.horizontalGap)
-  const [labelVerticalGap, setLabelVerticalGap] = useState(ZD220_LABEL_PROFILE.verticalGap)
-  const [labelMarginTop, setLabelMarginTop] = useState(ZD220_LABEL_PROFILE.marginTop)
-  const [labelMarginRight, setLabelMarginRight] = useState(ZD220_LABEL_PROFILE.marginRight)
-  const [labelMarginBottom, setLabelMarginBottom] = useState(ZD220_LABEL_PROFILE.marginBottom)
-  const [labelMarginLeft, setLabelMarginLeft] = useState(ZD220_LABEL_PROFILE.marginLeft)
-  const [labelCornerRadius, setLabelCornerRadius] = useState(ZD220_LABEL_PROFILE.cornerRadius)
-  const [labelContentPadding, setLabelContentPadding] = useState(ZD220_LABEL_PROFILE.contentPadding)
-  const [labelHorizontalPrintScale, setLabelHorizontalPrintScale] = useState(ZD220_LABEL_PROFILE.horizontalPrintScale)
+  const [labelFields, setLabelFields] = useState<PharmacyLabelField[]>([...ZD220_WORKING_CONFIGURATION_PROFILE.fields])
+  const [labelColumns, setLabelColumns] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.columns)
+  const [labelRows, setLabelRows] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.rows)
+  const [labelHorizontalGap, setLabelHorizontalGap] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.horizontalGap)
+  const [labelVerticalGap, setLabelVerticalGap] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.verticalGap)
+  const [labelMarginTop, setLabelMarginTop] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.marginTop)
+  const [labelMarginRight, setLabelMarginRight] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.marginRight)
+  const [labelMarginBottom, setLabelMarginBottom] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.marginBottom)
+  const [labelMarginLeft, setLabelMarginLeft] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.marginLeft)
+  const [labelCornerRadius, setLabelCornerRadius] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.cornerRadius)
+  const [labelContentPadding, setLabelContentPadding] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.contentPadding)
+  const [labelHorizontalPrintScale, setLabelHorizontalPrintScale] = useState(ZD220_WORKING_CONFIGURATION_PROFILE.horizontalPrintScale)
   const [labelProfileState, setLabelProfileState] = useState(readPharmacyLabelProfiles)
   const labelProfiles = labelProfileState.profiles
   const labelProfileError = labelProfileState.error
   const [selectedLabelProfile, setSelectedLabelProfile] = useState(() => (
-    labelProfileState.profiles.some((profile) => profile.name === ZD220_LABEL_PROFILE.name)
-      ? ZD220_LABEL_PROFILE.name
+    labelProfileState.profiles.some((profile) => profile.name === ZD220_WORKING_CONFIGURATION_PROFILE.name)
+      ? ZD220_WORKING_CONFIGURATION_PROFILE.name
       : ''
   ))
   const [labelProfileName, setLabelProfileName] = useState(() => (
-    labelProfileState.profiles.some((profile) => profile.name === ZD220_LABEL_PROFILE.name)
-      ? ZD220_LABEL_PROFILE.name
+    labelProfileState.profiles.some((profile) => profile.name === ZD220_WORKING_CONFIGURATION_PROFILE.name)
+      ? ZD220_WORKING_CONFIGURATION_PROFILE.name
       : ''
   ))
+  const [consultationCode, setConsultationCode] = useState('')
+  const [consultationLot, setConsultationLot] = useState<{ id: number; name: string; lot: string } | null>(null)
+  const [consultationScanner, setConsultationScanner] = useState(false)
   const [query, setQuery] = useState('')
   const [inventoryView, setInventoryView] = useState<'cards' | 'table'>('cards')
   const [stockDisplayUnit, setStockDisplayUnit] = useState<StockDisplayUnit>('base')
@@ -618,47 +636,57 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const barcodeProductAutofillRef = useRef(false)
   const barcodeLookupVersionRef = useRef(0)
 
-  const lookupBarcode = useCallback(async (code: string) => {
+  useEffect(() => {
+    if (!labelItem && !cameraScannerOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [cameraScannerOpen, labelItem])
+
+  const lookupBarcode = useCallback(async (code: string, fillRegistration = true) => {
     const requestVersion = ++barcodeLookupVersionRef.current
+    setConsultationLot(null)
     lastBarcodeLookupRef.current = code
     setError('')
     setNotice('Consultando GTIN no cadastro local…')
-    setCatalogSuggestions([])
+    if (fillRegistration) setCatalogSuggestions([])
     try {
       const result = await readApiResponse<PharmacyBarcodeLookup>(
         await fetch(`/api/v1/pharmacy/items/lookup?code=${encodeURIComponent(code)}`),
       )
       if (requestVersion !== barcodeLookupVersionRef.current) return
       lastBarcodeLookupRef.current = result.gtin
-      setCatalogSuggestions(result.catalog_suggestions)
-      const clearOldAutofill = !result.matches[0] && barcodeProductAutofillRef.current
-      setForm((current) => ({
-        ...current,
-        barcode: result.gtin,
-        catalog_registration: '',
-        pharmacy_registration_confirmed: false,
-        ...(clearOldAutofill && current.barcode.trim() !== result.gtin ? {
-          item_name: '',
-          category: 'Medicamento',
-          active_ingredient: '',
-          presentation: '',
-          unit: '',
-          packaging_levels: [],
-        } : {}),
-        ...(result.matches[0] ? {
-          item_name: result.matches[0].item_name,
-          category: result.matches[0].category,
-          active_ingredient: result.matches[0].active_ingredient,
-          presentation: result.matches[0].presentation,
-          purchase_unit: result.matches[0].product_packaging_unit,
-          unit: result.matches[0].unit,
-          packaging_levels: packagingLevelsForBase(result.matches[0].product_packaging_levels, result.matches[0].unit),
+      if (fillRegistration) {
+        setCatalogSuggestions(result.catalog_suggestions)
+        const clearOldAutofill = !result.matches[0] && barcodeProductAutofillRef.current
+        setForm((current) => ({
+          ...current,
+          barcode: result.gtin,
           catalog_registration: '',
-        } : {}),
-        ...(result.lot ? { lot: result.lot } : {}),
-        ...(result.expiry_date ? { expiry_date: result.expiry_date } : {}),
-      }))
-      barcodeProductAutofillRef.current = Boolean(result.matches[0])
+          pharmacy_registration_confirmed: false,
+          ...(clearOldAutofill && current.barcode.trim() !== result.gtin ? {
+            item_name: '',
+            category: 'Medicamento',
+            active_ingredient: '',
+            presentation: '',
+            unit: '',
+            packaging_levels: [],
+          } : {}),
+          ...(result.matches[0] ? {
+            item_name: result.matches[0].item_name,
+            category: result.matches[0].category,
+            active_ingredient: result.matches[0].active_ingredient,
+            presentation: result.matches[0].presentation,
+            purchase_unit: result.matches[0].product_packaging_unit,
+            unit: result.matches[0].unit,
+            packaging_levels: packagingLevelsForBase(result.matches[0].product_packaging_levels, result.matches[0].unit),
+            catalog_registration: '',
+          } : {}),
+          ...(result.lot ? { lot: result.lot } : {}),
+          ...(result.expiry_date ? { expiry_date: result.expiry_date } : {}),
+        }))
+        barcodeProductAutofillRef.current = Boolean(result.matches[0])
+      }
       const parsedDetails = [
         result.lot ? `lote lido ${result.lot}` : '',
         result.expiry_date ? `validade ${formatDateDmy(result.expiry_date)}` : '',
@@ -670,7 +698,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       const moreMatches = result.matches.length > productMatches.length
         ? `; e mais ${result.matches.length - productMatches.length} lote(s)`
         : ''
-      const catalogNote = result.catalog_suggestions.length
+      const catalogNote = fillRegistration && result.catalog_suggestions.length
         ? ` Há ${result.catalog_suggestions.length} sugestão(ões) Anvisa disponível(is) para conferência.`
         : ''
       setNotice(result.matches.length
@@ -684,12 +712,14 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   }, [])
 
   const lookupLotQr = useCallback(async (token: string) => {
+    setConsultationLot(null)
     setError('')
     setNotice('Consultando identificador do lote…')
     try {
       const result = await readApiResponse<PharmacyLotQrLookup>(
         await fetch(`/api/v1/pharmacy/lots/lookup?token=${encodeURIComponent(token)}`),
       )
+      setConsultationLot({ id: result.item_id, name: result.item_name, lot: result.lot })
       const status = result.status === 'expired'
         ? 'VENCIDO'
         : result.status === 'expiring'
@@ -713,7 +743,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       .then(({ default: QRCode }) => QRCode.toDataURL(`SCPOLOT:${token}`, {
         errorCorrectionLevel: 'M',
         margin: 1,
-        width: 180,
+      width: 360,
       }))
       .then((dataUrl) => { if (active) setLabelQrResult({ token, dataUrl }) })
       .catch((cause: unknown) => {
@@ -830,7 +860,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       if (code.startsWith('SCPOLOT:')) {
         void lookupLotQr(code.slice('SCPOLOT:'.length))
       } else {
-        void lookupBarcode(code)
+        void lookupBarcode(code, !consultationScanner)
       }
       setCameraScannerOpen(false)
     }
@@ -902,7 +932,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       controls?.stop()
       if (videoElement) videoElement.srcObject = null
     }
-  }, [cameraScannerOpen, lookupBarcode, lookupLotQr])
+  }, [cameraScannerOpen, consultationScanner, lookupBarcode, lookupLotQr])
 
   useEffect(() => {
     if (!cameraScannerOpen) return
@@ -1311,6 +1341,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
 
   function persistLabelProfiles(profiles: PharmacyLabelProfile[]) {
     window.localStorage.setItem(PHARMACY_LABEL_PROFILES_KEY, JSON.stringify(profiles))
+    window.localStorage.setItem(PHARMACY_LABEL_PROFILE_MIGRATION_KEY, '1')
     setLabelProfileState({ profiles, error: '' })
   }
 
@@ -1409,6 +1440,24 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     document.body.classList.add('print-pharmacy-labels')
     if (calibration) document.body.classList.add('print-pharmacy-label-calibration')
     if (sample) document.body.classList.add('print-pharmacy-label-test')
+    const printSheets = Array.from(document.querySelectorAll<HTMLElement>(
+      '.pharmacy-label-print-root .pharmacy-label-calibration-sheet, .pharmacy-label-print-root .pharmacy-label-print-sheet',
+    ))
+    const originalDisplay = printSheets.map((sheet) => ({
+      sheet,
+      value: sheet.style.getPropertyValue('display'),
+      priority: sheet.style.getPropertyPriority('display'),
+    }))
+    for (const { sheet } of originalDisplay) {
+      const isCalibration = sheet.classList.contains('pharmacy-label-calibration-sheet')
+      const isSample = sheet.classList.contains('pharmacy-label-test-sheet')
+      const show = calibration
+        ? isCalibration
+        : sample
+          ? isSample
+          : !isCalibration && !isSample
+      sheet.style.setProperty('display', show ? 'grid' : 'none', 'important')
+    }
     let fallbackTimer = 0
     const printMedia = window.matchMedia('print')
     const finishPrint = () => {
@@ -1416,6 +1465,10 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       document.body.classList.remove('print-pharmacy-labels')
       document.body.classList.remove('print-pharmacy-label-calibration')
       document.body.classList.remove('print-pharmacy-label-test')
+      for (const { sheet, value, priority } of originalDisplay) {
+        if (value) sheet.style.setProperty('display', value, priority)
+        else sheet.style.removeProperty('display')
+      }
       printStyle.remove()
       window.removeEventListener('afterprint', finishPrint)
       printMedia.removeEventListener('change', handlePrintMediaChange)
@@ -1433,6 +1486,26 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     setSelectedLabelProfile('')
     setLabelProfileName('')
     setLabelProfileError('')
+  }
+
+  function consultIdentifier(codeInput: string) {
+    const code = codeInput.trim()
+    if (!code) return
+    if (code.startsWith('SCPOLOT:')) {
+      void lookupLotQr(code.slice('SCPOLOT:'.length))
+      return
+    }
+
+    void lookupBarcode(code, false)
+  }
+
+  function openConsultedLotMovement() {
+    if (!consultationLot) return
+    setPharmacyTab('stock')
+    setShowForm(false)
+    setQuery(`${consultationLot.name} ${consultationLot.lot}`)
+    setMovementItemId(consultationLot.id)
+    setMovementForm({ movement_type: 'entry', quantity: '', reason: '' })
   }
 
   function renderStockMovementForm(item: PharmacyItem) {
@@ -1461,7 +1534,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   }
 
   return <section className={`pharmacy-page page-enter${mobileMode ? ' pharmacy-page-mobile' : ''}`}>
-    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : pharmacyTab === 'guide' ? 'Como funcionam as unidades e os medicamentos' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : pharmacyTab === 'guide' ? 'Entenda a conta do estoque e a diferença entre embalagem, dispensação, prescrição e administração.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => { const next = !current; if (next) setFormStep(1); return next }); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
+    <div className="page-title-row"><span className="module-icon module-icon-pharmacy"><Pill size={23} /></span><div><p className="eyebrow">{mobileMode ? 'MÓDULO MÓVEL · FARMÁCIA' : 'MÓDULO · FARMÁCIA'}</p><h1>{pharmacyTab === 'stock' ? 'Estoque e validade' : pharmacyTab === 'consultation' ? 'Consultas de produtos e lotes' : pharmacyTab === 'inventory' ? 'Estoque geral de medicamentos' : pharmacyTab === 'purchases' ? 'Compras e suprimentos' : pharmacyTab === 'prescriptions' ? 'Prescrições médicas' : pharmacyTab === 'reports' ? 'Relatórios da Farmácia' : pharmacyTab === 'guide' ? 'Como funcionam as unidades e os medicamentos' : 'Dispensação'}</h1><p className="welcome-copy">{pharmacyTab === 'stock' ? 'Consulte saldos e validades; use a câmera para agilizar a busca de produtos.' : pharmacyTab === 'consultation' ? 'Leia QR de lote ou código de barras para consultar informações sem movimentar estoque.' : pharmacyTab === 'inventory' ? 'Lista alfabética dos medicamentos cadastrados e seus saldos por lote.' : pharmacyTab === 'purchases' ? 'Solicite, cote, aprove, acompanhe pedidos e registre recebimentos por lote.' : pharmacyTab === 'prescriptions' ? 'Prescrições internas pendentes, prontas para conferência e dispensação.' : pharmacyTab === 'reports' ? 'Filtre o estoque e o histórico de movimentações para consulta e impressão.' : pharmacyTab === 'guide' ? 'Entenda a conta do estoque e a diferença entre embalagem, dispensação, prescrição e administração.' : 'Registre e acompanhe a dispensação de medicamentos para pacientes.'}</p></div>{!mobileMode && <a className="button button-secondary" href="/pharmacy.html" target="_blank" rel="noreferrer">Abrir Farmácia no celular</a>}{(pharmacyTab === 'stock' || pharmacyTab === 'inventory') && <button className="button button-primary" type="button" onClick={() => { setPharmacyTab('stock'); setShowForm((current) => { const next = !current; if (next) setFormStep(1); return next }); setNotice(''); setError('') }}><Package size={16} /> {showForm ? 'Fechar cadastro' : 'Cadastrar lote'}</button>}</div>
     <ModuleTabNavigation
       className="pharmacy-tabs"
       ariaLabel="Seções da Farmácia"
@@ -1479,6 +1552,8 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         label: pharmacyTabLabels[value],
         content: value === 'stock' || value === 'inventory'
           ? <><Package size={16} /> {pharmacyTabLabels[value]}</>
+          : value === 'consultation'
+            ? <><Search size={16} /> {pharmacyTabLabels[value]}</>
           : value === 'prescriptions'
             ? <><ArrowRight size={16} /> {pharmacyTabLabels[value]} <span>{prescriptions.length}</span></>
             : value === 'reports'
@@ -1513,6 +1588,14 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       ] as const).map(([value, label, count]) => <button className={`button ${stockFilter === value ? 'button-primary' : 'button-secondary'}`} type="button" key={value} aria-pressed={stockFilter === value} onClick={() => setStockFilter(value)}>{label}<span>{count}</span></button>)}
     </div>
     </>}
+    {pharmacyTab === 'consultation' && <section className="patient-list-panel pharmacy-consultation-panel">
+      <div className="section-heading"><div><p className="eyebrow">CONSULTA SOMENTE LEITURA</p><h2>Consultar produto, código de barras ou lote</h2><p className="welcome-copy">Leia o QR de identificação de um lote do SCPO ou um GTIN/GS1. A consulta não altera cadastro nem movimenta estoque.</p></div></div>
+      <form className="pharmacy-consultation-form" onSubmit={(event) => { event.preventDefault(); void consultIdentifier(consultationCode) }}>
+        <label className="field"><span className="field-label">QR do lote ou código de barras</span><input autoComplete="off" maxLength={200} value={consultationCode} onChange={(event) => setConsultationCode(event.target.value)} onFocus={prepareBarcodeAudio} placeholder="Leia com o leitor USB ou digite o código" /><span className="field-hint">O QR do lote começa com `SCPOLOT:`; GTIN/GS1 consulta os produtos e lotes relacionados. Você precisa estar autenticado.</span></label>
+        <div className="pharmacy-consultation-actions"><button className="button button-secondary" type="button" onClick={() => { prepareBarcodeAudio(); setConsultationScanner(true); setCameraScannerMessage(''); setCameraScannerOpen(true) }}><Camera size={16} /> Ler com a câmera</button><button className="button button-primary" type="submit" disabled={!consultationCode.trim()}><Search size={16} /> Consultar</button></div>
+      </form>
+      {consultationLot && <div className="pharmacy-consulted-lot"><span>QR consultado: {consultationLot.name} · Lote {consultationLot.lot}</span><button className="button button-secondary" type="button" onClick={openConsultedLotMovement}>Abrir lote em Movimentações</button></div>}
+    </section>}
     {pharmacyTab === 'inventory' && <section className="patient-list-panel pharmacy-alphabetic-inventory">
       <div className="section-heading"><div><p className="eyebrow">CATÁLOGO COM SALDO</p><h2>Medicamentos cadastrados por ordem alfabética</h2><p className="welcome-copy">Cada medicamento aparece uma vez; o saldo total e os lotes são consolidados por produto.</p></div><span className="module-total">{visibleAlphabeticMedicationStock.length} medicamento(s)</span></div>
       <label className="field"><span className="field-label">Buscar medicamento, princípio ativo, apresentação ou lote</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite para localizar no estoque" /></span></label>
@@ -1691,7 +1774,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         </label>
         <div className="field pharmacy-scan-field">
             <span className="field-label">Leitura e consulta do identificador</span>
-            <button className="button button-secondary" type="button" onClick={() => { prepareBarcodeAudio(); setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código ou QR pela câmera'}</button>
+            <button className="button button-secondary" type="button" onClick={() => { prepareBarcodeAudio(); setConsultationScanner(false); setCameraScannerMessage(''); setCameraScannerOpen((open) => !open) }}><Camera size={16} /> {cameraScannerOpen ? 'Fechar câmera' : 'Ler código ou QR pela câmera'}</button>
           <button className="button button-secondary" type="button" disabled={!form.barcode.trim()} onClick={() => { prepareBarcodeAudio(); playBarcodeTone(audioContextRef.current); void lookupBarcode(form.barcode.trim()) }}><Search size={16} /> Consultar código</button>
         </div>
         {!!catalogSuggestions.length && <section className="pharmacy-catalog-suggestions" aria-label="Sugestões do catálogo Anvisa">
@@ -1806,7 +1889,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade na unidade do lote, saldo após a operação, responsável e motivo. Exibimos até 10 por página; dispensações estão no relatório assistencial.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída manual', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item ? pharmacyUnitLabel(item.unit) : ''}</span><small>Saldo: {movement.balance_after} {item ? pharmacyUnitLabel(item.unit) : ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 10))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 10)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>
     </section>
     </>}
-    {labelItem && <>
+    {labelItem && createPortal(<>
       <div className="pharmacy-label-print-root" aria-hidden="true">
         <div
           className="pharmacy-label-calibration-sheet"
@@ -1965,14 +2048,14 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('3')}>3 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={startNewLabelProfile}>Nova configuração</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !canPrintLabelLayout || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-secondary" type="button" disabled={!canPrintLabelTest} onClick={() => printLabels(false, true)}>Imprimir modelo de teste</button><button className="button button-secondary" type="button" disabled={!canPrintLabelDimensions || !canPrintLabelLayout} onClick={() => printLabels(true)}>Imprimir régua de escala</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={() => printLabels()}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
         </section>
       </div>
-    </>}
-    {cameraScannerOpen && <div className="pharmacy-scanner-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setCameraScannerOpen(false) }}>
+    </>, document.body)}
+    {cameraScannerOpen && createPortal(<div className="pharmacy-scanner-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setCameraScannerOpen(false) }}>
       <section className="pharmacy-scanner-dialog" role="dialog" aria-modal="true" aria-labelledby="pharmacy-scanner-title">
         <header><div><p className="eyebrow">LEITURA DE CÓDIGO OU QR</p><h2 id="pharmacy-scanner-title">Enquadre o identificador na câmera</h2></div><button className="pharmacy-scanner-close" type="button" autoFocus aria-label="Fechar câmera" onClick={() => setCameraScannerOpen(false)}><X size={20} /></button></header>
         <video ref={barcodeVideoRef} className="pharmacy-scanner-video" autoPlay muted playsInline aria-label="Visualização da câmera para leitura de código de barras ou QR" />
         <span className="field-hint" role="status">{cameraScannerMessage || barcodeCameraUnavailable || 'Leia GTIN/GS1 para identificar o produto ou o QR interno para consultar um lote específico.'}</span>
       </section>
-    </div>}
+    </div>, document.body)}
   </section>
 }
 

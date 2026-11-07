@@ -3,13 +3,16 @@ import type { FormEvent } from 'react'
 import { Package, Plus, History, ClipboardList } from 'lucide-react'
 import { readApiResponse } from '../api'
 import { formatDateDmy } from '../dateFormatting'
+import { usePersistentTab } from '../components/PageNavigationContext'
 
 type Item = { id: string; name: string; category: string; unit: string; location: string; lot: string; expiry_date: string | null; balance: number; minimum_balance: number; active: boolean }
 type Movement = { id: number; item_name: string; movement_type: string; quantity: number; balance_after: number; reason: string; destination: string; actor_name: string; created_at: string }
 type Request = { id: string; item_name: string; item_unit: string; quantity: number; department: string; destination: string; justification: string; status: 'pending' | 'fulfilled' | 'cancelled'; requester_name: string }
+const warehouseTabValues = ['items', 'requests', 'movements'] as const
+const warehouseTabLabels = { items: 'Estoque e cadastro', requests: 'Solicitações', movements: 'Histórico' }
 
-export default function WarehousePage() {
-  const [tab, setTab] = useState<'items' | 'requests' | 'movements'>('items')
+export default function WarehousePage({ userId }: { userId: string }) {
+  const [tab, setTab] = usePersistentTab(`scpo-tab-warehouse-${userId}`, 'items', warehouseTabValues, warehouseTabLabels)
   const [items, setItems] = useState<Item[]>([])
   const [requests, setRequests] = useState<Request[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
