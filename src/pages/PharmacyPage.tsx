@@ -270,21 +270,8 @@ function readPharmacyLabelProfiles(): { profiles: PharmacyLabelProfile[]; error:
           : profile.horizontalPrintScale ?? 100,
       }
     })
-    const profilesWithDefaults = [...restoredProfiles]
-    for (const defaultProfile of [
-      ZD220_LABEL_PROFILE,
-      ZD220_THREE_COLUMN_TEST_PROFILE,
-      ZD220_HORIZONTAL_COMPENSATION_PROFILE,
-      ZD220_FINE_ALIGNMENT_TEST_PROFILE,
-      ZD220_WORKING_CONFIGURATION_PROFILE,
-      ZD220_COUCHE_LABEL_PROFILE,
-    ]) {
-      if (!profilesWithDefaults.some((profile) => profile.name === defaultProfile.name) && profilesWithDefaults.length < 20) {
-        profilesWithDefaults.push({ ...defaultProfile })
-      }
-    }
     return {
-      profiles: profilesWithDefaults,
+      profiles: restoredProfiles,
       error: '',
     }
   } catch (cause) {
@@ -599,8 +586,16 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [labelProfileState, setLabelProfileState] = useState(readPharmacyLabelProfiles)
   const labelProfiles = labelProfileState.profiles
   const labelProfileError = labelProfileState.error
-  const [selectedLabelProfile, setSelectedLabelProfile] = useState(ZD220_LABEL_PROFILE.name)
-  const [labelProfileName, setLabelProfileName] = useState(ZD220_LABEL_PROFILE.name)
+  const [selectedLabelProfile, setSelectedLabelProfile] = useState(() => (
+    labelProfileState.profiles.some((profile) => profile.name === ZD220_LABEL_PROFILE.name)
+      ? ZD220_LABEL_PROFILE.name
+      : ''
+  ))
+  const [labelProfileName, setLabelProfileName] = useState(() => (
+    labelProfileState.profiles.some((profile) => profile.name === ZD220_LABEL_PROFILE.name)
+      ? ZD220_LABEL_PROFILE.name
+      : ''
+  ))
   const [query, setQuery] = useState('')
   const [inventoryView, setInventoryView] = useState<'cards' | 'table'>('cards')
   const [stockDisplayUnit, setStockDisplayUnit] = useState<StockDisplayUnit>('base')
@@ -1381,8 +1376,10 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
 
   function deleteLabelProfile() {
     if (!selectedLabelProfile) return
+    const profileName = selectedLabelProfile
+    if (!window.confirm(`Excluir a configuração "${profileName}" deste navegador?`)) return
     try {
-      persistLabelProfiles(labelProfiles.filter((profile) => profile.name !== selectedLabelProfile))
+      persistLabelProfiles(labelProfiles.filter((profile) => profile.name !== profileName))
       setSelectedLabelProfile('')
       setLabelProfileName('')
     } catch (cause) {
@@ -1398,6 +1395,11 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       : sample
         ? !canPrintLabelTest
         : !canPrintLabels)) return
+    document.body.classList.remove(
+      'print-pharmacy-labels',
+      'print-pharmacy-label-calibration',
+      'print-pharmacy-label-test',
+    )
     const printStyle = document.createElement('style')
     const printPageHeight = calibration || sample
       ? labelHeightValue + labelMarginTop + labelMarginBottom
@@ -1405,9 +1407,10 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     printStyle.textContent = `@page { size: ${labelPageWidth}mm ${printPageHeight}mm; margin: 0; }`
     document.head.append(printStyle)
     document.body.classList.add('print-pharmacy-labels')
-    document.body.classList.toggle('print-pharmacy-label-calibration', calibration)
-    document.body.classList.toggle('print-pharmacy-label-test', sample)
+    if (calibration) document.body.classList.add('print-pharmacy-label-calibration')
+    if (sample) document.body.classList.add('print-pharmacy-label-test')
     let fallbackTimer = 0
+    const printMedia = window.matchMedia('print')
     const finishPrint = () => {
       window.clearTimeout(fallbackTimer)
       document.body.classList.remove('print-pharmacy-labels')
@@ -1415,10 +1418,21 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       document.body.classList.remove('print-pharmacy-label-test')
       printStyle.remove()
       window.removeEventListener('afterprint', finishPrint)
+      printMedia.removeEventListener('change', handlePrintMediaChange)
+    }
+    const handlePrintMediaChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) finishPrint()
     }
     window.addEventListener('afterprint', finishPrint)
+    printMedia.addEventListener('change', handlePrintMediaChange)
     fallbackTimer = window.setTimeout(finishPrint, 60_000)
     window.print()
+  }
+
+  function startNewLabelProfile() {
+    setSelectedLabelProfile('')
+    setLabelProfileName('')
+    setLabelProfileError('')
   }
 
   function renderStockMovementForm(item: PharmacyItem) {
@@ -1948,7 +1962,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           {labelFields.includes('lot_qr') && !labelQrForCurrentItem && <p className="field-hint" role="status">Gerando QR único deste lote…</p>}
           {labelProfileError && <p className="pharmacy-label-error" role="alert">{labelProfileError}</p>}
           {!canPrintLabels && <p className="pharmacy-label-error" role="alert">Confira dimensões entre 10 e 200 mm, grade, espaços, margens (folha máxima 200 mm), raio, ao menos um campo e quantidade inteira de 1 a 500.</p>}
-          <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('3')}>3 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !canPrintLabelLayout || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && selectedLabelProfile !== ZD220_LABEL_PROFILE.name && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-secondary" type="button" disabled={!canPrintLabelTest} onClick={() => printLabels(false, true)}>Imprimir modelo de teste</button><button className="button button-secondary" type="button" disabled={!canPrintLabelDimensions || !canPrintLabelLayout} onClick={() => printLabels(true)}>Imprimir régua de escala</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={() => printLabels()}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
+          <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('3')}>3 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={startNewLabelProfile}>Nova configuração</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !canPrintLabelLayout || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-secondary" type="button" disabled={!canPrintLabelTest} onClick={() => printLabels(false, true)}>Imprimir modelo de teste</button><button className="button button-secondary" type="button" disabled={!canPrintLabelDimensions || !canPrintLabelLayout} onClick={() => printLabels(true)}>Imprimir régua de escala</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={() => printLabels()}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
         </section>
       </div>
     </>}

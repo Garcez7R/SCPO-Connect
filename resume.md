@@ -1,6 +1,6 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 06/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 07/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
 
 ## Retomada atual — impressão, consulta da Farmácia e cartões de Manutenção
 
@@ -10,6 +10,7 @@ Atualizado em 06/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `ma
 - Cartões de resumo e de ordens de serviço da Manutenção foram alinhados às dimensões, cores semânticas, bordas, superfície e estados do padrão compartilhado do app.
 - Imagens de embalagens não serão implementadas: o benefício operacional esperado não justifica catálogo, armazenamento e cópias de backup.
 - README e Infos/guia foram atualizados. Validação sequencial concluída: `npm run typecheck`, ESLint dos componentes alterados, testes focados do cenário sintético Médico/Paciente/Técnica de Enfermagem/Prescrição e `npm run build` passaram; `git diff --check` passou. Não foi feito E2E nem impressão física. Após commit/push, retomar pela conferência de impressão na Zebra e pelo feedback visual dos modos Cartões/Lista compacta.
+- Em 07/11, o usuário confirmou que o modelo de teste imprime, mas ao tentar imprimir um lote sintético saiu novamente a amostra. A impressão foi ajustada para limpar qualquer estado de impressão anterior antes de cada operação e encerrar o modo de impressão também pela mudança da mídia de impressão. A tela agora permite iniciar, salvar/atualizar e excluir qualquer perfil salvo, inclusive os perfis iniciais; perfis apagados não são recriados automaticamente. A marca-d’água da etiqueta foi trocada do ícone do app para o SVG suave compartilhado com o fundo do menu lateral. README e ajuda interna foram atualizados. **Pendente:** validar fisicamente uma etiqueta de lote sintético após a correção, incluindo o QR real, e conferir visualmente Cartões/Lista compacta. Não usar dados clínicos reais.
 
 ## Correção concluída — unidades da Farmácia e rota do Almoxarifado
 

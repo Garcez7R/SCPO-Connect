@@ -986,7 +986,7 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-calibration-cell { display: flex; box-sizing: border-box; align-items: flex-start; justify-content: flex-start; border: .2mm dashed #111; padding: 1mm; }
 .pharmacy-label-calibration-cell span { display: grid; box-sizing: border-box; width: 10mm; height: 10mm; place-items: center; border: .2mm solid #111; font: 5pt Arial, sans-serif; }
 .pharmacy-label-print { position: relative; display: flex; box-sizing: border-box; flex-direction: column; justify-content: space-between; gap: 1.2mm; padding: 1mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.pharmacy-label-print::before { position: absolute; inset: 0; z-index: 0; background: url('/scpo-connect-icon.png') center / 18mm no-repeat; content: ''; opacity: .08; pointer-events: none; }
+.pharmacy-label-print::before { position: absolute; inset: 0; z-index: 0; background: url('/sidebar-health-watermark.svg') center / 18mm no-repeat; content: ''; opacity: .08; pointer-events: none; }
 .pharmacy-label-print > * { position: relative; z-index: 1; }
 .pharmacy-label-has-qr > :not(.pharmacy-label-name):not(.pharmacy-label-qr) { max-width: calc(100% - 12mm); }
 .pharmacy-label-has-qr > .pharmacy-label-name { align-self: stretch; width: 100%; max-width: none; }
