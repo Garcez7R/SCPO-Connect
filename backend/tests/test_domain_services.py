@@ -2397,9 +2397,23 @@ def test_physician_profile_and_internal_prescription_flow(
 ) -> None:
     db = domain_database["nursing"]
     monkeypatch.setattr(nursing, "emit_audit_event", lambda *args, **kwargs: None)
-    patient_reference = "123e4567-e89b-12d3-a456-426614174000"
-    db.add(nursing.Patient(reference=patient_reference, name="Paciente de teste", room="2", bed="A"))
+    nurse = DemoPrincipal(
+        "nurse-demo-1", "nurse-demo", "Técnica de Enfermagem (teste)", "nursing",
+        ["nursing"], {"nursing": ["consultar", "criar"]},
+    )
+    patient = nursing.create_patient_record(
+        db,
+        nurse,
+        nursing.PatientPayload(
+            name="Paciente fictício para teste de impressão",
+            room="2",
+            bed="A",
+            allergies_status="none_known",
+        ),
+    )
     db.commit()
+    patient_reference = patient.reference
+    assert patient.updated_by == nurse.actor_name
     physician = DemoPrincipal(
         "physician-1", "doctor", "Médico de teste", "physician",
         ["physician"], {"physician": ["consultar", "criar", "alterar"]},

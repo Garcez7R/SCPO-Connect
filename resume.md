@@ -1,6 +1,15 @@
 # SCPO Connect — ponto de retomada
 
-Atualizado em 05/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+Atualizado em 06/11/2026. Repositório: `/home/rgarcez/SCPO-Connect`, branch `main`.
+
+## Retomada atual — impressão, consulta da Farmácia e cartões de Manutenção
+
+- Na guia Movimentações da Farmácia, o inventário agora oferece alternância entre cartões detalhados e lista compacta em tabela; ambas preservam busca, ações e acessibilidade, com rolagem horizontal em telas menores.
+- Resultados rápidos da busca selecionam um lote e abrem suas opções de movimentação.
+- A etiqueta real posiciona o QR no canto inferior direito sem reservar a linha superior do medicamento. O modelo de teste continua com dados fictícios e QR não escaneável.
+- Cartões de resumo e de ordens de serviço da Manutenção foram alinhados às dimensões, cores semânticas, bordas, superfície e estados do padrão compartilhado do app.
+- Imagens de embalagens não serão implementadas: o benefício operacional esperado não justifica catálogo, armazenamento e cópias de backup.
+- README e Infos/guia foram atualizados. Validação sequencial concluída: `npm run typecheck`, ESLint dos componentes alterados, testes focados do cenário sintético Médico/Paciente/Técnica de Enfermagem/Prescrição e `npm run build` passaram; `git diff --check` passou. Não foi feito E2E nem impressão física. Após commit/push, retomar pela conferência de impressão na Zebra e pelo feedback visual dos modos Cartões/Lista compacta.
 
 ## Correção concluída — unidades da Farmácia e rota do Almoxarifado
 

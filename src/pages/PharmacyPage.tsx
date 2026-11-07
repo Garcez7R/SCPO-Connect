@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, ArrowRight, BookOpen, Camera, CalendarDays, ClipboardList, Package, Pill, Printer, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BookOpen, Camera, CalendarDays, ClipboardList, LayoutGrid, List, Package, Pill, Printer, Search, X } from 'lucide-react'
 import { readApiResponse, readableApiError } from '../api'
 import PatientSelect from '../components/PatientSelect'
 import { usePersistentTab } from '../components/PageNavigationContext'
@@ -116,6 +116,15 @@ const ZD220_COUCHE_LABEL_PROFILE: PharmacyLabelProfile = {
   cornerRadius: 1,
   contentPadding: 1,
   horizontalPrintScale: 100,
+}
+const PHARMACY_LABEL_TEST_VALUES = {
+  item_name: 'MEDICAMENTO DE TESTE',
+  active_ingredient: 'Princípio ativo demonstrativo',
+  presentation: 'Comprimido 500 mg',
+  lot: 'TESTE-LOTE-0001',
+  expiry_date: '2030-12-31',
+  storage_location: 'LOCAL DE TESTE',
+  barcode: '00000000000000',
 }
 const PHARMACY_LABEL_FIELD_OPTIONS: { value: PharmacyLabelField; label: string }[] = [
   { value: 'item_name', label: 'Medicamento' },
@@ -593,6 +602,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   const [selectedLabelProfile, setSelectedLabelProfile] = useState(ZD220_LABEL_PROFILE.name)
   const [labelProfileName, setLabelProfileName] = useState(ZD220_LABEL_PROFILE.name)
   const [query, setQuery] = useState('')
+  const [inventoryView, setInventoryView] = useState<'cards' | 'table'>('cards')
   const [stockDisplayUnit, setStockDisplayUnit] = useState<StockDisplayUnit>('base')
   const [stockFilter, setStockFilter] = useState<'all' | 'expired' | 'expiring' | 'critical' | 'attention'>('all')
   const [showForm, setShowForm] = useState(false)
@@ -970,6 +980,14 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
   }, [movementOffset])
 
   useEffect(() => {
+    if (movementItemId === null) return
+    document.getElementById(`pharmacy-item-${movementItemId}`)?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'center',
+    })
+  }, [movementItemId])
+
+  useEffect(() => {
     if (!canReadMovementReports || pharmacyTab !== 'reports') return
     let active = true
     const params = new URLSearchParams({ limit: '25', offset: String(movementReportOffset) })
@@ -1294,6 +1312,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     && labelFields.length > 0
     && (!labelFields.includes('lot_qr') || Boolean(labelQrForCurrentItem?.dataUrl))
     && Number.isInteger(labelCountValue) && labelCountValue >= 1 && labelCountValue <= 500
+  const canPrintLabelTest = canPrintLabelDimensions && canPrintLabelLayout && labelFields.length > 0
 
   function persistLabelProfiles(profiles: PharmacyLabelProfile[]) {
     window.localStorage.setItem(PHARMACY_LABEL_PROFILES_KEY, JSON.stringify(profiles))
@@ -1373,27 +1392,58 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
     }
   }
 
-  function printLabels(calibration = false) {
-    if (!labelItem || (calibration ? !canPrintLabelDimensions || !canPrintLabelLayout : !canPrintLabels)) return
+  function printLabels(calibration = false, sample = false) {
+    if (!labelItem || (calibration
+      ? !canPrintLabelDimensions || !canPrintLabelLayout
+      : sample
+        ? !canPrintLabelTest
+        : !canPrintLabels)) return
     const printStyle = document.createElement('style')
-    const printPageHeight = calibration
+    const printPageHeight = calibration || sample
       ? labelHeightValue + labelMarginTop + labelMarginBottom
       : labelPrintPageHeight
     printStyle.textContent = `@page { size: ${labelPageWidth}mm ${printPageHeight}mm; margin: 0; }`
     document.head.append(printStyle)
     document.body.classList.add('print-pharmacy-labels')
     document.body.classList.toggle('print-pharmacy-label-calibration', calibration)
+    document.body.classList.toggle('print-pharmacy-label-test', sample)
     let fallbackTimer = 0
     const finishPrint = () => {
       window.clearTimeout(fallbackTimer)
       document.body.classList.remove('print-pharmacy-labels')
       document.body.classList.remove('print-pharmacy-label-calibration')
+      document.body.classList.remove('print-pharmacy-label-test')
       printStyle.remove()
       window.removeEventListener('afterprint', finishPrint)
     }
     window.addEventListener('afterprint', finishPrint)
     fallbackTimer = window.setTimeout(finishPrint, 60_000)
     window.print()
+  }
+
+  function renderStockMovementForm(item: PharmacyItem) {
+    return <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}>
+      <label className="field">
+        <span className="field-label">Operação</span>
+        <select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}>
+          <option value="entry">Entrada no mesmo lote</option>
+          <option value="issue">Saída manual</option>
+          <option value="adjustment">Ajuste de inventário</option>
+        </select>
+        {movementForm.movement_type === 'entry' && <span className="field-hint">Acrescente uma nova quantidade ao lote selecionado sem criar outro lote. O recebimento ficará registrado no histórico.</span>}
+        {movementForm.movement_type === 'issue' && <span className="field-hint">Use somente para retirada manual de estoque. Para dispensar a um paciente, use a guia Dispensação.</span>}
+      </label>
+      <label className="field">
+        <span className="field-label">Quantidade ({pharmacyUnitLabel(item.unit)}) {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span>
+        <input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" />
+        <span className="field-hint">Use a mesma unidade do saldo deste lote: {pharmacyUnitLabel(item.unit)}.</span>
+      </label>
+      <label className="field">
+        <span className="field-label">Motivo da movimentação</span>
+        <input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: recebimento complementar, perda justificada" />
+      </label>
+      <button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : movementForm.movement_type === 'entry' ? 'Acrescentar ao mesmo lote' : 'Registrar movimentação'}</button>
+    </form>
   }
 
   return <section className={`pharmacy-page page-enter${mobileMode ? ' pharmacy-page-mobile' : ''}`}>
@@ -1675,6 +1725,21 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
       </div>
     </form>}
     <section className="pharmacy-inventory"><div className="section-heading"><div><p className="eyebrow">INVENTÁRIO</p><h2>Itens cadastrados</h2></div><button className="button button-secondary" type="button" onClick={() => void loadItems()} disabled={loading}>{loading ? 'Atualizando…' : 'Atualizar'}</button></div><label className="field pharmacy-search"><span className="field-label">Buscar item, princípio ativo, lote ou localização</span><span className="search-input-wrap"><Search size={17} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite nome, código de barras ou lote" /></span></label>
+      {query.trim() && filteredItems.length > 0 && <div className="pharmacy-search-results" aria-label="Resultados rápidos da busca">
+        <span className="field-hint">Selecione um lote para abrir diretamente suas opções de movimentação · {filteredItems.length} resultado(s)</span>
+        {filteredItems.slice(0, 8).map((item) => <button className="pharmacy-search-result" type="button" key={item.id} onClick={() => {
+          setMovementItemId(item.id)
+          setMovementForm({ movement_type: 'entry', quantity: '', reason: '' })
+        }}>
+          <strong>{item.item_name} · Lote {item.lot}</strong>
+          <span>{item.balance} {pharmacyUnitLabel(item.unit)} · validade {formatDateDmy(item.expiry_date)}{item.storage_location ? ` · ${item.storage_location}` : ''}</span>
+        </button>)}
+      </div>}
+      <div className="pharmacy-inventory-view-controls" role="group" aria-label="Forma de visualizar o inventário">
+        <span>Visualizar como</span>
+        <button className={`button button-secondary${inventoryView === 'cards' ? ' is-selected' : ''}`} type="button" aria-pressed={inventoryView === 'cards'} onClick={() => setInventoryView('cards')}><LayoutGrid size={16} /> Cartões</button>
+        <button className={`button button-secondary${inventoryView === 'table' ? ' is-selected' : ''}`} type="button" aria-pressed={inventoryView === 'table'} onClick={() => setInventoryView('table')}><List size={16} /> Lista compacta</button>
+      </div>
       {filteredItems.length > 0 && (() => {
         const representative = filteredItems.find((item) => item.product_packaging_levels?.length || item.product_packaging_unit !== item.unit) ?? filteredItems[0]
         const levels = packagingLevelsForBase(representative.product_packaging_levels?.length ? representative.product_packaging_levels : representative.packaging_levels, representative.unit)
@@ -1687,7 +1752,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           <button className={`button button-secondary${stockDisplayUnit === 'base' ? ' is-selected' : ''}`} type="button" aria-pressed={stockDisplayUnit === 'base'} onClick={() => setStockDisplayUnit('base')}>{pharmacyUnitLabel(representative.unit)}</button>
         </div>
       })()}
-      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? <div className="pharmacy-item-grid">{filteredItems.map((item) => {
+      {loading ? <div className="history-empty">Carregando estoque…</div> : filteredItems.length ? inventoryView === 'cards' ? <div className="pharmacy-item-grid">{filteredItems.map((item) => {
         const expired = item.expiry_date < today
         const expiring = !expired && item.expiry_date <= soon
         const level = productLevelById.get(item.product_id) ?? 'unconfigured'
@@ -1696,7 +1761,7 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
         const displayedBalance = packagingDisplayValue(item.balance, item, stockDisplayUnit)
         const displayedProductBalance = product ? packagingDisplayValue(String(product.available_balance), item, stockDisplayUnit) : null
         const displayedMinimum = product ? packagingDisplayValue(product.minimum_balance, item, stockDisplayUnit) : null
-        return <article className="pharmacy-item-card" key={item.id}>
+        return <article className="pharmacy-item-card" id={`pharmacy-item-${item.id}`} key={item.id}>
           <div className="pharmacy-item-heading"><span className="pharmacy-item-icon"><Package size={18} /></span><span className={`pharmacy-expiry ${expired ? 'pharmacy-expired' : expiring || low ? 'pharmacy-expiring' : ''}`}>{expired || expiring || low ? <AlertTriangle size={14} /> : <CalendarDays size={14} />}{expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Estoque crítico' : 'Dentro da validade'}</span></div>
           <h3>{item.item_name}</h3>
           <p className="pharmacy-item-description">{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</p>
@@ -1704,9 +1769,26 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           <div className="pharmacy-item-meta"><span><small>Entrada · conta registrada</small><strong>{packagingFormula(item.purchase_quantity, item.purchase_unit, item.packaging_levels, item.unit)}</strong></span><span><small>Código</small><strong>{item.barcode || 'Não informado'}</strong></span><span><small>Lote</small><strong>{item.lot}</strong></span><span><small>Validade</small><strong>{formatDateDmy(item.expiry_date)}</strong></span><span><small>Armazenamento</small><strong>{item.storage_location || 'Não informado'}</strong></span>{item.supplier && <span><small>Fornecedor</small><strong>{item.supplier}</strong></span>}</div>
           {!mobileMode && <button className="button button-secondary pharmacy-label-button" type="button" onClick={() => setLabelItem(item)}><Printer size={16} /> Imprimir etiquetas</button>}
           <button className="button button-secondary pharmacy-movement-toggle" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Cancelar' : 'Adicionar ao lote / movimentar'}</button>
-          {movementItemId === item.id && <form className="pharmacy-stock-movement-form" onSubmit={(event) => void submitMovement(event, item)}><label className="field"><span className="field-label">Operação</span><select value={movementForm.movement_type} onChange={(event) => setMovementForm({ ...movementForm, movement_type: event.target.value as typeof movementForm.movement_type })}><option value="entry">Entrada no mesmo lote</option><option value="issue">Saída manual</option><option value="adjustment">Ajuste de inventário</option></select>{movementForm.movement_type === 'entry' && <span className="field-hint">Acrescente uma nova quantidade ao lote selecionado sem criar outro lote. O recebimento ficará registrado no histórico.</span>}{movementForm.movement_type === 'issue' && <span className="field-hint">Use somente para retirada manual de estoque. Para dispensar a um paciente, use a guia Dispensação.</span>}</label><label className="field"><span className="field-label">Quantidade ({pharmacyUnitLabel(item.unit)}) {movementForm.movement_type === 'adjustment' ? '(negativa para reduzir)' : ''}</span><input required type="text" inputMode="decimal" pattern="-?[0-9]+([.,][0-9]{1,3})?" maxLength={32} value={movementForm.quantity} onChange={(event) => setMovementForm({ ...movementForm, quantity: event.target.value })} placeholder="Ex.: 5 ou -2" /><span className="field-hint">Use a mesma unidade do saldo deste lote: {pharmacyUnitLabel(item.unit)}.</span></label><label className="field"><span className="field-label">Motivo da movimentação</span><input required minLength={3} maxLength={500} value={movementForm.reason} onChange={(event) => setMovementForm({ ...movementForm, reason: event.target.value })} placeholder="Ex.: recebimento complementar, perda justificada" /></label><button className="button button-primary" type="submit" disabled={movementSaving}>{movementSaving ? 'Salvando…' : movementForm.movement_type === 'entry' ? 'Acrescentar ao mesmo lote' : 'Registrar movimentação'}</button></form>}
+          {movementItemId === item.id && renderStockMovementForm(item)}
         </article>
-      })}</div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
+      })}</div> : <div className="pharmacy-inventory-table-wrap"><table className="pharmacy-inventory-table"><thead><tr><th>Produto</th><th>Saldo</th><th>Lote e validade</th><th>Localização</th><th>Ações</th></tr></thead><tbody>{filteredItems.map((item) => {
+        const expired = item.expiry_date < today
+        const expiring = !expired && item.expiry_date <= soon
+        const level = productLevelById.get(item.product_id) ?? 'unconfigured'
+        const low = level === 'critical'
+        const displayedBalance = packagingDisplayValue(item.balance, item, stockDisplayUnit)
+        const statusLabel = expired ? 'Vencido' : expiring ? 'Vence em breve' : low ? 'Estoque crítico' : 'Dentro da validade'
+        return [
+          <tr id={`pharmacy-item-${item.id}`} key={`item-${item.id}`}>
+            <td><strong>{item.item_name}</strong><small>{item.category}{item.active_ingredient ? ` · ${item.active_ingredient}` : ''}{item.presentation ? ` · ${item.presentation}` : ''}</small></td>
+            <td><strong>{displayedBalance.value}</strong><small>{pharmacyUnitLabel(displayedBalance.unit)}</small></td>
+            <td><strong>{item.lot}</strong><small className={`pharmacy-table-expiry${expired ? ' pharmacy-expired' : expiring || low ? ' pharmacy-expiring' : ''}`}>{formatDateDmy(item.expiry_date)} · {statusLabel}</small></td>
+            <td>{item.storage_location || 'Não informado'}</td>
+            <td><div className="pharmacy-table-actions"><button className="button button-secondary" type="button" onClick={() => { setMovementItemId(movementItemId === item.id ? null : item.id); setMovementForm({ movement_type: 'entry', quantity: '', reason: '' }) }}>{movementItemId === item.id ? 'Fechar' : 'Movimentar'}</button>{!mobileMode && <button className="button button-secondary" type="button" onClick={() => setLabelItem(item)} aria-label={`Imprimir etiquetas de ${item.item_name}, lote ${item.lot}`}><Printer size={16} /></button>}</div></td>
+          </tr>,
+          movementItemId === item.id && <tr key={`movement-${item.id}`}><td className="pharmacy-table-movement-cell" colSpan={5}>{renderStockMovementForm(item)}</td></tr>,
+        ]
+      })}</tbody></table></div> : <div className="history-empty"><Package size={20} /><span>{query || stockFilter !== 'all' ? 'Nenhum lote corresponde à busca ou ao filtro selecionado.' : 'Nenhum lote cadastrado.'}</span></div>}
       <section className="pharmacy-movement-ledger"><div className="section-heading"><div><p className="eyebrow">RASTREABILIDADE DO ESTOQUE</p><h3>Movimentações recentes <span className="module-total">{movementTotal}</span></h3><p className="welcome-copy">Cada linha registra quantidade na unidade do lote, saldo após a operação, responsável e motivo. Exibimos até 10 por página; dispensações estão no relatório assistencial.</p></div><button className="button button-secondary" type="button" onClick={() => void loadItems(movementOffset)} disabled={loading}>Atualizar histórico</button></div>{movements.length ? <><div className="pharmacy-movement-list">{movements.map((movement) => { const item = items.find((candidate) => candidate.id === movement.item_id); const labels = { opening_balance: 'Saldo inicial legado', entry: 'Entrada', issue: 'Saída manual', adjustment: 'Ajuste' }; return <article className="pharmacy-movement-row" key={movement.id}><div><strong>{item ? `${item.item_name} · Lote ${item.lot}` : `Item #${movement.item_id}`}</strong><small>{labels[movement.movement_type]} · {dateTime(movement.created_at)}</small><small>{movement.reason}</small></div><div className="pharmacy-movement-values"><span>{movement.quantity} {item ? pharmacyUnitLabel(item.unit) : ''}</span><small>Saldo: {movement.balance_after} {item ? pharmacyUnitLabel(item.unit) : ''}</small></div><small className="pharmacy-movement-author">{movement.actor_name}</small></article> })}</div><div className="pharmacy-ledger-pagination"><span>{movementTotal ? `${movementOffset + 1}–${Math.min(movementOffset + movements.length, movementTotal)} de ${movementTotal}` : '0 registros'}</span><div><button className="button button-secondary" type="button" disabled={loading || movementOffset === 0} onClick={() => void loadItems(Math.max(0, movementOffset - 10))}>Anterior</button><button className="button button-secondary" type="button" disabled={loading || movementOffset + movements.length >= movementTotal} onClick={() => void loadItems(movementOffset + 10)}>Próxima</button></div></div></> : <div className="history-empty">Nenhuma movimentação registrada.</div>}</section>
     </section>
     </>}
@@ -1731,6 +1813,42 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
             </div>
           ))}
         </div>
+        {canPrintLabelTest && <div
+          className="pharmacy-label-test-sheet pharmacy-label-print-sheet pharmacy-label-print-last"
+          style={{
+            width: `${labelPageWidth}mm`,
+            height: `${labelHeightValue + labelMarginTop + labelMarginBottom}mm`,
+            gridTemplateColumns: `repeat(${labelColumns}, ${labelWidthValue}mm)`,
+            gridTemplateRows: `${labelHeightValue}mm`,
+            columnGap: `${labelHorizontalGap}mm`,
+            padding: `${labelMarginTop}mm ${labelMarginRight}mm ${labelMarginBottom}mm ${labelMarginLeft}mm`,
+            transform: `scaleX(${labelHorizontalPrintScale / 100})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          {Array.from({ length: labelColumns }, (_, columnIndex) => (
+            <article
+              className={`pharmacy-label-print${labelFields.includes('lot_qr') ? ' pharmacy-label-has-qr' : ''}`}
+              key={columnIndex}
+              style={{
+                width: `${labelWidthValue}mm`,
+                height: `${labelHeightValue}mm`,
+                borderRadius: `${labelCornerRadius}mm`,
+                padding: `${labelContentPadding}mm`,
+              }}
+            >
+              <small className="pharmacy-label-test-mark">AMOSTRA · NÃO USAR</small>
+              {labelFields.includes('item_name') && <strong className="pharmacy-label-name">{PHARMACY_LABEL_TEST_VALUES.item_name}</strong>}
+              {labelFields.includes('active_ingredient') && <span className="pharmacy-label-description">{PHARMACY_LABEL_TEST_VALUES.active_ingredient}</span>}
+              {labelFields.includes('presentation') && <span className="pharmacy-label-description">{PHARMACY_LABEL_TEST_VALUES.presentation}</span>}
+              {labelFields.includes('lot') && <span className="pharmacy-label-lot"><small>Lote</small><strong>{PHARMACY_LABEL_TEST_VALUES.lot}</strong></span>}
+              {labelFields.includes('expiry_date') && <span className="pharmacy-label-expiry"><small>Validade</small><strong>{formatDateDmy(PHARMACY_LABEL_TEST_VALUES.expiry_date)}</strong></span>}
+              {labelFields.includes('storage_location') && <span className="pharmacy-label-description">Local: {PHARMACY_LABEL_TEST_VALUES.storage_location}</span>}
+              {labelFields.includes('barcode') && <span className="pharmacy-label-description">Código: {PHARMACY_LABEL_TEST_VALUES.barcode}</span>}
+              {labelFields.includes('lot_qr') && <div className="pharmacy-label-qr"><span className="pharmacy-label-test-qr">QR<br />TESTE</span><small>Não escanear</small></div>}
+            </article>
+          ))}
+        </div>}
         {canPrintLabels && Array.from(
           { length: Math.ceil(labelCountValue / (labelColumns * labelRows)) },
           (_, pageIndex) => {
@@ -1824,13 +1942,13 @@ function PharmacyPage({ user, mobileMode = false }: { user: AuthUser; mobileMode
           </div>
           <div className="admin-warning pharmacy-label-media-notice" role="note">
             <strong>O perfil corresponde ao rolo de {labelColumns} colunas por {labelRows} linhas.</strong>
-            <span>Cada etiqueta mede {labelWidthValue} × {labelHeightValue} mm. A grade completa mede {labelPageWidth} × {labelPageHeight} mm; para {labelCountValue} etiqueta(s), o app imprime somente as {labelPrintRows} fileira(s) necessárias, usando uma mídia de {labelPageWidth} × {labelPrintPageHeight} mm. Escala horizontal do perfil: {labelHorizontalPrintScale}%; vertical: 100%. Configure no driver o tamanho da mídia correspondente a este teste; não selecione o tamanho individual da etiqueta, pois o navegador pode redimensionar o bloco. Use escala de 100% no diálogo, desative cabeçalhos e rodapés e confira uma impressão de teste. O teste de escala abaixo imprime contornos nas dimensões configuradas e um quadrado de referência de 10 × 10 mm.</span>
+            <span>Cada etiqueta mede {labelWidthValue} × {labelHeightValue} mm. A grade completa mede {labelPageWidth} × {labelPageHeight} mm; para {labelCountValue} etiqueta(s), o app imprime somente as {labelPrintRows} fileira(s) necessárias, usando uma mídia de {labelPageWidth} × {labelPrintPageHeight} mm. Escala horizontal do perfil: {labelHorizontalPrintScale}%; vertical: 100%. Configure no driver o tamanho da mídia correspondente a este teste; não selecione o tamanho individual da etiqueta, pois o navegador pode redimensionar o bloco. Use escala de 100% no diálogo e desative cabeçalhos e rodapés. A régua imprime contornos e um quadrado de referência de 10 × 10 mm; o modelo usa conteúdo fictício e não gera QR de lote válido.</span>
           </div>
           {labelQrForCurrentItem?.error && labelFields.includes('lot_qr') && <p className="pharmacy-label-error" role="alert">{labelQrForCurrentItem.error}</p>}
           {labelFields.includes('lot_qr') && !labelQrForCurrentItem && <p className="field-hint" role="status">Gerando QR único deste lote…</p>}
           {labelProfileError && <p className="pharmacy-label-error" role="alert">{labelProfileError}</p>}
           {!canPrintLabels && <p className="pharmacy-label-error" role="alert">Confira dimensões entre 10 e 200 mm, grade, espaços, margens (folha máxima 200 mm), raio, ao menos um campo e quantidade inteira de 1 a 500.</p>}
-          <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('3')}>3 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !canPrintLabelLayout || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && selectedLabelProfile !== ZD220_LABEL_PROFILE.name && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-secondary" type="button" disabled={!canPrintLabelDimensions || !canPrintLabelLayout} onClick={() => printLabels(true)}>Imprimir régua de escala</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={() => printLabels()}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
+          <div className="pharmacy-label-actions"><button className="button button-secondary" type="button" onClick={() => setLabelCount('1')}>1 etiqueta</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('3')}>3 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('5')}>5 etiquetas</button><button className="button button-secondary" type="button" onClick={() => setLabelCount('10')}>10 etiquetas</button><button className="button button-secondary" type="button" onClick={saveLabelProfile} disabled={!canPrintLabelDimensions || !canPrintLabelLayout || !labelProfileName.trim()}>{selectedLabelProfile ? 'Atualizar configuração' : 'Salvar configuração'}</button>{selectedLabelProfile && selectedLabelProfile !== ZD220_LABEL_PROFILE.name && <button className="button button-secondary" type="button" onClick={deleteLabelProfile}>Excluir configuração</button>}<button className="button button-secondary" type="button" onClick={() => setLabelItem(null)}>Cancelar</button><button className="button button-secondary" type="button" disabled={!canPrintLabelTest} onClick={() => printLabels(false, true)}>Imprimir modelo de teste</button><button className="button button-secondary" type="button" disabled={!canPrintLabelDimensions || !canPrintLabelLayout} onClick={() => printLabels(true)}>Imprimir régua de escala</button><button className="button button-primary" type="button" disabled={!canPrintLabels} onClick={() => printLabels()}><Printer size={16} /> Imprimir {labelCountValue} etiqueta(s)</button></div>
         </section>
       </div>
     </>}

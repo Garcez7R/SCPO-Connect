@@ -978,6 +978,7 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .pharmacy-label-error { margin: 0; color: #a4232e; font-size: 12px; }
 .pharmacy-label-print-root { display: none; }
+.pharmacy-label-test-sheet { display: none; }
 .pharmacy-label-media-notice { display: grid; gap: 5px; margin: 0; }
 .pharmacy-label-media-notice strong, .pharmacy-label-media-notice span { color: inherit; }
 .pharmacy-label-print-sheet { display: grid; box-sizing: border-box; align-content: start; justify-content: start; gap: 0; overflow: hidden; color: #111; background: #fff; }
@@ -987,8 +988,9 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-print { position: relative; display: flex; box-sizing: border-box; flex-direction: column; justify-content: space-between; gap: 1.2mm; padding: 1mm; overflow: hidden; color: #111; background: #fff; font-family: Arial, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .pharmacy-label-print::before { position: absolute; inset: 0; z-index: 0; background: url('/scpo-connect-icon.png') center / 18mm no-repeat; content: ''; opacity: .08; pointer-events: none; }
 .pharmacy-label-print > * { position: relative; z-index: 1; }
-.pharmacy-label-has-qr { padding-right: 12mm !important; }
-.pharmacy-label-qr { position: absolute !important; top: 50%; right: .5mm; display: grid; justify-items: center; gap: .3mm; transform: translateY(-50%); }
+.pharmacy-label-has-qr > :not(.pharmacy-label-name):not(.pharmacy-label-qr) { max-width: calc(100% - 12mm); }
+.pharmacy-label-has-qr > .pharmacy-label-name { align-self: stretch; width: 100%; max-width: none; }
+.pharmacy-label-qr { position: absolute !important; right: .5mm; bottom: .5mm; display: grid; justify-items: center; gap: .3mm; transform: none; }
 .pharmacy-label-qr img { width: 10mm; height: 10mm; object-fit: contain; }
 .pharmacy-label-qr small { max-width: 11mm; font-size: 4pt; text-align: center; }
 .pharmacy-label-field-options { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
@@ -996,6 +998,8 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
 .pharmacy-label-field-options label { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 12px; }
 .pharmacy-label-field-options input { width: auto; margin: 0; }
 .pharmacy-label-name { align-self: start; font-size: 9pt; line-height: 1.1; overflow-wrap: anywhere; }
+.pharmacy-label-test-mark { color: #a4232e; font-size: 4.5pt; font-weight: 700; }
+.pharmacy-label-test-qr { display: grid; width: 10mm; height: 10mm; place-items: center; border: .3mm dashed #111; background: repeating-linear-gradient(45deg, #ddd 0 1px, #fff 1px 3px); color: #111; font-size: 5pt; text-align: center; }
 .pharmacy-label-description { font-size: 6.5pt; line-height: 1.1; overflow-wrap: anywhere; }
 .pharmacy-label-lot, .pharmacy-label-expiry { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; border-top: .2mm solid #444; padding-top: 1mm; }
 .pharmacy-label-lot small, .pharmacy-label-expiry small { font-size: 6pt; text-transform: uppercase; }
@@ -1012,11 +1016,38 @@ html[data-theme="dark"] .system-module-control input[role="switch"]:checked { bo
   body.print-pharmacy-labels .pharmacy-label-print-sheet { break-after: page; page-break-after: always; }
   body.print-pharmacy-label-calibration .pharmacy-label-print-sheet { display: none !important; }
   body.print-pharmacy-label-calibration .pharmacy-label-calibration-sheet { display: grid !important; }
+  body.print-pharmacy-label-test .pharmacy-label-print-sheet:not(.pharmacy-label-test-sheet) { display: none !important; }
+  body.print-pharmacy-label-test .pharmacy-label-test-sheet { display: grid !important; }
+  body.print-pharmacy-label-calibration .pharmacy-label-test-sheet { display: none !important; }
 }
 .pharmacy-item-description { margin: -7px 0 0; color: var(--muted); font-size: 12px; }
 .search-input-wrap { position: relative; display: block; }
 .search-input-wrap > svg { position: absolute; top: 50%; left: 12px; color: var(--subtle); transform: translateY(-50%); }
 .search-input-wrap input { width: 100%; min-height: 43px; padding: 0 12px 0 38px; border: 1px solid var(--line); border-radius: 6px; background: white; color: var(--ink); font: inherit; }
+.pharmacy-search-results { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--page); }
+.pharmacy-search-results > .field-hint { margin: 0 0 2px; }
+.pharmacy-search-result { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; text-align: left; }
+.pharmacy-search-result:hover, .pharmacy-search-result:focus-visible { border-color: var(--blue); outline: 2px solid color-mix(in srgb, var(--blue) 25%, transparent); }
+.pharmacy-search-result strong { font-size: 12px; }
+.pharmacy-search-result span { color: var(--muted); font-size: 11px; }
+.pharmacy-inventory-view-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pharmacy-inventory-view-controls > span { color: var(--muted); font-size: 12px; }
+.pharmacy-inventory-view-controls .button { min-height: 38px; }
+.pharmacy-inventory-view-controls .button.is-selected { border-color: var(--accent, #287d9d); background: var(--accent, #287d9d); color: #fff; }
+.pharmacy-inventory-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.pharmacy-inventory-table { width: 100%; min-width: 720px; border-collapse: collapse; color: var(--ink); }
+.pharmacy-inventory-table th, .pharmacy-inventory-table td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; font-size: 12px; }
+.pharmacy-inventory-table th { background: var(--page); color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.pharmacy-inventory-table tbody tr:last-child > td { border-bottom: 0; }
+.pharmacy-inventory-table td:first-child { min-width: 210px; }
+.pharmacy-inventory-table td > strong, .pharmacy-inventory-table td > small { display: block; }
+.pharmacy-inventory-table td > small { margin-top: 3px; color: var(--muted); line-height: 1.4; }
+.pharmacy-table-expiry.pharmacy-expiring { color: #8b5c08 !important; }
+.pharmacy-table-expiry.pharmacy-expired { color: #a4232e !important; }
+.pharmacy-table-actions { display: flex; align-items: center; gap: 6px; }
+.pharmacy-table-actions .button { min-height: 36px; padding: 6px 9px; white-space: nowrap; }
+.pharmacy-inventory-table .pharmacy-table-movement-cell { padding: 12px; background: var(--page); }
+.pharmacy-inventory-table .pharmacy-stock-movement-form { min-width: 0; border: 0; padding: 4px; background: transparent; }
 .pharmacy-item-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .pharmacy-item-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: white; }
 .pharmacy-item-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1934,7 +1965,7 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .work-order-privacy { margin: -9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .work-order-list-panel .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .work-order-list { display: grid; gap: 11px; }
-.work-order-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.work-order-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); transition: border-color 150ms ease, box-shadow 150ms ease; }
 .work-order-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .work-order-card-heading h3 { margin: 6px 0 0; font-size: 15px; line-height: 1.35; }
 .service-request-number { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
@@ -1942,6 +1973,16 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 .maintenance-query { grid-column: span 2; }
 .maintenance-filter-actions, .maintenance-actions { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
 .maintenance-report-summary { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.maintenance-queue-page .maintenance-report-summary:has(> article[class*="status-tone-"]) > article {
+  min-height: 78px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border-left-width: 3px;
+  box-shadow: var(--shadow);
+}
+.maintenance-queue-page .maintenance-report-summary:has(> article[class*="status-tone-"]) > article > strong { font-size: 21px; }
+.maintenance-queue-page .maintenance-report-summary:has(> article[class*="status-tone-"]) > article > span { font-size: 11px; line-height: 1.4; }
+.maintenance-queue-page .work-order-card:hover { border-color: #a9c6d3; box-shadow: var(--shadow); }
 .work-order-print-action { display: flex; justify-content: flex-end; }
 .laundry-page { width: 100%; }
 .laundry-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; }

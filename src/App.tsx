@@ -6190,6 +6190,8 @@ const auditActionLabels: Record<string, string> = {
   anvisa_catalog_status_read: 'Catálogo público de medicamentos consultado',
   anvisa_catalog_refreshed: 'Catálogo público de medicamentos atualizado',
   inventory_read: 'Estoque consultado',
+  stock_movement_created: 'Movimentação de estoque registrada',
+  stock_movements_read: 'Movimentações de estoque consultadas',
   medication_dispensed: 'Medicamento dispensado',
   patient_observations_read: 'Observações do paciente consultadas',
   patient_observation_created: 'Observação do paciente registrada',
