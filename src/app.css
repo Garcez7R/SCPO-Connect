@@ -1982,7 +1982,16 @@ html[data-theme="dark"] .therapy-selected-participants li { border-color: var(--
 }
 .maintenance-queue-page .maintenance-report-summary:has(> article[class*="status-tone-"]) > article > strong { font-size: 21px; }
 .maintenance-queue-page .maintenance-report-summary:has(> article[class*="status-tone-"]) > article > span { font-size: 11px; line-height: 1.4; }
-.maintenance-queue-page .work-order-card:hover { border-color: #a9c6d3; box-shadow: var(--shadow); }
+.maintenance-queue-page .work-order-card { gap: 12px; padding: 15px; border-radius: 7px; box-shadow: none; }
+.maintenance-queue-page .work-order-card-heading h3 { margin: 7px 0 4px; color: var(--ink); font-size: 14px; }
+.maintenance-queue-page .work-order-meta { gap: 5px 14px; padding-top: 9px; border-top-color: var(--line); }
+.maintenance-queue-page .work-order-meta span { font-size: 10px; }
+.maintenance-queue-page .work-order-meta strong { color: var(--muted); font-size: 10px; font-weight: 600; text-transform: none; letter-spacing: normal; }
+.maintenance-queue-page .work-order-description { color: var(--ink); font-size: 12px; }
+.maintenance-queue-page .work-order-card:hover { border-color: #a9c6d3; }
+@media (max-width: 760px) {
+  .maintenance-queue-page .work-order-card-heading { flex-direction: column; gap: 8px; }
+}
 .work-order-print-action { display: flex; justify-content: flex-end; }
 .laundry-page { width: 100%; }
 .laundry-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; }
