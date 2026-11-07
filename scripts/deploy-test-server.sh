@@ -5,6 +5,7 @@ umask 077
 readonly project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly remote_target="${SCPO_TEST_SERVER:-connect@192.168.1.216}"
 readonly remote_app_dir="${SCPO_TEST_APP_DIR:-/home/connect/apps/SCPO-Connect}"
+readonly remote_internal_host="${remote_target#*@}"
 
 fail() {
   printf 'ERRO: %s\n' "$*" >&2
@@ -51,6 +52,6 @@ ssh -t -o BatchMode=yes "${remote_target}" \
    mkdir -p '${remote_app_dir}'
    tar -xzf '${remote_archive}' -C '${remote_app_dir}'
    cd '${remote_app_dir}'
-   sudo bash scripts/install-server-debian13.sh"
+   sudo SCPO_DEPLOY_INTERNAL_HOST='${remote_internal_host}' bash scripts/install-server-debian13.sh"
 
 printf '\nPublicação concluída em %s.\n' "${remote_target}"

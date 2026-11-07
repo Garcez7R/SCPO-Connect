@@ -28,7 +28,7 @@ sudo docker compose ps
 sudo grep -E '^(SCPO_INTERNAL_HOST|SCPO_HTTP_PORT|SCPO_HTTPS_PORT|SCPO_BIND_ADDRESS)=' .env
 ```
 
-Não exiba nem envie o `.env` inteiro: ele contém segredos. Para a URL deste servidor, `SCPO_INTERNAL_HOST` deve ser `192.168.1.216` e `SCPO_HTTPS_PORT` deve ser `7777`. Se os valores estiverem diferentes, ajuste somente essas configurações com `sudoedit .env` antes de publicar. O instalador preserva o `.env` existente e não troca automaticamente o host ou a porta.
+Não exiba nem envie o `.env` inteiro: ele contém segredos. O script de publicação deriva `SCPO_INTERNAL_HOST` do host em `SCPO_TEST_SERVER` (por padrão, `192.168.1.216`) e atualiza somente esse valor no `.env` remoto ao instalar a versão. A porta HTTPS continua sendo a já configurada no servidor (padrão `7777`). Não é necessário editar nem copiar o `.env` local antes do build/publicação; segredos e demais configurações existentes permanecem no servidor.
 
 ## Preparar uma versão depois de testá-la na VM de desenvolvimento
 
@@ -84,7 +84,7 @@ O SSH usa autenticação em modo não interativo, portanto a chave pública dest
 
 ## O que preserva usuários e dados entre versões
 
-O instalador usa `docker compose up -d --build`; ele não apaga os dados da instalação existente. As informações persistentes ficam fora do arquivo enviado pelo Git:
+O instalador usa `docker compose up -d --build`; ele não apaga os dados da instalação existente. O host de acesso HTTPS é atualizado a partir do destino SSH da publicação; o restante do `.env` não é enviado pelo Git nem substituído. As informações persistentes ficam fora do arquivo enviado pelo Git:
 
 - usuários, permissões e dados da aplicação: volume PostgreSQL `postgres_data`;
 - certificados/autoridade local do Caddy: volume `caddy_data`;

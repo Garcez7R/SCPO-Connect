@@ -129,7 +129,13 @@ for key in \
   fi
 done
 
-if [[ "${created_env}" == "true" ]] \
+if [[ -n "${SCPO_DEPLOY_INTERNAL_HOST:-}" ]]; then
+  internal_host="${SCPO_DEPLOY_INTERNAL_HOST}"
+  if [[ ! "${internal_host}" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ || "${internal_host}" == *..* ]]; then
+    fail "O host da implantação precisa ser um IPv4 ou nome DNS simples, sem protocolo, porta ou caminho."
+  fi
+  set_env_value SCPO_INTERNAL_HOST "${internal_host}"
+elif [[ "${created_env}" == "true" ]] \
   || ! grep -Eq '^SCPO_INTERNAL_HOST=.+$' "${temporary_env}" \
   || { [[ "${missing_required_secret}" == "true" ]] \
     && grep -qx 'SCPO_INTERNAL_HOST=localhost' "${temporary_env}"; }; then
